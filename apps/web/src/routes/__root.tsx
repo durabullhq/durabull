@@ -15,6 +15,7 @@ import { BarChart3, Calendar, Database, Layers, Link2, Loader2, Network, Users }
 import { PostHogProvider } from 'posthog-js/react'
 import { useState } from 'react'
 import { APP_TOP_BAR_HEIGHT_CLASS, AppTopBar, AppTopBarProvider } from '@/components/app-top-bar'
+import { AuthlessModeIndicator } from '@/components/authless-mode-indicator'
 import { ConnectionProvider, useConnection } from '@/components/connection-provider'
 import { ConnectionSelector } from '@/components/connection-selector'
 import { DurabullLogo } from '@/components/durabull-logo'
@@ -181,11 +182,9 @@ function RootLayout() {
                 >
                   <DurabullLogo className="h-5 w-5 text-black dark:text-white" />
                 </Link>
-                {!isAuthless && (
-                  <div className="min-w-0 flex-1 px-3">
-                    <OrganizationSelector compact />
-                  </div>
-                )}
+                <div className="min-w-0 flex-1 px-3">
+                  {isAuthless ? <AuthlessModeIndicator /> : <OrganizationSelector compact />}
+                </div>
               </div>
             </div>
 
@@ -233,11 +232,9 @@ function RootLayout() {
                   >
                     <DurabullLogo className="h-5 w-5 text-black dark:text-white" />
                   </Link>
-                  {!isAuthless && (
-                    <div className="min-w-0 flex-1 px-3">
-                      <OrganizationSelector compact />
-                    </div>
-                  )}
+                  <div className="min-w-0 flex-1 px-3">
+                    {isAuthless ? <AuthlessModeIndicator /> : <OrganizationSelector compact />}
+                  </div>
                 </div>
               </div>
 
