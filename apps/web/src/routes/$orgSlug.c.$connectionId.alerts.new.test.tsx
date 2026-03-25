@@ -9,7 +9,7 @@ const {
   createRuleMutateAsyncMock,
   builderPropsSpy,
   routeState,
-  saveInputsState,
+  saveInputState,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   toastSuccessMock: vi.fn(),
@@ -21,29 +21,17 @@ const {
       connectionId: 'conn-1',
     },
   },
-  saveInputsState: {
-    current: [
-      {
-        name: 'Email failures',
-        type: 'failure_threshold' as const,
-        queueFilterMode: 'include' as const,
-        filterQueueNames: ['email-send'],
-        config: { count: 5, windowMinutes: 5 },
-        notificationChannels: [],
-        cooldownMinutes: 30,
-        enabled: true,
-      },
-      {
-        name: 'Invoice failures',
-        type: 'failure_threshold' as const,
-        queueFilterMode: 'include' as const,
-        filterQueueNames: ['invoice-send'],
-        config: { count: 5, windowMinutes: 5 },
-        notificationChannels: [],
-        cooldownMinutes: 30,
-        enabled: true,
-      },
-    ],
+  saveInputState: {
+    current: {
+      name: 'Email failures',
+      type: 'failure_threshold' as const,
+      queueFilterMode: 'include' as const,
+      filterQueueNames: ['email-send'],
+      config: { count: 5, windowMinutes: 5 },
+      notificationChannels: [],
+      cooldownMinutes: 30,
+      enabled: true,
+    },
   },
 }))
 
@@ -66,7 +54,7 @@ vi.mock('@/components/alerts/alert-rule-builder-page', () => ({
         <button
           type="button"
           onClick={() =>
-            void (props.onSave as (inputs: unknown[]) => Promise<void>)(saveInputsState.current)
+            void (props.onSave as (input: unknown) => Promise<void>)(saveInputState.current)
           }
         >
           Save from builder
@@ -124,11 +112,10 @@ describe('CreateAlertRuleRoute', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save from builder' }))
 
-    await waitFor(() => expect(createRuleMutateAsyncMock).toHaveBeenCalledTimes(2))
-    expect(createRuleMutateAsyncMock).toHaveBeenNthCalledWith(1, saveInputsState.current[0])
-    expect(createRuleMutateAsyncMock).toHaveBeenNthCalledWith(2, saveInputsState.current[1])
-    expect(toastSuccessMock).toHaveBeenCalledWith('Alert rules created', {
-      description: '2 queue-scoped alert rules were created from this builder.',
+    await waitFor(() => expect(createRuleMutateAsyncMock).toHaveBeenCalledTimes(1))
+    expect(createRuleMutateAsyncMock).toHaveBeenCalledWith(saveInputState.current)
+    expect(toastSuccessMock).toHaveBeenCalledWith('Alert rule created', {
+      description: 'Email failures is now being evaluated in the background.',
     })
     expect(navigateMock).toHaveBeenCalledWith({
       to: '/$orgSlug/c/$connectionId/alerts',

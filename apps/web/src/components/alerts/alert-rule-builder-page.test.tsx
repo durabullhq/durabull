@@ -94,22 +94,20 @@ describe('AlertRuleBuilderPage', () => {
     await user.click(screen.getByRole('button', { name: 'Create rule' }))
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
-    expect(onSave).toHaveBeenCalledWith([
-      {
-        name: 'Email delivery failures',
-        type: 'failure_threshold',
-        queueName: null,
-        queueFilterMode: 'include',
-        filterQueueNames: ['email-send'],
-        enabled: true,
-        cooldownMinutes: 30,
-        notificationChannels: [],
-        config: {
-          count: 25,
-          windowMinutes: 5,
-        },
+    expect(onSave).toHaveBeenCalledWith({
+      name: 'Email delivery failures',
+      type: 'failure_threshold',
+      queueName: null,
+      queueFilterMode: 'include',
+      filterQueueNames: ['email-send'],
+      enabled: true,
+      cooldownMinutes: 30,
+      notificationChannels: [],
+      config: {
+        count: 25,
+        windowMinutes: 5,
       },
-    ])
+    })
   })
 
   it('runs a live test in edit mode and surfaces the result', async () => {

@@ -31,7 +31,7 @@ const {
   builderPropsSpy,
   routeState,
   rulesQueryState,
-  saveInputsState,
+  saveInputState,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   toastSuccessMock: vi.fn(),
@@ -68,19 +68,17 @@ const {
       },
     } as RulesQueryFixture,
   },
-  saveInputsState: {
-    current: [
-      {
-        name: 'Delivery failures',
-        type: 'failure_threshold' as const,
-        queueFilterMode: 'include' as const,
-        filterQueueNames: ['email-send'],
-        config: { count: 10, windowMinutes: 5 },
-        notificationChannels: [],
-        cooldownMinutes: 45,
-        enabled: true,
-      },
-    ],
+  saveInputState: {
+    current: {
+      name: 'Delivery failures',
+      type: 'failure_threshold' as const,
+      queueFilterMode: 'include' as const,
+      filterQueueNames: ['email-send'],
+      config: { count: 10, windowMinutes: 5 },
+      notificationChannels: [],
+      cooldownMinutes: 45,
+      enabled: true,
+    },
   },
 }))
 
@@ -102,7 +100,7 @@ vi.mock('@/components/alerts/alert-rule-builder-page', () => ({
         <button
           type="button"
           onClick={() =>
-            void (props.onSave as (inputs: unknown[]) => Promise<void>)(saveInputsState.current)
+            void (props.onSave as (input: unknown) => Promise<void>)(saveInputState.current)
           }
         >
           Save from builder
@@ -230,7 +228,7 @@ describe('EditAlertRuleRoute', () => {
     await waitFor(() =>
       expect(updateRuleMutateAsyncMock).toHaveBeenCalledWith({
         ruleId: 'rule-1',
-        input: saveInputsState.current[0],
+        input: saveInputState.current,
       })
     )
     expect(toastSuccessMock).toHaveBeenCalledWith('Alert rule updated', {
