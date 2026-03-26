@@ -2,7 +2,9 @@
   "version": "8",
   "dialect": "postgres",
   "id": "c39ac892-69ea-49f1-8056-da12735c22ea",
-  "prevIds": ["3da422bb-13e7-4cbc-87d8-e56f86d3b286"],
+  "prevIds": [
+    "3da422bb-13e7-4cbc-87d8-e56f86d3b286"
+  ],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -1744,31 +1746,60 @@
       "entityType": "indexes",
       "schema": "public",
       "table": "alert_rule",
-      "columns": ["connection_id", "organization_id"],
+      "columns": [
+        {
+          "value": "connection_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "organization_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
       "isUnique": false,
-      "with": null,
+      "with": "",
       "where": null,
       "method": "btree",
-      "concurrently": false
+      "concurrently": false,
+      "nameExplicit": true
     },
     {
       "name": "alert_rule_enabled_idx",
       "entityType": "indexes",
       "schema": "public",
       "table": "alert_rule",
-      "columns": ["enabled"],
+      "columns": [
+        {
+          "value": "enabled",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
       "isUnique": false,
-      "with": null,
+      "with": "",
       "where": "\"enabled\" = true",
       "method": "btree",
-      "concurrently": false
+      "concurrently": false,
+      "nameExplicit": true
     },
     {
       "nameExplicit": false,
-      "columns": ["connection_id"],
+      "columns": [
+        "connection_id"
+      ],
       "schemaTo": "public",
       "tableTo": "redis_connection",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "alert_check_cursor_connection_id_redis_connection_id_fkey",
@@ -1778,10 +1809,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["alert_rule_id"],
+      "columns": [
+        "alert_rule_id"
+      ],
       "schemaTo": "public",
       "tableTo": "alert_rule",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "alert_event_alert_rule_id_alert_rule_id_fkey",
@@ -1791,10 +1826,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["organization_id"],
+      "columns": [
+        "organization_id"
+      ],
       "schemaTo": "public",
       "tableTo": "organization",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "alert_event_organization_id_organization_id_fkey",
@@ -1804,10 +1843,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["connection_id"],
+      "columns": [
+        "connection_id"
+      ],
       "schemaTo": "public",
       "tableTo": "redis_connection",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "alert_event_connection_id_redis_connection_id_fkey",
@@ -1817,10 +1860,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["organization_id"],
+      "columns": [
+        "organization_id"
+      ],
       "schemaTo": "public",
       "tableTo": "organization",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "alert_rule_organization_id_organization_id_fkey",
@@ -1830,10 +1877,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["connection_id"],
+      "columns": [
+        "connection_id"
+      ],
       "schemaTo": "public",
       "tableTo": "redis_connection",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "alert_rule_connection_id_redis_connection_id_fkey",
@@ -1843,10 +1894,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["user_id"],
+      "columns": [
+        "user_id"
+      ],
       "schemaTo": "public",
       "tableTo": "user",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "auth_account_user_id_user_id_fkey",
@@ -1856,10 +1911,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["user_id"],
+      "columns": [
+        "user_id"
+      ],
       "schemaTo": "public",
       "tableTo": "user",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "auth_session_user_id_user_id_fkey",
@@ -1869,10 +1928,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["active_organization_id"],
+      "columns": [
+        "active_organization_id"
+      ],
       "schemaTo": "public",
       "tableTo": "organization",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "SET NULL",
       "name": "auth_session_active_organization_id_organization_id_fkey",
@@ -1882,10 +1945,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["organization_id"],
+      "columns": [
+        "organization_id"
+      ],
       "schemaTo": "public",
       "tableTo": "organization",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "invitation_organization_id_organization_id_fkey",
@@ -1895,10 +1962,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["inviter_id"],
+      "columns": [
+        "inviter_id"
+      ],
       "schemaTo": "public",
       "tableTo": "user",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "invitation_inviter_id_user_id_fkey",
@@ -1908,10 +1979,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["organization_id"],
+      "columns": [
+        "organization_id"
+      ],
       "schemaTo": "public",
       "tableTo": "organization",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "member_organization_id_organization_id_fkey",
@@ -1921,10 +1996,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["user_id"],
+      "columns": [
+        "user_id"
+      ],
       "schemaTo": "public",
       "tableTo": "user",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "member_user_id_user_id_fkey",
@@ -1934,10 +2013,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["organization_id"],
+      "columns": [
+        "organization_id"
+      ],
       "schemaTo": "public",
       "tableTo": "organization",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "redis_connection_organization_id_organization_id_fkey",
@@ -1947,10 +2030,14 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["connection_id"],
+      "columns": [
+        "connection_id"
+      ],
       "schemaTo": "public",
       "tableTo": "redis_connection",
-      "columnsTo": ["id"],
+      "columnsTo": [
+        "id"
+      ],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "name": "redis_discovered_queue_connection_id_redis_connection_id_fkey",
@@ -1959,7 +2046,9 @@
       "table": "redis_discovered_queue"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "alert_check_cursor_pkey",
       "schema": "public",
@@ -1967,7 +2056,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "alert_event_pkey",
       "schema": "public",
@@ -1975,7 +2066,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "alert_rule_pkey",
       "schema": "public",
@@ -1983,7 +2076,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "auth_account_pkey",
       "schema": "public",
@@ -1991,7 +2086,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "auth_session_pkey",
       "schema": "public",
@@ -1999,7 +2096,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "auth_verification_pkey",
       "schema": "public",
@@ -2007,7 +2106,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "invitation_pkey",
       "schema": "public",
@@ -2015,7 +2116,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "member_pkey",
       "schema": "public",
@@ -2023,7 +2126,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "organization_pkey",
       "schema": "public",
@@ -2031,7 +2136,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "redis_connection_pkey",
       "schema": "public",
@@ -2039,7 +2146,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "redis_discovered_queue_pkey",
       "schema": "public",
@@ -2047,7 +2156,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "user_pkey",
       "schema": "public",
@@ -2055,7 +2166,9 @@
       "entityType": "pks"
     },
     {
-      "columns": ["id"],
+      "columns": [
+        "id"
+      ],
       "nameExplicit": false,
       "name": "user_settings_pkey",
       "schema": "public",
@@ -2064,7 +2177,9 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["token"],
+      "columns": [
+        "token"
+      ],
       "nullsNotDistinct": false,
       "name": "auth_session_token_key",
       "schema": "public",
@@ -2073,7 +2188,9 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["slug"],
+      "columns": [
+        "slug"
+      ],
       "nullsNotDistinct": false,
       "name": "organization_slug_key",
       "schema": "public",
@@ -2082,7 +2199,9 @@
     },
     {
       "nameExplicit": false,
-      "columns": ["email"],
+      "columns": [
+        "email"
+      ],
       "nullsNotDistinct": false,
       "name": "user_email_key",
       "schema": "public",
