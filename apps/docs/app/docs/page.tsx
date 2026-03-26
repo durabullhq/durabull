@@ -36,7 +36,10 @@ export default function DocsPage() {
         badge="Documentation"
         title="Durabull Documentation"
         subtitle="Friendly guides for desktop installs, self-hosting, day-to-day operations, and incident response in BullMQ environments."
-        primaryCta={{ label: 'Desktop Install Guide', to: '/documentation/getting-started/desktop-apps' }}
+        primaryCta={{
+          label: 'Desktop Install Guide',
+          to: '/documentation/getting-started/desktop-apps',
+        }}
         secondaryCta={{ label: 'Open Documentation', to: '/documentation' }}
         sections={[
           {

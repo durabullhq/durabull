@@ -97,6 +97,7 @@ async function seedDatabase() {
   const isCI = !!process.env.CI
   const rootDir = path.resolve(__dirname, '../../../')
   const postgresPort = process.env.DURABULL_POSTGRES_PORT || '55432'
+  const redisPort = process.env.DURABULL_REDIS_PORT || '56379'
 
   // Build the environment for the seed script
   const seedEnv = {
@@ -105,7 +106,7 @@ async function seedDatabase() {
     DATABASE_URL:
       process.env.DATABASE_URL ||
       `postgresql://postgres:postgres@localhost:${postgresPort}/durabull`,
-    REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
+    REDIS_URL: process.env.REDIS_URL || `redis://localhost:${redisPort}`,
     DURABULL_REDIS_URL_ENCRYPTION_KEY: getE2ERedisUrlEncryptionKey(),
   }
 

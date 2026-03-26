@@ -31,6 +31,22 @@ export type {
 } from './db/schemas/organization/types'
 // Redis connection exports
 export {
+  alertRule,
+  type AlertRuleType,
+  alertRuleTypes,
+  type QueueFilterMode,
+  queueFilterModes,
+} from './db/schemas/alert-rule/schema'
+export type { AlertRule, NewAlertRule } from './db/schemas/alert-rule/types'
+export {
+  alertEvent,
+  type AlertEventStatus,
+  alertEventStatuses,
+} from './db/schemas/alert-event/schema'
+export type { AlertEvent, NewAlertEvent } from './db/schemas/alert-event/types'
+export { alertCheckCursor } from './db/schemas/alert-check-cursor/schema'
+export type { AlertCheckCursor, NewAlertCheckCursor } from './db/schemas/alert-check-cursor/types'
+export {
   type ConnectionEnvironment,
   connectionEnvironments,
   redisConnection,
@@ -51,6 +67,9 @@ export { user } from './db/schemas/user/schema'
 export type { NewUser, User } from './db/schemas/user/types'
 // Repositories
 export { redisConnectionRepository } from './repositories/redis-connection'
+export { alertCheckCursorRepository } from './repositories/alert-check-cursor'
+export { alertEventRepository } from './repositories/alert-event'
+export { alertRuleRepository } from './repositories/alert-rule'
 export { redisDiscoveredQueueRepository } from './repositories/redis-discovered-queue'
 export { userSettingsRepository } from './repositories/user-settings'
 export {

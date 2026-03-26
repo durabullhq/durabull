@@ -111,9 +111,7 @@ export function AddJobDialog({ open, onOpenChange, queueName, onSuccess }: AddJo
             <Plus className="h-5 w-5" />
             Add Job
           </DialogTitle>
-          <DialogDescription>
-            Create a new job and add it to this queue.
-          </DialogDescription>
+          <DialogDescription>Create a new job and add it to this queue.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">

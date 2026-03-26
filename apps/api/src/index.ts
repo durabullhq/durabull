@@ -6,6 +6,7 @@ import { env } from '@durabull/env'
 import { serveStatic } from 'hono/bun'
 
 import { createApiApp } from './app'
+import { startAlertMonitor, stopAlertMonitor } from './lib/alert-monitor'
 import { isAuthlessMode } from './lib/authless'
 
 process.on('unhandledRejection', (reason) => {
@@ -22,9 +23,13 @@ async function shutdown(reason: NodeJS.Signals): Promise<void> {
   if (shutdownPromise) return shutdownPromise
 
   shutdownPromise = (async () => {
-    console.log(`[shutdown] Received ${reason}, closing database...`)
+    console.log(`[shutdown] Received ${reason}, stopping alert monitor...`)
 
     try {
+      stopAlertMonitor()
+      console.log('[shutdown] Alert monitor stopped.')
+
+      console.log('[shutdown] Closing database...')
       await closeDb()
       console.log('[shutdown] Database closed cleanly.')
       process.exit(0)
@@ -54,6 +59,7 @@ if (!process.stdin.isTTY) {
 
 // Create the API app
 const { app } = await createApiApp()
+startAlertMonitor()
 
 // Serve static files from web app build (for production)
 const webDistPath = join(import.meta.dir, '../../web/dist')
@@ -94,6 +100,10 @@ const authBanner = isAuthlessMode() ? '🔐 Auth:   Authless' : '🔐 Auth:   Be
 const connectionsBanner = shouldUseEnvConnections()
   ? `🔌 Connections: Env (${envConnectionCount})`
   : '🔌 Connections: DB'
+const alertBanner =
+  env.DURABULL_ALERT_ENABLED === false
+    ? '🔔 Alerts: Disabled'
+    : `🔔 Alerts: Monitor active (${Math.round((env.DURABULL_ALERT_POLL_INTERVAL_MS ?? 60000) / 1000)}s)`
 const authlessProductionWarning =
   isAuthlessMode() && env.NODE_ENV === 'production'
     ? '⚠️  WARNING: Authless mode is enabled in production. Restrict network access to trusted environments only.'
@@ -107,6 +117,7 @@ console.log(`
 ${dbBanner}
 ${authBanner}
 ${connectionsBanner}
+${alertBanner}
 ${emailBanner}
 ${authlessProductionWarning ? `${authlessProductionWarning}` : ''}
 ${hasWebBuild ? `🌐 Web:    http://localhost:${port}` : '⚠️  Web: Run "bun run build" first'}

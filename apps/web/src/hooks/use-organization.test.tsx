@@ -4,25 +4,21 @@ import type { PropsWithChildren } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useOrganizations } from '@/hooks/use-organization'
 
-const {
-  modeState,
-  authState,
-  organizationListMock,
-  sessionGetMock,
-  handleResMock,
-} = vi.hoisted(() => ({
-  modeState: {
-    isAuthless: false,
-    isLoading: false,
-  },
-  authState: {
-    isAuthenticated: false,
-    session: null,
-  },
-  organizationListMock: vi.fn(),
-  sessionGetMock: vi.fn(),
-  handleResMock: vi.fn(),
-}))
+const { modeState, authState, organizationListMock, sessionGetMock, handleResMock } = vi.hoisted(
+  () => ({
+    modeState: {
+      isAuthless: false,
+      isLoading: false,
+    },
+    authState: {
+      isAuthenticated: false,
+      session: null,
+    },
+    organizationListMock: vi.fn(),
+    sessionGetMock: vi.fn(),
+    handleResMock: vi.fn(),
+  })
+)
 
 vi.mock('@/hooks/use-app-mode', () => ({
   useAppMode: () => modeState,

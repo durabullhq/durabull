@@ -1,5 +1,15 @@
 // Relations (consolidated to avoid circular dependencies)
 
+// Alert Rule schema exports
+export { alertRule, type AlertRuleType, alertRuleTypes } from './alert-rule/schema'
+export type { AlertRule, NewAlertRule } from './alert-rule/types'
+// Alert Event schema exports
+export { alertEvent, type AlertEventStatus, alertEventStatuses } from './alert-event/schema'
+export type { AlertEvent, NewAlertEvent } from './alert-event/types'
+// Alert Check Cursor schema exports
+export { alertCheckCursor } from './alert-check-cursor/schema'
+export type { AlertCheckCursor, NewAlertCheckCursor } from './alert-check-cursor/types'
+
 // Auth schema exports
 export { authAccount, authSession, authVerification } from './auth/schema'
 export type {

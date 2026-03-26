@@ -45,57 +45,60 @@ function useDesktopHistoryAvailability(enabled: boolean): HistoryAvailability {
   const historyTraversalRef = useRef(false)
   const currentEntryKey = `${location.pathname}?${JSON.stringify(location.search ?? {})}`
 
-  const syncAvailability = useCallback((currentEntryOverride?: string) => {
-    if (!enabled || typeof window === 'undefined') {
-      entryStackRef.current = []
-      entryIndexRef.current = -1
-      setAvailability(EMPTY_HISTORY_AVAILABILITY)
-      return
-    }
-
-    const currentEntry =
-      currentEntryOverride ??
-      `${window.location.pathname}${window.location.search}${window.location.hash}`
-    const currentStack = entryStackRef.current
-
-    if (entryIndexRef.current === -1) {
-      currentStack.push(currentEntry)
-      entryIndexRef.current = 0
-    } else if (currentStack[entryIndexRef.current] !== currentEntry) {
-      if (historyTraversalRef.current) {
-        if (currentStack[entryIndexRef.current - 1] === currentEntry) {
-          entryIndexRef.current -= 1
-        } else if (currentStack[entryIndexRef.current + 1] === currentEntry) {
-          entryIndexRef.current += 1
-        } else {
-          const existingIndex = currentStack.lastIndexOf(currentEntry)
-          if (existingIndex !== -1) {
-            entryIndexRef.current = existingIndex
-          } else {
-            currentStack.push(currentEntry)
-            entryIndexRef.current = currentStack.length - 1
-          }
-        }
-      } else {
-        currentStack.splice(entryIndexRef.current + 1)
-        currentStack.push(currentEntry)
-        entryIndexRef.current = currentStack.length - 1
+  const syncAvailability = useCallback(
+    (currentEntryOverride?: string) => {
+      if (!enabled || typeof window === 'undefined') {
+        entryStackRef.current = []
+        entryIndexRef.current = -1
+        setAvailability(EMPTY_HISTORY_AVAILABILITY)
+        return
       }
-    }
 
-    historyTraversalRef.current = false
+      const currentEntry =
+        currentEntryOverride ??
+        `${window.location.pathname}${window.location.search}${window.location.hash}`
+      const currentStack = entryStackRef.current
 
-    const nativeAvailability = readNativeHistoryAvailability()
-    if (nativeAvailability) {
-      setAvailability(nativeAvailability)
-      return
-    }
+      if (entryIndexRef.current === -1) {
+        currentStack.push(currentEntry)
+        entryIndexRef.current = 0
+      } else if (currentStack[entryIndexRef.current] !== currentEntry) {
+        if (historyTraversalRef.current) {
+          if (currentStack[entryIndexRef.current - 1] === currentEntry) {
+            entryIndexRef.current -= 1
+          } else if (currentStack[entryIndexRef.current + 1] === currentEntry) {
+            entryIndexRef.current += 1
+          } else {
+            const existingIndex = currentStack.lastIndexOf(currentEntry)
+            if (existingIndex !== -1) {
+              entryIndexRef.current = existingIndex
+            } else {
+              currentStack.push(currentEntry)
+              entryIndexRef.current = currentStack.length - 1
+            }
+          }
+        } else {
+          currentStack.splice(entryIndexRef.current + 1)
+          currentStack.push(currentEntry)
+          entryIndexRef.current = currentStack.length - 1
+        }
+      }
 
-    setAvailability({
-      canGoBack: entryIndexRef.current > 0,
-      canGoForward: entryIndexRef.current < currentStack.length - 1,
-    })
-  }, [enabled])
+      historyTraversalRef.current = false
+
+      const nativeAvailability = readNativeHistoryAvailability()
+      if (nativeAvailability) {
+        setAvailability(nativeAvailability)
+        return
+      }
+
+      setAvailability({
+        canGoBack: entryIndexRef.current > 0,
+        canGoForward: entryIndexRef.current < currentStack.length - 1,
+      })
+    },
+    [enabled]
+  )
 
   useEffect(() => {
     syncAvailability(currentEntryKey)

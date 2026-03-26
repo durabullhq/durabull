@@ -1,0 +1,324 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import {
+  alertCheckCursorRepository,
+  alertEventRepository,
+  alertRuleRepository,
+  closeDb,
+  getDb,
+  organization,
+  redisConnection,
+  redisDiscoveredQueue,
+} from '@durabull/dal'
+import { env } from '@durabull/env'
+import { Hono } from 'hono'
+
+const TEST_ORG_ID = 'alert-routes-org'
+const TEST_CONNECTION_ID = '55555555-5555-4555-8555-555555555555'
+
+const mutableEnv = env as {
+  DATABASE_URL?: string
+}
+
+const originalDatabaseUrl = mutableEnv.DATABASE_URL
+const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
+
+let tempPgliteDir = ''
+
+async function seedBaseConnection() {
+  const db = await getDb()
+  const now = new Date()
+
+  await db.insert(organization).values({
+    id: TEST_ORG_ID,
+    name: 'Alert Routes Org',
+    slug: 'alert-routes-org',
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  await db.insert(redisConnection).values({
+    id: TEST_CONNECTION_ID,
+    name: 'Primary Redis',
+    url: 'redis://localhost:6379/0',
+    environment: 'development',
+    isDefault: true,
+    organizationId: TEST_ORG_ID,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+async function seedDiscoveredQueue(name: string) {
+  const db = await getDb()
+  const now = new Date()
+
+  await db.insert(redisDiscoveredQueue).values({
+    connectionId: TEST_CONNECTION_ID,
+    name,
+    state: 'confirmed',
+    lastDiscoveredAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+async function createAlertsRouteApp() {
+  const { default: alertsRoutes } = await import('./alerts')
+
+  return new Hono()
+    .use('*', async (c, next) => {
+      c.set('connectionId', TEST_CONNECTION_ID)
+      c.set('connectionUrl', 'redis://localhost:6379/0')
+      c.set('connectionName', 'Primary Redis')
+      c.set('organizationId', TEST_ORG_ID)
+      await next()
+    })
+    .route('/', alertsRoutes)
+}
+
+function jsonRequest(body: unknown): RequestInit {
+  return {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  }
+}
+
+describe('alerts routes', () => {
+  beforeEach(async () => {
+    tempPgliteDir = await mkdtemp(join(tmpdir(), 'durabull-alert-routes-'))
+    process.env.DURABULL_PGLITE_DIR = tempPgliteDir
+    delete process.env.DATABASE_URL
+    mutableEnv.DATABASE_URL = undefined
+    await closeDb()
+    await seedBaseConnection()
+  })
+
+  afterEach(async () => {
+    await closeDb()
+    mutableEnv.DATABASE_URL = originalDatabaseUrl
+
+    if (originalPgliteDir) {
+      process.env.DURABULL_PGLITE_DIR = originalPgliteDir
+    } else {
+      delete process.env.DURABULL_PGLITE_DIR
+    }
+
+    if (tempPgliteDir) {
+      await rm(tempPgliteDir, { recursive: true, force: true })
+      tempPgliteDir = ''
+    }
+  })
+
+  it('rejects invalid rule configs on create', async () => {
+    const app = await createAlertsRouteApp()
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Failure spike',
+        type: 'failure_threshold',
+        queueName: 'email-send',
+        config: { count: 0, windowMinutes: 5 },
+        notificationChannels: [],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: expect.stringContaining('Invalid config'),
+    })
+  })
+
+  it('rejects the fifty-first rule on a connection', async () => {
+    for (let index = 0; index < 50; index += 1) {
+      await alertRuleRepository.create({
+        organizationId: TEST_ORG_ID,
+        connectionId: TEST_CONNECTION_ID,
+        queueName: `queue-${index}`,
+        name: `Rule ${index}`,
+        type: 'failure_threshold',
+        config: { count: 5, windowMinutes: 5 },
+        cooldownMinutes: 30,
+      })
+    }
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Rule 51',
+        type: 'failure_threshold',
+        queueName: 'overflow',
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'Maximum of 50 alert rules per connection',
+    })
+  })
+
+  it('resolves active incidents when a rule is muted', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Mute me',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Incident is firing',
+      context: {},
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled: false }),
+    })
+
+    expect(response.status).toBe(200)
+
+    const events = await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })
+    expect(events).toHaveLength(1)
+    expect(events[0]?.id).toBe(event.id)
+    expect(events[0]?.status).toBe('resolved')
+
+    const updatedRule = await alertRuleRepository.findById(rule.id, TEST_ORG_ID)
+    expect(updatedRule?.enabled).toBe(false)
+  })
+
+  it('returns a 400 from the live test endpoint when no queue is available yet', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: null,
+      name: 'Any queue failures',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}/test`, { method: 'POST' })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'No queue available to test this rule yet',
+    })
+  })
+
+  it('returns a live evaluation snapshot without persisting a firing event', async () => {
+    const getQueueMock = mock(async () => ({
+      getJobCounts: async () => ({
+        failed: 12,
+        waiting: 1,
+        active: 0,
+        completed: 80,
+      }),
+      getMetrics: async (metric: string) => ({
+        meta: { count: metric === 'failed' ? 12 : 80 },
+        data: metric === 'failed' ? [7, 5] : [40, 40],
+      }),
+    }))
+    mock.module('../lib/redis', () => ({
+      getQueue: getQueueMock,
+    }))
+
+    await seedDiscoveredQueue('email-send')
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: null,
+      queueFilterMode: 'exclude',
+      filterQueueNames: [],
+      name: 'Live test',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    await alertCheckCursorRepository.upsert({
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      lastCheckedAt: new Date(Date.now() - 5 * 60_000),
+      lastFailedCount: 2,
+      lastCompletedCount: 70,
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}/test`, { method: 'POST' })
+
+    expect(response.status).toBe(200)
+    expect(getQueueMock).toHaveBeenCalledTimes(1)
+
+    const body = (await response.json()) as {
+      evaluation: { triggered: boolean; context: { delta: number } }
+      snapshot: { queueName: string }
+    }
+    expect(body.snapshot.queueName).toBe('email-send')
+    expect(body.evaluation.triggered).toBe(true)
+    expect(body.evaluation.context.delta).toBe(10)
+
+    const events = await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })
+    expect(events).toHaveLength(0)
+  })
+
+  it('lists connection events and resolves them through the API', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Incident history',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Needs action',
+      context: {},
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+
+    const listResponse = await app.request('/events?status=firing')
+    expect(listResponse.status).toBe(200)
+    expect(await listResponse.json()).toMatchObject({
+      events: [expect.objectContaining({ id: event.id, status: 'firing' })],
+    })
+
+    const resolveResponse = await app.request(`/events/${event.id}/resolve`, { method: 'POST' })
+    expect(resolveResponse.status).toBe(200)
+    expect(await resolveResponse.json()).toMatchObject({
+      event: expect.objectContaining({ id: event.id, status: 'resolved' }),
+    })
+  })
+})

@@ -40,14 +40,7 @@ async function resolvePgliteDist(): Promise<string> {
     throw new Error('Unable to locate @electric-sql/pglite inside Bun install artifacts.')
   }
 
-  return join(
-    bunPackagesRoot,
-    pgliteEntry.name,
-    'node_modules',
-    '@electric-sql',
-    'pglite',
-    'dist'
-  )
+  return join(bunPackagesRoot, pgliteEntry.name, 'node_modules', '@electric-sql', 'pglite', 'dist')
 }
 
 async function main() {

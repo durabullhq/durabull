@@ -71,7 +71,9 @@ describe('brandMacAppBundlePlist', () => {
 
     expect(branded).toContain('<key>CFBundleDisplayName</key>\n  <string>Durabull</string>')
     expect(branded).toContain('<key>CFBundleExecutable</key>\n  <string>Durabull</string>')
-    expect(branded).toContain('<key>CFBundleIdentifier</key>\n  <string>com.durabull.desktop.dev</string>')
+    expect(branded).toContain(
+      '<key>CFBundleIdentifier</key>\n  <string>com.durabull.desktop.dev</string>'
+    )
     expect(branded).toContain('<key>CFBundleName</key>\n  <string>Durabull</string>')
   })
 })

@@ -1,5 +1,6 @@
 import { render } from '@react-email/components'
 import { getResendClient, isEmailConfigured } from './client'
+import { AlertEmail, type AlertEmailProps } from './templates/alert'
 import { InviteEmail, type InviteEmailProps } from './templates/invite'
 
 /**
@@ -54,6 +55,37 @@ export interface InvitationEmailData {
 export interface EmailOptions {
   /** Base URL of the application (e.g., https://durabull.io) */
   baseUrl: string
+}
+
+export type { AlertEmailProps }
+
+export async function sendAlertNotificationEmail(
+  data: AlertEmailProps & { to: string }
+): Promise<void> {
+  if (!isEmailConfigured()) {
+    console.warn('[email] RESEND_API_KEY not configured, skipping alert email')
+    return
+  }
+
+  const { to, ...props } = data
+  const html = await render(AlertEmail(props))
+  const text = await render(AlertEmail(props), { plainText: true })
+  const resend = getResendClient()
+
+  const { error } = await resend.emails.send({
+    from: FROM_EMAIL,
+    to,
+    subject: `Alert: ${props.summary}`,
+    html,
+    text,
+  })
+
+  if (error) {
+    console.error('[email] Failed to send alert email:', error)
+    throw new Error(`Failed to send alert email: ${error.message}`)
+  }
+
+  console.log(`[email] Alert email sent to ${to}`)
 }
 
 /**

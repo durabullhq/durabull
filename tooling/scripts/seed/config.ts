@@ -10,14 +10,21 @@
 // Environment Configuration
 // ============================================================================
 
+function defaultRedisUrlFromEnv(): string {
+  const port = process.env.DURABULL_REDIS_PORT?.trim()
+  if (port) return `redis://localhost:${port}`
+  // Matches tooling/docker default host port when DURABULL_REDIS_PORT is unset (see docker-compose.yaml).
+  return 'redis://localhost:56379'
+}
+
 // Use a getter function to read REDIS_URL at runtime (not import time)
 // This allows the demo seed script to override process.env.REDIS_URL before use
 export function getRedisUrl(): string {
-  return process.env.REDIS_URL || 'redis://localhost:6379'
+  return process.env.REDIS_URL || defaultRedisUrlFromEnv()
 }
 
 // Legacy export for backwards compatibility (evaluated at import time)
-export const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
+export const REDIS_URL = process.env.REDIS_URL || defaultRedisUrlFromEnv()
 
 // ============================================================================
 // User Definitions

@@ -233,7 +233,8 @@ export function useActiveOrganization() {
     enabled:
       !modeLoading &&
       (isAuthless ||
-        (isAuthenticated && !!(session as { activeOrganizationId?: string })?.activeOrganizationId)),
+        (isAuthenticated &&
+          !!(session as { activeOrganizationId?: string })?.activeOrganizationId)),
   })
 }
 

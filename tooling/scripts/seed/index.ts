@@ -80,6 +80,22 @@ async function main(): Promise<void> {
     }
   } catch (error) {
     logError(`Seed failed: ${error}`)
+    if (error instanceof Error) {
+      if (error.cause) console.error('  cause:', error.cause)
+      if ('code' in error && typeof (error as NodeJS.ErrnoException).code === 'string') {
+        console.error('  code:', (error as NodeJS.ErrnoException).code)
+      }
+    }
+    if (process.env.DATABASE_URL) {
+      try {
+        const u = new URL(process.env.DATABASE_URL)
+        console.error(
+          `  DATABASE_URL host: ${u.hostname} port: ${u.port || '(default)'} db: ${u.pathname.slice(1) || '(default)'}`
+        )
+      } catch {
+        console.error('  DATABASE_URL: (could not parse for logging)')
+      }
+    }
     await redis.quit().catch(() => {})
     await closeDb().catch(() => {})
     process.exit(1)

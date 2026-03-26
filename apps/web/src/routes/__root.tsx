@@ -11,7 +11,17 @@ import {
   useParams,
 } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-import { BarChart3, Calendar, Database, Layers, Link2, Loader2, Network, Users } from 'lucide-react'
+import {
+  BarChart3,
+  BellRing,
+  Calendar,
+  Database,
+  Layers,
+  Link2,
+  Loader2,
+  Network,
+  Users,
+} from 'lucide-react'
 import { PostHogProvider } from 'posthog-js/react'
 import { useState } from 'react'
 import { APP_TOP_BAR_HEIGHT_CLASS, AppTopBar, AppTopBarProvider } from '@/components/app-top-bar'
@@ -25,6 +35,8 @@ import { OrganizationSelector } from '@/components/organization-selector'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet'
 import { Toaster } from '@/components/ui/sonner'
+import { Badge } from '@/components/ui/badge'
+import { useAlertSummary } from '@/hooks/use-alerts'
 import { useAppConfig } from '@/hooks/use-app-config'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
@@ -310,9 +322,15 @@ function RootLayout() {
 function SidebarNav() {
   const { isAuthless } = useAppMode()
   const { currentConnection } = useConnection()
+  const { data: alertSummary } = useAlertSummary()
   const connectionId = currentConnection?.id
   // Get orgSlug from route params or fall back to active organization
   const orgSlug = useCurrentOrgSlug()
+  const totalOpenAlerts =
+    alertSummary?.connections.reduce(
+      (sum: number, entry: { count: number }) => sum + entry.count,
+      0
+    ) ?? 0
 
   // If no connection or org is selected, we can still show nav but links won't work
   // The index page will handle redirecting to a connection
@@ -326,6 +344,9 @@ function SidebarNav() {
       </div>
       <NavLink to={basePath} icon={Layers}>
         Queues
+      </NavLink>
+      <NavLink to={`${basePath}/alerts`} icon={BellRing} badge={totalOpenAlerts}>
+        Alerts
       </NavLink>
       <NavLink to={`${basePath}/analytics`} icon={BarChart3}>
         Analytics
@@ -358,9 +379,15 @@ function SidebarNav() {
 function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
   const { isAuthless } = useAppMode()
   const { currentConnection } = useConnection()
+  const { data: alertSummary } = useAlertSummary()
   const connectionId = currentConnection?.id
   // Get orgSlug from route params or fall back to active organization
   const orgSlug = useCurrentOrgSlug()
+  const totalOpenAlerts =
+    alertSummary?.connections.reduce(
+      (sum: number, entry: { count: number }) => sum + entry.count,
+      0
+    ) ?? 0
 
   const basePath =
     orgSlug && connectionId ? `/${orgSlug}/c/${connectionId}` : orgSlug ? `/${orgSlug}` : '/'
@@ -372,6 +399,14 @@ function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
       </div>
       <MobileNavLink to={basePath} icon={Layers} onNavigate={onNavigate}>
         Queues
+      </MobileNavLink>
+      <MobileNavLink
+        to={`${basePath}/alerts`}
+        icon={BellRing}
+        onNavigate={onNavigate}
+        badge={totalOpenAlerts}
+      >
+        Alerts
       </MobileNavLink>
       <MobileNavLink to={`${basePath}/analytics`} icon={BarChart3} onNavigate={onNavigate}>
         Analytics
@@ -414,11 +449,13 @@ function MobileNavLink({
   icon: Icon,
   children,
   onNavigate,
+  badge,
 }: {
   to: string
   icon: React.ComponentType<{ className?: string }>
   children: React.ReactNode
   onNavigate: () => void
+  badge?: number
 }) {
   const location = useLocation()
 
@@ -436,7 +473,12 @@ function MobileNavLink({
       )}
     >
       <Icon className="h-4 w-4" />
-      {children}
+      <span className="flex-1">{children}</span>
+      {badge && badge > 0 ? (
+        <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">
+          {badge}
+        </Badge>
+      ) : null}
     </Link>
   )
 }
@@ -445,10 +487,12 @@ function NavLink({
   to,
   icon: Icon,
   children,
+  badge,
 }: {
   to: string
   icon: React.ComponentType<{ className?: string }>
   children: React.ReactNode
+  badge?: number
 }) {
   const location = useLocation()
 
@@ -468,7 +512,12 @@ function NavLink({
       )}
     >
       <Icon className="h-4 w-4" />
-      {children}
+      <span className="flex-1">{children}</span>
+      {badge && badge > 0 ? (
+        <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">
+          {badge}
+        </Badge>
+      ) : null}
     </Link>
   )
 }

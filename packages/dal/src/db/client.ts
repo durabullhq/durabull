@@ -37,6 +37,17 @@ function getPgliteDataDir(): string {
   return join(process.cwd(), 'data', 'pglite')
 }
 
+/** Local Docker / dev Postgres: disable SSL so pg does not negotiate TLS and drop the connection. */
+function shouldDisableSslForPostgresUrl(connectionString: string): boolean {
+  try {
+    const u = new URL(connectionString)
+    const host = u.hostname.toLowerCase()
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  } catch {
+    return false
+  }
+}
+
 /**
  * Get or create the database instance.
  * Uses lazy initialization to avoid creating the connection until needed.
@@ -52,7 +63,10 @@ export async function getDb(): Promise<Database> {
         throw new Error('DATABASE_URL is required for PostgreSQL mode.')
       }
 
-      pgPool = new pg.Pool({ connectionString })
+      pgPool = new pg.Pool({
+        connectionString,
+        ...(shouldDisableSslForPostgresUrl(connectionString) ? { ssl: false } : {}),
+      })
       const pgDb = drizzleNodePg({ client: pgPool, schema, relations })
       db = pgDb
 

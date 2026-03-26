@@ -13,7 +13,13 @@ import '@durabull/env'
 import { closeDb, getPgPool } from '@durabull/dal'
 import { Redis } from 'ioredis'
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
+function defaultRedisUrlFromEnv(): string {
+  const port = process.env.DURABULL_REDIS_PORT?.trim()
+  if (port) return `redis://localhost:${port}`
+  return 'redis://localhost:56379'
+}
+
+const REDIS_URL = process.env.REDIS_URL || defaultRedisUrlFromEnv()
 
 async function wipePostgres(): Promise<void> {
   console.log('\n🗑️  Wiping PostgreSQL database...')

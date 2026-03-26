@@ -67,11 +67,7 @@ export function getEnvRedisConnections(): EnvRedisConnection[] {
 
   for (const [key, value] of Object.entries(process.env)) {
     if (!key.startsWith(ENV_PREFIX)) continue
-    if (
-      key === ENV_DEFAULT_KEY ||
-      key === ENV_ENCRYPTION_KEY ||
-      key.endsWith(ENVIRONMENT_SUFFIX)
-    ) {
+    if (key === ENV_DEFAULT_KEY || key === ENV_ENCRYPTION_KEY || key.endsWith(ENVIRONMENT_SUFFIX)) {
       continue
     }
 

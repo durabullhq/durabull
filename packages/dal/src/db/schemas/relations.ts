@@ -37,6 +37,9 @@ export const relations = defineRelations(tables, (r) => ({
   organization: {
     members: r.many.member(),
     invitations: r.many.invitation(),
+    redisConnections: r.many.redisConnection(),
+    alertRules: r.many.alertRule(),
+    alertEvents: r.many.alertEvent(),
   },
   member: {
     user: r.one.user({
@@ -56,6 +59,53 @@ export const relations = defineRelations(tables, (r) => ({
     inviter: r.one.user({
       from: r.invitation.inviterId,
       to: r.user.id,
+    }),
+  },
+  redisConnection: {
+    organization: r.one.organization({
+      from: r.redisConnection.organizationId,
+      to: r.organization.id,
+    }),
+    discoveredQueues: r.many.redisDiscoveredQueue(),
+    alertRules: r.many.alertRule(),
+    alertEvents: r.many.alertEvent(),
+    alertCheckCursors: r.many.alertCheckCursor(),
+  },
+  redisDiscoveredQueue: {
+    connection: r.one.redisConnection({
+      from: r.redisDiscoveredQueue.connectionId,
+      to: r.redisConnection.id,
+    }),
+  },
+  alertRule: {
+    organization: r.one.organization({
+      from: r.alertRule.organizationId,
+      to: r.organization.id,
+    }),
+    connection: r.one.redisConnection({
+      from: r.alertRule.connectionId,
+      to: r.redisConnection.id,
+    }),
+    events: r.many.alertEvent(),
+  },
+  alertEvent: {
+    rule: r.one.alertRule({
+      from: r.alertEvent.alertRuleId,
+      to: r.alertRule.id,
+    }),
+    organization: r.one.organization({
+      from: r.alertEvent.organizationId,
+      to: r.organization.id,
+    }),
+    connection: r.one.redisConnection({
+      from: r.alertEvent.connectionId,
+      to: r.redisConnection.id,
+    }),
+  },
+  alertCheckCursor: {
+    connection: r.one.redisConnection({
+      from: r.alertCheckCursor.connectionId,
+      to: r.redisConnection.id,
     }),
   },
 }))

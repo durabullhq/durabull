@@ -4,10 +4,7 @@ import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  brandMacAppBundlePlist,
-  buildDesktopLauncherEnv,
-} from '../src/desktop-launcher'
+import { brandMacAppBundlePlist, buildDesktopLauncherEnv } from '../src/desktop-launcher'
 
 const PRODUCT_NAME = 'Durabull'
 const DEV_BUNDLE_ID = 'com.durabull.desktop.dev'

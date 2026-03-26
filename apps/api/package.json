@@ -20,6 +20,7 @@
     "build": "bun build src/index.ts --target=bun --outdir=dist --sourcemap=external",
     "start": "bun src/index.ts",
     "start:built": "bun dist/index.js",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint ./src",
     "lint:fix": "biome lint --write ./src",

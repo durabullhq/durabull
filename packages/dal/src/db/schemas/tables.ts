@@ -6,6 +6,11 @@
 // Auth schema tables
 export { authAccount, authSession, authVerification } from './auth/schema'
 
+// Alert schema tables
+export { alertCheckCursor } from './alert-check-cursor/schema'
+export { alertEvent } from './alert-event/schema'
+export { alertRule } from './alert-rule/schema'
+
 // Organization schema tables
 export { invitation, member, organization } from './organization/schema'
 

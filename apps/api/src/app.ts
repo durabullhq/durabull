@@ -15,6 +15,8 @@ import { createSessionMiddleware } from './middleware/auth'
 import { createConnectionMiddleware } from './middleware/connection'
 import { apiRateLimiter, authRateLimiter } from './middleware/rate-limit'
 import authRoutes from './routes/auth'
+import alertsGlobalRoutes from './routes/alerts-global'
+import alertsRoutes from './routes/alerts'
 import connectionsRoutes from './routes/connections'
 import invitationsRoutes from './routes/invitations'
 import jobsRoutes from './routes/jobs'
@@ -184,7 +186,9 @@ const apiRoutes = new Hono()
   .route('/team', teamRoutes)
   // User settings
   .route('/user-settings', userSettingsRoutes)
+  .route('/alerts', alertsGlobalRoutes)
   // Connected routes under /c/:connectionId
+  .route('/c/:connectionId/alerts', alertsRoutes)
   .route('/c/:connectionId/queues', queuesRoutes)
   .route('/c/:connectionId/queues', jobsRoutes)
   .route('/c/:connectionId/scheduled-jobs', scheduledJobsRoutes)
@@ -337,6 +341,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
   api.use('/connections/*', sessionMiddleware)
   api.use('/team/*', sessionMiddleware)
   api.use('/user-settings/*', sessionMiddleware)
+  api.use('/alerts/*', sessionMiddleware)
   // Connection middleware includes session handling - no need for both
   api.use('/c/:connectionId/*', connectionMiddleware)
 
@@ -355,6 +360,8 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     .route('/connections', connectionsRoutes)
     .route('/team', teamRoutes)
     .route('/user-settings', userSettingsRoutes)
+    .route('/alerts', alertsGlobalRoutes)
+    .route('/c/:connectionId/alerts', alertsRoutes)
     .route('/c/:connectionId/queues', queuesRoutes)
     .route('/c/:connectionId/queues', jobsRoutes)
     .route('/c/:connectionId/scheduled-jobs', scheduledJobsRoutes)

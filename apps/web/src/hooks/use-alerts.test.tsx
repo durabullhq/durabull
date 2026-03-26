@@ -1,0 +1,305 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook, waitFor } from '@testing-library/react'
+import type { PropsWithChildren } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  useConnectionAlertRules,
+  useCreateAlertRule,
+  useGlobalAlertEvents,
+  useResolveAlertEvent,
+} from '@/hooks/use-alerts'
+
+const {
+  summaryGetMock,
+  globalEventsGetMock,
+  connectionRulesGetMock,
+  connectionEventsGetMock,
+  createRulePostMock,
+  updateRulePatchMock,
+  deleteRuleDeleteMock,
+  resolveEventPostMock,
+  testRulePostMock,
+  handleResMock,
+} = vi.hoisted(() => ({
+  summaryGetMock: vi.fn(),
+  globalEventsGetMock: vi.fn(),
+  connectionRulesGetMock: vi.fn(),
+  connectionEventsGetMock: vi.fn(),
+  createRulePostMock: vi.fn(),
+  updateRulePatchMock: vi.fn(),
+  deleteRuleDeleteMock: vi.fn(),
+  resolveEventPostMock: vi.fn(),
+  testRulePostMock: vi.fn(),
+  handleResMock: vi.fn(),
+}))
+
+vi.mock('@/lib/api', () => ({
+  api: {
+    alerts: {
+      summary: {
+        $get: summaryGetMock,
+      },
+      events: {
+        $get: globalEventsGetMock,
+      },
+    },
+    c: {
+      ':connectionId': {
+        alerts: {
+          rules: {
+            $get: connectionRulesGetMock,
+            $post: createRulePostMock,
+            ':ruleId': {
+              $patch: updateRulePatchMock,
+              $delete: deleteRuleDeleteMock,
+              test: {
+                $post: testRulePostMock,
+              },
+            },
+          },
+          events: {
+            $get: connectionEventsGetMock,
+            ':eventId': {
+              resolve: {
+                $post: resolveEventPostMock,
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  handleRes: handleResMock,
+}))
+
+function createWrapper(queryClient: QueryClient) {
+  return function Wrapper({ children }: PropsWithChildren) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  }
+}
+
+function createQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+      mutations: {
+        retry: false,
+      },
+    },
+  })
+}
+
+describe('use-alerts', () => {
+  beforeEach(() => {
+    summaryGetMock.mockReset()
+    globalEventsGetMock.mockReset()
+    connectionRulesGetMock.mockReset()
+    connectionEventsGetMock.mockReset()
+    createRulePostMock.mockReset()
+    updateRulePatchMock.mockReset()
+    deleteRuleDeleteMock.mockReset()
+    resolveEventPostMock.mockReset()
+    testRulePostMock.mockReset()
+    handleResMock.mockReset()
+  })
+
+  it('normalizes connection rules returned from the API', async () => {
+    const queryClient = createQueryClient()
+    connectionRulesGetMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      rules: [
+        {
+          id: 'rule-1',
+          organizationId: 'org-1',
+          connectionId: 'conn-1',
+          queueName: 42,
+          queueFilterMode: 'bogus',
+          filterQueueNames: ['email-send', 123],
+          name: 99,
+          type: 'totally_unknown',
+          config: null,
+          enabled: undefined,
+          notificationChannels: [
+            { type: 'email', target: 'ops@example.com' },
+            { type: 'slack', target: '#ops' },
+          ],
+          cooldownMinutes: 'bad',
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useConnectionAlertRules('conn-1'), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => expect(result.current.data?.rules).toHaveLength(1))
+
+    expect(connectionRulesGetMock).toHaveBeenCalledWith({
+      param: { connectionId: 'conn-1' },
+    })
+    expect(result.current.data?.rules[0]).toEqual({
+      id: 'rule-1',
+      organizationId: 'org-1',
+      connectionId: 'conn-1',
+      queueName: null,
+      queueFilterMode: null,
+      filterQueueNames: ['email-send'],
+      name: 'Alert rule',
+      type: 'failure_threshold',
+      config: {},
+      enabled: true,
+      notificationChannels: [{ type: 'email', target: 'ops@example.com' }],
+      cooldownMinutes: 30,
+      createdAt: undefined,
+      updatedAt: undefined,
+    })
+  })
+
+  it('normalizes global alert events and forwards query filters', async () => {
+    const queryClient = createQueryClient()
+    globalEventsGetMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      events: [
+        {
+          id: 'event-1',
+          alertRuleId: 'rule-1',
+          organizationId: 'org-1',
+          connectionId: 'conn-1',
+          queueName: 'email-send',
+          type: 'unknown-type',
+          status: 'not-a-status',
+          summary: null,
+          context: null,
+          firedAt: null,
+          resolvedAt: '2026-03-24T10:00:00.000Z',
+          notificationSentAt: undefined,
+        },
+      ],
+    })
+
+    const { result } = renderHook(
+      () => useGlobalAlertEvents({ status: 'resolved', limit: 20, offset: 5 }),
+      {
+        wrapper: createWrapper(queryClient),
+      }
+    )
+
+    await waitFor(() => expect(result.current.data?.events).toHaveLength(1))
+
+    expect(globalEventsGetMock).toHaveBeenCalledWith({
+      query: {
+        limit: '20',
+        offset: '5',
+        status: 'resolved',
+      },
+    })
+    expect(result.current.data?.events[0]).toMatchObject({
+      id: 'event-1',
+      type: 'failure_threshold',
+      status: 'firing',
+      summary: '',
+      context: {},
+      resolvedAt: '2026-03-24T10:00:00.000Z',
+      notificationSentAt: null,
+    })
+  })
+
+  it('invalidates summary, global, and connection queries after creating a rule', async () => {
+    const queryClient = createQueryClient()
+    const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    createRulePostMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      rule: {
+        id: 'rule-1',
+        organizationId: 'org-1',
+        connectionId: 'conn-1',
+        queueName: null,
+        queueFilterMode: 'include',
+        filterQueueNames: ['email-send'],
+        name: 'Delivery failures',
+        type: 'failure_threshold',
+        config: { count: 5, windowMinutes: 5 },
+        enabled: true,
+        notificationChannels: [],
+        cooldownMinutes: 30,
+      },
+    })
+
+    const { result } = renderHook(() => useCreateAlertRule('conn-1'), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await result.current.mutateAsync({
+      name: 'Delivery failures',
+      type: 'failure_threshold',
+      queueFilterMode: 'include',
+      filterQueueNames: ['email-send'],
+      config: { count: 5, windowMinutes: 5 },
+      notificationChannels: [],
+      cooldownMinutes: 30,
+      enabled: true,
+    })
+
+    expect(createRulePostMock).toHaveBeenCalledWith({
+      param: { connectionId: 'conn-1' },
+      json: {
+        name: 'Delivery failures',
+        type: 'failure_threshold',
+        queueFilterMode: 'include',
+        filterQueueNames: ['email-send'],
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [],
+        cooldownMinutes: 30,
+        enabled: true,
+      },
+    })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'summary'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'global-events'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ['alerts', 'connection', 'conn-1'],
+    })
+  })
+
+  it('invalidates the same query families after resolving an alert event', async () => {
+    const queryClient = createQueryClient()
+    const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    resolveEventPostMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      event: {
+        id: 'event-1',
+        alertRuleId: 'rule-1',
+        organizationId: 'org-1',
+        connectionId: 'conn-1',
+        queueName: 'email-send',
+        type: 'failure_threshold',
+        status: 'resolved',
+        summary: 'Resolved',
+        context: {},
+        firedAt: '2026-03-24T09:00:00.000Z',
+        resolvedAt: '2026-03-24T09:05:00.000Z',
+      },
+    })
+
+    const { result } = renderHook(() => useResolveAlertEvent(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await result.current.mutateAsync({
+      connectionId: 'conn-1',
+      eventId: 'event-1',
+    })
+
+    expect(resolveEventPostMock).toHaveBeenCalledWith({
+      param: { connectionId: 'conn-1', eventId: 'event-1' },
+    })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'summary'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'global-events'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ['alerts', 'connection', 'conn-1'],
+    })
+  })
+})

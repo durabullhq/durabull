@@ -12,7 +12,13 @@ let envLoaded = false
 
 function loadEnvFile(): void {
   if (envLoaded) return
-  loadDotenv({ path: envPath })
+  // Cwd first: when running `bun tooling/scripts/...` from the repo root, this is the real `.env`.
+  // Module-relative `repoRoot` can disagree with cwd in some workspace/symlink layouts.
+  const cwdEnvPath = path.join(process.cwd(), '.env')
+  loadDotenv({ path: cwdEnvPath })
+  if (cwdEnvPath !== envPath) {
+    loadDotenv({ path: envPath })
+  }
   envLoaded = true
 }
 
@@ -72,8 +78,11 @@ const envSchema = z.object({
   DURABULL_AUTHLESS: optionalBoolean,
   DURABULL_ENV_CONNECTIONS: optionalBoolean,
   DURABULL_REDIS_URL_ENCRYPTION_KEY: optionalString,
+  DURABULL_REDIS_PORT: optionalInt,
   DURABULL_REDIS_URL_DEFAULT: optionalString,
   DURABULL_DEMO_ACCOUNT_REDIS_CONNECTION_STRING: optionalString,
+  DURABULL_ALERT_ENABLED: optionalBoolean,
+  DURABULL_ALERT_POLL_INTERVAL_MS: optionalInt,
   DEMO_HEALTH_MAX_AGE_HOURS: optionalNonNegativeInt,
 })
 
