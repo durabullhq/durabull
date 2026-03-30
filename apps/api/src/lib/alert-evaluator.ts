@@ -77,9 +77,7 @@ export function evaluateFailureThreshold(
   // Only count the delta if the cursor falls within the configured window.
   // If the monitor was down or the last check is older than the window, skip
   // to avoid counting a large backlog as a sudden spike.
-  const minutesSinceLastCheck = cursor
-    ? (Date.now() - cursor.lastCheckedAt.getTime()) / 60_000
-    : 0
+  const minutesSinceLastCheck = cursor ? (Date.now() - cursor.lastCheckedAt.getTime()) / 60_000 : 0
 
   // Allow a 10% tolerance beyond the window to account for polling jitter and clock drift
   const windowWithTolerance = config.windowMinutes * 1.1

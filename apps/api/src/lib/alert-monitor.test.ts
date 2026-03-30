@@ -18,16 +18,19 @@ import { env } from '@durabull/env'
 import type { CursorState, QueueSnapshot } from './alert-evaluator'
 
 const TEST_ORG_ID = 'alert-monitor-org'
+const TEST_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
 const mutableEnv = env as {
   DATABASE_URL?: string
   RESEND_API_KEY?: string
   APP_BASE_URL?: string
+  DURABULL_REDIS_URL_ENCRYPTION_KEY?: string
 }
 
 const originalDatabaseUrl = mutableEnv.DATABASE_URL
 const originalResendKey = mutableEnv.RESEND_API_KEY
 const originalAppBaseUrl = mutableEnv.APP_BASE_URL
+const originalEncryptionKey = mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY
 const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
 
 let tempPgliteDir = ''
@@ -150,6 +153,7 @@ describe('alert monitor', () => {
     mutableEnv.DATABASE_URL = undefined
     mutableEnv.RESEND_API_KEY = undefined
     mutableEnv.APP_BASE_URL = 'https://app.durabull.io'
+    mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY = TEST_ENCRYPTION_KEY
     await closeDb()
     await seedBaseConnection()
   })
@@ -159,6 +163,7 @@ describe('alert monitor', () => {
     mutableEnv.DATABASE_URL = originalDatabaseUrl
     mutableEnv.RESEND_API_KEY = originalResendKey
     mutableEnv.APP_BASE_URL = originalAppBaseUrl
+    mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY = originalEncryptionKey
 
     if (originalPgliteDir) {
       process.env.DURABULL_PGLITE_DIR = originalPgliteDir
