@@ -137,6 +137,10 @@ function getAppConfig() {
     persistence,
     stateless: persistence === 'pglite',
     environment: env.NODE_ENV ?? 'development',
+    oauthProviders: {
+      google: !!(env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET),
+      github: !!(env.GITHUB_OAUTH_CLIENT_ID && env.GITHUB_OAUTH_CLIENT_SECRET),
+    },
     posthog: {
       enabled: !!posthogKey,
       key: posthogKey,

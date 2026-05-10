@@ -5,8 +5,12 @@ import { InviteEmail, type InviteEmailProps } from './templates/invite'
 
 /**
  * The from address for all Durabull emails.
+ *
+ * Override with the EMAIL_FROM env var (e.g. "Acme Ops <ops@acme.example>")
+ * when self-hosting against a Resend account that does not control the
+ * default durabull.io domain. Falls back to the upstream default.
  */
-const FROM_EMAIL = 'Durabull <no-reply@durabull.io>'
+const FROM_EMAIL = process.env.EMAIL_FROM ?? 'Durabull <no-reply@durabull.io>'
 
 /**
  * Data passed from better-auth's organization plugin when an invitation is created.

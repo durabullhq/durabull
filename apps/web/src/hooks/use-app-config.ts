@@ -16,6 +16,10 @@ const FALLBACK_APP_CONFIG: AppConfigResponse = {
   persistence: 'unknown',
   stateless: false,
   environment: 'development',
+  oauthProviders: {
+    google: false,
+    github: false,
+  },
   posthog: {
     enabled: false,
     key: null,

@@ -64,6 +64,7 @@ const envSchema = z.object({
   DATABASE_URL: optionalString,
   REDIS_URL: optionalString,
   RESEND_API_KEY: optionalString,
+  EMAIL_FROM: optionalString,
   GOOGLE_OAUTH_CLIENT_ID: optionalString,
   GOOGLE_OAUTH_CLIENT_SECRET: optionalString,
   GITHUB_OAUTH_CLIENT_ID: optionalString,
