@@ -27,7 +27,7 @@ The launch model should be low-friction:
 - Active paid customers can be past due for one week before lockout.
 - There is no Enterprise plan.
 - Business is the highest public plan and should feel enterprise-grade without requiring sales.
-- Cloud billing mode and authless mode are mutually exclusive; the API must refuse to boot if both flags are set.
+- Cloud mode and authless mode are mutually exclusive: the API must refuse to boot whenever `DURABULL_CLOUD === true && DURABULL_AUTHLESS === true`, regardless of `DURABULL_BILLING_ENABLED`. (A cloud deploy with authless is never desirable, even temporarily, so the rule is independent of the billing toggle.)
 - A boot-time kill switch (`DURABULL_BILLING_FORCE_UNLOCK=true`) makes `assertBillingAccess` always allow, for incident response. Its activation must emit a startup warning log line and a daily reminder.
 
 ## Existing-Organization Grandfathering (Launch Day Policy)
@@ -37,9 +37,10 @@ Production already has organizations whose usage exceeds Free limits. They must 
 On the first cloud billing deploy, a one-time migration must:
 
 1. Insert an `organization_billing_state` row for every existing organization.
-2. Set `access_state = 'trialing'`, `last_checked_status = 'grandfathered_trial'`, `grace_ends_at = deploy_time + 30 days`.
-3. Email each org's owner with the grandfather notice and a link to start a real paid trial or downgrade explicitly to Free.
-4. After 30 days, a scheduled reconciliation transitions any grandfathered org that has not subscribed to:
+2. Set `access_state = 'grandfathered_trial'`, `last_checked_status = 'grandfathered_trial'`, `grace_ends_at = deploy_time + 30 days`. The Durabull `access_state` enum value `grandfathered_trial` is the marker; the resolver branches on it directly. `trialing` is reserved for orgs with a real Stripe `trialing` subscription.
+3. Snapshot each org's current usage (connections, environments, queues, alert rules, members) into `organization_billing_state.metadata.grandfatherUsageSnapshot` so the resolver can apply per-org synthetic limits derived from launch-day reality (see Plan Limits → `grandfathered_trial`).
+4. Email each org's owner with the grandfather notice and a link to start a real paid trial or downgrade explicitly to Free.
+5. After 30 days, a scheduled reconciliation transitions any grandfathered org that has not subscribed to:
    - Free if current usage fits Free.
    - `locked` with a clear UI explaining the cleanup path if it does not.
 
@@ -201,7 +202,7 @@ If any check fails, no Stripe plugin is added to the Better Auth instance. This 
 - Self-hosted/local/authless deployments never expose `/api/auth/stripe/webhook` or any subscription endpoint.
 - The auth handler returns the standard Better Auth 404 for unmounted plugin routes in non-cloud modes.
 
-If `DURABULL_CLOUD` is true but `DURABULL_AUTHLESS` is also true, the API must throw at boot with a descriptive error and refuse to start.
+If `DURABULL_CLOUD === true && DURABULL_AUTHLESS === true`, the API throws at boot with a descriptive error and refuses to start. This is independent of `DURABULL_BILLING_ENABLED` — see the env module's mutual-exclusion assertion.
 
 ### Plugin Order
 
@@ -232,12 +233,38 @@ stripe({
       const m = await memberRepository.findByUserAndOrg(user.id, referenceId)
       return m?.role === 'owner' || m?.role === 'admin'
     },
-    getCheckoutSessionParams: async ({ plan }) => ({
-      params: {
-        payment_method_collection: 'if_required',
-        subscription_data: { trial_period_days: 14 },
-      },
-    }),
+    getCheckoutSessionParams: async ({ plan }) => {
+      if (!plan.freeTrial?.days) {
+        return { params: { payment_method_collection: 'if_required' } }
+      }
+      // The trial_period_days line is required as a workaround for
+      // better-auth/better-auth#9129 (`subscription_data` overrides shallow-
+      // merged the plugin's internally generated `trial_period_days` and
+      // silently disabled the trial). Fixed in PR #9474 (2026-05-06). The
+      // implementation must verify, against the spike-pinned plugin version,
+      // that the trial badge appears on the Checkout page; if the bug is
+      // present, this re-emit keeps trials working. The line is safe to
+      // keep on a fixed plugin too.
+      //
+      // `trial_settings.end_behavior.missing_payment_method = 'pause'` is
+      // mandatory: without it, Stripe defaults to canceling the
+      // subscription when a card-free trial expires, sending
+      // `customer.subscription.deleted` instead of
+      // `customer.subscription.paused`. The entire `paused` branch of the
+      // access-state resolver assumes pause behavior and will not fire
+      // otherwise.
+      return {
+        params: {
+          payment_method_collection: 'if_required',
+          subscription_data: {
+            trial_period_days: plan.freeTrial.days,
+            trial_settings: {
+              end_behavior: { missing_payment_method: 'pause' },
+            },
+          },
+        },
+      }
+    },
     onSubscriptionComplete: ...,
     onSubscriptionCreated: ...,
     onSubscriptionUpdate: ...,
@@ -280,7 +307,7 @@ Wire `onEvent` for non-subscription Stripe events that Durabull-specific policy 
 - `customer.subscription.resumed`
 - `customer.subscription.trial_will_end`
 
-Every `onEvent` handler must be idempotent: check `event.id` against `organization_billing_state.last_processed_stripe_event_id` (or a small `stripe_event_log` table) and skip duplicates.
+Every `onEvent` handler must be idempotent: wrap with `withStripeEventIdempotency(event, ...)` (defined in Data Model → `stripe_event_log` — Mandatory Dedupe Table). The wrapper inserts into `stripe_event_log` with `ON CONFLICT DO NOTHING` and short-circuits on duplicate `event.id`.
 
 ### `authorizeReference` Surface
 
@@ -298,13 +325,35 @@ For each: the user must be an org `owner` or `admin` in `referenceId`.
 Required Checkout behavior the implementation must guarantee:
 
 - `payment_method_collection=if_required` on the Checkout Session.
-- 14-day trial via the plugin's `freeTrial.days`.
+- 14-day trial via the plugin's `freeTrial.days` (single source of truth — see Trial Length below).
+- `subscription_data.trial_settings.end_behavior.missing_payment_method = 'pause'` is set on the Checkout Session **and** in the Stripe Dashboard's default subscription settings (so Dashboard-created subscriptions and edge-case API-created subscriptions pause instead of cancel).
 - Stripe sends `customer.subscription.paused` when the trial expires without a payment method.
 - Stripe Customer Portal is used for payment method updates, invoice history, plan changes, and cancellation.
 
-If the Verification Spike (rollout step 0) finds that `payment_method_collection=if_required` cannot be set through `getCheckoutSessionParams` for the Better Auth plugin's Checkout path, or that the pause flow does not fire as expected, fall back to:
+The `trial_settings.end_behavior.missing_payment_method = 'pause'` value requires Stripe API version `2022-08-01` or later. The plan pins `2026-03-25.dahlia` (see Version Pinning), which satisfies this; if the API version is rolled back, pause behavior silently regresses to cancel.
 
-- A small custom Checkout-start endpoint that creates the Stripe Checkout Session directly with the required parameters.
+#### Trial Length — Single Source of Truth
+
+Trial length is configured **once** in the `freeTrial.days` field on each plan in the plugin config. The `getCheckoutSessionParams` re-emits `trial_period_days: plan.freeTrial.days` only because of the merge bug described above; it must read from the plan, never hardcode a number. Tests assert that the rendered Checkout Session's `trial_period_days` matches the plan's `freeTrial.days`.
+
+#### Plan-Switching `successUrl` Rewrite
+
+Better Auth Stripe rewrites the supplied `successUrl` to an intermediate endpoint that handles the race between Checkout completion and webhook processing, then redirects to the original URL. Because of this:
+
+- `apps/web/src/routes/$orgSlug.billing.success.tsx` is the **post-rewrite** target. The user lands there after the plugin's intermediate hop; subscription status is already up to date when this route renders.
+- Tests must verify that this route receives a valid post-rewrite request; the agent must not invent a separate `/billing/start-success` intermediate.
+
+#### Verification Spike Tests for the Trial Path
+
+In addition to the spike tests already listed in Rollout step 0, the spike must explicitly verify:
+
+1. The Stripe Checkout page renders the trial badge (visual confirmation that the `freeTrial` survived the merge into `subscription_data`).
+2. Letting the trial expire produces `customer.subscription.paused`, **not** `customer.subscription.deleted` or `incomplete_expired`.
+3. After pause, adding a payment method through the Customer Portal produces `customer.subscription.resumed` and the access state returns to `active`.
+
+If any of those fail, fall back to:
+
+- A small custom Checkout-start endpoint that creates the Stripe Checkout Session directly with the required parameters (`payment_method_collection`, `trial_period_days`, `trial_settings.end_behavior.missing_payment_method`).
 - Better Auth Stripe still owns subscription storage, the Customer Portal session, and webhook processing.
 
 ### Trial Across Plan Switching
@@ -317,7 +366,7 @@ Better Auth Stripe blocks organization deletion when an active subscription exis
 
 ### Built-In Trial Abuse Prevention
 
-The plugin includes per-`referenceId` trial-abuse prevention: once an org has had any trial, future trial requests return zero trial days. This is a useful first layer but is **not sufficient** on its own, because a user can create a new organization and get a fresh trial. The Duplicate Redis Connection fingerprint check (below) is the second, required layer.
+The plugin includes per-**user** trial-abuse prevention: once a user has had any trial across all plans (tracked by `trialStart`/`trialEnd` on prior subscription rows), future trial requests for that user return zero trial days. This is a useful first layer but is **not sufficient** on its own, because the user can create a new organization and the trial-abuse check still happens on the user, not the org — but a different user as owner of a new org can still get a fresh trial. The Duplicate Redis Connection fingerprint check (below) keys on the Redis URL itself and is the second, required layer.
 
 ## Stripe Dashboard Setup
 
@@ -381,19 +430,51 @@ Add `organization_billing_state` for Durabull-only policy:
 - `last_checked_subscription_id`.
 - `last_checked_status`.
 - `last_synced_at`.
-- `last_processed_stripe_event_id` (for `onEvent` idempotency).
+- `last_processed_stripe_event_id` (latest event id observed for this org; informational/monitoring only — **not** the dedupe source of truth, see `stripe_event_log` below).
 - `metadata` (jsonb; used for support-tool audit entries such as claim transfers).
 - `created_at`, `updated_at`.
 
 Bandwidth period is calendar month UTC for every plan (paid orgs and Free alike) because Free has no Stripe subscription anniversary to align to. Period rolls over via a scheduled cron at month boundary.
 
-Do not create a duplicate generic Stripe webhook table — the plugin handles its own webhook idempotency. If `onEvent` handlers need cross-event dedupe beyond `last_processed_stripe_event_id`, add a small `stripe_event_log(event_id PK, processed_at)` table.
+#### `stripe_event_log` — Mandatory Dedupe Table
+
+The plugin handles its own dedupe for the four built-in subscription events (`checkout.session.completed`, `customer.subscription.created/updated/deleted`). Every Durabull-side handler — every lifecycle hook (`onSubscriptionComplete`, `onSubscriptionCreated`, `onSubscriptionUpdate`, `onSubscriptionCancel`, `onSubscriptionDeleted`, `freeTrial.onTrialStart`, `onTrialEnd`, `onTrialExpired`) and every `onEvent` branch — runs side effects (state writes, emails, analytics) that must not fire twice for the same `event.id`. The per-org `last_processed_stripe_event_id` column is insufficient because two events for the same org can interleave, overwriting each other before a retry of the first arrives.
+
+Add a small `stripe_event_log` table:
+
+- `event_id` (text, primary key) — the Stripe `event.id`.
+- `event_type` (text).
+- `livemode` (boolean).
+- `organization_id` (text, nullable; FK to `organization.id` with `onDelete: 'set null'` for forensics — events that arrive for a since-deleted org still want a record).
+- `processed_at` (timestamp).
+- `processing_duration_ms` (integer, nullable).
+
+#### Idempotency Pattern
+
+Every Durabull-side handler wraps its work in:
+
+```ts
+await withStripeEventIdempotency(event, async () => {
+  // side effects: state writes, emails, analytics, plan re-projection.
+})
+```
+
+`withStripeEventIdempotency`:
+
+1. Inserts `stripe_event_log` with `event_id`, `event_type`, `livemode`, resolved `organization_id`, `processed_at = now`. The insert uses `ON CONFLICT (event_id) DO NOTHING`. If the insert affects zero rows, the event has already been processed and the handler returns immediately.
+2. Otherwise runs the handler body.
+3. After success, updates `organization_billing_state.last_processed_stripe_event_id` for monitoring.
+4. On handler failure, the row in `stripe_event_log` is rolled back as part of the same transaction so a retry can re-attempt. (The wrapper opens its own transaction; handlers must be transaction-safe.)
+
+#### Retention
+
+`stripe_event_log` is append-only. A nightly cleanup job removes rows older than 90 days, matching the existing alert event retention pattern in `alert-monitor.ts`.
 
 ### Backfill Behavior
 
 The `organization_billing_state` row for an existing organization is inserted in two cases:
 
-1. **One-time migration at first cloud-billing deploy** — see "Existing-Organization Grandfathering" above. Every existing org gets `access_state = 'trialing'`, `last_checked_status = 'grandfathered_trial'`, `grace_ends_at = deploy_time + 30 days`.
+1. **One-time migration at first cloud-billing deploy** — see "Existing-Organization Grandfathering" above. Every existing org gets `access_state = 'grandfathered_trial'`, `last_checked_status = 'grandfathered_trial'`, `grace_ends_at = deploy_time + 30 days`, and a snapshot of launch-day usage in `metadata.grandfatherUsageSnapshot`.
 2. **Lazy upsert on first request** for any org that lacks a row after deploy (e.g. new orgs). Insert `access_state = 'free'`, `free_started_at = now`.
 
 ### Plan Limits
@@ -435,7 +516,7 @@ Computed once at boot:
 - `local`: non-production or local development.
 - `disabled`: explicit `DURABULL_BILLING_ENABLED !== true`.
 
-Boot must throw if `DURABULL_CLOUD === true && DURABULL_AUTHLESS === true`.
+Boot must throw if `DURABULL_CLOUD === true && DURABULL_AUTHLESS === true`, independent of `DURABULL_BILLING_ENABLED`. The check lives in the env module so every entry point (api server, workers, scripts) hits it before any code reads cloud-specific config.
 
 ### Kill Switch
 
@@ -480,20 +561,21 @@ Never scatter `if self-hosted` checks throughout routes. The bypass belongs in t
 
 `getBillingContext` derives `access_state` from the Better Auth `subscription` row(s) for the org plus `organization_billing_state`, in this precedence order:
 
-1. If kill switch is on → `active` (synthetic).
-2. If grandfathered_trial and `now < grace_ends_at` → `trialing` (synthetic limits).
-3. Subscription `status === 'trialing'` → `trialing`.
-4. Subscription `status === 'active'` and not `past_due` → `active`.
-5. Subscription `status === 'past_due'` and `now < grace_ends_at` → `past_due_grace`.
-6. Subscription `status === 'past_due'` and `now >= grace_ends_at` → `locked`.
-7. Subscription `status === 'paused'`:
+1. If kill switch is on → `active` (synthetic, unlimited plan).
+2. If `organization_billing_state.access_state === 'grandfathered_trial'` and `now < grace_ends_at` → `grandfathered_trial`. Limits come from `metadata.grandfatherUsageSnapshot`; all measured launch-day usage is permitted. The 30-day grandfather cron flips this row to `free` or `locked` once `now >= grace_ends_at`.
+3. If `organization_billing_state.access_state === 'grandfathered_trial'` and `now >= grace_ends_at` and the cron hasn't run yet → resolver re-evaluates as if Stripe state alone applied (i.e., falls through to the next branches). The cron is the canonical writer; the resolver fail-safe only short-circuits the brief gap between expiration and the cron tick.
+4. Subscription `status === 'trialing'` → `trialing`.
+5. Subscription `status === 'active'` and not `past_due` → `active`.
+6. Subscription `status === 'past_due'` and `now < grace_ends_at` → `past_due_grace`.
+7. Subscription `status === 'past_due'` and `now >= grace_ends_at` → `locked`.
+8. Subscription `status === 'paused'`:
    - If usage fits Free → `free` (auto-downgrade record applied).
    - Else → `locked`.
-8. Subscription `status === 'unpaid' | 'canceled' | 'incomplete_expired'`:
+9. Subscription `status === 'unpaid' | 'canceled' | 'incomplete_expired'`:
    - If usage fits Free → `free`.
    - Else → `locked`.
-9. Subscription `status === 'incomplete'` → `locked`.
-10. No subscription row → `free`.
+10. Subscription `status === 'incomplete'` → `locked`.
+11. No subscription row → `free`.
 
 This ordering is the single source of truth for access policy. The implementation must include a unit test matrix covering every Stripe status × usage-fits-Free combination.
 
@@ -526,7 +608,8 @@ Cloud billing mode only. The resolver order in "Access-State Resolver" above is 
 ### Per-State Behavior
 
 - `free`: limited but usable forever.
-- `trialing` / `grandfathered_trial`: full selected-plan access until `trialEnd` / `grace_ends_at`.
+- `trialing`: full selected-plan access until Stripe `trialEnd`.
+- `grandfathered_trial`: usage-snapshot-permissive access until `grace_ends_at` (per-org limits come from launch-day snapshot, not a plan tier).
 - `active`: full paid-plan access.
 - `past_due_grace`: full access with persistent banner and billing CTA.
 - `locked`: see "Locked Access" below.
@@ -555,7 +638,7 @@ Billing is per-organization. A user who is a member of orgs A (locked) and B (ac
 - Analytics.
 - Workers.
 - Alerts (rules and event reads).
-- Team management writes (invite, role change, remove member).
+- Team management writes (invite, role change, remove member, cancel/resend invitation). Enforced via Better Auth `databaseHooks` on `member` and `invitation`, not via HTTP middleware (see "Team Management Enforcement (Auth Plugin Hooks)" in API Enforcement). Cross-org invitation **acceptance** by a member of a locked org remains allowed so a user can recover into another org.
 
 Return `402 Payment Required` with the structured billing envelope (see "Billing Error Envelope") in cloud billing mode only.
 
@@ -615,7 +698,7 @@ Idempotency: the handler uses `event.id` deduplication so retried webhooks do no
 When a paid renewal fails:
 
 1. Better Auth Stripe `onEvent` receives `invoice.payment_failed`.
-2. Idempotency check: skip if `event.id === last_processed_stripe_event_id`.
+2. Idempotency check: `withStripeEventIdempotency(event, ...)` short-circuits on duplicate `event.id`.
 3. Durabull sets `past_due_started_at` if absent.
 4. Durabull sets `grace_ends_at = past_due_started_at + 7 days`.
 5. App shows persistent payment-failed banner.
@@ -649,19 +732,42 @@ Add three Hono middlewares in `apps/api/src/middleware/billing.ts`:
 
 ### Ordering
 
-The exact mount order per protected prefix is:
+`attachBillingContext` requires `c.get('organizationId')` to already be set, so it must run after whichever middleware resolves the organization. The two existing patterns differ:
+
+#### Pattern A — `/api/connections/*`, `/api/alerts/*`, `/api/team/*` (read), and other org-scoped prefixes
+
+These mount `sessionMiddleware` at the app level (`app.ts`) and `requireOrganization` inside the route file (e.g. `connections.ts` line 20: `.use('*', requireOrganization)`).
+
+For these prefixes, billing middleware is added **inside the route file**, immediately after the existing `.use('*', requireOrganization)` line, so the chain becomes:
 
 ```
-session → attachBillingContext → requireOrganization → requireBillingAccess → handler
+sessionMiddleware (app-level)
+  → requireOrganization (route-level, existing)
+  → attachBillingContext (route-level, new)
+  → requireBillingAccess (route-level, new)
+  → handler
 ```
 
-For per-connection routes the order is:
+The agent must not move `requireOrganization` out of the route files for these prefixes; doing so would change error semantics (existing tests expect 403 on missing-org before any billing logic runs).
+
+#### Pattern B — `/api/c/:connectionId/*`
+
+The existing `createConnectionMiddleware` (`apps/api/src/middleware/connection.ts`) internally resolves the session, sets `organizationId`, **and** loads the connection in a single middleware. Splitting it would change error semantics. Therefore:
 
 ```
-session → attachBillingContext → connectionMiddleware → requireBillingAccess → handler
+connectionMiddleware (existing — sets session + org + connection)
+  → attachBillingContext (new)
+  → requireBillingAccess (new)
+  → handler
 ```
 
-The plan does **not** introduce a new `requireOrganizationWithBilling` wrapper. The existing `requireOrganization` is unchanged; `requireBillingAccess` is composed after it.
+`attachBillingContext` runs after `connectionMiddleware` because that is the first point at which `organizationId` is available on the per-connection chain. This is a deliberate divergence from Pattern A's ordering and must be documented in the middleware's JSDoc so future readers don't try to "normalize" the order.
+
+#### Shared Rules
+
+- The plan does **not** introduce a new `requireOrganizationWithBilling` wrapper.
+- `requireBillingAccess` always reads `c.get('billing')` set by `attachBillingContext`; it never re-fetches.
+- In non-cloud-billing modes, `attachBillingContext` sets a synthetic unlimited context (`billing.enforced = false`), `requireBillingAccess` is a no-op, and per-route plan-limit checks short-circuit through the same context.
 
 ### Mount Targets (Exact)
 
@@ -670,7 +776,8 @@ Cloud billing middleware applies only on these prefixes, mounted after session/o
 - `/api/connections/*` — protected.
 - `/api/c/:connectionId/*` — protected.
 - `/api/alerts/*` — protected (org-wide event feed and summary).
-- `/api/team/invite`, `/api/team/role/*`, `/api/team/remove/*` — protected (writes only; if these routes don't exist yet, mount the middleware on the writes as they're added).
+
+Team management writes are **not** mounted under `/api/team/*` and are not enforced at the HTTP layer. They live under `/api/auth/organization/*` (owned by Better Auth's organization plugin: `inviteMember`, `removeMember`, `updateMemberRole`, `cancelInvitation`, `resendInvitation`). Because `/api/auth/*` is exempted from billing checks (so the webhook and recovery actions stay reachable when locked), team writes must be enforced inside the auth pipeline itself — see "Team Management Enforcement (Auth Plugin Hooks)" below.
 
 Explicitly **not** mounted on:
 
@@ -681,6 +788,53 @@ Explicitly **not** mounted on:
 - `/api/app/config` — needed for the locked UI.
 - `/api/app/version`, `/api/health` — operational.
 - `/api/team/members` (read) — needed for org switcher and locked-screen UI.
+
+### Team Management Enforcement (Auth Plugin Hooks)
+
+Locked organizations must not be able to invite members, change roles, remove members, cancel invitations, or resend invitations. Because all of these flow through `/api/auth/organization/*`, the HTTP-layer billing middlewares cannot enforce them without breaking the rest of the auth pipeline. The enforcement therefore lives in the Better Auth instance itself, in two places:
+
+1. **Database hooks on the `member` and `invitation` tables.** Add a `databaseHooks` block in `createAuth()` that runs only when `cloudBillingEnabled === true`:
+
+   ```ts
+   databaseHooks: {
+     member: {
+       create: { before: assertBillingAccessForMemberWrite },
+       update: { before: assertBillingAccessForMemberWrite },
+       delete: { before: assertBillingAccessForMemberWrite },
+     },
+     invitation: {
+       create: { before: assertBillingAccessForInvitationWrite },
+       update: { before: assertBillingAccessForInvitationWrite },
+       delete: { before: assertBillingAccessForInvitationWrite },
+     },
+   }
+   ```
+
+   Each `assertBillingAccess…` helper:
+
+   - Resolves the target `organizationId` from the row being mutated.
+   - Calls `getBillingContext(organizationId)`.
+   - If `access_state === 'locked'`, throws `new APIError('FORBIDDEN', { code: 'BILLING_LOCKED', message: '…', billing: <envelope> })`. Better Auth surfaces the error to the client; the web app's TanStack Query normalizer recognizes the `code` and routes to `BillingLockedScreen`.
+   - Allows accept/reject of an existing invitation regardless of access state, so a user can accept an invite to a non-locked org from a locked one. The hook distinguishes "create" (blocked when source org is locked) from status-only updates initiated by the invitee (allowed).
+
+2. **Carve-outs.**
+
+   - The hooks are no-ops when `billingMode !== 'cloud_billing'`.
+   - The hooks are no-ops when `DURABULL_BILLING_FORCE_UNLOCK === true` (kill switch).
+   - The hooks must not call back into Stripe or the billing portal (no network I/O in a DB hook); they read only `organization_billing_state` and the access-state resolver.
+
+3. **402 envelope shape parity.** When the hook throws, the resulting error response payload includes the same `billing` block specified in "Billing Error Envelope". The web app's organization-mutation hooks (`useInviteMember`, `useRemoveMember`, `useUpdateMemberRole`, `useCancelInvitation`, `useResendInvitation` in `apps/web/src/hooks/use-organization.ts`) inspect the error response and route to `BillingLockedScreen` or `PlanLimitNotice` rather than showing a generic toast.
+
+4. **Tests.**
+
+   - Locked org cannot invite a member (Better Auth client returns `BILLING_LOCKED`).
+   - Locked org cannot remove a member.
+   - Locked org cannot change a member's role.
+   - Locked org cannot resend / cancel an invitation.
+   - **Member of a locked org can still accept an invitation to a different org** (cross-org invitation acceptance is critical for recovery flows when a single user owns multiple orgs).
+   - Self-hosted / authless / disabled modes never invoke the hook.
+
+5. **Future routes.** If `/api/team/*` ever grows write endpoints, those routes get the standard `requireBillingAccess` middleware. The auth-plugin hook remains the canonical enforcement point because Better Auth is the source of truth for member/invitation state.
 
 ### Stripe Webhook Path — Middleware Stack
 
@@ -709,9 +863,9 @@ if (cloudBillingEnabled) {
 }
 ```
 
-After these checks pass, the request reaches Better Auth's handler, which runs signature verification (Layer 4), dual-secret retry (Layer 5), livemode check and idempotency (Layer 6). See **Stripe Webhook Security (Defense in Depth)** below for the full layered model.
+After these checks pass, the request reaches Better Auth's handler, which runs signature verification (Layer 4), Stripe-native multi-secret rotation (Layer 5; phase 1 leverages Stripe Dashboard's dual-active-secret window rather than an app-level overlay), livemode check and idempotency (Layer 6). See **Stripe Webhook Security (Defense in Depth)** below for the full layered model.
 
-In non-cloud modes the Stripe plugin is not registered, so the path 404s and none of these middlewares are mounted. The authless catch-all 403 is therefore never reached because cloud billing is mutually exclusive with authless mode (boot assertion).
+In non-cloud modes the Stripe plugin is not registered, so the path 404s and none of these middlewares are mounted. The authless catch-all 403 is therefore never reached on the webhook path because cloud mode is mutually exclusive with authless mode (boot assertion); cloud-without-billing simply 404s at the auth handler.
 
 ### Body-Limit and Signature Verification
 
@@ -800,26 +954,41 @@ Implementation requirements:
 - Every signature failure increments a metric `stripe_webhook_signature_failures_total` and emits a structured log line with the source IP only (no body, no header, no event content).
 - More than 5 signature failures from any single IP in 60 seconds fires a security alert.
 
-### Layer 5 — Dual-Secret Rotation
+### Layer 5 — Webhook Secret Rotation (Phase 1: Dashboard-Only; Phase 2: Dual-Secret)
 
-A leak of `STRIPE_WEBHOOK_SECRET` is the highest-impact compromise. Stripe supports rolling secrets; the implementation supports it:
+A leak of `STRIPE_WEBHOOK_SECRET` is the highest-impact compromise, so rotation must be a documented operational procedure.
 
-- `STRIPE_WEBHOOK_SECRET` is the primary.
-- `STRIPE_WEBHOOK_SECRET_NEXT` is optional. When set, the webhook handler attempts signature verification against the primary first; on failure, it retries against `_NEXT`. Both passes use constant-time comparison via the Stripe SDK.
-- Rotation procedure (documented in the cloud runbook):
-  1. Add a new signing secret in the Stripe Dashboard for the same endpoint.
-  2. Set `STRIPE_WEBHOOK_SECRET_NEXT` to the new secret in production env.
-  3. Wait for at least 24 hours so all in-flight deliveries land on the new secret.
-  4. Remove the old secret from Stripe Dashboard.
-  5. Promote `STRIPE_WEBHOOK_SECRET_NEXT` to `STRIPE_WEBHOOK_SECRET` and unset `_NEXT`.
-- A boot-time assertion warns (does not fail) if `_NEXT` has been set for more than 14 days, to prevent stale rotation state.
+#### Phase 1 — Single-Secret Dashboard Rotation
+
+Better Auth Stripe accepts a single `stripeWebhookSecret` and runs `stripe.webhooks.constructEventAsync` internally. There is no public hook to inject dual-secret retry without forking the plugin or replacing its webhook route. Phase 1 therefore uses Stripe's native multi-secret endpoint feature plus a controlled-window deploy:
+
+1. **Stripe Dashboard supports multiple signing secrets per webhook endpoint.** Add the new secret in the Dashboard. Stripe begins signing every delivery with **both** old and new secrets simultaneously (the `Stripe-Signature` header carries multiple `v1=…` values).
+2. The plugin's `constructEventAsync` accepts a `Stripe-Signature` header containing multiple signatures and considers verification successful if any one matches. So a deploy that flips `STRIPE_WEBHOOK_SECRET` from old to new has zero downtime as long as both secrets are configured in the Stripe Dashboard for the rotation window.
+3. **Rotation procedure (documented in the cloud runbook):**
+   1. In Stripe Dashboard, "Roll secret" on the webhook endpoint. Stripe activates a new signing secret. Both old and new secrets sign deliveries during the dual-active window (Stripe's default is 24 hours; configurable when rolling).
+   2. Within that window, set `STRIPE_WEBHOOK_SECRET` to the new value in production env and redeploy.
+   3. Verify the next webhook delivery succeeds (logs show signature-verified true).
+   4. Allow Stripe's dual-active window to expire; the old secret is automatically deactivated.
+4. **No `STRIPE_WEBHOOK_SECRET_NEXT` env var in phase 1.** Rotation is an env-flip + redeploy, not an env-overlay.
+5. **Compensating controls during the rotation window:** Layer 2 (IP allowlist), Layer 3 (request shape), Layer 7 (rate limiter), and Layer 6 (livemode + idempotency) are all unaffected by the secret value and continue to filter forged or replayed traffic.
+
+#### Phase 2 — Dual-Secret Overlay (Deferred)
+
+If the team needs application-level control over which secrets are accepted (e.g. to revoke a leaked secret faster than Stripe's dual-active window allows), phase 2 ships one of:
+
+- A pre-handler middleware that verifies the signature against `STRIPE_WEBHOOK_SECRET` and `STRIPE_WEBHOOK_SECRET_NEXT`, sets `c.set('verifiedStripeEvent', event)`, and **replaces** the auth handler call for `/api/auth/stripe/webhook` with a Durabull route that invokes the plugin's internal event-processing functions directly. This requires either a public API on `@better-auth/stripe` for "I've already verified this event" (does not exist as of the spike's pinned version) or a deliberate fork of the webhook route.
+- Or a contribution upstream to Better Auth Stripe to accept an array of secrets.
+
+Phase 2 is out of scope here. The Open Risks section flags this as deferred.
+
+A boot-time assertion warns (does not fail) when `STRIPE_WEBHOOK_SECRET` matches a known-leaked-secret hash registered in `DURABULL_STRIPE_WEBHOOK_SECRET_REVOCATION_HASHES`, an optional comma-separated list of SHA-256 hashes of revoked secrets. This gives operators a way to fail-loud if a redeploy accidentally re-introduces a leaked secret.
 
 ### Layer 6 — Event Replay and Idempotency
 
 Even a fully verified event could be a replay of a real older event captured by a man-in-the-middle (theoretical given TLS; practical only if a downstream proxy logs the body).
 
 - Stripe's signature tolerance of 300 seconds already bounds the replay window.
-- Beyond that, every `onEvent` and lifecycle handler dedupes on `event.id` via `organization_billing_state.last_processed_stripe_event_id` (or the `stripe_event_log` table). Duplicate event IDs from the same subscription are no-ops.
+- Beyond that, every `onEvent` and lifecycle handler dedupes on `event.id` via the mandatory `stripe_event_log` table (see Data Model). Duplicate event IDs are no-ops; cross-event interleaving cannot defeat the dedupe because the table has a per-event PK.
 - Test mode and live mode events are never mixed: production validates `event.livemode === true` and rejects test events with `400`. Test mode (Stripe CLI, staging) does the inverse. This prevents an attacker with test-mode access from injecting events into a live system.
 
 ### Layer 7 — Dedicated Rate Limiter
@@ -848,7 +1017,7 @@ The webhook path is exempt from `authRateLimiter` (which would block Stripe retr
 |--------|------------------------|
 | Forged webhook from random attacker | 1, 2, 3, 4 |
 | Replayed real event captured upstream | 4 (timestamp), 6 |
-| Stolen `STRIPE_WEBHOOK_SECRET` | 2 (defense in depth), 5 (rotation), 7 (rate limit) |
+| Stolen `STRIPE_WEBHOOK_SECRET` | 2 (defense in depth), 5 (Stripe-Dashboard rotation window + revocation-hash boot warning), 7 (rate limit) |
 | Cross-environment event injection (test → live) | 6 (`livemode` check) |
 | Slowloris / large-body DoS | 3 (size + content-type), 7 |
 | CPU-amplified signature-check DoS | 2 (IP allowlist drops first), 3, 7 |
@@ -892,7 +1061,7 @@ Problem:
 - Existing Redis URLs are encrypted with random IVs.
 - Duplicate detection cannot compare encrypted URLs.
 
-This system is the second of two layers — the first is Better Auth Stripe's built-in per-`referenceId` trial-abuse prevention. Both are required.
+This system is the second of two layers — the first is Better Auth Stripe's built-in per-**user** trial-abuse prevention (per the plugin docs: "users can only get one trial per account across all plans"). Per-user prevention does not stop a user from creating a fresh organization and starting a fresh trial there, which is exactly why the Redis URL fingerprint claim system exists as a second layer keyed on the underlying Redis instance.
 
 ### Schema
 
@@ -907,11 +1076,22 @@ Add `url_fingerprint` to `redis_connection`:
 Add `redis_connection_claim`:
 
 - `url_fingerprint` (text) primary key.
-- `owning_organization_id` (references `organization.id`, `onDelete: 'restrict'`).
+- `owning_organization_id` (references `organization.id`, `onDelete: 'set null'`). When the owning org is deleted, the FK is nulled rather than the claim row being removed; the claim row stays as an audit record. A null `owning_organization_id` is treated as `claim_status = 'released'` by the create/update assertion (i.e. another org may take it).
 - `first_connection_id` (text — the originating connection; for forensics, not FK).
 - `first_seen_at`, `last_seen_at`, `released_at` (timestamps).
-- `claim_status`: `active | released | blocked`.
+- `claim_status`: `active | released | blocked`. A row with `owning_organization_id IS NULL` has `claim_status = 'released'`.
 - `notes` (text, nullable — populated by support tool transfers).
+- A DB trigger (or repository-level wrapper for PGlite parity) sets `claim_status = 'released'`, `released_at = now`, and appends a structured note when `owning_organization_id` transitions to NULL via a cascade-set-null. Implementations that cannot run triggers (PGlite) instead require org deletion to go through `organizationDeletionRepository.delete`, which performs the claim-release write inside the same transaction as the org row delete.
+
+#### Why `set null` instead of `restrict`
+
+`restrict` would block any org-delete (free, voluntary, or admin-driven) on any active claim, surfacing as an opaque FK violation. `set null` lets org deletion proceed; the claim row remains as a forensic record but no longer blocks reuse. Better Auth Stripe already blocks deletion of orgs with active subscriptions (see "Organization Deletion"), so a free org's voluntary delete is the only common path here, and it should not silently fail because of a claim.
+
+#### Tests
+
+- Deleting an org with active claims succeeds; the claim rows have `owning_organization_id = NULL` and `claim_status = 'released'`.
+- After such a delete, another org can create a connection with the same Redis URL successfully.
+- The claim's audit fields (`first_seen_at`, `notes`) survive the cascade for forensics.
 
 ### Bypass Conditions
 
@@ -938,7 +1118,7 @@ The canonical form is computed by `packages/billing/src/redis-url-canonical.ts`.
 4. **Database** — explicit integer `0..15`. `redis://h:6379`, `redis://h:6379/`, and `redis://h:6379/0` all normalize to db `0`. `?db=2` and `/2` both normalize to `/2`. Different db indexes on the same host **are different fingerprints**.
 5. **User** — Redis 6 ACL default user. `default@`, `@`, and no user prefix all normalize to omitted user.
 6. **Password** — percent-decoded then percent-encoded with a fixed RFC3986-unreserved set, so `%21` and `!` produce the same output. Passwords supplied via `?password=` are merged into the userinfo position.
-7. **Query parameters** — kept only for: `db`, `family`. Everything else (`tls`, `ssl`, `password`, `username`, `name`) is consumed into normalized fields and removed from the query. Remaining params are sorted lexicographically.
+7. **Query parameters** — `db` is **never** kept as a query parameter; it is always normalized into the path per rule 4. Of the remaining query parameters, only `family` is kept. Everything else (`tls`, `ssl`, `password`, `username`, `name`, `db`) is consumed into normalized fields (path or userinfo) and removed from the query. Remaining params (just `family` if present) are sorted lexicographically. URLs with no parameters left have no `?` in canonical form.
 8. **Sentinel / Cluster URIs** — multi-host URIs (`redis-sentinel://h1,h2/...`, `redis+cluster://...`) are explicitly rejected in phase 1 with `RedisUrlCanonicalizationError` and a user-facing error directing to single-host Redis or Sentinel resolved at the client. This avoids fingerprint ambiguity. Phase 2 may add a canonical form by sorting host list.
 
 The canonicalizer ships with a fixture suite covering every rule above, including negative cases.
@@ -955,13 +1135,18 @@ Never log canonical URLs, raw URLs, or fingerprints in normal operation. Errors 
 - Compute canonical URL and fingerprint (skips on bypass conditions).
 - In a single DB transaction:
   - Read `redis_connection_claim` for the fingerprint.
-  - If no claim exists → insert claim with this org as owner, then insert connection.
-  - If claim exists and `owning_organization_id === this org` → insert/update connection, bump `last_seen_at`.
-  - If claim exists and `owning_organization_id !== this org` → throw `RedisConnectionDuplicateClaimError`.
+  - If no row exists → insert claim with this org as owner, then insert connection.
+  - If row exists and `claim_status === 'blocked'` → throw `RedisConnectionDuplicateClaimError` regardless of owner. (`blocked` is set only by the support tool when the system's investigated abuse and decided no org may claim this fingerprint.)
+  - If row exists and `claim_status === 'released'` (or `owning_organization_id IS NULL`) → re-acquire by setting `owning_organization_id = this org`, `claim_status = 'active'`, `last_seen_at = now`, append a "reacquired" note, then insert connection.
+  - If row exists, `claim_status === 'active'`, and `owning_organization_id === this org` → insert/update connection, bump `last_seen_at`.
+  - If row exists, `claim_status === 'active'`, and `owning_organization_id !== this org` → throw `RedisConnectionDuplicateClaimError`.
 - The API translates `RedisConnectionDuplicateClaimError` into `409 Conflict` with non-leaky copy:
   > "This Redis connection is already associated with another organization. Ask the owner to invite you or contact support to transfer ownership."
 
-Deleting a connection does **not** release the claim. `claim_status` stays `active` until explicit support action.
+Deleting a connection does **not** release the claim (the row remains `active` so a separate org cannot quickly "steal" the fingerprint by deleting and recreating). Releases happen only via:
+
+- The support tool's `--release` (sets `claim_status = 'released'`).
+- Cascade-set-null when the owning org is deleted (fires the trigger that flips status to `released`).
 
 ### Migration / Backfill
 
@@ -1091,10 +1276,11 @@ Mounted under `/api/billing/*` (not protected by `requireBillingAccess` — thes
   - Returns the same payload as `/status`.
   - Used by the UI's "Refresh billing" button and by manual recovery flows.
 - `POST /api/billing/downgrade-to-free` (owner/admin only):
-  - Available only when `access_state IN ('locked', 'paused', 'canceled')`.
-  - Verifies current usage fits Free; returns 400 with the over-Free detail if not.
+  - Eligible only when the org's resolved `access_state IN ('locked', 'past_due_grace', 'grandfathered_trial')` **or** the underlying Stripe subscription `status IN ('paused', 'canceled', 'unpaid', 'incomplete_expired')`. (`access_state` is the Durabull projection; Stripe `status` is checked separately because an `active` Durabull state can mask a paused subscription mid-reconciliation.)
+  - Returns 400 with `{ code: 'NOT_ELIGIBLE_FOR_DOWNGRADE' }` outside that set.
+  - Verifies current usage fits Free; returns 400 with the over-Free detail (`{ code: 'USAGE_EXCEEDS_FREE', usage, limits }`) if not.
   - Cancels any open Stripe subscription via the plugin's cancel endpoint.
-  - Sets `access_state = 'free'`.
+  - Sets `access_state = 'free'`, `free_started_at = now`, clears `grace_ends_at`, `past_due_started_at`, `access_locked_at`.
 - `POST /api/billing/start-grandfather-trial-end` (internal, called by the 30-day grandfather cron, not user-facing).
 
 All `/api/billing/*` routes are mounted only in `cloud_billing` mode. In other modes the prefix returns 404.
@@ -1106,7 +1292,7 @@ All new variables are added to the `tooling/env/src/index.ts` Zod schema so miss
 ### Required When `DURABULL_CLOUD && DURABULL_BILLING_ENABLED`
 
 - `STRIPE_SECRET_KEY`.
-- `STRIPE_WEBHOOK_SECRET` (primary signing secret; rotation supported via `_NEXT`).
+- `STRIPE_WEBHOOK_SECRET` (signing secret; rotation handled via Stripe Dashboard's dual-active-secret window — see Layer 5 phase 1).
 - `STRIPE_PRICE_STARTER_MONTHLY`.
 - `STRIPE_PRICE_STARTER_YEARLY`.
 - `STRIPE_PRICE_TEAM_MONTHLY`.
@@ -1117,7 +1303,7 @@ All new variables are added to the `tooling/env/src/index.ts` Zod schema so miss
 
 ### Optional
 
-- `STRIPE_WEBHOOK_SECRET_NEXT` — secondary signing secret used during webhook secret rotation (Layer 5). When set, both primary and next secrets are tried for signature verification.
+- `DURABULL_STRIPE_WEBHOOK_SECRET_REVOCATION_HASHES` — optional comma-separated SHA-256 hashes of revoked signing secrets. Boot warns (does not fail) if `STRIPE_WEBHOOK_SECRET` matches any of them, to detect accidental reuse of a leaked secret.
 - `STRIPE_CUSTOMER_PORTAL_CONFIGURATION_ID` — only needed if the default Customer Portal configuration doesn't match Durabull requirements (specific cancellation copy, plan-change set, tax ID collection).
 - `DURABULL_STRIPE_WEBHOOK_IP_ALLOWLIST_MODE` — `enforce` (default in production) | `monitor` | `disabled`. Use `disabled` for local Stripe CLI testing only.
 - `DURABULL_STRIPE_WEBHOOK_IP_ALLOWLIST_REFRESH_URL` — override for the Stripe webhook IPs JSON. Defaults to `https://stripe.com/files/ips/ips_webhooks.json`. Only set for offline staging or private mirrors.
@@ -1148,10 +1334,12 @@ All `STRIPE_*` and `DURABULL_*_SECRET` env values are loaded from the platform's
 The env module asserts at boot:
 
 ```
-if (DURABULL_CLOUD && DURABULL_BILLING_ENABLED && DURABULL_AUTHLESS) {
-  throw new Error('Authless mode cannot be enabled together with cloud billing.')
+if (DURABULL_CLOUD && DURABULL_AUTHLESS) {
+  throw new Error('Authless mode cannot be enabled together with cloud mode.')
 }
 ```
+
+The assertion is independent of `DURABULL_BILLING_ENABLED`. Cloud mode without authless is allowed (the cloud deploy may temporarily ship `DURABULL_BILLING_ENABLED=false` to dark-launch billing code), but cloud + authless is never permitted.
 
 ## Rollout Plan
 
@@ -1168,7 +1356,7 @@ if (DURABULL_CLOUD && DURABULL_BILLING_ENABLED && DURABULL_AUTHLESS) {
 4. Extend `tooling/env/src/index.ts` with all new variables and the mutual-exclusion assertion.
 5. Conditionally register the Stripe plugin in `createAuth()` based on `DURABULL_CLOUD && DURABULL_BILLING_ENABLED && !DURABULL_AUTHLESS`. Register the Stripe client plugin in `authClient` under the same condition (set via Vite/SSR config).
 6. Run `npx auth generate` and check resulting Drizzle migrations into `packages/dal/src/db/migrations/`.
-7. Add `organization_billing_state` schema and migration.
+7. Add `organization_billing_state` and `stripe_event_log` schemas and migrations. Add a daily cleanup job for `stripe_event_log` rows older than 90 days.
 8. Add `url_fingerprint` column to `redis_connection` (nullable initially) and the `redis_connection_claim` table.
 9. Implement the runtime billing service: `getBillingContext`, `assertBillingAccess`, `assertPlanLimit`, `shouldProcessBackgroundBillingWork`, `resolveStripeSubscriptionToBillingContext`.
 10. Implement `Better Auth Stripe` lifecycle hooks (`onSubscriptionComplete/Created/Update/Cancel/Deleted`, `freeTrial.onTrialStart/End/Expired`) and `onEvent` for invoice/paused/resumed/trial_will_end events. Every handler idempotent on `event.id`.
@@ -1209,7 +1397,9 @@ if (DURABULL_CLOUD && DURABULL_BILLING_ENABLED && DURABULL_AUTHLESS) {
 
 ### API Tests
 
-- Boot fails when `DURABULL_CLOUD && DURABULL_BILLING_ENABLED && DURABULL_AUTHLESS` are all true.
+- Boot fails when `DURABULL_CLOUD && DURABULL_AUTHLESS` (independent of `DURABULL_BILLING_ENABLED`).
+- Boot succeeds when `DURABULL_CLOUD && !DURABULL_AUTHLESS && !DURABULL_BILLING_ENABLED` (cloud dark-launch).
+- Boot succeeds when `DURABULL_CLOUD && DURABULL_BILLING_ENABLED && !DURABULL_AUTHLESS` (cloud billing live).
 - Stripe plugin is registered only when cloud billing is enabled.
 - `/api/auth/stripe/webhook` returns 404 in non-cloud modes.
 - `/api/auth/stripe/webhook` is exempt from `authRateLimiter` and from any auth-mode 403.
@@ -1288,15 +1478,17 @@ Each test posts to `/api/auth/stripe/webhook` and asserts the response and side 
 - Signature with a timestamp older than 300 seconds → `400` (replay outside tolerance).
 - Five signature failures from the same IP within 60 seconds fires the security alert.
 
-**Layer 5 — Dual-secret rotation:**
+**Layer 5 — Secret rotation:**
 
-- Only `STRIPE_WEBHOOK_SECRET` set: signed with primary → `200`; signed with anything else → `400`.
-- Both `STRIPE_WEBHOOK_SECRET` and `STRIPE_WEBHOOK_SECRET_NEXT` set: signed with either → `200`; signed with neither → `400`.
-- Boot warning emitted when `_NEXT` has been set for >14 days (mock-clock test).
+- Stripe-Dashboard dual-secret window: a `Stripe-Signature` header carrying both old and new `v1=` signatures verifies successfully against either configured secret (delegated to the Stripe SDK's multi-signature handling inside `constructEventAsync`).
+- After rotation completes (env flipped to new secret, old removed from Dashboard), only the new secret verifies; signed with the old → `400`.
+- `DURABULL_STRIPE_WEBHOOK_SECRET_REVOCATION_HASHES` matches `STRIPE_WEBHOOK_SECRET` → boot emits warning log line (does not fail boot).
+- Phase 2 dual-secret overlay (when implemented): both `STRIPE_WEBHOOK_SECRET` and an additional secret accepted independently. Phase 1 has no app-level overlay.
 
 **Layer 6 — Replay and idempotency:**
 
-- Posting the same verified event twice produces a single state mutation and a single email send; `last_processed_stripe_event_id` matches the second call without a second write.
+- Posting the same verified event twice produces a single state mutation and a single email send; the second call's transaction rolls back on `ON CONFLICT DO NOTHING` and `stripe_event_log` has exactly one row for that `event.id`.
+- Posting two different events whose handlers interleave (e.g. `customer.subscription.updated` arrives, handler runs, `invoice.paid` arrives, handler runs, then a retry of `customer.subscription.updated` arrives) → only the first run of each event executes side effects; the retry of the first event short-circuits via `stripe_event_log`.
 - Posting an event with `event.livemode = false` to a production-mode instance → `400`, metric `stripe_webhook_livemode_mismatch_total` incremented.
 - Posting an event with `event.livemode = true` to a test-mode instance → `400`.
 
@@ -1321,7 +1513,8 @@ Each test posts to `/api/auth/stripe/webhook` and asserts the response and side 
 - `DURABULL_CONNECTION_FINGERPRINT_BACKFILL_PERMISSIVE=true` allows canonicalization-failed rows to be skipped.
 - Sentinel/cluster URLs are recorded in the structured error output and not assigned a fingerprint.
 - Migration compatibility with both Postgres and PGlite runtimes.
-- Grandfather migration inserts a `trialing` row for every existing org with `grace_ends_at = deploy_time + 30 days`.
+- Grandfather migration inserts a row with `access_state = 'grandfathered_trial'`, `last_checked_status = 'grandfathered_trial'`, `grace_ends_at = deploy_time + 30 days`, and a populated `metadata.grandfatherUsageSnapshot` for every existing org.
+- Resolver returns `access_state: 'grandfathered_trial'` for these rows while `now < grace_ends_at`.
 - 30-day grandfather cron correctly transitions to Free or Locked based on usage at expiry.
 
 ### Support Tool Tests
@@ -1340,9 +1533,9 @@ Each test posts to `/api/auth/stripe/webhook` and asserts the response and side 
 - Seat enforcement is warning-only in phase 1 and must never block normal collaboration.
 - Existing-organization backfill on launch day must use the grandfather migration; without it, paying customers risk being locked.
 - Hono `bodyLimit` and rate limiters can interact with Stripe webhook delivery; the plan documents the required exemptions, the dedicated webhook rate limiter, and an end-to-end raw-body signature-verification test.
-- The Stripe webhook is the only public, unauthenticated billing surface and is protected by seven independent layers (TLS+HSTS, Stripe IP allowlist, strict request shape, signature verification, dual-secret rotation, replay/livemode/idempotency, dedicated rate limiter). See "Stripe Webhook Security (Defense in Depth)".
+- The Stripe webhook is the only public, unauthenticated billing surface and is protected by seven independent layers (TLS+HSTS, Stripe IP allowlist, strict request shape, signature verification, Stripe-native dual-active-secret rotation window, replay/livemode/idempotency, dedicated rate limiter). See "Stripe Webhook Security (Defense in Depth)".
 - Stripe webhook IP list changes over time; the cached allowlist refreshes every 6 hours with a bundled snapshot fallback. A snapshot that gets stale enough may reject legitimate Stripe traffic — the snapshot must be refreshed in the repo at least quarterly, tracked as an ops task.
-- `STRIPE_WEBHOOK_SECRET` rotation requires a 24-hour overlap window using `STRIPE_WEBHOOK_SECRET_NEXT`. A boot warning surfaces stale `_NEXT` values past 14 days.
+- `STRIPE_WEBHOOK_SECRET` rotation in phase 1 uses Stripe Dashboard's dual-active-secret window (no `_NEXT` env var, no app-level overlay). The runbook prescribes a Stripe Dashboard secret roll → env flip → redeploy sequence within Stripe's dual-active window. Phase 2 may ship an app-level overlay if the team needs faster revocation than Stripe's window allows.
 - Test-mode events must never reach a live system. `DURABULL_STRIPE_WEBHOOK_LIVEMODE_EXPECTED` enforces this; a misconfiguration here is the most plausible "fake free trial" attack vector and must be alerted on at boot.
 - PGlite supports the new schema in Drizzle but must be re-verified after `npx auth generate` produces migration SQL.
 - Stripe API version drift: pinning is explicit; future upgrades require an additional migration test pass.
@@ -1389,3 +1582,696 @@ flowchart TD
   grandfather[Launch: Grandfather Migration] --> billingState
   killSwitch[DURABULL_BILLING_FORCE_UNLOCK] -.short-circuit.-> resolver
 ```
+
+## Phased PR Rollout (Agentic Execution Plan)
+
+This section converts the plan above into a sequence of independently mergeable pull requests, each scoped so a single agent can complete it in one focused session. The numbered "Rollout Plan" further up is the policy view; this section is the execution view.
+
+### Ground Rules For Every Phase
+
+These rules apply to every PR in this rollout and should be re-read by the agent at the start of each phase.
+
+1. **Branch from `origin/main` directly.** Never branch off a sibling phase's feature branch; merge order is enforced by the PR queue, not by stacking.
+2. **Feature-flag posture: ship dark.** Until Phase 10 flips production, every PR must be safe to merge to `main` with `DURABULL_BILLING_ENABLED=false` (and with `DURABULL_CLOUD=true` on the cloud deploy). The mutual-exclusion assertion (`DURABULL_CLOUD && DURABULL_AUTHLESS`) is the only boot-blocking new invariant.
+3. **No code path may newly throw on `local`/`self_hosted`/`disabled` modes.** All new modules either no-op or return synthetic unlimited contexts in non-cloud-billing modes.
+4. **Tests must cover the mode matrix.** Every new module that branches on `billingMode` ships unit tests for at least: `cloud_billing` (enforced), `local` (no-op), `self_hosted` (no-op), `disabled` (no-op), and `cloud_billing` + kill switch on.
+5. **No secrets in committed `.env*`.** The plan's secrets-handling rule applies; only `.env.example` is touched.
+6. **Linear issue per PR.** Each phase gets one Linear issue. Branch name format: `gregg/dur-<n>-stripe-phase-<N>-<slug>`. PR description references the Linear issue and includes the phase number from this section.
+7. **Plan compliance.** The PR description must list every section of `PLAN-STRIPE-BILLING.md` it implements and every section it explicitly defers (with the phase number where the deferred work lands).
+8. **Test commands.** Every PR runs and passes: `bun run typecheck`, `bun run lint`, `bun test` for every touched package. Web PRs additionally run `bun run test:unit` and `bun run build` in `apps/web`.
+9. **Migration safety.** Any phase that adds Drizzle migrations must verify PGlite parity (`apps/api` boots with `DURABULL_DATABASE_DRIVER=pglite`) and Postgres (`tooling/docker` stack). Migrations are forward-only; rollback is documented in the PR description.
+10. **Verification-spike output is canonical.** Phase 0 below produces the `tooling/docs/stripe-spike-report.md` referenced by every subsequent phase. If the spike forces a fallback (custom Checkout-start endpoint), update this plan in the same PR that records the spike.
+
+### Phase 0 — Verification Spike (Non-Production)
+
+**Linear title:** `Stripe Billing: Verification Spike Against better-auth@^1.4.9`
+**Branch:** `gregg/dur-<n>-stripe-phase-0-spike`
+**Depends on:** nothing.
+**Blocks:** every subsequent phase.
+
+#### Scope (in)
+
+- Add `@better-auth/stripe` (pinned to a specific version) and `stripe@^22.0.0` to a throwaway branch only.
+- Wire a test-mode Stripe account end-to-end on a feature branch in a non-production environment.
+- Confirm, with logs and screenshots in `tooling/docs/stripe-spike-report.md`:
+  1. `subscription.upgrade` with `getCheckoutSessionParams` setting `payment_method_collection: 'if_required'` and `freeTrial.days: 14` produces a Stripe Checkout Session whose page renders the trial badge and does not require a card.
+  2. Letting the trial expire emits `customer.subscription.paused` (not `customer.subscription.deleted`, not `incomplete_expired`).
+  3. Adding a payment method via the Customer Portal afterwards emits `customer.subscription.resumed` and Stripe restores `active`.
+  4. `subscription.upgrade` with `subscriptionId` mid-trial preserves `trial_end`.
+  5. The plugin's `Stripe-Signature` header path verifies via `constructEventAsync` and supports multi-`v1=…` headers during Dashboard secret rotation.
+- Record the exact pinned plugin version that passed.
+- If any of (1)–(4) fail, design the fallback custom Checkout-start endpoint **in the same spike PR** and update §"Better Auth Stripe Integration → Verification Spike Tests for the Trial Path" to mark the fallback active.
+
+#### Scope (out)
+
+- No production code changes.
+- No DB migrations.
+- No `apps/api` or `apps/web` runtime wiring.
+
+#### Deliverables
+
+- `tooling/docs/stripe-spike-report.md` checked in.
+- Spike branch deleted after report is merged.
+- If fallback needed: a PR-1 amendment that updates the plan's Better Auth Stripe section to reflect the divergence.
+
+#### Verification
+
+- Spike report includes Stripe Dashboard screenshots for each of the four flows.
+- Pinned plugin version is the version every subsequent phase imports.
+
+### Phase 1 — Billing Foundation Package (No Runtime Effects)
+
+**Linear title:** `Stripe Billing: Foundation Package + Env + Mutual-Exclusion Assertion`
+**Branch:** `gregg/dur-<n>-stripe-phase-1-foundation`
+**Depends on:** Phase 0.
+**Blocks:** Phases 2, 3, 4, 5, 6, 7, 8, 9, 10.
+
+#### Scope (in)
+
+- Create `packages/billing/` workspace package (`@durabull/billing`):
+  - `src/plan-config.ts` — exports the full plan limits table for `free | starter | team | business`, plus the synthetic `local | self_hosted` plan and the `grandfathered_trial` shape. Re-exports a strongly typed `PlanLimits` record keyed by limit name.
+  - `src/billing-mode.ts` — `getBillingMode(env): 'cloud_billing' | 'self_hosted' | 'local' | 'disabled'` computed once at module load. Includes the kill-switch wiring so the resolver in Phase 3 can branch on it.
+  - `src/error-envelope.ts` — exports the canonical 402 envelope TypeScript type (`PaymentRequiredEnvelope`, `BillingErrorCode`, etc.) per §"Billing Error Envelope". Exports the `RedisConnectionDuplicateClaimError` placeholder class for Phase 7 to consume.
+  - `src/redis-url-canonical.ts` — pure canonicalizer + `computeFingerprint` (HMAC-SHA256 wrapper). No DB calls. Throws `RedisUrlCanonicalizationError` on sentinel/cluster/unknown schemes per §"Canonicalization".
+  - `src/__fixtures__/redis-url-canonical.fixtures.ts` — full fixture suite covering every canonicalization rule and negative cases.
+  - `src/index.ts` — public entry; no other package imports private modules.
+- Extend `tooling/env/src/index.ts`:
+  - Add every required and optional env var listed in §"Environment Variables".
+  - Add the mutual-exclusion boot assertion: `if (DURABULL_CLOUD && DURABULL_AUTHLESS) throw …`. The assertion runs regardless of `DURABULL_BILLING_ENABLED`.
+  - Document each new var in `.env.example` with explanatory comments (no secret values).
+- Add `@durabull/billing` to `apps/api` and `apps/web` workspaces as a dependency. Do **not** call any function from it yet; this PR just makes the package importable.
+
+#### Scope (out)
+
+- No DB migrations.
+- No Better Auth Stripe wiring.
+- No middleware.
+- No `apps/api` route changes.
+- No Stripe SDK imports.
+
+#### Tests
+
+- `packages/billing/src/redis-url-canonical.test.ts` — full fixture suite, including sentinel/cluster rejection, IPv6 brackets, ACL `default` user, password percent-encoding equivalence, db `0` equivalence.
+- `packages/billing/src/billing-mode.test.ts` — every (`DURABULL_CLOUD`, `DURABULL_BILLING_ENABLED`, `DURABULL_AUTHLESS`) combination resolves to the documented mode; mutual-exclusion throws.
+- `packages/billing/src/plan-config.test.ts` — every plan's limit table matches the §"Pricing And Packaging" specification.
+- `tooling/env/src/index.test.ts` — boot asserts mutual exclusion; cloud-dark-launch (`DURABULL_CLOUD && !DURABULL_BILLING_ENABLED && !DURABULL_AUTHLESS`) succeeds; missing-required-var in cloud-billing mode fails with actionable error.
+
+#### Verification
+
+- `bun run typecheck`, `bun run lint`, `bun test` pass for `packages/billing`, `tooling/env`, `apps/api`, `apps/web`.
+- `apps/api` boots locally with `DURABULL_AUTHLESS=true` and `DURABULL_CLOUD=true` and **fails** with the mutual-exclusion error. Without either flag set, it boots normally.
+
+#### Feature-flag posture
+
+- Adds no runtime behavior. Safe to merge regardless of cloud-mode posture.
+
+### Phase 2 — Better Auth Stripe Wiring + Billing-State Schema + Idempotency Wrapper
+
+**Linear title:** `Stripe Billing: Plugin Registration + organization_billing_state + Idempotency`
+**Branch:** `gregg/dur-<n>-stripe-phase-2-plugin-schema`
+**Depends on:** Phase 1.
+**Blocks:** Phases 3, 4, 5, 6, 7, 8, 9, 10.
+
+#### Scope (in)
+
+- Add dependencies (`stripe@^22.0.0`, `@better-auth/stripe` at spike-pinned version) to `packages/auth` and `apps/api`. Pin Stripe API version to `2026-03-25.dahlia` in the Stripe client constructor.
+- Conditionally register the Stripe plugin in `packages/auth/src/index.ts → createAuth()`:
+  - Only when `cloudBillingEnabled === true` (i.e. `DURABULL_CLOUD && DURABULL_BILLING_ENABLED && !DURABULL_AUTHLESS`).
+  - Plugin ordering: `organization(...)` then `stripe(...)`.
+  - Configure `createCustomerOnSignUp: false`.
+  - Configure `authorizeReference` for all four documented actions; gate on `owner | admin` member role.
+  - Configure `getCheckoutSessionParams` per §"Plugin Configuration" (including the trial workaround note).
+  - **Do not** wire any Durabull lifecycle hooks yet; pass empty no-op handlers that just call `withStripeEventIdempotency` and return. Hooks land in Phase 3.
+- Register the Stripe client plugin in `packages/auth/src/client.ts` under the same condition (set at SSR/Vite config time).
+- Run `npx auth generate` against the new plugin set and check resulting Drizzle migration into `packages/dal/src/db/migrations/`. The migration adds `user.stripeCustomerId`, `organization.stripeCustomerId`, and the `subscription` table.
+- Add Drizzle schema + migration for `organization_billing_state` per §"Durabull Billing State" (every column listed there, including `metadata` JSONB).
+- Add Drizzle schema + migration for `stripe_event_log` per §"`stripe_event_log` — Mandatory Dedupe Table".
+- Add `organizationBillingStateRepository` with:
+  - `findByOrganizationId(orgId)`.
+  - `lazyUpsertFree(orgId)` — inserts a row with `access_state = 'free'`, `free_started_at = now` on first read for an org that lacks one. Idempotent.
+  - `updateAccessState(orgId, partial)`.
+- Add `stripeEventLogRepository` with `insertIfAbsent(event)` returning `'inserted' | 'duplicate'`.
+- Implement `withStripeEventIdempotency` in `@durabull/billing` (now that the table exists; this requires moving the helper out of Phase 1 into `apps/api/src/lib/stripe-idempotency.ts` because it needs DB access).
+- Add a daily cleanup cron in `apps/api/src/lib/stripe-event-log-cleanup.ts` that deletes rows older than 90 days. Guarded by `billingMode === 'cloud_billing'`.
+
+#### Scope (out)
+
+- No middleware mount.
+- No `/api/billing/*` routes.
+- No access-state resolver logic (that's Phase 3).
+- No Stripe lifecycle hooks (Phase 3).
+- No webhook security hardening (Phase 4).
+- No fingerprint schema (Phase 7).
+
+#### Tests
+
+- `packages/auth/src/__tests__/plugin-registration.test.ts` — plugin is registered iff `DURABULL_CLOUD && DURABULL_BILLING_ENABLED && !DURABULL_AUTHLESS`. Otherwise the auth handler returns 404 at `/api/auth/stripe/webhook`.
+- `packages/dal/src/repositories/__tests__/organization-billing-state.test.ts` — lazy upsert is idempotent; concurrent first-reads produce a single row.
+- `packages/dal/src/repositories/__tests__/stripe-event-log.test.ts` — `insertIfAbsent` returns `inserted` on first call, `duplicate` on second.
+- `apps/api/src/lib/__tests__/stripe-idempotency.test.ts` — handler body runs once on duplicate `event.id`; rollback on handler throw allows retry.
+- `apps/api/src/lib/__tests__/stripe-event-log-cleanup.test.ts` — deletes rows older than 90 days; no-op in non-cloud-billing modes.
+- Migration parity: `bun run db:migrate` runs cleanly on both Postgres and PGlite.
+
+#### Verification
+
+- `apps/api` boots in cloud-billing mode and exposes `/api/auth/stripe/webhook` (returns 400 without a signature, not 404).
+- `apps/api` boots in any non-cloud mode and the webhook path returns 404 (auth-handler unmounted plugin route).
+- New tables exist with documented columns and indexes.
+
+#### Feature-flag posture
+
+- Plugin only registers in cloud-billing mode. Cloud-dark-launch deploys (`DURABULL_BILLING_ENABLED=false`) get the schema migrations but no plugin and no webhook surface.
+
+### Phase 3 — Runtime Billing Service + Access-State Resolver + Lifecycle Hooks
+
+**Linear title:** `Stripe Billing: Runtime Service + Access-State Resolver + Lifecycle Hooks`
+**Branch:** `gregg/dur-<n>-stripe-phase-3-runtime-service`
+**Depends on:** Phase 2.
+**Blocks:** Phases 5, 6, 8, 9, 10.
+
+#### Scope (in)
+
+- Add `@durabull/billing/src/billing-service.ts`:
+  - `getBillingContext(organizationId): Promise<BillingContext>` — reads `subscription` + `organization_billing_state` + computes resolved `access_state` per the 11-rule precedence table in §"Access-State Resolver".
+  - `assertBillingAccess(context): void | throws PaymentRequiredError`.
+  - `assertPlanLimit(context, limitKey, currentUsage): void | throws PlanLimitExceededError`.
+  - `shouldProcessBackgroundBillingWork(context): boolean`.
+  - `resolveStripeSubscriptionToBillingContext(orgId): Promise<BillingContext>` — re-pulls subscription from Stripe via SDK and reprojects state.
+- Implement the kill switch (`DURABULL_BILLING_FORCE_UNLOCK`):
+  - Resolver short-circuits to synthetic `active`/unlimited.
+  - Boot log line includes `BILLING_FORCE_UNLOCK=ACTIVE`.
+  - Recurring warning every 6h via a new `apps/api/src/lib/billing-force-unlock-warning.ts` interval.
+- Implement non-cloud-billing carve-outs: `getBillingContext` returns synthetic unlimited context with `billing.enforced = false`.
+- Wire Stripe lifecycle hooks in `packages/auth/src/index.ts` (replacing the empty no-ops from Phase 2). All handlers wrap their work in `withStripeEventIdempotency`:
+  - `onSubscriptionComplete` → reproject to `trialing` / `active`.
+  - `onSubscriptionCreated` → reconcile to `active`.
+  - `onSubscriptionUpdate` → re-project state from latest Stripe row; handle every status transition from §"State-Transition Notes".
+  - `onSubscriptionCancel` → set banner copy.
+  - `onSubscriptionDeleted` → lock or downgrade per §"Trial Expiration" / §"Payment Failure Flow".
+  - `freeTrial.onTrialStart` → emit Durabull email + analytics event.
+  - `freeTrial.onTrialEnd` → no-op (subscription update reprojects).
+  - `freeTrial.onTrialExpired` → fall back to Free if usage fits, else lock. This is the critical card-free trial path.
+  - `onEvent` for `invoice.paid`, `invoice.payment_failed`, `invoice.finalization_failed`, `invoice.payment_action_required`, `customer.subscription.paused`, `customer.subscription.resumed`, `customer.subscription.trial_will_end`.
+- Implement usage-fits-Free probe (`computeCurrentUsage(orgId)`) reading current `connections / environments / queues / alertRules / members`.
+- Durabull-side emails (grandfather notice, auto-downgrade, auto-lock, bandwidth thresholds) wired behind `isEmailConfigured()` per §"Stripe Emails vs Durabull Emails".
+
+#### Scope (out)
+
+- No HTTP middleware mount.
+- No `/api/billing/*` routes.
+- No webhook security middleware.
+- No fingerprint claim work.
+- No web UI.
+- No grandfather migration.
+
+#### Tests
+
+- `packages/billing/src/__tests__/access-state-resolver.test.ts` — the full matrix: every Stripe `status` × (usage fits Free / exceeds Free) × kill switch on/off. The matrix is the **single source of truth for access policy** per §"Access-State Resolver".
+- `packages/billing/src/__tests__/assert-plan-limit.test.ts` — every limit key produces a `PLAN_LIMIT_EXCEEDED` envelope at boundary `+1`.
+- `packages/auth/src/__tests__/lifecycle-hooks.test.ts` — every hook reprojects state correctly. Replaying the same `event.id` is a single mutation and a single email.
+- `apps/api/src/lib/__tests__/billing-force-unlock.test.ts` — kill switch logs warning every 6h and resolver returns synthetic `active`.
+
+#### Verification
+
+- Test matrix coverage is exhaustive (every cell of the 11-rule table × 8 statuses).
+- The trial-expired card-free path is unit-tested for both "fits Free" and "exceeds Free" branches.
+
+#### Feature-flag posture
+
+- All new service methods are gated on `billingMode === 'cloud_billing'` for enforcement; in any other mode they return synthetic unlimited. Lifecycle hooks only fire when the plugin is registered.
+
+### Phase 4 — Stripe Webhook Security Hardening (7 Layers)
+
+**Linear title:** `Stripe Billing: Webhook Defense-In-Depth (IP Allowlist + Strict Shape + Rate Limit + Livemode)`
+**Branch:** `gregg/dur-<n>-stripe-phase-4-webhook-security`
+**Depends on:** Phase 2.
+**Blocks:** Phase 10 (go-live).
+
+This phase can run in parallel with Phase 3.
+
+#### Scope (in)
+
+- Implement Layer 2 IP allowlist in `apps/api/src/lib/stripe-webhook-ip-allowlist.ts`:
+  - Boot fetch + 6h refresh from `https://stripe.com/files/ips/ips_webhooks.json`.
+  - ETag/Last-Modified caching.
+  - Fallback to bundled snapshot at `apps/api/src/lib/stripe-webhook-ips.snapshot.json`.
+  - `DURABULL_STRIPE_WEBHOOK_IP_ALLOWLIST_MODE` env var with `enforce | monitor | disabled`.
+  - Refresh failure never empties the cache.
+- Implement Layer 3 strict-shape middleware (`stripeWebhookStrictShape`): POST + `application/json` Content-Type + `Stripe-Signature` header present + 64 KB body cap. Returns precise error codes (`405 | 400 | 413`).
+- Implement Layer 7 dedicated rate limiter (`stripeWebhookRateLimiter`): 200 req / 10 s per source IP, keyed identically to existing rate limiters.
+- Wire the auth rate limiter exemption (`/api/auth/stripe/webhook` skipped from `authRateLimiter`).
+- Wire the webhook middleware chain in `apps/api/src/app.ts` per §"Stripe Webhook Path — Middleware Stack". Order: `ipAllowlist → strictShape → rateLimiter → authHandler`.
+- Implement Layer 6 livemode mismatch rejection inside `onEvent` (early-return + metric `stripe_webhook_livemode_mismatch_total` increment).
+- Implement signature-failure metric (`stripe_webhook_signature_failures_total`) and security-alert trigger after 5 failures from one IP in 60 s.
+- Implement Layer 5 boot warning: SHA-256 hash of `STRIPE_WEBHOOK_SECRET` is compared against `DURABULL_STRIPE_WEBHOOK_SECRET_REVOCATION_HASHES` and emits a warning if matched.
+- Implement structured audit log on every verified delivery (event.id, type, IP, livemode, duration). Never log body or headers.
+
+#### Scope (out)
+
+- No new business logic in handlers (Phase 3 owns hooks).
+- No fingerprint work.
+- No phase-2 dual-secret overlay (deferred to a future phase per the plan).
+
+#### Tests
+
+- `apps/api/src/routes/stripe-webhook.security.test.ts` — every test case in §"Webhook Security Tests" (Layers 1–7 and cross-cutting). Layer-by-layer coverage:
+  - Layer 1/2: IP allowlist enforce/monitor/disabled; refresh-failure fallback to snapshot.
+  - Layer 3: 405 / 400 / 413 cases.
+  - Layer 4: valid sig OK; wrong secret → 400 + metric; tampered body → 400; old timestamp → 400; 5 failures → security alert.
+  - Layer 5: Dashboard dual-secret window verifies against either secret; revocation-hash boot warning.
+  - Layer 6: replay short-circuit; livemode mismatch → 400 + metric.
+  - Layer 7: 201st request returns 429; 429s don't increment signature-failure metric.
+  - Cross-cutting: no logs contain body/header/secret; no cookies read/set; webhook path 404s in non-cloud modes; raw-body signature works end-to-end through CORS → bodyLimit → secureHeaders → middlewares → auth handler.
+- The "raw body end-to-end signature" test runs on every PR going forward (CI guard against future middleware regressions).
+
+#### Verification
+
+- Stripe CLI `stripe listen` works in `monitor` mode locally.
+- A forged event from a non-allowlisted IP returns 403 with empty body and increments the rejection metric.
+- A signed event from an allowlisted IP processes successfully and logs an audit line.
+
+#### Feature-flag posture
+
+- Webhook middlewares are only mounted when the Stripe plugin is registered. In all other modes the path 404s and these middlewares are absent.
+
+### Phase 5 — API Enforcement Middlewares + Billing Routes + Team-Management Hooks
+
+**Linear title:** `Stripe Billing: API Enforcement Middlewares + /api/billing/* + Team Hook Enforcement`
+**Branch:** `gregg/dur-<n>-stripe-phase-5-api-enforcement`
+**Depends on:** Phase 3.
+**Blocks:** Phases 8 (web UI needs `/api/billing/status`), 10.
+
+#### Scope (in)
+
+- Add `apps/api/src/middleware/billing.ts` with three middlewares:
+  - `attachBillingContext` — calls `getBillingContext` once per request and sets `c.set('billing', context)`.
+  - `requireBillingAccess` — reads `c.get('billing')` and returns the 402 envelope on locked.
+  - `requirePlanLimit(limitKey, getUsage)` — returns 402 `PLAN_LIMIT_EXCEEDED` on overflow.
+- Mount the middlewares per §"Mount Targets (Exact)":
+  - `apps/api/src/routes/connections.ts` — after the existing `requireOrganization` (Pattern A).
+  - `apps/api/src/routes/c/$connectionId/*` — after the existing `connectionMiddleware` (Pattern B). Document the deliberate ordering divergence in the new middleware's JSDoc.
+  - `apps/api/src/routes/alerts/*` — Pattern A.
+  - Do **not** mount on `/api/auth/*`, `/api/billing/*`, `/api/session`, `/api/app/config`, `/api/app/version`, `/api/health`, or `/api/team/members` (read).
+- Implement plan-limit enforcement points per §"Enforcement Points":
+  - Connection count — `redisConnectionRepository.create` via injected `assertPlanLimit('connections', …)` callback.
+  - Environment count — `connections.ts` POST/PATCH.
+  - Monitored queue count — queue discovery/sync per connection.
+  - Alert rule count — alert rule create handler.
+- Implement `/api/billing/*` routes (mounted only in `cloud_billing` mode):
+  - `GET /api/billing/status` — returns the documented payload (plan, access_state, limits, usage, trial, grace, portalAvailable, billing.enforced).
+  - `POST /api/billing/sync` — owner/admin only, rate-limited 1/min per org, calls `resolveStripeSubscriptionToBillingContext`.
+  - `POST /api/billing/downgrade-to-free` — owner/admin only, eligibility-gated, refuses when usage exceeds Free.
+- Implement Better Auth `databaseHooks` on `member` and `invitation` per §"Team Management Enforcement (Auth Plugin Hooks)":
+  - `member.create | update | delete`: block when source org is locked.
+  - `invitation.create | update | delete`: same, with the carve-out for cross-org invitation **acceptance** (member of locked-org-A can accept invite to org-B).
+  - Hooks are no-ops in non-cloud-billing modes and when kill switch is on.
+  - Error response shape matches the 402 envelope so the web normalizer can route to `BillingLockedScreen`.
+
+#### Scope (out)
+
+- No bandwidth metering (Phase 6).
+- No alert monitor lock filter (Phase 6).
+- No fingerprint claim work (Phase 7).
+- No web UI (Phase 8).
+
+#### Tests
+
+- `apps/api/src/middleware/__tests__/billing.test.ts` — ordering test for Pattern A and Pattern B; the middleware never re-fetches the context.
+- `apps/api/src/routes/__tests__/billing-routes.test.ts` — `/status`, `/sync`, `/downgrade-to-free` happy + sad paths.
+- `apps/api/src/routes/__tests__/connections-billing.test.ts` — connection / environment limits enforce only in cloud-billing mode; 402 envelope shape exact.
+- `apps/api/src/routes/__tests__/alerts-billing.test.ts` — alert-rule limit; locked org gets 402 on /alerts/*.
+- `apps/api/src/routes/__tests__/c-connectionId-billing.test.ts` — Pattern B ordering still resolves connection ownership errors as 403, not as 402, when the user isn't authorized.
+- `packages/auth/src/__tests__/team-management-hooks.test.ts`:
+  - Locked org cannot invite / remove / change role / cancel / resend.
+  - Locked org member **can** accept invite to a different (non-locked) org.
+  - Self-hosted / authless / disabled modes never invoke the hook.
+  - Kill switch off-ramps the hook.
+  - Error payload includes the 402 envelope `billing` block.
+
+#### Verification
+
+- 402 response shape is asserted via the TypeScript type exported from `@durabull/billing/src/error-envelope.ts`.
+- `bun test` matrix includes locked / past_due_grace / trialing / active / grandfathered_trial behavior on every protected prefix.
+
+#### Feature-flag posture
+
+- In non-cloud-billing modes `attachBillingContext` returns synthetic unlimited and `requireBillingAccess` is a no-op. `/api/billing/*` returns 404. Team hooks no-op.
+
+### Phase 6 — Background Jobs + Bandwidth Metering
+
+**Linear title:** `Stripe Billing: Alert Monitor Filter + Reconciliation Cron + Bandwidth Metering`
+**Branch:** `gregg/dur-<n>-stripe-phase-6-background-bandwidth`
+**Depends on:** Phase 3.
+**Blocks:** Phase 10.
+
+This phase can run in parallel with Phase 5.
+
+#### Scope (in)
+
+- Add `alertRuleRepository.findAllEnabledForActiveOrgs()` per §"Alert Monitor Lock Filtering":
+  - Joins `alert_rule → organization_billing_state` and returns rules only when `access_state IN ('free', 'trialing', 'grandfathered_trial', 'active', 'past_due_grace')`.
+  - Non-cloud modes behave identically to `findAllEnabled()`.
+- Update `apps/api/src/lib/alert-monitor.ts → runPollCycle` to call the new method via `shouldProcessBackgroundBillingWork`.
+- Add `apps/api/src/lib/billing-reconciliation.ts`:
+  - Every 10 minutes pick orgs with `last_synced_at` older than 30 minutes.
+  - Re-pull subscription via `resolveStripeSubscriptionToBillingContext`.
+  - Log (without PII) any state disagreement.
+  - Guard the whole body with `if (billingMode !== 'cloud_billing') return`.
+- Add `apps/api/src/lib/bandwidth-flusher.ts`:
+  - 60 s timer drains an in-memory `Map<orgId, bytes>` into `organization_billing_state.bandwidth_bytes_used` with a single batched UPDATE.
+  - Excludes `/api/health`, `/api/app/*`, `/api/auth/*`, `/api/telemetry/*`, `/ingest/*`, `/api/auth/stripe/webhook`.
+- Add `apps/api/src/middleware/bandwidth.ts`:
+  - Outermost (after CORS/rate-limit) wrapper that observes `Content-Length` or counts streamed bytes.
+  - Increments the in-memory map.
+  - No-ops in non-cloud-billing modes.
+- Add `apps/api/src/lib/bandwidth-warning-cron.ts`:
+  - 1 h cron evaluates `bandwidth_bytes_used` against the org's plan transfer limit and sends warning emails at 75/90/100% (via `@durabull/email`, behind `isEmailConfigured()`).
+- Add `apps/api/src/lib/bandwidth-rollover-cron.ts`:
+  - First second of each UTC month resets `bandwidth_bytes_used = 0` and advances `bandwidth_period_start` / `bandwidth_period_end`.
+
+#### Scope (out)
+
+- No automatic overage billing (deferred per §"What Not To Meter").
+- No fingerprint work.
+
+#### Tests
+
+- `apps/api/src/lib/__tests__/alert-monitor-lock-filter.test.ts` — locked org's rules excluded; monitor never opens Redis for a locked org; non-cloud modes unchanged.
+- `apps/api/src/lib/__tests__/billing-reconciliation.test.ts` — picks stale orgs only; no-op in non-cloud modes; logs disagreements.
+- `apps/api/src/middleware/__tests__/bandwidth.test.ts` — counts response bytes correctly for static and streamed responses; excludes the documented prefixes; no-ops in non-cloud modes.
+- `apps/api/src/lib/__tests__/bandwidth-flusher.test.ts` — drains map; survives concurrent updates; batched UPDATE.
+- `apps/api/src/lib/__tests__/bandwidth-warning-cron.test.ts` — emails at exactly 75/90/100% boundaries; no double-fire within the same period.
+- `apps/api/src/lib/__tests__/bandwidth-rollover-cron.test.ts` — resets at first second of UTC month; idempotent if cron double-fires.
+
+#### Verification
+
+- Run `apps/api` locally with cloud-billing on and exercise `/api/connections` — `bandwidth_bytes_used` increases after 60 s flush.
+- Locked org's alert rules never reach `runPollCycle`.
+
+#### Feature-flag posture
+
+- All four crons + middleware no-op in non-cloud-billing modes.
+
+### Phase 7 — Duplicate Redis Connection Prevention (Fingerprint Claim System)
+
+**Linear title:** `Stripe Billing: Redis URL Fingerprint Claim System + Launch Backfill`
+**Branch:** `gregg/dur-<n>-stripe-phase-7-fingerprint-claim`
+**Depends on:** Phase 2 (needs `organization_billing_state` schema for metadata-write audit).
+**Blocks:** Phases 9 (grandfather migration co-orders with the backfill), 10.
+
+This phase can run in parallel with Phases 3, 4, 5, 6.
+
+#### Scope (in)
+
+- Add Drizzle schema + migration:
+  - `redis_connection.url_fingerprint` (text, nullable until backfill completes) + index.
+  - `redis_connection_claim` table per §"Schema":
+    - `url_fingerprint` PK, `owning_organization_id` (FK → `organization.id`, `onDelete: 'set null'`), `first_connection_id`, `first_seen_at`, `last_seen_at`, `released_at`, `claim_status` enum, `notes`.
+  - DB trigger (Postgres) and repository-level wrapper (PGlite parity) that fires on cascade-set-null: `claim_status = 'released'`, `released_at = now`, append note.
+- Add `redisConnectionClaimRepository` in `packages/dal`:
+  - `findByFingerprint(fp)`.
+  - `insertOrReacquire({ fp, orgId, connectionId })` — transactional.
+  - `getOwnerForFingerprint(fp)`.
+- Update `redisConnectionRepository.create` and `.update` per §"Repository Behavior":
+  - Validate Redis URL (existing).
+  - Compute canonical URL + fingerprint (skipped on bypass conditions).
+  - Transactional claim lookup + insert/reacquire/conflict-throw.
+  - Throw `RedisConnectionDuplicateClaimError` (new error class) on cross-org collision or `blocked` status.
+  - Honor all four bypass conditions: `billingMode !== 'cloud_billing'`, `shouldUseEnvConnections()`, demo string canonicalization, `DURABULL_BILLING_FORCE_UNLOCK`.
+- Map `RedisConnectionDuplicateClaimError` to `409 Conflict` in `connections.ts` with the documented non-leaky copy.
+- Add `organizationDeletionRepository.delete` (or extend the existing org delete path) so org-delete writes the claim-release in the same transaction (for PGlite parity).
+- Launch-day backfill migration `tooling/scripts/migrate-redis-fingerprint-backfill.ts`:
+  - First-seen-wins policy.
+  - `(organization.createdAt ASC, redis_connection.createdAt ASC)` sort.
+  - Skips bypass-condition rows.
+  - Catches `RedisUrlCanonicalizationError` (sentinel/cluster) and emits structured error rows; does not abort.
+  - Tolerates skipped rows iff `DURABULL_CONNECTION_FINGERPRINT_BACKFILL_PERMISSIVE=true`.
+  - After completion, applies `url_fingerprint NOT NULL` (unless permissive mode).
+  - Logging discipline: never log canonical URLs, raw URLs, or fingerprints — only org/connection IDs.
+
+#### Scope (out)
+
+- Support-tool script (Phase 9).
+- Grandfather migration (Phase 9).
+- Fingerprint secret rotation tooling (deferred).
+
+#### Tests
+
+- `packages/dal/src/repositories/__tests__/redis-connection-claim.test.ts` — covers every claim transition in §"Repository Behavior" plus the cascade-set-null + trigger/wrapper.
+- `packages/dal/src/repositories/__tests__/redis-connection-fingerprint.test.ts`:
+  - Within-org reuse allowed.
+  - Cross-org claim blocked.
+  - Bypass conditions skip the claim check.
+  - Deleted connection does not auto-release.
+  - Org delete releases (status → `released`, `owning_organization_id` → NULL) and another org can recreate.
+- `tooling/scripts/__tests__/migrate-redis-fingerprint-backfill.test.ts`:
+  - First-seen-wins applied deterministically across duplicate fingerprints.
+  - Sentinel/cluster URLs recorded in error output, not assigned a fingerprint.
+  - Missing `DURABULL_REDIS_URL_ENCRYPTION_KEY` or `DURABULL_CONNECTION_FINGERPRINT_SECRET` aborts with actionable error.
+  - Log capture asserts no URL or fingerprint substring appears.
+  - Postgres + PGlite parity.
+
+#### Verification
+
+- Local exercise: create a connection in org A; create the same URL in org B — second returns 409 with the documented copy.
+- Delete org A; create the same URL in org C — succeeds.
+- Demo connection string is unaffected.
+
+#### Feature-flag posture
+
+- Schema is shipped unconditionally so non-cloud deploys can still write `url_fingerprint = NULL` rows. Enforcement (`insertOrReacquire`) is bypassed in all non-cloud-billing modes.
+
+### Phase 8 — Web UI (Billing Routes + Locked Screen + 402 Normalizer + Banners)
+
+**Linear title:** `Stripe Billing: Web UI — Routes, Locked Screen, 402 Normalizer, Plan Picker`
+**Branch:** `gregg/dur-<n>-stripe-phase-8-web-ui`
+**Depends on:** Phase 5 (needs `/api/billing/status` and 402 envelope).
+**Blocks:** Phase 10.
+
+This phase can run in parallel with Phases 6 and 7.
+
+#### Scope (in)
+
+- Add route files:
+  - `apps/web/src/routes/$orgSlug.billing.tsx` — main billing page (plan picker, current plan, usage bars, portal link).
+  - `apps/web/src/routes/$orgSlug.billing.success.tsx` — post-rewrite Checkout success target.
+- Add components in `apps/web/src/components/billing/`:
+  - `SubscriptionStatusBanner` — `trialing | past_due_grace | paused | grandfathered_trial | locked-imminent`.
+  - `BillingLockedScreen` — full-page replacement when `access_state === 'locked'`; renders why-locked copy from the 402 envelope, "Add payment" CTA, "Switch organization" action, and per-resource cleanup checklist.
+  - `PlanLimitNotice` — inline 402 renderer for `PLAN_LIMIT_EXCEEDED`.
+  - `PlanPicker` — calls `authClient.subscription.upgrade({ plan, customerType: 'organization', referenceId: activeOrgId, ... })`.
+  - `BandwidthUsageBar` — billing page only.
+- Add `useBillingStatus()` hook in `apps/web/src/hooks/use-billing.ts`.
+- Wire app-shell:
+  - Fetch billing status alongside `/api/app/config` bootstrap.
+  - Route locked orgs to `BillingLockedScreen` before mounting protected routes.
+  - Allow billing routes when locked: `$orgSlug.billing.*`, login, sign-out, org switching, locked screen itself.
+  - In non-cloud-billing modes (`config.billing.enforced === false`), hide upgrade pressure entirely.
+  - Org switcher remains operational at all times.
+- Update TanStack Query default error handler:
+  - Recognize the 402 envelope shape.
+  - For `BILLING_LOCKED | PAST_DUE_LOCKED | TRIAL_EXPIRED | GRANDFATHER_EXPIRED` → swap to `BillingLockedScreen`.
+  - For `PLAN_LIMIT_EXCEEDED` → render `PlanLimitNotice` inline, suppress generic toast.
+- Update Connections / Alerts / Team UI:
+  - Connections UI shows count vs. plan limits; disables unavailable env choices.
+  - Renders duplicate-claim 409 with non-leaky copy.
+  - Alerts UI shows alert-rule usage and links to billing at cap.
+  - Team UI shows seat count and explains seats are warning-only in phase 1.
+- Update `apps/web/src/hooks/use-organization.ts` mutations (`useInviteMember`, `useRemoveMember`, `useUpdateMemberRole`, `useCancelInvitation`, `useResendInvitation`) to inspect the 402 envelope returned by Phase 5's auth hooks and route to `BillingLockedScreen` / `PlanLimitNotice` instead of showing a generic toast.
+- Update org setup (`setup-organization.tsx`) to show the optional onboarding card "Start a 14-day Team trial, no credit card required" only when `config.billing.enforced === true`.
+
+#### Scope (out)
+
+- Stripe Pricing Table embed (intentionally avoided in phase 1).
+- Grandfather notice email (Phase 9).
+- Support tool (Phase 9).
+
+#### Tests
+
+- `apps/web/src/routes/__tests__/billing-page.test.tsx` — renders for each access state; plan picker calls `authClient.subscription.upgrade` with the right `customerType` and `referenceId`.
+- `apps/web/src/routes/__tests__/billing-success.test.tsx` — post-rewrite landing reflects updated subscription.
+- `apps/web/src/components/billing/__tests__/billing-locked-screen.test.tsx` — renders 402 envelope copy; org switcher works; "Add payment" CTA visible; cleanup checklist when applicable.
+- `apps/web/src/components/billing/__tests__/plan-limit-notice.test.tsx` — inline render; no generic toast.
+- `apps/web/src/hooks/__tests__/use-billing.test.ts` — fetches `/api/billing/status` and exposes typed plan/usage.
+- `apps/web/src/__tests__/error-normalizer.test.tsx` — every 402 code routes correctly; no 402 produces a generic toast.
+- `apps/web/src/__tests__/non-cloud-mode.test.tsx` — `config.billing.enforced === false` hides upgrade pressure; over-Free usage is not blocked.
+
+#### Verification
+
+- Local cloud-billing mode: navigate to `/{org}/billing`, switch plans, see locked screen by simulating Stripe `paused`.
+- Local self-hosted mode: same routes render without paid pressure; no `/api/billing/*` calls fire.
+
+#### Feature-flag posture
+
+- All billing UI is gated on `config.billing.enforced`. In non-cloud-billing modes the routes still render but hide upgrade CTAs and never call `/api/billing/*`.
+
+### Phase 9 — Grandfather Migration + 30-Day Cron + Support Tooling
+
+**Linear title:** `Stripe Billing: Existing-Org Grandfathering + Claim-Release Support Script`
+**Branch:** `gregg/dur-<n>-stripe-phase-9-grandfather-support`
+**Depends on:** Phases 3, 7.
+**Blocks:** Phase 10.
+
+#### Scope (in)
+
+- Add one-time grandfather migration `tooling/scripts/migrate-grandfather-existing-orgs.ts`:
+  - For every existing organization, insert `organization_billing_state` with `access_state = 'grandfathered_trial'`, `last_checked_status = 'grandfathered_trial'`, `grace_ends_at = deploy_time + 30 days`.
+  - Snapshot current usage into `metadata.grandfatherUsageSnapshot` (connections, environments, queues, alert rules, members).
+  - Idempotent (skips orgs with an existing row).
+  - Emits a structured log per org (no usage detail to logs; only `{ orgId, snapshotKeys }`).
+- Send grandfather-notice email (via `@durabull/email` behind `isEmailConfigured()`) listing the 30-day window and links to start a real trial or downgrade.
+- Update the access-state resolver (already implemented in Phase 3) so `grandfathered_trial` derives limits from the per-org snapshot (already covered by §"Plan Limits → `grandfathered_trial`"). Phase 9 only verifies + adds resolver tests using the snapshot data.
+- Add 30-day grandfather expiry cron `apps/api/src/lib/grandfather-expiry-cron.ts`:
+  - Scheduled daily; for every org where `access_state = 'grandfathered_trial'` and `now >= grace_ends_at`:
+    - If current usage fits Free → flip to `free`, email auto-downgrade notice.
+    - Else → flip to `locked`, email auto-lock notice with cleanup list.
+  - Idempotent (won't re-process flipped orgs).
+  - Guarded `if (billingMode !== 'cloud_billing') return`.
+- Add `POST /api/billing/start-grandfather-trial-end` internal endpoint per §"API Routes" so the cron can be invoked manually for a single org during support flows. Not user-facing.
+- Add claim-release support script `tooling/scripts/release-redis-connection-claim.ts`:
+  - `--list <orgId>`.
+  - `--transfer <fingerprint> <newOrgId> --reason "<text>"`.
+  - `--release <fingerprint> --reason "<text>"`.
+  - Requires `DURABULL_BILLING_SUPPORT_TOKEN` to run.
+  - Writes audit entries into `organization_billing_state.metadata` of source + target.
+  - Not exposed as HTTP API in phase 1.
+
+#### Scope (out)
+
+- HTTP-exposed support API.
+- Fingerprint secret rotation script (deferred).
+
+#### Tests
+
+- `tooling/scripts/__tests__/migrate-grandfather-existing-orgs.test.ts`:
+  - Inserts a row with documented fields for every existing org.
+  - Idempotent; re-running does not duplicate rows.
+  - Snapshot includes connections, environments, queues, alert rules, members.
+- `apps/api/src/lib/__tests__/grandfather-expiry-cron.test.ts`:
+  - Org with usage fitting Free → flips to `free` + email sent.
+  - Org with usage exceeding Free → flips to `locked` + email sent.
+  - Idempotent (a re-run produces no additional emails).
+  - No-op in non-cloud-billing modes.
+- `packages/billing/src/__tests__/grandfather-trial-limits.test.ts` — resolver returns `grandfathered_trial` while `now < grace_ends_at` and derives limits from the snapshot.
+- `tooling/scripts/__tests__/release-redis-connection-claim.test.ts`:
+  - Refuses to run without `DURABULL_BILLING_SUPPORT_TOKEN`.
+  - `--transfer` writes audit entries to both orgs.
+  - `--release` allows subsequent create in any org to claim.
+
+#### Verification
+
+- Run grandfather migration against a staging snapshot of the prod DB; verify every existing org has a row and at least one over-Free org's snapshot lists its real usage.
+- Force-advance `grace_ends_at` for a test org and run the cron; verify transition + email.
+
+#### Feature-flag posture
+
+- Grandfather migration only runs when explicitly invoked (it's a one-time script, not boot logic). The cron no-ops in non-cloud-billing modes.
+
+### Phase 10 — Stripe Dashboard Configuration + Go-Live
+
+**Linear title:** `Stripe Billing: Stripe Dashboard Configuration + Cloud Go-Live`
+**Branch:** `gregg/dur-<n>-stripe-phase-10-go-live`
+**Depends on:** Phases 4, 5, 6, 7, 8, 9.
+
+This phase is largely operational/documentation. Minimal code change beyond enabling the feature.
+
+#### Scope (in)
+
+- Stripe Dashboard configuration (per §"Stripe Dashboard Setup"):
+  - Create Products: Starter, Team, Business.
+  - Create Prices: monthly + yearly for each product.
+  - Configure Customer Portal: payment method, invoices, plan changes, cancellation at period end.
+  - Configure trial-ending reminder email (3 days before).
+  - Configure payment-failed email (immediate).
+  - Configure revenue recovery emails for the 7-day grace window.
+  - Configure Smart Retries bounded to one week.
+  - Set Dashboard default subscription `trial_settings.end_behavior.missing_payment_method = 'pause'` (so dashboard-created subscriptions match plan policy).
+  - Configure webhook endpoint to point at production `/api/auth/stripe/webhook` with the signing secret recorded in production secrets.
+- Update production env (via the secret manager, not the repo):
+  - Set every required `STRIPE_*` and `DURABULL_CONNECTION_FINGERPRINT_SECRET` value.
+  - Optional: `STRIPE_CUSTOMER_PORTAL_CONFIGURATION_ID`, `DURABULL_STRIPE_WEBHOOK_SECRET_REVOCATION_HASHES`.
+  - Set `DURABULL_BILLING_ENABLED=true`.
+- Production deploy order:
+  1. Confirm Phases 1–9 are merged to `main` and deployed dark (`DURABULL_BILLING_ENABLED=false`).
+  2. Run the fingerprint backfill migration in production (Phase 7's script).
+  3. Run the grandfather migration in production (Phase 9's script).
+  4. Verify a staging Stripe CLI end-to-end run (signed webhook → state reprojection → UI update).
+  5. Flip `DURABULL_BILLING_ENABLED=true` in production secrets.
+  6. Restart the API service.
+  7. Confirm the boot log shows the plugin registered and `BILLING_FORCE_UNLOCK=INACTIVE`.
+- Run the Stripe go-live checklist (linked from the runbook).
+- Document the rotation procedure (`docs/runbooks/stripe-webhook-secret-rotation.md`) with the exact Stripe Dashboard "Roll secret" → env flip → redeploy sequence per §"Layer 5".
+- Document the kill-switch procedure (`docs/runbooks/billing-force-unlock.md`).
+- Document the claim-release procedure (`docs/runbooks/redis-connection-claim-release.md`).
+- Document the bandwidth-overage manual outreach playbook (`docs/runbooks/bandwidth-overage.md`).
+- Update operator-facing READMEs in `apps/api` and `apps/web` with the cloud-billing mode notes.
+
+#### Scope (out)
+
+- Bandwidth automatic overage billing (deferred).
+- Stripe Pricing Table embed (deferred).
+- Phase 2 app-level dual-secret overlay (deferred per §"Layer 5 → Phase 2").
+- HTTP support API for claim-release (deferred).
+
+#### Tests
+
+- Production-only smoke checks (executed manually in a runbook step):
+  - Start a card-free Team trial from a test org; verify Checkout has the trial badge.
+  - Let the trial expire; verify `customer.subscription.paused`; verify org falls to Free or Locked correctly.
+  - Add a payment method; verify access returns to `active`.
+  - Force a failed payment via Stripe Dashboard; verify grace banner; pay; verify recovery.
+- The end-to-end raw-body signature-verification test from Phase 4 runs on the prod deploy commit's CI.
+
+#### Verification
+
+- Production `/api/health` reports normal status.
+- A test org can open Stripe Checkout, trial, pay, and access paid surfaces.
+- An over-Free test org locked by `paused` shows `BillingLockedScreen` with a working org switcher.
+- The reconciliation cron runs every 10 min in prod logs without disagreement spikes.
+- The bandwidth flusher persists counters every 60 s.
+- The webhook audit log shows verified deliveries without any body/signature substring.
+
+#### Feature-flag posture
+
+- This is the flip-on PR. After merge + deploy, `DURABULL_BILLING_ENABLED=true` is permanent for cloud unless an incident requires the kill switch.
+
+### Cross-Phase Dependency Diagram
+
+```mermaid
+flowchart LR
+  P0[Phase 0: Spike] --> P1[Phase 1: Foundation Package]
+  P1 --> P2[Phase 2: Plugin + Schema]
+  P2 --> P3[Phase 3: Runtime Service + Hooks]
+  P2 --> P4[Phase 4: Webhook Security]
+  P2 --> P7[Phase 7: Fingerprint Claim]
+  P3 --> P5[Phase 5: API Enforcement + Routes]
+  P3 --> P6[Phase 6: Background + Bandwidth]
+  P5 --> P8[Phase 8: Web UI]
+  P3 --> P9[Phase 9: Grandfather + Support]
+  P7 --> P9
+  P4 --> P10[Phase 10: Dashboard + Go-Live]
+  P5 --> P10
+  P6 --> P10
+  P7 --> P10
+  P8 --> P10
+  P9 --> P10
+```
+
+Phases that share no edges can be developed in parallel by different agents:
+
+- Phase 3 ↔ Phase 4 ↔ Phase 7 (all depend only on Phase 2).
+- Phase 5 ↔ Phase 6 ↔ Phase 7 (after Phases 2/3).
+- Phase 8 ↔ Phase 9 (after their respective deps).
+
+### What Each Agent Receives
+
+Each phase's agent prompt is the corresponding subsection above, plus:
+
+1. The full `PLAN-STRIPE-BILLING.md` for context (the agent must read every section the phase touches, not just the phase heading).
+2. The verification spike report from Phase 0 (`tooling/docs/stripe-spike-report.md`).
+3. A pre-created Linear issue with the phase's title and a back-link to this section.
+4. A fresh feature branch off latest `origin/main`.
+5. The ground rules at the top of this section.
+
+Agents working in parallel must rebase their branches on `main` whenever an upstream phase merges. No phase's PR may merge until its declared dependencies are on `main`.
+
