@@ -373,6 +373,7 @@ export function useJobs(
           priority: number
         }>
         total: number
+        truncated?: boolean
         page: number
         cursor: string
         nextCursor: string | null

@@ -23,6 +23,7 @@ const {
       tab: 'jobs' as const,
       status: '',
       jobId: '',
+      name: '',
       hideScheduled: 0 as const,
       page: 1,
     },
@@ -218,6 +219,7 @@ describe('queue detail scheduled removal', () => {
       tab: 'jobs',
       status: '',
       jobId: '',
+      name: '',
       hideScheduled: 0,
       page: 1,
     }

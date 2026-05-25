@@ -6,6 +6,8 @@ import { getQueue } from '../lib/redis'
 // Default page size for stacktraces and logs
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
+// BullMQ has no supported substring filter on job names; filtered requests scan in-memory.
+const MAX_FILTERED_JOB_RESULTS = 1000
 const RETRY_BATCH_SIZE = 1000
 const MAX_RETRY_BATCHES_PER_STATUS = 500
 const MAX_RETRY_ERRORS_IN_RESPONSE = 100
@@ -165,8 +167,9 @@ const app = new Hono()
     const needsClientFilter = !!(name || jobId)
 
     if (needsClientFilter) {
-      // Fetch each state separately so we know the status without per-job getState() calls,
-      // then return all filtered results in one response for client-side pagination.
+      // BullMQ has no public API for case-insensitive name substring search, so we scan jobs
+      // in-process. Fetch each state separately to avoid per-job getState() calls, then return
+      // matches in one response for client-side pagination.
       const jobsWithState: Array<{ job: NonNullable<Awaited<ReturnType<typeof queue.getJobs>>[number]>; state: JobState }> = []
       for (const state of states) {
         const stateJobs = await queue.getJobs([state])
@@ -191,30 +194,35 @@ const app = new Hono()
             : true
         )
 
-      const mappedJobs = filtered.map(({ job, state }) => ({
-        id: job.id ?? '',
-        name: job.name,
-        status: state,
-        data: job.data as Record<string, unknown>,
-        progress: job.progress,
-        attemptsMade: job.attemptsMade,
-        maxAttempts: job.opts.attempts ?? 1,
-        failedReason: job.failedReason,
-        processedOn: job.processedOn,
-        finishedOn: job.finishedOn,
-        timestamp: job.timestamp,
-        delay: job.delay ?? 0,
-        priority: job.opts.priority ?? 0,
-      }))
+      const totalMatched = filtered.length
+      const truncated = totalMatched > MAX_FILTERED_JOB_RESULTS
+      const mappedJobs = filtered
+        .slice(0, MAX_FILTERED_JOB_RESULTS)
+        .map(({ job, state }) => ({
+          id: job.id ?? '',
+          name: job.name,
+          status: state,
+          data: job.data as Record<string, unknown>,
+          progress: job.progress,
+          attemptsMade: job.attemptsMade,
+          maxAttempts: job.opts.attempts ?? 1,
+          failedReason: job.failedReason,
+          processedOn: job.processedOn,
+          finishedOn: job.finishedOn,
+          timestamp: job.timestamp,
+          delay: job.delay ?? 0,
+          priority: job.opts.priority ?? 0,
+        }))
 
       return c.json({
         jobs: mappedJobs,
-        total: filtered.length,
+        total: totalMatched,
+        truncated,
         page: 1,
         cursor: '0',
         nextCursor: null,
         hasMore: false,
-        pageSize: filtered.length,
+        pageSize: mappedJobs.length,
         totalPages: 1,
       })
     }

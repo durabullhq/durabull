@@ -228,6 +228,25 @@ function QueueDetailPage() {
   const hasMoreVisibleJobs = hasClientSideJobFilter
     ? visibleJobs.length < filteredVisibleJobs.length
     : hasMoreJobs
+  const jobsListTruncated = jobsData?.pages[0]?.truncated ?? false
+  const displayedJobsLabel = useMemo(() => {
+    const visibleCount = filteredVisibleJobs.length
+    const apiTotal = jobsData?.pages[0]?.total ?? 0
+    const moreToLoad = hasMoreVisibleJobs || (hasMoreJobs && !hasClientSideJobFilter)
+
+    if (hideScheduledJobs || hasClientSideJobFilter) {
+      return moreToLoad ? `${visibleCount} shown` : `${visibleCount} total`
+    }
+
+    return `${apiTotal} total`
+  }, [
+    filteredVisibleJobs.length,
+    hasClientSideJobFilter,
+    hasMoreJobs,
+    hasMoreVisibleJobs,
+    hideScheduledJobs,
+    jobsData?.pages,
+  ])
 
   useEffect(() => {
     setVisibleJobCount(20)
@@ -1566,8 +1585,14 @@ function QueueDetailPage() {
                 </table>
               </div>
             </Card>
+            {jobsListTruncated ? (
+              <div className="rounded-md border border-amber-300/60 bg-amber-50/30 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300">
+                Showing the first 1,000 of {jobsData?.pages[0]?.total ?? 0} matches. Narrow your
+                search to see more specific results.
+              </div>
+            ) : null}
             <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>{jobsData?.pages[0]?.total ?? 0} total</span>
+              <span>{displayedJobsLabel}</span>
               <span>{hasMoreVisibleJobs ? 'Scroll to load more' : 'All jobs loaded'}</span>
             </div>
           </TabsContent>
