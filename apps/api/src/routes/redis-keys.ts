@@ -6,9 +6,49 @@ import { getConnectionRedisOptions } from '../lib/connection-options'
 import { getRedis, type RedisClient } from '../lib/redis'
 
 /**
+ * Cursor state for cluster SCAN pagination. Encodes the current master being
+ * scanned and per-master Redis SCAN cursors so each page picks up where the
+ * previous one left off — without re-scanning the whole cluster.
+ */
+interface ClusterScanState {
+  /** Index of the master currently being scanned in the cluster.nodes('master') list */
+  i: number
+  /** Per-master SCAN cursors, parallel to cluster.nodes('master') */
+  c: string[]
+}
+
+const CLUSTER_CURSOR_PREFIX = 'cluster:'
+
+function encodeClusterCursor(state: ClusterScanState): string {
+  return `${CLUSTER_CURSOR_PREFIX}${Buffer.from(JSON.stringify(state), 'utf8').toString('base64url')}`
+}
+
+function decodeClusterCursor(cursor: string, masterCount: number): ClusterScanState {
+  if (!cursor.startsWith(CLUSTER_CURSOR_PREFIX) || cursor === '0') {
+    return { i: 0, c: new Array(masterCount).fill('0') }
+  }
+  try {
+    const decoded = Buffer.from(cursor.slice(CLUSTER_CURSOR_PREFIX.length), 'base64url').toString(
+      'utf8'
+    )
+    const parsed = JSON.parse(decoded) as ClusterScanState
+    // Defensive: pad/trim per-master cursors if cluster topology shifted between calls
+    const cursors = Array.isArray(parsed.c) ? parsed.c.slice(0, masterCount) : []
+    while (cursors.length < masterCount) cursors.push('0')
+    return {
+      i: Math.max(0, Math.min(parsed.i ?? 0, masterCount)),
+      c: cursors,
+    }
+  } catch {
+    return { i: 0, c: new Array(masterCount).fill('0') }
+  }
+}
+
+/**
  * Cluster-aware SCAN: scans all master nodes in a cluster, or uses standard SCAN for standalone.
- * For cluster mode, uses offset-based pagination (cursor is `cluster:<offset>` or '0' for start).
- * For standalone, uses native Redis SCAN cursor.
+ * For cluster mode, returns an encoded cursor that contains per-master SCAN cursors and the
+ * current node index, so successive calls resume where the previous page left off instead of
+ * re-scanning the entire cluster each page.
  */
 async function clusterAwareScan(
   client: RedisClient,
@@ -17,24 +57,30 @@ async function clusterAwareScan(
   count: number
 ): Promise<[string, string[]]> {
   if (client instanceof Cluster) {
-    // Full scan across all master nodes
     const masters = client.nodes('master')
-    const allKeys: string[] = []
-    for (const master of masters) {
-      let nodeCursor = '0'
-      do {
-        const [next, keys] = await master.scan(nodeCursor, 'MATCH', pattern, 'COUNT', count)
-        nodeCursor = next
-        allKeys.push(...keys)
-      } while (nodeCursor !== '0')
+    if (masters.length === 0) return ['0', []]
+
+    const state = decodeClusterCursor(cursor, masters.length)
+    const collected: string[] = []
+
+    // Advance through masters, scanning each incrementally until we have enough keys
+    // or all masters are exhausted.
+    while (state.i < masters.length && collected.length < count) {
+      const master = masters[state.i]
+      const nodeCursor = state.c[state.i] ?? '0'
+      const [next, keys] = await master.scan(nodeCursor, 'MATCH', pattern, 'COUNT', count)
+      state.c[state.i] = next
+      collected.push(...keys)
+
+      if (next === '0') {
+        // This master is exhausted, move to the next one
+        state.i += 1
+      }
     }
 
-    // Offset-based pagination over the full result set
-    const offset = cursor.startsWith('cluster:') ? Number.parseInt(cursor.slice(8), 10) : 0
-    const page = allKeys.slice(offset, offset + count)
-    const nextOffset = offset + page.length
-    const nextCursor = nextOffset < allKeys.length ? `cluster:${nextOffset}` : '0'
-    return [nextCursor, page]
+    const allDone = state.i >= masters.length
+    const nextCursor = allDone ? '0' : encodeClusterCursor(state)
+    return [nextCursor, collected]
   }
   return client.scan(cursor, 'MATCH', pattern, 'COUNT', count)
 }
