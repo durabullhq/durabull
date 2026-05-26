@@ -170,6 +170,7 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const schedulerId = c.req.param('schedulerId')
 
@@ -178,7 +179,8 @@ const app = new Hono()
       connectionUrl,
       queueName,
       connectionPrefix,
-      redisOptions
+      redisOptions,
+      connectionMode
     )
     const scheduler = (await queue.getJobSchedulers()).find((item) => item.key === schedulerId)
 
@@ -198,6 +200,7 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const payload = c.req.valid('json')
 
@@ -206,7 +209,8 @@ const app = new Hono()
       connectionUrl,
       queueName,
       connectionPrefix,
-      redisOptions
+      redisOptions,
+      connectionMode
     )
     const existingSchedulers = await queue.getJobSchedulers()
     const existingScheduler = existingSchedulers.find(
@@ -260,6 +264,7 @@ const app = new Hono()
       const connectionUrl = c.get('connectionUrl')
       const connectionPrefix = c.get('connectionPrefix')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const queueName = c.req.param('queueName')
       const schedulerId = c.req.param('schedulerId')
       const payload = c.req.valid('json')
@@ -269,7 +274,8 @@ const app = new Hono()
         connectionUrl,
         queueName,
         connectionPrefix,
-        redisOptions
+        redisOptions,
+        connectionMode
       )
       const existingScheduler = (await queue.getJobSchedulers()).find(
         (scheduler) => scheduler.key === schedulerId
