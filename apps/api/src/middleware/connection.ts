@@ -1,5 +1,9 @@
 import type { Auth } from '@durabull/auth'
-import { redisConnectionRepository, shouldUseEnvConnections } from '@durabull/dal'
+import {
+  type ConnectionMode,
+  redisConnectionRepository,
+  shouldUseEnvConnections,
+} from '@durabull/dal'
 import type { Session } from 'better-auth/types'
 import { createMiddleware } from 'hono/factory'
 import { getAuthlessContext, isAuthlessMode } from '../lib/authless'
@@ -12,6 +16,7 @@ declare module 'hono' {
     connectionName: string
     connectionPrefix: string
     connectionAllowSelfSignedCerts: boolean
+    connectionMode: ConnectionMode
   }
 }
 
@@ -149,6 +154,7 @@ export function createConnectionMiddleware(auth?: Auth) {
     c.set('connectionName', connection.name)
     c.set('connectionPrefix', connection.prefix ?? 'bull')
     c.set('connectionAllowSelfSignedCerts', connection.allowSelfSignedCerts ?? false)
+    c.set('connectionMode', connection.mode ?? 'standalone')
 
     await next()
   })

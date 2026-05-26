@@ -7,8 +7,8 @@ import {
   DEFAULT_PRIORITY_BUCKETS,
   MAX_METRICS_WINDOW_MINUTES,
 } from '../lib/bullmq-metrics'
-import { discoverQueues, getQueue } from '../lib/redis'
 import { getConnectionRedisOptions } from '../lib/connection-options'
+import { discoverQueues, getQueue } from '../lib/redis'
 
 // Default and max page sizes for pagination
 const DEFAULT_PAGE_SIZE = 50
@@ -52,6 +52,7 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const query = c.req.valid('query')
     const pageStr = c.req.query('page')
     const pageSizeStr = c.req.query('pageSize')
@@ -62,7 +63,13 @@ const app = new Hono()
       MAX_PAGE_SIZE
     )
 
-    const allQueueNames = await discoverQueues(connectionId, connectionUrl, connectionPrefix, redisOptions)
+    const allQueueNames = await discoverQueues(
+      connectionId,
+      connectionUrl,
+      connectionPrefix,
+      redisOptions,
+      connectionMode
+    )
     const total = allQueueNames.length
 
     // Paginate the queue names BEFORE fetching metrics
@@ -80,7 +87,14 @@ const app = new Hono()
 
     const metrics = await Promise.all(
       paginatedQueueNames.map(async (queueName) => {
-        const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+        const queue = await getQueue(
+          connectionId,
+          connectionUrl,
+          queueName,
+          connectionPrefix,
+          redisOptions,
+          connectionMode
+        )
         const nativeMetrics = await collectQueueNativeMetrics(queue, {
           queueName,
           start: 0,

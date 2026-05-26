@@ -1,6 +1,6 @@
-import { useNavigate, useParams } from '@tanstack/react-router'
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import {
   AlertCircle,
   Check,
@@ -12,6 +12,7 @@ import {
   EyeOff,
   Info,
   Loader2,
+  Network,
   Pencil,
   Plus,
   Server,
@@ -64,6 +65,7 @@ type ConnectionEnvironment = 'development' | 'staging' | 'production'
 interface RedisConnection {
   id: string
   name: string
+  mode: 'standalone' | 'cluster'
   isDefault: boolean
   environment: ConnectionEnvironment | null
   prefix: string
@@ -443,16 +445,20 @@ function ConnectionCard({
             </div>
             <div className="min-w-0">
               <CardTitle className="text-base truncate">{connection.name}</CardTitle>
-              <Badge
-                variant="outline"
-                className={cn(
-                  'mt-1 text-[10px] font-medium',
-                  envConfig.borderColor,
-                  envConfig.color
+              <div className="flex items-center gap-1 mt-1">
+                <Badge
+                  variant="outline"
+                  className={cn('text-[10px] font-medium', envConfig.borderColor, envConfig.color)}
+                >
+                  {envConfig.label}
+                </Badge>
+                {connection.mode === 'cluster' && (
+                  <Badge variant="outline" className="text-[10px] font-medium">
+                    <Network className="h-2.5 w-2.5 mr-0.5" />
+                    Cluster
+                  </Badge>
                 )}
-              >
-                {envConfig.label}
-              </Badge>
+              </div>
             </div>
           </div>
         </div>
@@ -572,6 +578,7 @@ function ConnectionFormDialog({
   const [prefix, setPrefix] = useState('bull')
   const [showUrl, setShowUrl] = useState(false)
   const [environment, setEnvironment] = useState<ConnectionEnvironment>('development')
+  const [connectionMode, setConnectionMode] = useState<'standalone' | 'cluster'>('standalone')
   const [isDefault, setIsDefault] = useState(false)
   const [allowSelfSignedCerts, setAllowSelfSignedCerts] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
@@ -605,6 +612,7 @@ function ConnectionFormDialog({
       setUrl(existingConnection.url ?? '')
       setPrefix(existingConnection.prefix ?? 'bull')
       setEnvironment(existingConnection.environment ?? 'development')
+      setConnectionMode(existingConnection.mode ?? 'standalone')
       setIsDefault(existingConnection.isDefault)
       setAllowSelfSignedCerts(existingConnection.allowSelfSignedCerts ?? false)
     } else if (mode === 'create' && open) {
@@ -612,6 +620,7 @@ function ConnectionFormDialog({
       setUrl('')
       setPrefix('bull')
       setEnvironment('development')
+      setConnectionMode('standalone')
       setIsDefault(false)
       setAllowSelfSignedCerts(false)
       setDiscoveryConnectionId(null)
@@ -631,6 +640,7 @@ function ConnectionFormDialog({
           isDefault,
           prefix,
           allowSelfSignedCerts,
+          mode: connectionMode,
         })
         setDiscoveryConnectionId(created.connection.id)
         await runQueueDiscoveryMutation.mutateAsync(created.connection.id)
@@ -644,6 +654,7 @@ function ConnectionFormDialog({
             isDefault,
             prefix,
             allowSelfSignedCerts,
+            mode: connectionMode,
           },
         })
         onOpenChange(false)
@@ -656,7 +667,11 @@ function ConnectionFormDialog({
   const handleTestConnection = async () => {
     setTestResult(null)
     try {
-      const result = await testMutation.mutateAsync({ url, allowSelfSignedCerts })
+      const result = await testMutation.mutateAsync({
+        url,
+        allowSelfSignedCerts,
+        mode: connectionMode,
+      })
       setTestResult(result)
     } catch (error) {
       setTestResult({
@@ -851,6 +866,39 @@ function ConnectionFormDialog({
                     Having trouble connecting? Read connection troubleshooting
                   </a>
                 </Button>
+              )}
+            </div>
+
+            {/* Connection Mode */}
+            <div className="space-y-2">
+              <Label>Connection Mode</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={connectionMode === 'standalone' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setConnectionMode('standalone')}
+                  className="gap-1.5"
+                >
+                  <Server className="h-3.5 w-3.5" />
+                  Standalone
+                </Button>
+                <Button
+                  type="button"
+                  variant={connectionMode === 'cluster' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setConnectionMode('cluster')}
+                  className="gap-1.5"
+                >
+                  <Network className="h-3.5 w-3.5" />
+                  Cluster
+                </Button>
+              </div>
+              {connectionMode === 'cluster' && (
+                <p className="text-xs text-muted-foreground">
+                  For Redis Cluster deployments (e.g., AWS ElastiCache, Upstash). Provide the
+                  cluster endpoint URL.
+                </p>
               )}
             </div>
 
@@ -1179,7 +1227,9 @@ function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: St
         {loading ? (
           <div className="h-8 w-12 bg-muted rounded animate-pulse" />
         ) : (
-          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
+          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
+            {value}
+          </div>
         )}
       </CardContent>
     </Card>

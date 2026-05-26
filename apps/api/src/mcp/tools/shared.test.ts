@@ -22,13 +22,14 @@ describe('resolveConnectionForPrincipal', () => {
     canDelegatedUserAccessConnection.mockImplementation(async () => true)
     findById.mockReset()
     findByIdUnsafe.mockReset()
-    findByIdUnsafe.mockImplementation(async () => ({
+    findByIdUnsafe.mockImplementation((async () => ({
       id: 'conn-1',
       organizationId: 'org-1',
       url: 'https://redis.example.com',
+      mode: 'standalone',
       prefix: 'queues',
       allowSelfSignedCerts: false,
-    }))
+    })) as never)
   })
 
   it('skips delegated access re-check when policy already verified access', async () => {

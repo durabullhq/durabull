@@ -1,8 +1,58 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
+import { Cluster } from 'ioredis'
 import { z } from 'zod'
-import { getRedis } from '../lib/redis'
 import { getConnectionRedisOptions } from '../lib/connection-options'
+import { getRedis, type RedisClient } from '../lib/redis'
+
+/**
+ * Cluster-aware SCAN: scans all master nodes in a cluster, or uses standard SCAN for standalone.
+ * For cluster mode, uses offset-based pagination (cursor is `cluster:<offset>` or '0' for start).
+ * For standalone, uses native Redis SCAN cursor.
+ */
+async function clusterAwareScan(
+  client: RedisClient,
+  cursor: string,
+  pattern: string,
+  count: number
+): Promise<[string, string[]]> {
+  if (client instanceof Cluster) {
+    // Full scan across all master nodes
+    const masters = client.nodes('master')
+    const allKeys: string[] = []
+    for (const master of masters) {
+      let nodeCursor = '0'
+      do {
+        const [next, keys] = await master.scan(nodeCursor, 'MATCH', pattern, 'COUNT', count)
+        nodeCursor = next
+        allKeys.push(...keys)
+      } while (nodeCursor !== '0')
+    }
+
+    // Offset-based pagination over the full result set
+    const offset = cursor.startsWith('cluster:') ? Number.parseInt(cursor.slice(8), 10) : 0
+    const page = allKeys.slice(offset, offset + count)
+    const nextOffset = offset + page.length
+    const nextCursor = nextOffset < allKeys.length ? `cluster:${nextOffset}` : '0'
+    return [nextCursor, page]
+  }
+  return client.scan(cursor, 'MATCH', pattern, 'COUNT', count)
+}
+
+/**
+ * Cluster-aware DBSIZE: sums dbsize across all master nodes for cluster mode.
+ */
+async function clusterAwareDbSize(client: RedisClient): Promise<number> {
+  if (client instanceof Cluster) {
+    const masters = client.nodes('master')
+    let total = 0
+    for (const master of masters) {
+      total += await master.dbsize()
+    }
+    return total
+  }
+  return client.dbsize()
+}
 
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
@@ -35,14 +85,21 @@ const app = new Hono()
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const { pattern, cursor, pageSize, excludeBull } = c.req.valid('query')
 
-      const redis = await getRedis(connectionId, connectionUrl, undefined, redisOptions)
+      const redis = await getRedis(
+        connectionId,
+        connectionUrl,
+        undefined,
+        redisOptions,
+        connectionMode
+      )
 
       // Use SCAN for efficient key discovery
       // When excluding bull keys, we need to scan more to get enough non-bull keys
       const scanCount = excludeBull ? pageSize * 4 : pageSize * 2
-      const [nextCursor, rawKeys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', scanCount)
+      const [nextCursor, rawKeys] = await clusterAwareScan(redis, cursor, pattern, scanCount)
 
       // Filter out bull keys if requested
       const filteredKeys = excludeBull ? rawKeys.filter((key) => !isBullKey(key)) : rawKeys
@@ -73,7 +130,7 @@ const app = new Hono()
       // Try to get approximate total count
       let total: number | undefined
       try {
-        total = await redis.dbsize()
+        total = await clusterAwareDbSize(redis)
       } catch {
         // DBSIZE not available
       }
@@ -108,13 +165,20 @@ const app = new Hono()
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const { key } = c.req.valid('param')
       const { limit, offset } = c.req.valid('query')
 
       // URL decode the key since it might contain special characters
       const decodedKey = decodeURIComponent(key)
 
-      const redis = await getRedis(connectionId, connectionUrl, undefined, redisOptions)
+      const redis = await getRedis(
+        connectionId,
+        connectionUrl,
+        undefined,
+        redisOptions,
+        connectionMode
+      )
 
       // Get key type and TTL
       const [type, ttl] = await Promise.all([redis.type(decodedKey), redis.ttl(decodedKey)])
@@ -265,6 +329,7 @@ const app = new Hono()
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const { key } = c.req.valid('param')
       const decodedKey = decodeURIComponent(key)
 
@@ -280,7 +345,13 @@ const app = new Hono()
         )
       }
 
-      const redis = await getRedis(connectionId, connectionUrl, undefined, redisOptions)
+      const redis = await getRedis(
+        connectionId,
+        connectionUrl,
+        undefined,
+        redisOptions,
+        connectionMode
+      )
       const deleted = await redis.del(decodedKey)
 
       return c.json({ success: deleted > 0, deleted })

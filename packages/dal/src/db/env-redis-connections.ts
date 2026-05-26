@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import type { Database } from './client'
 import { encryptRedisUrl } from './redis-url-encryption'
 import { validateRedisUrlForEnvironment } from './redis-url-validation'
-import type { ConnectionEnvironment } from './schemas/redis-connection/schema'
+import type { ConnectionEnvironment, ConnectionMode } from './schemas/redis-connection/schema'
 import { redisConnection } from './schemas/redis-connection/schema'
 
 const ENV_PREFIX = 'DURABULL_REDIS_URL_'
@@ -13,12 +13,14 @@ const ENV_ENCRYPTION_KEY = 'DURABULL_REDIS_URL_ENCRYPTION_KEY'
 const ENVIRONMENT_SUFFIX = '_ENVIRONMENT'
 const PREFIX_SUFFIX = '_PREFIX'
 const ALLOW_SELF_SIGNED_CERTS_SUFFIX = '_ALLOW_SELF_SIGNED_CERTS'
+const MODE_SUFFIX = '_MODE'
 const ENV_NAMESPACE_UUID = '2a48b9e7-32fa-4d5a-8f61-7e7a2f6c3f0b'
 
 export interface EnvRedisConnection {
   envName: string
   name: string
   url: string
+  mode: ConnectionMode
   environment: ConnectionEnvironment
   prefix: string
   allowSelfSignedCerts: boolean
@@ -60,6 +62,12 @@ function parseEnvironment(value: string | undefined): ConnectionEnvironment {
   return 'development'
 }
 
+function parseMode(value: string | undefined): ConnectionMode {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === 'cluster') return 'cluster'
+  return 'standalone'
+}
+
 function normalizeDefaultName(value: string | undefined): string | null {
   const normalized = value?.trim().toUpperCase()
   return normalized && normalized.length > 0 ? normalized : null
@@ -81,7 +89,8 @@ export function getEnvRedisConnections(): EnvRedisConnection[] {
       key === ENV_ENCRYPTION_KEY ||
       key.endsWith(ENVIRONMENT_SUFFIX) ||
       key.endsWith(PREFIX_SUFFIX) ||
-      key.endsWith(ALLOW_SELF_SIGNED_CERTS_SUFFIX)
+      key.endsWith(ALLOW_SELF_SIGNED_CERTS_SUFFIX) ||
+      key.endsWith(MODE_SUFFIX)
     ) {
       continue
     }
@@ -106,11 +115,13 @@ export function getEnvRedisConnections(): EnvRedisConnection[] {
     const allowSelfSignedCerts = parseBoolean(
       process.env[`${key}${ALLOW_SELF_SIGNED_CERTS_SUFFIX}`]
     )
+    const mode = parseMode(process.env[`${key}${MODE_SUFFIX}`])
 
     connections.push({
       envName,
       name: toDisplayName(envName),
       url,
+      mode,
       environment,
       prefix,
       allowSelfSignedCerts,
@@ -212,6 +223,7 @@ export async function syncEnvConnectionsForOrganization(
     const updateSet: Partial<{
       name: string
       url: string
+      mode: ConnectionMode
       environment: ConnectionEnvironment
       prefix: string
       allowSelfSignedCerts: boolean
@@ -220,6 +232,7 @@ export async function syncEnvConnectionsForOrganization(
     }> = {
       name: connection.name,
       url: encryptRedisUrl(connection.url),
+      mode: connection.mode,
       environment: connection.environment,
       prefix: connection.prefix,
       allowSelfSignedCerts: connection.allowSelfSignedCerts,
@@ -233,6 +246,7 @@ export async function syncEnvConnectionsForOrganization(
         id,
         name: connection.name,
         url: encryptRedisUrl(connection.url),
+        mode: connection.mode,
         environment: connection.environment,
         prefix: connection.prefix,
         allowSelfSignedCerts: connection.allowSelfSignedCerts,
