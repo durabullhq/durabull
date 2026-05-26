@@ -106,9 +106,23 @@ const MAX_PAGE_SIZE = 100
 // Redis data types
 type RedisDataType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'none' | 'unknown'
 
-// Helper to check if a key is a BullMQ-managed key
-function isBullKey(key: string): boolean {
-  return key.startsWith('bull:') || key.startsWith('bullmq:')
+/**
+ * Check if a key is a BullMQ-managed key for this connection.
+ *
+ * BullMQ keys follow the pattern `<prefix>:<queueName>:<...>`. The prefix is
+ * usually `bull` but can be customized per connection (e.g. `{bull}` or
+ * `{myprefix}` for cluster-safe hash tagging).
+ *
+ * We always block the BullMQ default prefixes (`bull:`, `bullmq:`) as a safety
+ * net for misconfigured connections, and additionally block the connection's
+ * configured prefix when it differs from the defaults.
+ */
+function isBullKey(key: string, connectionPrefix?: string): boolean {
+  if (key.startsWith('bull:') || key.startsWith('bullmq:')) return true
+  if (connectionPrefix && connectionPrefix !== 'bull' && connectionPrefix !== 'bullmq') {
+    return key.startsWith(`${connectionPrefix}:`)
+  }
+  return false
 }
 
 const app = new Hono()
@@ -130,6 +144,7 @@ const app = new Hono()
     async (c) => {
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
+      const connectionPrefix = c.get('connectionPrefix')
       const redisOptions = getConnectionRedisOptions(c)
       const connectionMode = c.get('connectionMode')
       const { pattern, cursor, pageSize, excludeBull } = c.req.valid('query')
@@ -148,7 +163,9 @@ const app = new Hono()
       const [nextCursor, rawKeys] = await clusterAwareScan(redis, cursor, pattern, scanCount)
 
       // Filter out bull keys if requested
-      const filteredKeys = excludeBull ? rawKeys.filter((key) => !isBullKey(key)) : rawKeys
+      const filteredKeys = excludeBull
+        ? rawKeys.filter((key) => !isBullKey(key, connectionPrefix))
+        : rawKeys
 
       // Get key info for each key (type, TTL)
       const keyInfoPromises = filteredKeys.slice(0, pageSize).map(async (key) => {
@@ -374,13 +391,14 @@ const app = new Hono()
     async (c) => {
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
+      const connectionPrefix = c.get('connectionPrefix')
       const redisOptions = getConnectionRedisOptions(c)
       const connectionMode = c.get('connectionMode')
       const { key } = c.req.valid('param')
       const decodedKey = decodeURIComponent(key)
 
       // Prevent deletion of BullMQ-managed keys
-      if (isBullKey(decodedKey)) {
+      if (isBullKey(decodedKey, connectionPrefix)) {
         return c.json(
           {
             error: 'Cannot delete BullMQ keys',
