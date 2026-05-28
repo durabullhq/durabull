@@ -168,10 +168,20 @@ export async function getJobs(
   page: Page,
   connectionId: string,
   queueName: string,
-  options?: { status?: string; page?: number; pageSize?: number }
+  options?: {
+    status?: string
+    name?: string
+    jobId?: string
+    data?: string
+    page?: number
+    pageSize?: number
+  }
 ): Promise<{ jobs: JobSummary[]; total: number }> {
   const params = new URLSearchParams()
   if (options?.status) params.set('status', options.status)
+  if (options?.name) params.set('name', options.name)
+  if (options?.jobId) params.set('jobId', options.jobId)
+  if (options?.data) params.set('data', options.data)
   params.set('page', String(options?.page ?? 1))
   params.set('pageSize', String(options?.pageSize ?? 20))
   const response = await page.request.get(

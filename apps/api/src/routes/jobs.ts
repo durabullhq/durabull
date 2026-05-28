@@ -26,6 +26,18 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+// Substring match against the job's serialized data payload (e.g. a `message`
+// field nested anywhere in the payload). Case-insensitive.
+function jobDataMatches(data: unknown, search: string): boolean {
+  try {
+    return JSON.stringify(data ?? {})
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
 async function removeJobWithRetries(
   queue: Awaited<ReturnType<typeof getQueue>>,
   jobId: string
@@ -87,6 +99,7 @@ const app = new Hono()
     const status = c.req.query('status')
     const name = c.req.query('name')
     const jobId = c.req.query('jobId')?.trim()
+    const dataSearch = c.req.query('data')?.trim()
     const pageStr = c.req.query('page')
     const cursorStr = c.req.query('cursor')
     const pageSizeStr = c.req.query('pageSize')
@@ -106,7 +119,11 @@ const app = new Hono()
       if (job) {
         const state = await job.getState()
 
-        if ((status && state !== status) || (name && !job.name.toLowerCase().includes(name.toLowerCase()))) {
+        if (
+          (status && state !== status) ||
+          (name && !job.name.toLowerCase().includes(name.toLowerCase())) ||
+          (dataSearch && !jobDataMatches(job.data, dataSearch))
+        ) {
           return c.json({
             jobs: [],
             total: 0,
@@ -166,7 +183,7 @@ const app = new Hono()
       states = [status as JobState]
     }
 
-    const needsClientFilter = !!(name || jobId)
+    const needsClientFilter = !!(name || jobId || dataSearch)
 
     if (needsClientFilter) {
       // Fetch each state separately so we know the status without per-job getState() calls,
@@ -194,6 +211,7 @@ const app = new Hono()
                 .includes(jobId.toLowerCase())
             : true
         )
+        .filter(({ job }) => (dataSearch ? jobDataMatches(job.data, dataSearch) : true))
 
       const mappedJobs = filtered.map(({ job, state }) => ({
         id: job.id ?? '',

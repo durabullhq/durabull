@@ -97,6 +97,7 @@ const queueSearchSchema = z.object({
   status: z.enum(['', 'waiting', 'active', 'delayed', 'completed', 'failed']).catch(''),
   jobId: z.string().catch(''),
   name: z.string().catch(''),
+  data: z.string().catch(''),
   hideScheduled: z
     .union([z.literal(0), z.literal(1), z.literal('0'), z.literal('1')])
     .transform((value) => (value === 1 || value === '1' ? 1 : 0))
@@ -147,12 +148,22 @@ export const Route = createFileRoute('/$orgSlug/c/$connectionId/queues/$queueNam
 
 function QueueDetailPage() {
   const { orgSlug, connectionId, queueName } = Route.useParams()
-  const { section, tab, status, jobId, name = '', hideScheduled, page } = Route.useSearch()
+  const {
+    section,
+    tab,
+    status,
+    jobId,
+    name = '',
+    data: dataSearch = '',
+    hideScheduled,
+    page,
+  } = Route.useSearch()
   const navigate = useNavigate()
   const matchRoute = useMatchRoute()
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set())
   const [jobIdInput, setJobIdInput] = useState(jobId)
   const [nameInput, setNameInput] = useState(name)
+  const [dataInput, setDataInput] = useState(dataSearch)
   const [addJobDialogOpen, setAddJobDialogOpen] = useState(false)
   const [retryDialogOpen, setRetryDialogOpen] = useState(false)
   const [purgeDialogOpen, setPurgeDialogOpen] = useState(false)
@@ -195,6 +206,7 @@ function QueueDetailPage() {
     status: status || undefined,
     jobId: jobId || undefined,
     name: name || undefined,
+    data: dataSearch || undefined,
     pageSize: 20,
   })
   const {
@@ -217,7 +229,7 @@ function QueueDetailPage() {
   const removeMutation = useRemoveJobs()
   const invokeMutation = useInvokeJobs()
   const hideScheduledJobs = hideScheduled === 1
-  const hasClientSideJobFilter = Boolean(jobId || name)
+  const hasClientSideJobFilter = Boolean(jobId || name || dataSearch)
   const [visibleJobCount, setVisibleJobCount] = useState(20)
   const allJobs = useMemo(
     () => jobsData?.pages.flatMap((pageData) => pageData.jobs) ?? [],
@@ -240,7 +252,7 @@ function QueueDetailPage() {
 
   useEffect(() => {
     setVisibleJobCount(20)
-  }, [jobId, name, status, hideScheduled, queueName])
+  }, [jobId, name, dataSearch, status, hideScheduled, queueName])
   const jobsScrollRef = useRef<HTMLDivElement | null>(null)
   const metricsPoints = metrics?.series.points ?? []
   const metricsTotals = metrics?.series.totals
@@ -312,6 +324,10 @@ function QueueDetailPage() {
     setNameInput(name)
   }, [name])
 
+  useEffect(() => {
+    setDataInput(dataSearch)
+  }, [dataSearch])
+
   const handleCopyPrometheus = useCallback(async () => {
     if (!prometheusText || typeof navigator === 'undefined' || !navigator.clipboard) {
       return
@@ -332,13 +348,22 @@ function QueueDetailPage() {
     const timer = setTimeout(() => {
       navigate({
         to: '.',
-        search: { section, tab, status, jobId: normalizedJobId, name, hideScheduled, page: 1 },
+        search: {
+          section,
+          tab,
+          status,
+          jobId: normalizedJobId,
+          name,
+          data: dataSearch,
+          hideScheduled,
+          page: 1,
+        },
         replace: true,
       })
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [jobIdInput, jobId, section, tab, status, name, hideScheduled, navigate])
+  }, [jobIdInput, jobId, section, tab, status, name, dataSearch, hideScheduled, navigate])
 
   useEffect(() => {
     const normalizedName = nameInput.trim()
@@ -350,13 +375,40 @@ function QueueDetailPage() {
     const timer = setTimeout(() => {
       navigate({
         to: '.',
-        search: { section, tab, status, jobId, name: normalizedName, hideScheduled, page: 1 },
+        search: {
+          section,
+          tab,
+          status,
+          jobId,
+          name: normalizedName,
+          data: dataSearch,
+          hideScheduled,
+          page: 1,
+        },
         replace: true,
       })
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [nameInput, name, section, tab, status, jobId, hideScheduled, navigate])
+  }, [nameInput, name, section, tab, status, jobId, dataSearch, hideScheduled, navigate])
+
+  useEffect(() => {
+    const normalizedData = dataInput.trim()
+
+    if (normalizedData === dataSearch) {
+      return
+    }
+
+    const timer = setTimeout(() => {
+      navigate({
+        to: '.',
+        search: { section, tab, status, jobId, name, data: normalizedData, hideScheduled, page: 1 },
+        replace: true,
+      })
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [dataInput, dataSearch, section, tab, status, jobId, name, hideScheduled, navigate])
 
   useEffect(() => {
     const container = jobsScrollRef.current
@@ -651,6 +703,7 @@ function QueueDetailPage() {
               status,
               jobId,
               name,
+              data: dataSearch,
               hideScheduled,
               page,
             },
@@ -1381,13 +1434,23 @@ function QueueDetailPage() {
           onValueChange={(newTab) =>
             navigate({
               to: '.',
-              search: { section, tab: newTab as typeof tab, status, jobId, name, hideScheduled, page },
+              search: {
+                section,
+                tab: newTab as typeof tab,
+                status,
+                jobId,
+                name,
+                data: dataSearch,
+                hideScheduled,
+                page,
+              },
               replace: true,
             })
           }
         >
           {/* Toolbar: filters on left, tab toggle on right */}
-          <div className="flex items-center justify-between gap-3">
+          {/* pt-1.5 keeps focus rings from being clipped by the Tabs' overflow-hidden */}
+          <div className="flex items-center justify-between gap-3 pt-1.5">
             <div className="flex items-center gap-2">
               {tab === 'jobs' && (
                 <>
@@ -1401,7 +1464,16 @@ function QueueDetailPage() {
                       })
                       navigate({
                         to: '.',
-                        search: { section, tab, status: newStatus, jobId, name, hideScheduled, page: 1 },
+                        search: {
+                          section,
+                          tab,
+                          status: newStatus,
+                          jobId,
+                          name,
+                          data: dataSearch,
+                          hideScheduled,
+                          page: 1,
+                        },
                         replace: true,
                       })
                     }}
@@ -1428,6 +1500,13 @@ function QueueDetailPage() {
                     className="w-48 max-w-full"
                     aria-label="Search jobs by name"
                   />
+                  <Input
+                    value={dataInput}
+                    onChange={(e) => setDataInput(e.target.value)}
+                    placeholder="Search in job data"
+                    className="w-48 max-w-full"
+                    aria-label="Search jobs by data payload"
+                  />
                   <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                     <input
                       type="checkbox"
@@ -1441,6 +1520,7 @@ function QueueDetailPage() {
                             status,
                             jobId,
                             name,
+                            data: dataSearch,
                             hideScheduled: e.target.checked ? 1 : 0,
                             page: 1,
                           },
