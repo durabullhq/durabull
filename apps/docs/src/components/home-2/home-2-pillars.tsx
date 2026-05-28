@@ -1,4 +1,5 @@
 import { home2Copy } from '@/components/home-2/home-2-copy'
+import { Home2Headline } from '@/components/home-2/home-2-headline'
 
 export function Home2Pillars() {
   const { pillars } = home2Copy
@@ -11,11 +12,11 @@ export function Home2Pillars() {
             <span className="eyebrow">
               <span className="lit">{pillars.eyebrow}</span>
             </span>
-            <h2 style={{ marginTop: 18 }}>
-              {pillars.headline.line1}
-              <br />
-              <span className="acc">{pillars.headline.accent}</span>
-            </h2>
+            <Home2Headline
+              style={{ marginTop: 18 }}
+              primary={pillars.headline.primary}
+              accent={pillars.headline.accent}
+            />
           </div>
           <p>{pillars.subhead}</p>
         </div>

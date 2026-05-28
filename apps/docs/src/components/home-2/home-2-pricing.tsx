@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { home2Copy } from '@/components/home-2/home-2-copy'
+import { Home2Headline } from '@/components/home-2/home-2-headline'
 import { Button } from '@/components/ui/button'
 import { CheckIcon, ChevronRightIcon } from '@/components/home-2/icons'
 import { home2Links } from '@/components/home-2/home-2-links'
@@ -24,11 +25,11 @@ export function Home2Pricing() {
             <span className="eyebrow">
               <span className="lit">{pricing.eyebrow}</span>
             </span>
-            <h2 style={{ marginTop: 18 }}>
-              {pricing.headline.line1}
-              <br />
-              <span className="acc">{pricing.headline.accent}</span>
-            </h2>
+            <Home2Headline
+              style={{ marginTop: 18 }}
+              primary={pricing.headline.primary}
+              accent={pricing.headline.accent}
+            />
             <p>{pricing.subhead}</p>
           </div>
           <div className="pricing-card">

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { home2Copy } from '@/components/home-2/home-2-copy'
+import { Home2Headline } from '@/components/home-2/home-2-headline'
 import { Button } from '@/components/ui/button'
 import { ChevronRightIcon, DesktopIcon, GithubIcon } from '@/components/home-2/icons'
 import { home2Links } from '@/components/home-2/home-2-links'
@@ -20,10 +21,11 @@ export function Home2Cta() {
         <span className="eyebrow on-dark">
           <span className="lit">{cta.eyebrow}</span> · cloud · docker · desktop · self-host
         </span>
-        <h2 style={{ marginTop: 18 }}>
-          <span className="acc">{cta.headline.accent}</span>{' '}
-          <span className="dim">{cta.headline.dim}</span>
-        </h2>
+        <Home2Headline
+          style={{ marginTop: 18 }}
+          primary={cta.headline.primary}
+          dim={cta.headline.dim}
+        />
         <p>{cta.subhead}</p>
         <div className="actions">
           <Button asChild variant="unstyled" className="btn btn-pri btn-lg">

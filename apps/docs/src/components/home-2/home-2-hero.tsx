@@ -18,12 +18,10 @@ export function Home2Hero() {
           <span style={{ color: 'var(--ink)', fontWeight: 500 }}>{hero.bannerCta} →</span>
         </Link>
 
-        <h1>
+        <h1 className="hero-title">
           {hero.headline.line1}
           <br />
-          <span className="acc">{hero.headline.accent}</span>
-          <br />
-          <span className="dim">{hero.headline.dim}</span>
+          <span className="acc">{hero.headline.line2}</span>
         </h1>
 
         <p className="hero-sub">{hero.subhead}</p>

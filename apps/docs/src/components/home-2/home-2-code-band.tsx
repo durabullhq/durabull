@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { home2Copy } from '@/components/home-2/home-2-copy'
+import { Home2Headline } from '@/components/home-2/home-2-headline'
 import { Button } from '@/components/ui/button'
 import { CheckIcon } from '@/components/home-2/icons'
 
@@ -44,13 +45,12 @@ export function Home2CodeBand() {
             <span className="eyebrow on-dark">
               <span className="lit">{integration.eyebrow}</span>
             </span>
-            <h2 style={{ marginTop: 18 }}>
-              {integration.headline.line1}
-              <br />
-              <span className="acc">{integration.headline.accent}</span>
-              <br />
-              <span className="dim">{integration.headline.dim}</span>
-            </h2>
+            <Home2Headline
+              style={{ marginTop: 18 }}
+              primary={integration.headline.primary}
+              accent={integration.headline.accent}
+              dim={integration.headline.dim}
+            />
             <p>{integration.subhead}</p>
             <ul className="feats">
               {integration.bullets.map((bullet) => (

@@ -11,8 +11,12 @@ const home2Mono = JetBrains_Mono({
 export default function Home2Layout({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className={`home-2 min-h-screen bg-white text-[#0a0b0d] ${home2Mono.variable}`}
-      style={{ colorScheme: 'light' }}
+      className={`home-2 isolate min-h-screen bg-white text-[#0a0b0d] ${home2Mono.variable}`}
+      style={{
+        colorScheme: 'light',
+        fontFamily:
+          '"Berthold Akzidenz Grotesk Extended", -apple-system, "SF Pro Text", system-ui, sans-serif',
+      }}
     >
       {children}
     </div>

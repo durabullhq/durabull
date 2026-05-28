@@ -7,11 +7,10 @@ export const home2Copy = {
     bannerCta: 'See how it works',
     headline: {
       line1: 'The BullMQ dashboard for teams that ship.',
-      accent: 'The only BullMQ dashboard designed for true production scale.',
-      dim: 'Connect Redis. Your workers stay unchanged.',
+      line2: 'The only BullMQ dashboard for true production scale.',
     },
     subhead:
-      'Monitor every queue, inspect failed jobs with full context, manage schedulers, and catch stalls before they become outages — without redis-cli, custom scripts, or patching worker code.',
+      'Connect Redis — workers unchanged. Monitor every queue, inspect failed jobs, manage schedulers, and catch stalls before they become outages.',
     stats: [
       { label: 'Setup', value: 'redis://…', detail: 'Point at prod, staging, or local Redis.' },
       { label: 'Beta price', value: '$0', detail: 'Every feature. No card required.' },
@@ -25,8 +24,8 @@ export const home2Copy = {
   console: {
     eyebrow: 'Queues dashboard',
     headline: {
-      accent: 'Every queue in one view.',
-      dim: 'Drill down to the job in seconds.',
+      primary: ['Every queue in one view.'],
+      dim: ['Drill to the job in seconds.'],
     },
     subhead:
       'Live counts for waiting, active, delayed, failed, and paused jobs. Filter, search, pause, retry, and bulk-operate — the way you already think about incidents, without leaving the UI.',
@@ -34,8 +33,8 @@ export const home2Copy = {
   pillars: {
     eyebrow: 'Why teams choose Durabull',
     headline: {
-      line1: 'One product for',
-      accent: 'visibility, incidents, and alerts.',
+      primary: ['One product for'],
+      accent: ['visibility, incidents, and alerts.'],
     },
     subhead:
       'Replace the patchwork of Bull Board tabs, redis-cli one-liners, and log grep with a single surface your whole team can use during an outage.',
@@ -63,11 +62,11 @@ export const home2Copy = {
   flow: {
     eyebrow: 'Incident workflow',
     headline: {
-      accent: 'Five steps.',
-      rest: 'One tab.',
+      primary: ['Five steps.'],
+      accent: ['One tab.'],
     },
     subhead:
-      'The path you already take during a page — find the failure, read the trace, check logs, retry, file a ticket — without switching tools or pasting job IDs into Slack.',
+      'The path you already take during an incident — find the failure, read the trace, check logs, retry, file a ticket — without switching tools or pasting job IDs into Slack.',
     steps: [
       {
         index: '01 · Alert',
@@ -99,9 +98,9 @@ export const home2Copy = {
   integration: {
     eyebrow: 'Zero integration tax',
     headline: {
-      line1: 'Point Durabull at Redis.',
-      accent: 'Your queues show up.',
-      dim: 'Your worker code does not change.',
+      primary: ['Point at Redis.'],
+      accent: ['Your queues show up.'],
+      dim: ['Your workers stay unchanged.'],
     },
     subhead:
       'Durabull reads BullMQ data structures directly. No SDK install, no wrapper library, no deploy of a metrics pipeline. For richer per-queue charts, optionally set metrics.maxDataPoints on workers — that is the only change you might ever make.',
@@ -115,8 +114,8 @@ export const home2Copy = {
   deploy: {
     eyebrow: 'Deployment',
     headline: {
-      rest: 'Cloud, Docker, desktop,',
-      accent: 'or behind your VPN.',
+      primary: ['Cloud, Docker, desktop,'],
+      accent: ['or behind your VPN.'],
     },
     subhead:
       'Same dashboard and APIs everywhere. Start in the cloud in minutes, or run entirely inside your network when data cannot leave the VPC.',
@@ -154,8 +153,8 @@ export const home2Copy = {
   pricing: {
     eyebrow: 'Pricing',
     headline: {
-      line1: 'Free during beta.',
-      accent: 'Honest pricing after.',
+      primary: ['Free during beta.'],
+      accent: ['Honest pricing after.'],
     },
     subhead:
       'No per-seat games and no “contact sales” gate. When paid tiers arrive, they are meant to cover cloud compute — not margin-maximize your queue bill.',
@@ -175,8 +174,8 @@ export const home2Copy = {
   cta: {
     eyebrow: 'Get started',
     headline: {
-      accent: 'Connect Redis today.',
-      dim: 'Ship calmer on-call tomorrow.',
+      primary: ['Connect Redis today.'],
+      dim: ['Ship calmer on-call tomorrow.'],
     },
     subhead:
       'Free during beta. Cloud signup takes minutes, or pull the Docker image into your VPC. Your BullMQ workers do not need a single line changed.',

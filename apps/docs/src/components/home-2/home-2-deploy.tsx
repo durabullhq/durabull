@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { home2Copy } from '@/components/home-2/home-2-copy'
+import { Home2Headline } from '@/components/home-2/home-2-headline'
 import { CheckIconSm } from '@/components/home-2/icons'
 import { home2Links } from '@/components/home-2/home-2-links'
 
@@ -27,9 +28,11 @@ export function Home2Deploy() {
           <span className="eyebrow">
             <span className="lit">{deploy.eyebrow}</span>
           </span>
-          <h2 style={{ marginTop: 18 }}>
-            {deploy.headline.rest} <span className="acc">{deploy.headline.accent}</span>
-          </h2>
+          <Home2Headline
+            style={{ marginTop: 18 }}
+            primary={deploy.headline.primary}
+            accent={deploy.headline.accent}
+          />
           <p style={{ marginTop: 18, fontSize: 17, maxWidth: 600, lineHeight: 1.5 }}>{deploy.subhead}</p>
         </div>
         <div className="deploy-grid">

@@ -1,6 +1,7 @@
 'use client'
 
 import { home2Copy } from '@/components/home-2/home-2-copy'
+import { Home2Headline } from '@/components/home-2/home-2-headline'
 import { useEffect, useRef } from 'react'
 
 const JOB_NAMES = [
@@ -88,10 +89,11 @@ export function Home2Console() {
             <span className="eyebrow on-dark">
               <span className="lit">{copy.eyebrow}</span> · live counts
             </span>
-            <h2 style={{ marginTop: 18 }}>
-              <span className="acc">{copy.headline.accent}</span>{' '}
-              <span className="dim">{copy.headline.dim}</span>
-            </h2>
+            <Home2Headline
+              style={{ marginTop: 18 }}
+              primary={copy.headline.primary}
+              dim={copy.headline.dim}
+            />
           </div>
           <div className="right">
             <span className="live-pill">

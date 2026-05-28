@@ -1,4 +1,5 @@
 import { home2Copy } from '@/components/home-2/home-2-copy'
+import { Home2Headline } from '@/components/home-2/home-2-headline'
 
 const FLOW_OUTPUTS = [
   <>
@@ -35,9 +36,7 @@ export function Home2Flow() {
           <span className="eyebrow">
             <span className="lit">{flow.eyebrow}</span>
           </span>
-          <h2>
-            <span className="acc">{flow.headline.accent}</span> {flow.headline.rest}
-          </h2>
+          <Home2Headline primary={flow.headline.primary} accent={flow.headline.accent} />
           <p>{flow.subhead}</p>
         </div>
         <div className="flow-steps">
