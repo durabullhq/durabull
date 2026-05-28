@@ -1,24 +1,30 @@
 import Link from 'next/link'
+import { home2Copy } from '@/components/home-2/home-2-copy'
 import { Button } from '@/components/ui/button'
 import { ChevronRightIcon, DesktopIcon, GithubIcon } from '@/components/home-2/icons'
 import { home2Links } from '@/components/home-2/home-2-links'
 
+const QUICK_LINKS = [
+  home2Links.macDownload,
+  home2Links.documentation,
+  home2Links.documentation,
+  home2Links.github,
+] as const
+
 export function Home2Cta() {
+  const { cta } = home2Copy
+
   return (
     <section className="dark cta-section">
       <div className="wrap cta-inner">
         <span className="eyebrow on-dark">
-          <span className="lit">Final step</span> · cloud · docker · desktop · authless
+          <span className="lit">{cta.eyebrow}</span> · cloud · docker · desktop · self-host
         </span>
         <h2 style={{ marginTop: 18 }}>
-          Roll out Durabull
-          <br />
-          <span className="acc">your way.</span> <span className="dim">Worker code untouched.</span>
+          <span className="acc">{cta.headline.accent}</span>{' '}
+          <span className="dim">{cta.headline.dim}</span>
         </h2>
-        <p>
-          Free during beta. Cloud signup in 30 seconds, or pull the Docker image into your VPC. Zero
-          worker code changes either way.
-        </p>
+        <p>{cta.subhead}</p>
         <div className="actions">
           <Button asChild variant="unstyled" className="btn btn-pri btn-lg">
             <Link href={home2Links.signup}>
@@ -31,16 +37,13 @@ export function Home2Cta() {
           </Button>
         </div>
         <div className="quick">
-          <Link href={home2Links.macDownload}>
-            <DesktopIcon />
-            $ open Durabull.app
-          </Link>
-          <Link href={home2Links.documentation}>$ docker run durabullhq/durabull</Link>
-          <Link href={home2Links.documentation}>$ brew install --cask durabull</Link>
-          <Link href={home2Links.github}>
-            <GithubIcon />
-            $ git clone durabullhq/durabull
-          </Link>
+          {cta.quick.map((label, index) => (
+            <Link key={label.label} href={QUICK_LINKS[index]}>
+              {index === 0 ? <DesktopIcon /> : null}
+              {index === 3 ? <GithubIcon /> : null}
+              {label.label}
+            </Link>
+          ))}
         </div>
       </div>
     </section>

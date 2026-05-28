@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { useState } from 'react'
+import { home2Copy } from '@/components/home-2/home-2-copy'
 import { Button } from '@/components/ui/button'
 import { CheckIcon } from '@/components/home-2/icons'
 
@@ -23,6 +24,7 @@ function CodeBlock({ id, active, children }: { id: TabId; active: TabId; childre
 }
 
 export function Home2CodeBand() {
+  const { integration } = home2Copy
   const [activeTab, setActiveTab] = useState<TabId>('docker')
   const [copied, setCopied] = useState(false)
 
@@ -40,62 +42,23 @@ export function Home2CodeBand() {
         <div className="code-band-grid">
           <div className="code-band-text">
             <span className="eyebrow on-dark">
-              <span className="lit">Zero integration</span>
+              <span className="lit">{integration.eyebrow}</span>
             </span>
             <h2 style={{ marginTop: 18 }}>
-              Point at Redis.
+              {integration.headline.line1}
               <br />
-              <span className="acc">Your queues appear.</span>
+              <span className="acc">{integration.headline.accent}</span>
               <br />
-              <span className="dim">Your workers don&apos;t change.</span>
+              <span className="dim">{integration.headline.dim}</span>
             </h2>
-            <p>
-              Durabull connects directly to Redis and reads BullMQ&apos;s data structures. No SDK,
-              no instrumentation library, no worker-side patch. One env var, one container, one
-              URL.
-            </p>
+            <p>{integration.subhead}</p>
             <ul className="feats">
-              <li>
-                <CheckIcon />
-                Queue discovery via{' '}
-                <code
-                  style={{
-                    fontFamily: 'var(--mono)',
-                    fontSize: '0.85em',
-                    background: 'rgba(255,255,255,0.08)',
-                    padding: '1px 6px',
-                    borderRadius: 3,
-                    color: 'var(--accent-2)',
-                  }}
-                >
-                  bull:*:meta
-                </code>
-              </li>
-              <li>
-                <CheckIcon />
-                Live counts: waiting · active · delayed · completed · failed · paused
-              </li>
-              <li>
-                <CheckIcon />
-                Native telemetry via{' '}
-                <code
-                  style={{
-                    fontFamily: 'var(--mono)',
-                    fontSize: '0.85em',
-                    background: 'rgba(255,255,255,0.08)',
-                    padding: '1px 6px',
-                    borderRadius: 3,
-                    color: 'var(--accent-2)',
-                  }}
-                >
-                  getMetrics
-                </code>{' '}
-                — no Prometheus to operate
-              </li>
-              <li>
-                <CheckIcon />
-                BullMQ v4+ · Redis or Redis-compatible
-              </li>
+              {integration.bullets.map((bullet) => (
+                <li key={bullet}>
+                  <CheckIcon />
+                  {bullet}
+                </li>
+              ))}
             </ul>
           </div>
 

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { home2Copy } from '@/components/home-2/home-2-copy'
 import { home2Links } from '@/components/home-2/home-2-links'
 
 export function Home2Footer() {
@@ -11,7 +12,7 @@ export function Home2Footer() {
               <span className="brand-mark">$_</span>
               <span>Durabull</span>
             </Link>
-            <p className="footer-tag">The modern dashboard for BullMQ. Open source under ELv2.</p>
+            <p className="footer-tag">{home2Copy.footer.tagline}</p>
           </div>
           <div>
             <h5>Product</h5>

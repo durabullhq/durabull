@@ -1,62 +1,53 @@
 import Link from 'next/link'
+import { home2Copy } from '@/components/home-2/home-2-copy'
 import { Button } from '@/components/ui/button'
 import { CheckIcon, ChevronRightIcon } from '@/components/home-2/icons'
 import { home2Links } from '@/components/home-2/home-2-links'
 
+const PRICING_FEATURES = [
+  'Unlimited connections, unlimited queues',
+  'Real-time monitoring and job debugging',
+  'Fleet Analytics, schedulers, worker topology',
+  'Email, webhook, and Linear alerts',
+  'Team and organization collaboration',
+  'Cloud, Docker, desktop, or authless',
+] as const
+
 export function Home2Pricing() {
+  const { pricing } = home2Copy
+
   return (
     <section className="pricing-section" id="pricing">
       <div className="wrap">
         <div className="pricing-grid">
           <div className="pricing-text">
             <span className="eyebrow">
-              <span className="lit">Pricing</span>
+              <span className="lit">{pricing.eyebrow}</span>
             </span>
             <h2 style={{ marginTop: 18 }}>
-              Free during beta.
+              {pricing.headline.line1}
               <br />
-              <span className="acc">Break-even after.</span>
+              <span className="acc">{pricing.headline.accent}</span>
             </h2>
-            <p>
-              No per-seat trickery. No &quot;contact sales&quot;. Future pricing covers cloud compute
-              — nothing more. Self-host is always free under ELv2.
-            </p>
+            <p>{pricing.subhead}</p>
           </div>
           <div className="pricing-card">
             <div className="row1">
-              <span className="plan">Beta · everything included</span>
+              <span className="plan">{pricing.card.plan}</span>
               <span className="badge">Current</span>
             </div>
             <div className="price">
               <span className="amt">$0</span>
               <span className="per">/ month</span>
             </div>
-            <p className="note">No card. No upsell. Cancel by closing the tab.</p>
+            <p className="note">{pricing.card.note}</p>
             <ul>
-              <li>
-                <CheckIcon />
-                Unlimited connections, unlimited queues
-              </li>
-              <li>
-                <CheckIcon />
-                Real-time monitoring &amp; job debugging
-              </li>
-              <li>
-                <CheckIcon />
-                Fleet Analytics, schedulers, worker topology
-              </li>
-              <li>
-                <CheckIcon />
-                Email, webhook, and Linear alerts
-              </li>
-              <li>
-                <CheckIcon />
-                Team &amp; organization collaboration
-              </li>
-              <li>
-                <CheckIcon />
-                Cloud, Docker, desktop, or authless
-              </li>
+              {PRICING_FEATURES.map((feature) => (
+                <li key={feature}>
+                  <CheckIcon />
+                  {feature}
+                </li>
+              ))}
             </ul>
             <Button asChild variant="unstyled" className="btn btn-pri">
               <Link href={home2Links.signup}>
@@ -64,7 +55,7 @@ export function Home2Pricing() {
                 <ChevronRightIcon />
               </Link>
             </Button>
-            <p className="commit">{'// future pricing covers cloud compute only'}</p>
+            <p className="commit">{pricing.card.commit}</p>
           </div>
         </div>
       </div>

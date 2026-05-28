@@ -1,3 +1,5 @@
+import { home2Copy } from '@/components/home-2/home-2-copy'
+
 const TRUST_LOGOS = [
   ['A', 'acumen'],
   ['B', 'blockwise'],
@@ -30,7 +32,7 @@ export function Home2Trust() {
       <div className="wrap">
         <div className="trust-label-row">
           <span className="ping" />
-          <span>Built for teams running BullMQ in production</span>
+          <span>{home2Copy.trust.label}</span>
         </div>
       </div>
       <div className="trust-marquee" id="trustMarquee">

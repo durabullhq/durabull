@@ -1,5 +1,6 @@
 'use client'
 
+import { home2Copy } from '@/components/home-2/home-2-copy'
 import { useEffect, useRef } from 'react'
 
 const JOB_NAMES = [
@@ -77,28 +78,27 @@ export function Home2Console() {
     return () => window.clearInterval(interval)
   }, [])
 
+  const { console: copy } = home2Copy
+
   return (
     <section className="dark console-section">
       <div className="wrap">
         <div className="console-head">
           <div>
             <span className="eyebrow on-dark">
-              <span className="lit">Live from production</span> · auto-refresh
+              <span className="lit">{copy.eyebrow}</span> · live counts
             </span>
             <h2 style={{ marginTop: 18 }}>
-              Fleet visibility — <br />
-              <span className="acc">in one tab.</span> <span className="dim">No metrics database.</span>
+              <span className="acc">{copy.headline.accent}</span>{' '}
+              <span className="dim">{copy.headline.dim}</span>
             </h2>
           </div>
           <div className="right">
             <span className="live-pill">
               <span className="pulse" />
-              connected · 2s ago
+              streaming from Redis
             </span>
-            <p>
-              Cross-queue health scoring, throughput trends, backlog pressure, worker capacity —
-              pulled directly from BullMQ APIs.
-            </p>
+            <p>{copy.subhead}</p>
           </div>
         </div>
 
