@@ -375,8 +375,8 @@ function SettingsPage() {
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 value={linearTeamId}
                 onChange={(event) => setLinearTeamId(event.target.value)}
-                placeholder="Default Linear team ID"
-                aria-label="Default Linear team ID"
+                placeholder="Default Linear team (name, key, or ID)"
+                aria-label="Default Linear team (name, key, or ID)"
               />
             </div>
           )}
@@ -427,7 +427,8 @@ function SettingsPage() {
           </div>
           <p className="text-sm text-muted-foreground">
             OAuth tokens are encrypted at rest and never returned by the API. Rules can override
-            Linear fields, but the default team is used when no rule-level team is set.
+            Linear fields, but the default team is used when no rule-level team is set. You can
+            enter a team name, key (e.g. INTAKE), or ID — Durabull resolves it automatically.
           </p>
         </CardContent>
       </Card>

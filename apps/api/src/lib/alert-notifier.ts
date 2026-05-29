@@ -12,9 +12,8 @@ import {
 } from '@durabull/dal'
 import { isEmailConfigured } from '@durabull/email'
 import { env } from '@durabull/env'
-import { createLinearIssue, LinearApiError } from './linear-client'
-import { getValidLinearAccessToken } from './linear-oauth'
 import { buildAlertAppUrls } from './alert-app-urls'
+import { findWebhookSecretFromChannels, toWebhookDeliveryMetadata } from './alert-webhook-channels'
 import {
   deliverWebhookOrThrow,
   isWebhookDeliveryExpired,
@@ -25,11 +24,10 @@ import {
   buildAlertWebhookPayloadFromEvent,
   serializeAlertWebhookPayload,
 } from './alert-webhook-payload'
-import {
-  findWebhookSecretFromChannels,
-  toWebhookDeliveryMetadata,
-} from './alert-webhook-channels'
 import { getWebhookDeliveryTarget } from './alert-webhook-url'
+import { createLinearIssue, LinearApiError } from './linear-client'
+import { resolveLinearIssueFields } from './linear-field-resolver'
+import { getValidLinearAccessToken } from './linear-oauth'
 
 class NonRetryableDeliveryError extends Error {
   constructor(message: string) {
@@ -37,6 +35,13 @@ class NonRetryableDeliveryError extends Error {
     this.name = 'NonRetryableDeliveryError'
   }
 }
+
+/**
+ * Notification dispatch only needs the connection's identity, not its secrets or
+ * Redis URL. Depending on this narrow shape lets callers (e.g. a manual retry)
+ * pass the already-resolved connection context without re-fetching or decrypting.
+ */
+export type AlertNotificationConnection = Pick<RedisConnection, 'id' | 'name'>
 
 export type NotificationChannel =
   | {
@@ -62,7 +67,7 @@ export type NotificationChannel =
 export async function dispatchAlertNotification(
   event: AlertEvent,
   channels: NotificationChannel[],
-  connection: RedisConnection,
+  connection: AlertNotificationConnection,
   ruleName: string
 ): Promise<void> {
   const deliveries = channels.map((channel) => ({
@@ -79,7 +84,7 @@ export async function dispatchAlertNotification(
 
 export async function processAlertDeliveries(
   event: AlertEvent,
-  connection: RedisConnection,
+  connection: AlertNotificationConnection,
   ruleName: string
 ): Promise<void> {
   const dueDeliveries = await alertDeliveryRepository.claimDueForEvent(event.id)
@@ -150,7 +155,7 @@ function getDeliveryTarget(channel: NotificationChannel): string {
 async function sendAlertEmail(
   to: string,
   event: AlertEvent,
-  connection: RedisConnection,
+  connection: AlertNotificationConnection,
   ruleName: string,
   organizationSlug: string | null
 ): Promise<void> {
@@ -185,7 +190,7 @@ async function sendAlertEmail(
 async function sendLinearAlert(
   delivery: AlertDelivery,
   event: AlertEvent,
-  connection: RedisConnection,
+  connection: AlertNotificationConnection,
   ruleName: string,
   organizationSlug: string | null
 ): Promise<void> {
@@ -245,8 +250,16 @@ async function sendLinearAlert(
   }
 
   const accessToken = await getValidLinearAccessToken(integration)
-  const issue = await createLinearIssueOnce(accessToken, {
+  const resolvedFields = await resolveLinearIssueFields(integration, accessToken, {
     teamId,
+    projectId: channel.projectId ?? integration.defaultProjectId,
+    labelIds: channel.labelIds?.length ? channel.labelIds : integration.defaultLabelIds,
+    assigneeId: channel.assigneeId ?? integration.defaultAssigneeId,
+    stateId: channel.stateId ?? integration.defaultStateId,
+    priority: channel.priority ?? integration.defaultPriority,
+  })
+  const issue = await createLinearIssueOnce(accessToken, {
+    teamId: resolvedFields.teamId,
     title: buildLinearIssueTitle(event, connection, ruleName, jobContext.jobName),
     description: buildLinearIssueDescription({
       event,
@@ -255,11 +268,11 @@ async function sendLinearAlert(
       jobUrl,
       jobContext,
     }),
-    projectId: channel.projectId ?? integration.defaultProjectId,
-    labelIds: channel.labelIds?.length ? channel.labelIds : integration.defaultLabelIds,
-    assigneeId: channel.assigneeId ?? integration.defaultAssigneeId,
-    stateId: channel.stateId ?? integration.defaultStateId,
-    priority: channel.priority ?? integration.defaultPriority,
+    projectId: resolvedFields.projectId,
+    labelIds: resolvedFields.labelIds,
+    assigneeId: resolvedFields.assigneeId,
+    stateId: resolvedFields.stateId,
+    priority: resolvedFields.priority,
   })
 
   try {
@@ -352,16 +365,12 @@ function requireClaimedAt(delivery: AlertDelivery): Date {
 async function sendWebhookAlert(
   delivery: AlertDelivery,
   event: AlertEvent,
-  connection: RedisConnection,
+  connection: AlertNotificationConnection,
   ruleName: string,
   organizationSlug: string | null
 ): Promise<void> {
   const channel = parseWebhookChannel(delivery.providerMetadata)
-  const secret = await resolveWebhookSigningSecret(
-    event,
-    channel.url,
-    delivery.providerMetadata
-  )
+  const secret = await resolveWebhookSigningSecret(event, channel.url, delivery.providerMetadata)
   const payload = buildAlertWebhookPayloadFromEvent(
     event,
     delivery.id,
@@ -473,7 +482,7 @@ function getJobContext(context: unknown): {
 
 function buildLinearIssueTitle(
   event: AlertEvent,
-  connection: RedisConnection,
+  connection: AlertNotificationConnection,
   ruleName: string,
   jobName: string | null
 ): string {
@@ -494,7 +503,7 @@ function buildLinearIssueDescription({
   jobContext,
 }: {
   event: AlertEvent
-  connection: RedisConnection
+  connection: AlertNotificationConnection
   ruleName: string
   jobUrl: string
   jobContext: ReturnType<typeof getJobContext>
@@ -537,10 +546,7 @@ function classifyDeliveryFailure(
   attemptCount: number,
   delivery?: Pick<AlertDelivery, 'channelType' | 'createdAt'>
 ): { error: string; retryable: boolean; nextRetryAt?: Date | null } {
-  if (
-    delivery?.channelType === 'webhook' &&
-    isWebhookDeliveryExpired(delivery.createdAt)
-  ) {
+  if (delivery?.channelType === 'webhook' && isWebhookDeliveryExpired(delivery.createdAt)) {
     return { error: WEBHOOK_DELIVERY_ABANDONED_MESSAGE, retryable: false }
   }
 

@@ -371,6 +371,104 @@ describe('alerts routes', () => {
     })
   })
 
+  it('retries a failed delivery and re-attempts it through the API', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Retryable incident',
+      type: 'job_failed',
+      config: { maxIssuesPerPoll: 10 },
+      notificationChannels: [{ type: 'linear', target: 'org-default', teamId: 'INTAKE' }],
+      cooldownMinutes: 30,
+    })
+
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Linear delivery failed',
+      context: { jobId: 'job-1' },
+      firedAt: new Date(),
+    })
+
+    await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'linear',
+        target: 'org-default:INTAKE',
+        providerMetadata: { type: 'linear', target: 'org-default', teamId: 'INTAKE' },
+      },
+    ])
+
+    const [claimed] = await alertDeliveryRepository.claimDueForEvent(event.id)
+    expect(claimed).toBeDefined()
+    await alertDeliveryRepository.markFailed(claimed.id, {
+      error: 'Linear integration is not configured for this organization.',
+      retryable: false,
+      expectedClaimedAt: claimed.claimedAt as Date,
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/events/${event.id}/deliveries/${claimed.id}/retry`, {
+      method: 'POST',
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      event: { deliveries: Array<{ id: string; status: string; attemptCount: number }> }
+    }
+    const delivery = body.event.deliveries.find((entry) => entry.id === claimed.id)
+    expect(delivery?.status).toBe('failed')
+    expect(delivery?.attemptCount).toBe(2)
+  })
+
+  it('returns 404 when retrying a delivery that is not in a retryable state', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Pending delivery',
+      type: 'job_failed',
+      config: { maxIssuesPerPoll: 10 },
+      notificationChannels: [{ type: 'linear', target: 'org-default', teamId: 'INTAKE' }],
+      cooldownMinutes: 30,
+    })
+
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Pending linear delivery',
+      context: {},
+      firedAt: new Date(),
+    })
+
+    const [pending] = await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'linear',
+        target: 'org-default:INTAKE',
+        providerMetadata: { type: 'linear', target: 'org-default', teamId: 'INTAKE' },
+      },
+    ])
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/events/${event.id}/deliveries/${pending.id}/retry`, {
+      method: 'POST',
+    })
+
+    expect(response.status).toBe(404)
+  })
+
   it('rejects webhook URLs that target private networks', async () => {
     const app = await createAlertsRouteApp()
 

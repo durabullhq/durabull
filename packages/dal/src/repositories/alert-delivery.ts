@@ -135,6 +135,34 @@ export const alertDeliveryRepository = {
     return rowsFromExecute<AlertDelivery>(result).map(normalizeAlertDeliveryRow)
   },
 
+  /**
+   * Resets a failed or stuck delivery so the next processing pass will pick it
+   * up again. Scoped to its event for authorization and refuses to re-send an
+   * already delivered row (which would create a duplicate downstream issue).
+   */
+  async resetForRetry(deliveryId: string, alertEventId: string): Promise<AlertDelivery | null> {
+    const db = await getDb()
+    const now = new Date()
+    const rows = await db
+      .update(alertDelivery)
+      .set({
+        status: 'pending',
+        claimedAt: null,
+        nextRetryAt: null,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(alertDelivery.id, deliveryId),
+          eq(alertDelivery.alertEventId, alertEventId),
+          sql`${alertDelivery.status} IN ('failed', 'claimed')`
+        )
+      )
+      .returning()
+
+    return rows[0] ? normalizeAlertDeliveryRow(rows[0]) : null
+  },
+
   async markDelivered(
     id: string,
     metadata: {
