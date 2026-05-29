@@ -24,13 +24,14 @@ interface NavUserProps {
     email: string
     avatar: string
   }
+  settingsPath?: string
 }
 
 /**
  * User avatar dropdown in the navigation sidebar
  * Provides access to settings, theme toggle, and logout
  */
-export function NavUser({ user }: NavUserProps) {
+export function NavUser({ user, settingsPath = '/settings' }: NavUserProps) {
   const { theme, setTheme } = useTheme()
   const { signOut } = useAuth()
   const navigate = useNavigate()
@@ -86,7 +87,7 @@ export function NavUser({ user }: NavUserProps) {
         <DropdownMenuGroup>
           <DropdownMenuItem
             className="cursor-pointer"
-            onClick={() => navigate({ to: '/settings' })}
+            onClick={() => navigate({ to: settingsPath })}
           >
             <Settings className="mr-2 h-4 w-4 text-muted-foreground" />
             Settings

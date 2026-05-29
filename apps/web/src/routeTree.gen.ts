@@ -21,11 +21,19 @@ import { Route as OrgSlugIndexRouteImport } from './routes/$orgSlug.index'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as OrgSlugWorkersRouteImport } from './routes/$orgSlug.workers'
 import { Route as OrgSlugTeamRouteImport } from './routes/$orgSlug.team'
+import { Route as OrgSlugSettingsRouteImport } from './routes/$orgSlug.settings'
 import { Route as OrgSlugScheduledJobsRouteImport } from './routes/$orgSlug.scheduled-jobs'
 import { Route as OrgSlugRedisKeysRouteImport } from './routes/$orgSlug.redis-keys'
 import { Route as OrgSlugConnectionsRouteImport } from './routes/$orgSlug.connections'
 import { Route as OrgSlugAnalyticsRouteImport } from './routes/$orgSlug.analytics'
 import { Route as OrgSlugAlertsRouteImport } from './routes/$orgSlug.alerts'
+import { Route as OrgSlugSettingsIndexRouteImport } from './routes/$orgSlug.settings.index'
+import { Route as OrgSlugSettingsTeamRouteImport } from './routes/$orgSlug.settings.team'
+import { Route as OrgSlugSettingsIntegrationsRouteImport } from './routes/$orgSlug.settings.integrations'
+import { Route as OrgSlugSettingsConnectionsRouteImport } from './routes/$orgSlug.settings.connections'
+import { Route as OrgSlugSettingsAuthenticationRouteImport } from './routes/$orgSlug.settings.authentication'
+import { Route as OrgSlugSettingsAppearanceRouteImport } from './routes/$orgSlug.settings.appearance'
+import { Route as OrgSlugSettingsAboutRouteImport } from './routes/$orgSlug.settings.about'
 import { Route as OrgSlugCConnectionIdRouteImport } from './routes/$orgSlug.c.$connectionId'
 import { Route as OrgSlugCConnectionIdIndexRouteImport } from './routes/$orgSlug.c.$connectionId.index'
 import { Route as OrgSlugCConnectionIdWorkersRouteImport } from './routes/$orgSlug.c.$connectionId.workers'
@@ -101,6 +109,11 @@ const OrgSlugTeamRoute = OrgSlugTeamRouteImport.update({
   path: '/team',
   getParentRoute: () => OrgSlugRoute,
 } as any)
+const OrgSlugSettingsRoute = OrgSlugSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => OrgSlugRoute,
+} as any)
 const OrgSlugScheduledJobsRoute = OrgSlugScheduledJobsRouteImport.update({
   id: '/scheduled-jobs',
   path: '/scheduled-jobs',
@@ -125,6 +138,45 @@ const OrgSlugAlertsRoute = OrgSlugAlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
   getParentRoute: () => OrgSlugRoute,
+} as any)
+const OrgSlugSettingsIndexRoute = OrgSlugSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OrgSlugSettingsRoute,
+} as any)
+const OrgSlugSettingsTeamRoute = OrgSlugSettingsTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => OrgSlugSettingsRoute,
+} as any)
+const OrgSlugSettingsIntegrationsRoute =
+  OrgSlugSettingsIntegrationsRouteImport.update({
+    id: '/integrations',
+    path: '/integrations',
+    getParentRoute: () => OrgSlugSettingsRoute,
+  } as any)
+const OrgSlugSettingsConnectionsRoute =
+  OrgSlugSettingsConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => OrgSlugSettingsRoute,
+  } as any)
+const OrgSlugSettingsAuthenticationRoute =
+  OrgSlugSettingsAuthenticationRouteImport.update({
+    id: '/authentication',
+    path: '/authentication',
+    getParentRoute: () => OrgSlugSettingsRoute,
+  } as any)
+const OrgSlugSettingsAppearanceRoute =
+  OrgSlugSettingsAppearanceRouteImport.update({
+    id: '/appearance',
+    path: '/appearance',
+    getParentRoute: () => OrgSlugSettingsRoute,
+  } as any)
+const OrgSlugSettingsAboutRoute = OrgSlugSettingsAboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => OrgSlugSettingsRoute,
 } as any)
 const OrgSlugCConnectionIdRoute = OrgSlugCConnectionIdRouteImport.update({
   id: '/c/$connectionId',
@@ -226,11 +278,19 @@ export interface FileRoutesByFullPath {
   '/$orgSlug/connections': typeof OrgSlugConnectionsRoute
   '/$orgSlug/redis-keys': typeof OrgSlugRedisKeysRoute
   '/$orgSlug/scheduled-jobs': typeof OrgSlugScheduledJobsRoute
+  '/$orgSlug/settings': typeof OrgSlugSettingsRouteWithChildren
   '/$orgSlug/team': typeof OrgSlugTeamRoute
   '/$orgSlug/workers': typeof OrgSlugWorkersRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/$orgSlug/': typeof OrgSlugIndexRoute
   '/$orgSlug/c/$connectionId': typeof OrgSlugCConnectionIdRouteWithChildren
+  '/$orgSlug/settings/about': typeof OrgSlugSettingsAboutRoute
+  '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
+  '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
+  '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
+  '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
+  '/$orgSlug/settings/': typeof OrgSlugSettingsIndexRoute
   '/$orgSlug/c/$connectionId/alerts': typeof OrgSlugCConnectionIdAlertsRouteWithChildren
   '/$orgSlug/c/$connectionId/analytics': typeof OrgSlugCConnectionIdAnalyticsRoute
   '/$orgSlug/c/$connectionId/redis-keys': typeof OrgSlugCConnectionIdRedisKeysRoute
@@ -262,6 +322,13 @@ export interface FileRoutesByTo {
   '/$orgSlug/workers': typeof OrgSlugWorkersRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/$orgSlug': typeof OrgSlugIndexRoute
+  '/$orgSlug/settings/about': typeof OrgSlugSettingsAboutRoute
+  '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
+  '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
+  '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
+  '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
+  '/$orgSlug/settings': typeof OrgSlugSettingsIndexRoute
   '/$orgSlug/c/$connectionId/analytics': typeof OrgSlugCConnectionIdAnalyticsRoute
   '/$orgSlug/c/$connectionId/redis-keys': typeof OrgSlugCConnectionIdRedisKeysRoute
   '/$orgSlug/c/$connectionId/scheduled-jobs': typeof OrgSlugCConnectionIdScheduledJobsRoute
@@ -290,11 +357,19 @@ export interface FileRoutesById {
   '/$orgSlug/connections': typeof OrgSlugConnectionsRoute
   '/$orgSlug/redis-keys': typeof OrgSlugRedisKeysRoute
   '/$orgSlug/scheduled-jobs': typeof OrgSlugScheduledJobsRoute
+  '/$orgSlug/settings': typeof OrgSlugSettingsRouteWithChildren
   '/$orgSlug/team': typeof OrgSlugTeamRoute
   '/$orgSlug/workers': typeof OrgSlugWorkersRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/$orgSlug/': typeof OrgSlugIndexRoute
   '/$orgSlug/c/$connectionId': typeof OrgSlugCConnectionIdRouteWithChildren
+  '/$orgSlug/settings/about': typeof OrgSlugSettingsAboutRoute
+  '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
+  '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
+  '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
+  '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
+  '/$orgSlug/settings/': typeof OrgSlugSettingsIndexRoute
   '/$orgSlug/c/$connectionId/alerts': typeof OrgSlugCConnectionIdAlertsRouteWithChildren
   '/$orgSlug/c/$connectionId/analytics': typeof OrgSlugCConnectionIdAnalyticsRoute
   '/$orgSlug/c/$connectionId/redis-keys': typeof OrgSlugCConnectionIdRedisKeysRoute
@@ -325,11 +400,19 @@ export interface FileRouteTypes {
     | '/$orgSlug/connections'
     | '/$orgSlug/redis-keys'
     | '/$orgSlug/scheduled-jobs'
+    | '/$orgSlug/settings'
     | '/$orgSlug/team'
     | '/$orgSlug/workers'
     | '/invite/$invitationId'
     | '/$orgSlug/'
     | '/$orgSlug/c/$connectionId'
+    | '/$orgSlug/settings/about'
+    | '/$orgSlug/settings/appearance'
+    | '/$orgSlug/settings/authentication'
+    | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/integrations'
+    | '/$orgSlug/settings/team'
+    | '/$orgSlug/settings/'
     | '/$orgSlug/c/$connectionId/alerts'
     | '/$orgSlug/c/$connectionId/analytics'
     | '/$orgSlug/c/$connectionId/redis-keys'
@@ -361,6 +444,13 @@ export interface FileRouteTypes {
     | '/$orgSlug/workers'
     | '/invite/$invitationId'
     | '/$orgSlug'
+    | '/$orgSlug/settings/about'
+    | '/$orgSlug/settings/appearance'
+    | '/$orgSlug/settings/authentication'
+    | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/integrations'
+    | '/$orgSlug/settings/team'
+    | '/$orgSlug/settings'
     | '/$orgSlug/c/$connectionId/analytics'
     | '/$orgSlug/c/$connectionId/redis-keys'
     | '/$orgSlug/c/$connectionId/scheduled-jobs'
@@ -388,11 +478,19 @@ export interface FileRouteTypes {
     | '/$orgSlug/connections'
     | '/$orgSlug/redis-keys'
     | '/$orgSlug/scheduled-jobs'
+    | '/$orgSlug/settings'
     | '/$orgSlug/team'
     | '/$orgSlug/workers'
     | '/invite/$invitationId'
     | '/$orgSlug/'
     | '/$orgSlug/c/$connectionId'
+    | '/$orgSlug/settings/about'
+    | '/$orgSlug/settings/appearance'
+    | '/$orgSlug/settings/authentication'
+    | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/integrations'
+    | '/$orgSlug/settings/team'
+    | '/$orgSlug/settings/'
     | '/$orgSlug/c/$connectionId/alerts'
     | '/$orgSlug/c/$connectionId/analytics'
     | '/$orgSlug/c/$connectionId/redis-keys'
@@ -506,6 +604,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgSlugTeamRouteImport
       parentRoute: typeof OrgSlugRoute
     }
+    '/$orgSlug/settings': {
+      id: '/$orgSlug/settings'
+      path: '/settings'
+      fullPath: '/$orgSlug/settings'
+      preLoaderRoute: typeof OrgSlugSettingsRouteImport
+      parentRoute: typeof OrgSlugRoute
+    }
     '/$orgSlug/scheduled-jobs': {
       id: '/$orgSlug/scheduled-jobs'
       path: '/scheduled-jobs'
@@ -540,6 +645,55 @@ declare module '@tanstack/react-router' {
       fullPath: '/$orgSlug/alerts'
       preLoaderRoute: typeof OrgSlugAlertsRouteImport
       parentRoute: typeof OrgSlugRoute
+    }
+    '/$orgSlug/settings/': {
+      id: '/$orgSlug/settings/'
+      path: '/'
+      fullPath: '/$orgSlug/settings/'
+      preLoaderRoute: typeof OrgSlugSettingsIndexRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
+    }
+    '/$orgSlug/settings/team': {
+      id: '/$orgSlug/settings/team'
+      path: '/team'
+      fullPath: '/$orgSlug/settings/team'
+      preLoaderRoute: typeof OrgSlugSettingsTeamRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
+    }
+    '/$orgSlug/settings/integrations': {
+      id: '/$orgSlug/settings/integrations'
+      path: '/integrations'
+      fullPath: '/$orgSlug/settings/integrations'
+      preLoaderRoute: typeof OrgSlugSettingsIntegrationsRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
+    }
+    '/$orgSlug/settings/connections': {
+      id: '/$orgSlug/settings/connections'
+      path: '/connections'
+      fullPath: '/$orgSlug/settings/connections'
+      preLoaderRoute: typeof OrgSlugSettingsConnectionsRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
+    }
+    '/$orgSlug/settings/authentication': {
+      id: '/$orgSlug/settings/authentication'
+      path: '/authentication'
+      fullPath: '/$orgSlug/settings/authentication'
+      preLoaderRoute: typeof OrgSlugSettingsAuthenticationRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
+    }
+    '/$orgSlug/settings/appearance': {
+      id: '/$orgSlug/settings/appearance'
+      path: '/appearance'
+      fullPath: '/$orgSlug/settings/appearance'
+      preLoaderRoute: typeof OrgSlugSettingsAppearanceRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
+    }
+    '/$orgSlug/settings/about': {
+      id: '/$orgSlug/settings/about'
+      path: '/about'
+      fullPath: '/$orgSlug/settings/about'
+      preLoaderRoute: typeof OrgSlugSettingsAboutRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
     }
     '/$orgSlug/c/$connectionId': {
       id: '/$orgSlug/c/$connectionId'
@@ -642,6 +796,30 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface OrgSlugSettingsRouteChildren {
+  OrgSlugSettingsAboutRoute: typeof OrgSlugSettingsAboutRoute
+  OrgSlugSettingsAppearanceRoute: typeof OrgSlugSettingsAppearanceRoute
+  OrgSlugSettingsAuthenticationRoute: typeof OrgSlugSettingsAuthenticationRoute
+  OrgSlugSettingsConnectionsRoute: typeof OrgSlugSettingsConnectionsRoute
+  OrgSlugSettingsIntegrationsRoute: typeof OrgSlugSettingsIntegrationsRoute
+  OrgSlugSettingsTeamRoute: typeof OrgSlugSettingsTeamRoute
+  OrgSlugSettingsIndexRoute: typeof OrgSlugSettingsIndexRoute
+}
+
+const OrgSlugSettingsRouteChildren: OrgSlugSettingsRouteChildren = {
+  OrgSlugSettingsAboutRoute: OrgSlugSettingsAboutRoute,
+  OrgSlugSettingsAppearanceRoute: OrgSlugSettingsAppearanceRoute,
+  OrgSlugSettingsAuthenticationRoute: OrgSlugSettingsAuthenticationRoute,
+  OrgSlugSettingsConnectionsRoute: OrgSlugSettingsConnectionsRoute,
+  OrgSlugSettingsIntegrationsRoute: OrgSlugSettingsIntegrationsRoute,
+  OrgSlugSettingsTeamRoute: OrgSlugSettingsTeamRoute,
+  OrgSlugSettingsIndexRoute: OrgSlugSettingsIndexRoute,
+}
+
+const OrgSlugSettingsRouteWithChildren = OrgSlugSettingsRoute._addFileChildren(
+  OrgSlugSettingsRouteChildren,
+)
+
 interface OrgSlugCConnectionIdAlertsRouteChildren {
   OrgSlugCConnectionIdAlertsRuleIdRoute: typeof OrgSlugCConnectionIdAlertsRuleIdRoute
   OrgSlugCConnectionIdAlertsNewRoute: typeof OrgSlugCConnectionIdAlertsNewRoute
@@ -701,6 +879,7 @@ interface OrgSlugRouteChildren {
   OrgSlugConnectionsRoute: typeof OrgSlugConnectionsRoute
   OrgSlugRedisKeysRoute: typeof OrgSlugRedisKeysRoute
   OrgSlugScheduledJobsRoute: typeof OrgSlugScheduledJobsRoute
+  OrgSlugSettingsRoute: typeof OrgSlugSettingsRouteWithChildren
   OrgSlugTeamRoute: typeof OrgSlugTeamRoute
   OrgSlugWorkersRoute: typeof OrgSlugWorkersRoute
   OrgSlugIndexRoute: typeof OrgSlugIndexRoute
@@ -713,6 +892,7 @@ const OrgSlugRouteChildren: OrgSlugRouteChildren = {
   OrgSlugConnectionsRoute: OrgSlugConnectionsRoute,
   OrgSlugRedisKeysRoute: OrgSlugRedisKeysRoute,
   OrgSlugScheduledJobsRoute: OrgSlugScheduledJobsRoute,
+  OrgSlugSettingsRoute: OrgSlugSettingsRouteWithChildren,
   OrgSlugTeamRoute: OrgSlugTeamRoute,
   OrgSlugWorkersRoute: OrgSlugWorkersRoute,
   OrgSlugIndexRoute: OrgSlugIndexRoute,

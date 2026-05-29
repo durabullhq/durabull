@@ -1,0 +1,162 @@
+import { Link2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  useConnectLinearIntegration,
+  useDeleteLinearIntegration,
+  useLinearIntegration,
+  useSaveLinearIntegration,
+  useTestLinearIntegration,
+} from '@/hooks/use-alerts'
+
+export function IntegrationsSettingsPanel() {
+  const linearIntegrationQuery = useLinearIntegration()
+  const connectLinearIntegration = useConnectLinearIntegration()
+  const saveLinearIntegration = useSaveLinearIntegration()
+  const deleteLinearIntegration = useDeleteLinearIntegration()
+  const testLinearIntegration = useTestLinearIntegration()
+  const [linearTeamId, setLinearTeamId] = useState('')
+  const linearIntegration = linearIntegrationQuery.data?.integration ?? null
+
+  useEffect(() => {
+    setLinearTeamId(linearIntegration?.defaultTeamId ?? '')
+  }, [linearIntegration?.defaultTeamId])
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <Card>
+        <CardHeader className="border-b bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Link2 className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle className="text-base">Integrations</CardTitle>
+              <CardDescription>
+                Connect third-party tools and choose defaults for integrations.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 p-4">
+          <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-sm font-semibold">Linear alerts</h3>
+              <Badge variant={linearIntegration?.validationStatus === 'valid' ? 'success' : 'secondary'}>
+                {linearIntegration
+                  ? linearIntegration.validationStatus === 'valid'
+                    ? 'Valid'
+                    : 'Needs attention'
+                  : 'Not configured'}
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Connect Linear with OAuth and choose defaults for alert-created issues.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {linearIntegration?.linearOrganizationName ? (
+                <span className="text-xs text-muted-foreground">
+                  {linearIntegration.linearOrganizationName}
+                </span>
+              ) : null}
+              {linearIntegration?.scopes ? (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {linearIntegration.scopes}
+                </span>
+              ) : null}
+            </div>
+
+            {!linearIntegration ? (
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const result = await connectLinearIntegration.mutateAsync()
+                      window.location.assign(result.authorizationUrl)
+                    } catch (error) {
+                      console.error('Failed to start Linear OAuth:', error)
+                      toast.error('Failed to start Linear connection', {
+                        description: getErrorMessage(
+                          error,
+                          'Check the Linear OAuth configuration and try again.'
+                        ),
+                      })
+                    }
+                  }}
+                  disabled={connectLinearIntegration.isPending}
+                >
+                  {connectLinearIntegration.isPending ? 'Connecting...' : 'Connect Linear'}
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+                <input
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={linearTeamId}
+                  onChange={(event) => setLinearTeamId(event.target.value)}
+                  placeholder="Default Linear team ID"
+                  aria-label="Default Linear team ID"
+                />
+              </div>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              {linearIntegration ? (
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    await saveLinearIntegration.mutateAsync({
+                      defaultTeamId: linearTeamId.trim() || null,
+                    })
+                    toast.success('Linear defaults saved')
+                  }}
+                  disabled={saveLinearIntegration.isPending}
+                >
+                  {saveLinearIntegration.isPending ? 'Saving...' : 'Save defaults'}
+                </Button>
+              ) : null}
+              {linearIntegration ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    const result = await testLinearIntegration.mutateAsync()
+                    toast.success('Linear connection verified', {
+                      description: result.organizationName,
+                    })
+                  }}
+                  disabled={testLinearIntegration.isPending}
+                >
+                  {testLinearIntegration.isPending ? 'Testing...' : 'Test connection'}
+                </Button>
+              ) : null}
+              {linearIntegration ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={async () => {
+                    await deleteLinearIntegration.mutateAsync()
+                    setLinearTeamId('')
+                    toast.success('Linear integration removed')
+                  }}
+                  disabled={deleteLinearIntegration.isPending}
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            OAuth tokens are encrypted at rest and never returned by the API. Rules can override
+            Linear fields, but the default team is used when no rule-level team is set.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback
+}

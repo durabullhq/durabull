@@ -18,10 +18,9 @@ import {
   Calendar,
   Database,
   Layers,
-  Link2,
   Loader2,
   Network,
-  Users,
+  Settings,
 } from 'lucide-react'
 import { PostHogProvider } from 'posthog-js/react'
 import { useEffect, useMemo, useState } from 'react'
@@ -46,6 +45,7 @@ import { useIsElectronShell } from '@/hooks/use-electron-shell'
 import { type Organization, useOrganizations } from '@/hooks/use-organization'
 import { usePageViewTracking } from '@/hooks/use-page-view-tracking'
 import { APP_BUILD_INFO } from '@/lib/app-version'
+import { type NavMatchMode, isNavLinkActive } from '@/lib/nav-link-active'
 import { cn } from '@/lib/utils'
 
 /**
@@ -191,6 +191,8 @@ function RootLayout() {
   const location = useLocation()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const isElectronShell = useIsElectronShell()
+  const orgSlug = useCurrentOrgSlug()
+  const settingsPath = orgSlug ? `/${orgSlug}/settings/connections` : '/settings'
 
   usePageViewTracking()
 
@@ -292,7 +294,7 @@ function RootLayout() {
 
             {/* User menu at bottom */}
             <div className="shrink-0 border-t p-3">
-              <NavUser user={displayUser} />
+              <NavUser user={displayUser} settingsPath={settingsPath} />
             </div>
           </aside>
 
@@ -363,7 +365,7 @@ function RootLayout() {
 
               {/* User menu at bottom */}
               <div className="shrink-0 border-t p-3 bg-sidebar-background">
-                <NavUser user={displayUser} />
+                <NavUser user={displayUser} settingsPath={settingsPath} />
               </div>
             </SheetContent>
           </Sheet>
@@ -374,7 +376,6 @@ function RootLayout() {
 }
 
 function SidebarNav() {
-  const { isAuthless } = useAppMode()
   const { currentConnection } = useConnection()
   const { data: alertSummary } = useAlertSummary()
   const params = useParams({ strict: false }) as { connectionId?: string }
@@ -414,24 +415,18 @@ function SidebarNav() {
       <NavLink to={`${basePath}/redis-keys`} icon={Database}>
         KV Explorer
       </NavLink>
-
-      <div className="mb-2 mt-4 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <NavLink
+        to={orgSlug ? `/${orgSlug}/settings` : '/settings'}
+        icon={Settings}
+        matchMode="section"
+      >
         Settings
-      </div>
-      <NavLink to={orgSlug ? `/${orgSlug}/connections` : '/connections'} icon={Link2}>
-        Connections
       </NavLink>
-      {!isAuthless && (
-        <NavLink to={orgSlug ? `/${orgSlug}/team` : '/team'} icon={Users}>
-          Team
-        </NavLink>
-      )}
     </nav>
   )
 }
 
 function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
-  const { isAuthless } = useAppMode()
   const { currentConnection } = useConnection()
   const { data: alertSummary } = useAlertSummary()
   const params = useParams({ strict: false }) as { connectionId?: string }
@@ -474,26 +469,14 @@ function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
       <MobileNavLink to={`${basePath}/redis-keys`} icon={Database} onNavigate={onNavigate}>
         KV Explorer
       </MobileNavLink>
-
-      <div className="mb-2 mt-4 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Settings
-      </div>
       <MobileNavLink
-        to={orgSlug ? `/${orgSlug}/connections` : '/connections'}
-        icon={Link2}
+        to={orgSlug ? `/${orgSlug}/settings` : '/settings'}
+        icon={Settings}
         onNavigate={onNavigate}
+        matchMode="section"
       >
-        Connections
+        Settings
       </MobileNavLink>
-      {!isAuthless && (
-        <MobileNavLink
-          to={orgSlug ? `/${orgSlug}/team` : '/team'}
-          icon={Users}
-          onNavigate={onNavigate}
-        >
-          Team
-        </MobileNavLink>
-      )}
     </nav>
   )
 }
@@ -504,18 +487,18 @@ function MobileNavLink({
   children,
   onNavigate,
   badge,
+  matchMode = 'default',
 }: {
   to: string
   icon: React.ComponentType<{ className?: string }>
   children: React.ReactNode
   onNavigate: () => void
   badge?: number
+  matchMode?: NavMatchMode
 }) {
   const location = useLocation()
 
-  const isActive =
-    location.pathname === to ||
-    (to !== location.pathname.replace(/\/[^/]+$/, '') && location.pathname.startsWith(`${to}/`))
+  const isActive = isNavLinkActive(location.pathname, to, matchMode)
 
   return (
     <Link
@@ -542,20 +525,17 @@ function NavLink({
   icon: Icon,
   children,
   badge,
+  matchMode = 'default',
 }: {
   to: string
   icon: React.ComponentType<{ className?: string }>
   children: React.ReactNode
   badge?: number
+  matchMode?: NavMatchMode
 }) {
   const location = useLocation()
 
-  // Check if this nav link is active
-  // For the base path (queues), we need to check if we're exactly on that path
-  // For other paths, we check if the current path starts with the link path
-  const isActive =
-    location.pathname === to ||
-    (to !== location.pathname.replace(/\/[^/]+$/, '') && location.pathname.startsWith(`${to}/`))
+  const isActive = isNavLinkActive(location.pathname, to, matchMode)
 
   return (
     <Link
