@@ -87,6 +87,12 @@ export interface Organization {
  */
 export type MemberRole = 'owner' | 'admin' | 'member'
 
+export const MEMBER_ROLES = {
+  OWNER: 'owner',
+  ADMIN: 'admin',
+  MEMBER: 'member',
+} as const satisfies Record<'OWNER' | 'ADMIN' | 'MEMBER', MemberRole>
+
 /**
  * Invitation status type
  */
