@@ -12,8 +12,17 @@ import {
   MoreHorizontal,
   Pause,
   Play,
+  Rocket,
 } from 'lucide-react'
-import { type KeyboardEvent, memo, type MouseEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  type KeyboardEvent,
+  type MouseEvent,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { useConnection } from '@/components/connection-provider'
 import { QueueNameTag } from '@/components/queue-name-tag'
 import { StatusIndicator } from '@/components/status-badge'
@@ -72,6 +81,7 @@ function getTotalJobs(queue: QueueSummary): number {
   const { jobCounts } = queue
   return (
     jobCounts.waiting +
+    jobCounts.prioritized +
     jobCounts.active +
     jobCounts.delayed +
     jobCounts.completed +
@@ -114,27 +124,33 @@ export function QueueTable({
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className={cn('rounded-lg border bg-card overflow-hidden flex flex-col h-[calc(100vh-18rem)]', className)}>
+      <div
+        className={cn(
+          'rounded-lg border bg-card overflow-hidden flex flex-col h-[calc(100vh-18rem)]',
+          className
+        )}
+      >
         <div className="flex-1 overflow-auto min-h-0 [&>div]:overflow-visible">
-        <Table>
-          <TableHeader className="sticky top-0 z-10 bg-card">
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Queue</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Waiting</TableHead>
-              <TableHead className="text-right">Active</TableHead>
-              <TableHead className="text-right">Delayed</TableHead>
-              <TableHead className="text-right">Completed</TableHead>
-              <TableHead className="text-right">Failed</TableHead>
-              <TableHead className="w-[60px]"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredQueues.map((queue) => (
-              <QueueTableRow key={queue.name} queue={queue} />
-            ))}
-          </TableBody>
-        </Table>
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-card">
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Queue</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Waiting</TableHead>
+                <TableHead className="text-right">Prioritized</TableHead>
+                <TableHead className="text-right">Active</TableHead>
+                <TableHead className="text-right">Delayed</TableHead>
+                <TableHead className="text-right">Completed</TableHead>
+                <TableHead className="text-right">Failed</TableHead>
+                <TableHead className="w-[60px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredQueues.map((queue) => (
+                <QueueTableRow key={queue.name} queue={queue} />
+              ))}
+            </TableBody>
+          </Table>
         </div>
 
         {/* Footer: empty toggle + pagination */}
@@ -316,6 +332,21 @@ const QueueTableRow = memo(function QueueTableRow({ queue }: QueueTableRowProps)
       {/* Waiting */}
       <TableCell className="text-right tabular-nums text-muted-foreground">
         {formatNumber(queue.jobCounts.waiting)}
+      </TableCell>
+
+      {/* Prioritized */}
+      <TableCell className="text-right">
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 tabular-nums',
+            queue.jobCounts.prioritized > 0
+              ? 'text-violet-600 dark:text-violet-400 font-medium'
+              : 'text-muted-foreground'
+          )}
+        >
+          {queue.jobCounts.prioritized > 0 && <Rocket className="h-3.5 w-3.5" />}
+          {formatNumber(queue.jobCounts.prioritized)}
+        </span>
       </TableCell>
 
       {/* Active */}
