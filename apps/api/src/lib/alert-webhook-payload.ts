@@ -1,4 +1,4 @@
-import type { AlertEvent, AlertRuleType, RedisConnection } from '@durabull/dal'
+import type { AlertEvent, AlertRuleType } from '@durabull/dal'
 import { buildAlertAppUrls } from './alert-app-urls'
 
 export const WEBHOOK_MAX_BODY_BYTES = 32_768
@@ -38,7 +38,7 @@ export interface BuildAlertWebhookPayloadInput {
   occurredAt: Date
   organizationId: string
   organizationSlug: string | null
-  connection: RedisConnection
+  connection: { id: string; name: string }
   ruleId: string
   ruleName: string
   ruleType: AlertRuleType | string
@@ -103,7 +103,7 @@ export function buildAlertWebhookPayload(
 export function buildAlertWebhookPayloadFromEvent(
   event: AlertEvent,
   deliveryId: string,
-  connection: RedisConnection,
+  connection: { id: string; name: string },
   ruleName: string,
   organizationSlug: string | null,
   appBaseUrl: string

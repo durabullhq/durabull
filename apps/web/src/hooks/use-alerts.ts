@@ -28,6 +28,10 @@ type ResolveAlertEventResponse = InferResponseType<
   ConnectionAlertsEndpoint['events'][':eventId']['resolve']['$post'],
   200
 >
+type RetryAlertDeliveryResponse = InferResponseType<
+  ConnectionAlertsEndpoint['events'][':eventId']['deliveries'][':deliveryId']['retry']['$post'],
+  200
+>
 type TestAlertRuleResponse = InferResponseType<
   ConnectionAlertsEndpoint['rules'][':ruleId']['test']['$post'],
   200
@@ -75,6 +79,7 @@ export interface AlertDeliveryRecord {
   channelType: 'email' | 'linear' | 'webhook'
   status: 'pending' | 'claimed' | 'delivered' | 'failed'
   target: string
+  attemptCount?: number | null
   externalIdentifier?: string | null
   externalUrl?: string | null
   lastError?: string | null
@@ -326,7 +331,11 @@ function normalizeAlertDeliveries(value: unknown): AlertDeliveryRecord[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
     if (!isRecord(entry)) return []
-    if (entry.channelType !== 'email' && entry.channelType !== 'linear' && entry.channelType !== 'webhook') {
+    if (
+      entry.channelType !== 'email' &&
+      entry.channelType !== 'linear' &&
+      entry.channelType !== 'webhook'
+    ) {
       return []
     }
     return [
@@ -341,6 +350,7 @@ function normalizeAlertDeliveries(value: unknown): AlertDeliveryRecord[] {
             ? entry.status
             : 'pending',
         target: typeof entry.target === 'string' ? entry.target : '',
+        attemptCount: typeof entry.attemptCount === 'number' ? entry.attemptCount : null,
         externalIdentifier:
           typeof entry.externalIdentifier === 'string' ? entry.externalIdentifier : null,
         externalUrl: typeof entry.externalUrl === 'string' ? entry.externalUrl : null,
@@ -521,6 +531,31 @@ export function useResolveAlertEvent() {
         param: { connectionId, eventId },
       })
       const data = await handleRes<ResolveAlertEventResponse>(res)
+      return { event: normalizeAlertEvent(data.event) }
+    },
+    onSuccess: (_, variables) => invalidateAlertQueries(queryClient, variables.connectionId),
+  })
+}
+
+export function useRetryAlertDelivery() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      connectionId,
+      eventId,
+      deliveryId,
+    }: {
+      connectionId: string
+      eventId: string
+      deliveryId: string
+    }) => {
+      const res = await api.c[':connectionId'].alerts.events[':eventId'].deliveries[
+        ':deliveryId'
+      ].retry.$post({
+        param: { connectionId, eventId, deliveryId },
+      })
+      const data = await handleRes<RetryAlertDeliveryResponse>(res)
       return { event: normalizeAlertEvent(data.event) }
     },
     onSuccess: (_, variables) => invalidateAlertQueries(queryClient, variables.connectionId),

@@ -1,5 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowUpRight, CheckCheck, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { AlertEventDetailsDialog } from '@/components/alerts/alert-event-details-dialog'
 import {
   AlertStatusBadge,
   AlertTypeBadge,
@@ -37,6 +39,8 @@ export function AlertEventsTable({
   onResolve,
   resolvingEventId,
 }: AlertEventsTableProps) {
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
+
   if (events.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border/70 bg-muted/15 px-6 py-12 text-center">
@@ -46,8 +50,17 @@ export function AlertEventsTable({
     )
   }
 
+  const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null
+
   return (
     <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/70">
+      <AlertEventDetailsDialog
+        event={selectedEvent}
+        open={selectedEvent !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedEventId(null)
+        }}
+      />
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -66,7 +79,11 @@ export function AlertEventsTable({
             const isResolving = resolvingEventId === event.id
 
             return (
-              <TableRow key={event.id}>
+              <TableRow
+                key={event.id}
+                className="cursor-pointer"
+                onClick={() => setSelectedEventId(event.id)}
+              >
                 {showConnectionColumn ? (
                   <TableCell className="text-sm font-medium">
                     {connectionNameForEvent?.(event) ?? 'Unknown connection'}
@@ -87,6 +104,7 @@ export function AlertEventsTable({
                       queueName: event.queueName,
                     }}
                     className="inline-flex items-center gap-1.5 truncate font-medium hover:text-primary"
+                    onClick={(clickEvent) => clickEvent.stopPropagation()}
                   >
                     <span className="truncate">{event.queueName}</span>
                     <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
@@ -109,36 +127,43 @@ export function AlertEventsTable({
                   {formatAlertDate(event.firedAt)}
                 </TableCell>
                 <TableCell className="text-right">
-                  {event.status === 'firing' && onResolve ? (
+                  <div className="flex items-center justify-end gap-2">
                     <Button
                       type="button"
                       size="xs"
-                      variant="outline"
-                      onClick={() => onResolve(event)}
-                      disabled={isResolving}
+                      variant="ghost"
+                      onClick={(clickEvent) => {
+                        clickEvent.stopPropagation()
+                        setSelectedEventId(event.id)
+                      }}
                     >
-                      {isResolving ? (
-                        <>
-                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                          Resolving
-                        </>
-                      ) : (
-                        <>
-                          <CheckCheck className="mr-1.5 h-3.5 w-3.5" />
-                          Resolve
-                        </>
-                      )}
+                      Details
                     </Button>
-                  ) : (
-                    <Link
-                      to="/$orgSlug/c/$connectionId/alerts"
-                      params={{ orgSlug, connectionId: event.connectionId }}
-                      search={{ tab: 'history' }}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      Open alerts
-                    </Link>
-                  )}
+                    {event.status === 'firing' && onResolve ? (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        onClick={(clickEvent) => {
+                          clickEvent.stopPropagation()
+                          onResolve(event)
+                        }}
+                        disabled={isResolving}
+                      >
+                        {isResolving ? (
+                          <>
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            Resolving
+                          </>
+                        ) : (
+                          <>
+                            <CheckCheck className="mr-1.5 h-3.5 w-3.5" />
+                            Resolve
+                          </>
+                        )}
+                      </Button>
+                    ) : null}
+                  </div>
                 </TableCell>
               </TableRow>
             )
@@ -150,9 +175,7 @@ export function AlertEventsTable({
 }
 
 function DeliverySummary({ event }: { event: AlertEventRecord }) {
-  const linearDelivery = event.deliveries.find(
-    (delivery) => delivery.channelType === 'linear' && delivery.externalUrl
-  )
+  const linearDelivery = event.deliveries.find((delivery) => delivery.channelType === 'linear')
   if (linearDelivery?.externalUrl) {
     return (
       <a
@@ -160,10 +183,18 @@ function DeliverySummary({ event }: { event: AlertEventRecord }) {
         target="_blank"
         rel="noreferrer"
         className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
       >
         {linearDelivery.externalIdentifier ?? 'Linear issue'}
         <ArrowUpRight className="h-3 w-3" />
       </a>
+    )
+  }
+  if (linearDelivery?.status === 'failed') {
+    return (
+      <span className="text-xs text-destructive">
+        Linear failed{linearDelivery.lastError ? `: ${linearDelivery.lastError}` : ''}
+      </span>
     )
   }
 
@@ -185,6 +216,10 @@ function DeliverySummary({ event }: { event: AlertEventRecord }) {
       )
     }
     return <span className="text-xs text-muted-foreground">Webhook pending</span>
+  }
+
+  if (linearDelivery) {
+    return <span className="text-xs text-muted-foreground">Linear pending</span>
   }
 
   if (event.deliveries.length > 0) {

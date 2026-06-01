@@ -79,6 +79,17 @@ export const alertEventRepository = {
     return { event: rows[0], created: false }
   },
 
+  async findById(id: string, organizationId: string): Promise<AlertEvent | null> {
+    const db = await getDb()
+    const rows = await db
+      .select()
+      .from(alertEvent)
+      .where(and(eq(alertEvent.id, id), eq(alertEvent.organizationId, organizationId)))
+      .limit(1)
+
+    return rows[0] ?? null
+  },
+
   async findActiveFiring(alertRuleId: string, queueName: string): Promise<AlertEvent | null> {
     const db = await getDb()
     const rows = await db

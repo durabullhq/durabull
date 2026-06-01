@@ -13,6 +13,7 @@ import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { type CursorState, evaluateRule, type QueueSnapshot } from '../lib/alert-evaluator'
+import { processAlertDeliveries } from '../lib/alert-notifier'
 import {
   mergeWebhookSecretsOnUpdate,
   resolveWebhookTestSecret,
@@ -439,6 +440,36 @@ const app = new Hono()
     }
 
     return c.json({ event })
+  })
+  .post('/events/:eventId/deliveries/:deliveryId/retry', async (c) => {
+    const { eventId, deliveryId } = c.req.param()
+    const connectionId = c.get('connectionId')
+    const organizationId = c.get('organizationId')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    const event = await alertEventRepository.findById(eventId, organizationId)
+    if (!event || event.connectionId !== connectionId) {
+      return c.json({ error: 'Event not found' }, 404)
+    }
+
+    const reset = await alertDeliveryRepository.resetForRetry(deliveryId, eventId)
+    if (!reset) {
+      return c.json({ error: 'Delivery not found or is not in a retryable state.' }, 404)
+    }
+
+    // Dispatch only needs the connection identity, which the connection
+    // middleware already resolved into context — no refetch/decrypt required.
+    const connection = { id: connectionId, name: c.get('connectionName') }
+
+    const rule = await alertRuleRepository.findById(event.alertRuleId, organizationId)
+    await processAlertDeliveries(event, connection, rule?.name ?? 'Durabull alert', {
+      deliveryId,
+    })
+
+    const [refreshed] = await attachDeliveries([event])
+    return c.json({ event: refreshed })
   })
 
 async function attachDeliveries<T extends { id: string }>(events: T[]) {
