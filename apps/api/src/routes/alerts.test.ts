@@ -427,6 +427,75 @@ describe('alerts routes', () => {
     expect(delivery?.attemptCount).toBe(2)
   })
 
+  it('retries only the targeted delivery when other deliveries are also due', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Multi-channel incident',
+      type: 'job_failed',
+      config: { maxIssuesPerPoll: 10 },
+      notificationChannels: [
+        { type: 'email', target: 'ops@example.com' },
+        { type: 'linear', target: 'org-default', teamId: 'INTAKE' },
+      ],
+      cooldownMinutes: 30,
+    })
+
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'One channel failed',
+      context: { jobId: 'job-1' },
+      firedAt: new Date(),
+    })
+
+    const [emailDelivery, linearDelivery] = await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'email',
+        target: 'ops@example.com',
+      },
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'linear',
+        target: 'org-default:INTAKE',
+        providerMetadata: { type: 'linear', target: 'org-default', teamId: 'INTAKE' },
+      },
+    ])
+
+    const [claimedLinear] = await alertDeliveryRepository.claimById(linearDelivery!.id, event.id)
+    await alertDeliveryRepository.markFailed(claimedLinear!.id, {
+      error: 'Linear integration is not configured for this organization.',
+      retryable: false,
+      expectedClaimedAt: claimedLinear!.claimedAt as Date,
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(
+      `/events/${event.id}/deliveries/${linearDelivery!.id}/retry`,
+      { method: 'POST' }
+    )
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      event: { deliveries: Array<{ id: string; status: string; attemptCount: number }> }
+    }
+    const retried = body.event.deliveries.find((entry) => entry.id === linearDelivery!.id)
+    const untouched = body.event.deliveries.find((entry) => entry.id === emailDelivery!.id)
+
+    expect(retried?.status).toBe('failed')
+    expect(retried?.attemptCount).toBe(2)
+    expect(untouched?.status).toBe('pending')
+    expect(untouched?.attemptCount).toBe(0)
+  })
+
   it('returns 404 when retrying a delivery that is not in a retryable state', async () => {
     const rule = await alertRuleRepository.create({
       organizationId: TEST_ORG_ID,

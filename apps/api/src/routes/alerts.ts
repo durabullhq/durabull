@@ -464,11 +464,9 @@ const app = new Hono()
     const connection = { id: connectionId, name: c.get('connectionName') }
 
     const rule = await alertRuleRepository.findById(event.alertRuleId, organizationId)
-    try {
-      await processAlertDeliveries(event, connection, rule?.name ?? 'Durabull alert')
-    } catch (error) {
-      console.error('[alerts] Manual delivery retry failed:', error)
-    }
+    await processAlertDeliveries(event, connection, rule?.name ?? 'Durabull alert', {
+      deliveryId,
+    })
 
     const [refreshed] = await attachDeliveries([event])
     return c.json({ event: refreshed })

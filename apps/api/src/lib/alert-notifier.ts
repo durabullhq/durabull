@@ -82,12 +82,20 @@ export async function dispatchAlertNotification(
   await processAlertDeliveries(event, connection, ruleName)
 }
 
+export type ProcessAlertDeliveriesOptions = {
+  /** When set, claim and dispatch only this delivery (manual retry). */
+  deliveryId?: string
+}
+
 export async function processAlertDeliveries(
   event: AlertEvent,
   connection: AlertNotificationConnection,
-  ruleName: string
+  ruleName: string,
+  options?: ProcessAlertDeliveriesOptions
 ): Promise<void> {
-  const dueDeliveries = await alertDeliveryRepository.claimDueForEvent(event.id)
+  const dueDeliveries = options?.deliveryId
+    ? await alertDeliveryRepository.claimById(options.deliveryId, event.id)
+    : await alertDeliveryRepository.claimDueForEvent(event.id)
   if (dueDeliveries.length === 0) return
 
   const organizationSlug = await getOrganizationSlug(event.organizationId)

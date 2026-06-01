@@ -132,6 +132,32 @@ describe('alertDeliveryRepository', () => {
     expect(finalClaim).toHaveLength(0)
   })
 
+  it('claims only the requested delivery by id', async () => {
+    const event = await seedAlertEvent()
+    const deliveries = await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'email',
+        target: 'ops@example.com',
+      },
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'linear',
+        target: 'org-default:team-1::::',
+      },
+    ])
+
+    const [claimed] = await alertDeliveryRepository.claimById(deliveries[1]!.id, event.id)
+    expect(claimed?.id).toBe(deliveries[1]!.id)
+    expect(claimed?.status).toBe('claimed')
+
+    const listed = await alertDeliveryRepository.listByEvent(event.id)
+    expect(listed.find((row) => row.id === deliveries[0]!.id)?.status).toBe('pending')
+    expect(listed.find((row) => row.id === deliveries[1]!.id)?.status).toBe('claimed')
+  })
+
   it('does not reclaim non-retryable failed deliveries', async () => {
     const event = await seedAlertEvent()
     await alertDeliveryRepository.enqueueMany([
