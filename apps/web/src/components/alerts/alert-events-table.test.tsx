@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { AlertEventsTable } from '@/components/alerts/alert-events-table'
 import type { AlertEventRecord } from '@/hooks/use-alerts'
@@ -88,7 +88,7 @@ describe('AlertEventsTable', () => {
     expect(onResolve).toHaveBeenCalledWith(expect.objectContaining({ id: 'event-1' }))
   })
 
-  it('links back to the alerts page for non-firing events', () => {
+  it('exposes a details action for non-firing events', () => {
     render(
       <AlertEventsTable
         orgSlug="acme"
@@ -106,6 +106,6 @@ describe('AlertEventsTable', () => {
     )
 
     expect(screen.getByText('Delivered')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open alerts' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Details' })).toBeInTheDocument()
   })
 })

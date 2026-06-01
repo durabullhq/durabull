@@ -61,7 +61,7 @@ describe('IntegrationsSettingsPanel', () => {
     render(<IntegrationsSettingsPanel />)
 
     expect(
-      screen.queryByRole('textbox', { name: /default linear team id/i })
+      screen.queryByRole('textbox', { name: /default linear team/i })
     ).not.toBeInTheDocument()
 
     const connectButton = screen.getByRole('button', { name: /connect linear/i })
@@ -92,7 +92,7 @@ describe('IntegrationsSettingsPanel', () => {
 
     render(<IntegrationsSettingsPanel />)
 
-    const teamInput = screen.getByRole('textbox', { name: /default linear team id/i })
+    const teamInput = screen.getByRole('textbox', { name: /default linear team/i })
     expect(teamInput).toHaveValue('')
     fireEvent.change(teamInput, { target: { value: 'team-456' } })
     fireEvent.click(screen.getByRole('button', { name: /save defaults/i }))

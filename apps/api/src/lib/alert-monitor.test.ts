@@ -16,6 +16,15 @@ import {
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import type { CursorState, QueueSnapshot } from './alert-evaluator'
+import * as alertNotifierModule from './alert-notifier'
+import * as redisModule from './redis'
+
+// `mock.module` is process-global and is NOT reverted by `mock.restore()`, so the
+// notifier/redis mocks below would leak into other test files (e.g. the alerts
+// route tests rely on the real `processAlertDeliveries`). Snapshot the real
+// modules now and reinstall them after every test to keep the suite isolated.
+const realAlertNotifierModule = { ...alertNotifierModule }
+const realRedisModule = { ...redisModule }
 
 const TEST_ORG_ID = 'alert-monitor-org'
 
@@ -157,6 +166,9 @@ describe('alert monitor', () => {
   })
 
   afterEach(async () => {
+    mock.restore()
+    mock.module('./alert-notifier', () => realAlertNotifierModule)
+    mock.module('./redis', () => realRedisModule)
     await closeDb()
     mutableEnv.DATABASE_URL = originalDatabaseUrl
     mutableEnv.RESEND_API_KEY = originalResendKey

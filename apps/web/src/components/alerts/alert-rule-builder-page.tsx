@@ -1,5 +1,14 @@
 import { Link } from '@tanstack/react-router'
-import { BellRing, ChevronLeft, ChevronRight, Mail, Plus, TestTube2, Trash2, Webhook } from 'lucide-react'
+import {
+  BellRing,
+  ChevronLeft,
+  ChevronRight,
+  Mail,
+  Plus,
+  TestTube2,
+  Trash2,
+  Webhook,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -167,14 +176,14 @@ function NotificationRouteFields({
           aria-label={`Linear team override ${index + 1}`}
           value={route.teamId ?? ''}
           onChange={(event) => onUpdate({ ...route, teamId: event.target.value })}
-          placeholder="Team ID (optional)"
+          placeholder="Team name, key, or ID (optional)"
           data-testid={`alert-rule-linear-team-${index}`}
         />
         <Input
           aria-label={`Linear project override ${index + 1}`}
           value={route.projectId ?? ''}
           onChange={(event) => onUpdate({ ...route, projectId: event.target.value })}
-          placeholder="Project ID"
+          placeholder="Project name or ID"
         />
         <Input
           aria-label={`Linear labels override ${index + 1}`}
@@ -188,19 +197,19 @@ function NotificationRouteFields({
                 .filter(Boolean),
             })
           }
-          placeholder="Label IDs"
+          placeholder="Label names or IDs"
         />
         <Input
           aria-label={`Linear assignee override ${index + 1}`}
           value={route.assigneeId ?? ''}
           onChange={(event) => onUpdate({ ...route, assigneeId: event.target.value })}
-          placeholder="Assignee ID"
+          placeholder="Assignee name, email, or ID"
         />
         <Input
           aria-label={`Linear state override ${index + 1}`}
           value={route.stateId ?? ''}
           onChange={(event) => onUpdate({ ...route, stateId: event.target.value })}
-          placeholder="State ID"
+          placeholder="State name or ID"
         />
         <Input
           aria-label={`Linear priority override ${index + 1}`}

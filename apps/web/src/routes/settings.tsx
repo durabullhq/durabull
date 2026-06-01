@@ -1,7 +1,7 @@
 import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { useAuth } from '@/hooks/use-auth'
-import { SESSION_KEYS, type SessionWithActiveOrganization } from '@/lib/session-keys'
 import { type Organization, useOrganizations } from '@/hooks/use-organization'
+import { SESSION_KEYS, type SessionWithActiveOrganization } from '@/lib/session-keys'
 
 export const Route = createFileRoute('/settings')({
   component: LegacySettingsRedirect,
