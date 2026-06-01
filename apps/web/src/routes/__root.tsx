@@ -46,6 +46,7 @@ import { type Organization, useOrganizations } from '@/hooks/use-organization'
 import { usePageViewTracking } from '@/hooks/use-page-view-tracking'
 import { APP_BUILD_INFO } from '@/lib/app-version'
 import { type NavMatchMode, isNavLinkActive } from '@/lib/nav-link-active'
+import { SESSION_KEYS, type SessionWithActiveOrganization } from '@/lib/session-keys'
 import { cn } from '@/lib/utils'
 
 /**
@@ -63,7 +64,9 @@ function useCurrentOrgSlug(): string | undefined {
   if (paramsOrgSlug) return paramsOrgSlug
 
   // Fall back to active organization from session
-  const activeOrgId = (session as { activeOrganizationId?: string })?.activeOrganizationId
+  const activeOrgId = (session as SessionWithActiveOrganization)?.[
+    SESSION_KEYS.ACTIVE_ORGANIZATION_ID
+  ]
   if (activeOrgId && organizations) {
     const activeOrg = organizations.find((org: Organization) => org.id === activeOrgId)
     if (activeOrg) return activeOrg.slug

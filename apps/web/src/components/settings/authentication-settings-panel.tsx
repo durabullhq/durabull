@@ -57,7 +57,10 @@ export function AuthenticationSettingsPanel() {
 
   useEffect(() => {
     async function fetchAccounts() {
-      if (!user) return
+      if (!user) {
+        setIsLoadingAccounts(false)
+        return
+      }
 
       try {
         setIsLoadingAccounts(true)

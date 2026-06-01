@@ -276,10 +276,12 @@ test.describe("Pages", () => {
     await ensureActiveOrg(page);
     await page.goto("/settings");
 
+    await page.waitForURL(new RegExp(`/${TEST_ORG_SLUG}/settings/connections`));
+    await expect(page.getByText("Settings", { exact: true }).first()).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Settings", exact: true, level: 1 })
+      page.getByRole("heading", { name: "Connections", exact: true, level: 1 })
     ).toBeVisible();
-    await expect(page.getByText("Manage your account settings")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Connections" })).toBeVisible();
   });
 
   test("invite page shows not found for invalid id", async ({ page }) => {

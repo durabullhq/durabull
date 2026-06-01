@@ -106,7 +106,20 @@ const environments: {
   },
 ]
 
+const unassignedEnvironment = {
+  value: 'development' as ConnectionEnvironment,
+  label: 'Unassigned',
+  icon: Database,
+  color: 'text-muted-foreground',
+  bgColor: 'bg-muted/50',
+  borderColor: 'border-border',
+}
+
 function getEnvironmentConfig(env: ConnectionEnvironment | null) {
+  if (env === null) {
+    return unassignedEnvironment
+  }
+
   return environments.find((e) => e.value === env) ?? environments[0]
 }
 
@@ -329,6 +342,22 @@ export function ConnectionsSettingsPage({ createFromSearch = false }: { createFr
               />
             )
           })}
+          {(() => {
+            const unassignedConnections = connections.filter((c) => c.environment === null)
+            if (unassignedConnections.length === 0) return null
+
+            return (
+              <EnvironmentSection
+                key="unassigned"
+                envConfig={unassignedEnvironment}
+                connections={unassignedConnections}
+                readOnly={envConnections}
+                canViewSecrets={canViewSecrets}
+                onEdit={setEditingConnection}
+                onDelete={setDeletingConnection}
+              />
+            )
+          })()}
         </div>
       )}
 
@@ -566,8 +595,8 @@ function ConnectionFormDialog({
     mode === 'create' &&
     !!discoveryConnectionId &&
     (runQueueDiscoveryMutation.isPending ||
-      queueDiscoveryQuery.data?.running ||
-      !queueDiscoveryQuery.data)
+      queueDiscoveryQuery.isPending ||
+      queueDiscoveryQuery.data?.running === true)
   const discoveryResult = queueDiscoveryQuery.data
 
   useEffect(() => {

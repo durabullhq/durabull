@@ -106,10 +106,17 @@ export function IntegrationsSettingsPanel() {
                 <Button
                   type="button"
                   onClick={async () => {
-                    await saveLinearIntegration.mutateAsync({
-                      defaultTeamId: linearTeamId.trim() || null,
-                    })
-                    toast.success('Linear defaults saved')
+                    try {
+                      await saveLinearIntegration.mutateAsync({
+                        defaultTeamId: linearTeamId.trim() || null,
+                      })
+                      toast.success('Linear defaults saved')
+                    } catch (error) {
+                      console.error('Failed to save Linear defaults:', error)
+                      toast.error('Failed to save Linear defaults', {
+                        description: getErrorMessage(error, 'Please try again.'),
+                      })
+                    }
                   }}
                   disabled={saveLinearIntegration.isPending}
                 >
@@ -121,10 +128,17 @@ export function IntegrationsSettingsPanel() {
                   type="button"
                   variant="outline"
                   onClick={async () => {
-                    const result = await testLinearIntegration.mutateAsync()
-                    toast.success('Linear connection verified', {
-                      description: result.organizationName,
-                    })
+                    try {
+                      const result = await testLinearIntegration.mutateAsync()
+                      toast.success('Linear connection verified', {
+                        description: result.organizationName,
+                      })
+                    } catch (error) {
+                      console.error('Failed to test Linear connection:', error)
+                      toast.error('Failed to test Linear connection', {
+                        description: getErrorMessage(error, 'Please try again.'),
+                      })
+                    }
                   }}
                   disabled={testLinearIntegration.isPending}
                 >
@@ -136,9 +150,16 @@ export function IntegrationsSettingsPanel() {
                   type="button"
                   variant="destructive"
                   onClick={async () => {
-                    await deleteLinearIntegration.mutateAsync()
-                    setLinearTeamId('')
-                    toast.success('Linear integration removed')
+                    try {
+                      await deleteLinearIntegration.mutateAsync()
+                      setLinearTeamId('')
+                      toast.success('Linear integration removed')
+                    } catch (error) {
+                      console.error('Failed to remove Linear integration:', error)
+                      toast.error('Failed to remove Linear integration', {
+                        description: getErrorMessage(error, 'Please try again.'),
+                      })
+                    }
                   }}
                   disabled={deleteLinearIntegration.isPending}
                 >

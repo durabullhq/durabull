@@ -52,6 +52,7 @@ import {
 import { useAuth } from '@/hooks/use-auth'
 import {
   type Invitation,
+  MEMBER_ROLES,
   type MemberRole,
   type OrganizationMember,
   useActiveOrganization,
@@ -74,7 +75,7 @@ const roles: {
   description: string
 }[] = [
   {
-    value: 'owner',
+    value: MEMBER_ROLES.OWNER,
     label: 'Owner',
     icon: Crown,
     color: 'text-amber-600 dark:text-amber-400',
@@ -82,7 +83,7 @@ const roles: {
     description: 'Full access including billing and danger zone',
   },
   {
-    value: 'admin',
+    value: MEMBER_ROLES.ADMIN,
     label: 'Admin',
     icon: Shield,
     color: 'text-purple-600 dark:text-purple-400',
@@ -90,7 +91,7 @@ const roles: {
     description: 'Can manage members and settings',
   },
   {
-    value: 'member',
+    value: MEMBER_ROLES.MEMBER,
     label: 'Member',
     icon: User,
     color: 'text-blue-600 dark:text-blue-400',
@@ -130,7 +131,8 @@ export function TeamSettingsPage() {
 
   const currentMembership = members?.find((m) => m.userId === user?.id)
   const canManageMembers =
-    currentMembership?.role === 'owner' || currentMembership?.role === 'admin'
+    currentMembership?.role === MEMBER_ROLES.OWNER ||
+    currentMembership?.role === MEMBER_ROLES.ADMIN
   const topBarConfig = useMemo(
     () => ({
       left: (
@@ -178,7 +180,9 @@ export function TeamSettingsPage() {
 
   const totalMembers = members?.length ?? 0
   const pendingInvites = invitations?.length ?? 0
-  const admins = members?.filter((m) => m.role === 'admin' || m.role === 'owner').length ?? 0
+  const admins =
+    members?.filter((m) => m.role === MEMBER_ROLES.ADMIN || m.role === MEMBER_ROLES.OWNER).length ??
+    0
 
   return (
     <div className="space-y-6">
@@ -264,7 +268,7 @@ export function TeamSettingsPage() {
                   key={member.id}
                   member={member}
                   isCurrentUser={member.userId === user?.id}
-                  canManage={canManageMembers && member.role !== 'owner'}
+                  canManage={canManageMembers && member.role !== MEMBER_ROLES.OWNER}
                   onRemove={() => {
                     trackEvent(AnalyticsEvents.DIALOG_OPENED, {
                       [AnalyticsProperties.DIALOG_TYPE]: DialogType.REMOVE_MEMBER,
@@ -410,7 +414,7 @@ function MemberRow({
 
       {/* Role */}
       <TableCell>
-        {canManage && member.role !== 'owner' ? (
+        {canManage && member.role !== MEMBER_ROLES.OWNER ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -426,7 +430,7 @@ function MemberRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               {roles
-                .filter((r) => r.value !== 'owner')
+                .filter((r) => r.value !== MEMBER_ROLES.OWNER)
                 .map((role) => (
                   <DropdownMenuItem
                     key={role.value}
@@ -477,7 +481,7 @@ function MemberRow({
       {/* Actions */}
       {canManage && (
         <TableCell>
-          {!isCurrentUser && member.role !== 'owner' && (
+          {!isCurrentUser && member.role !== MEMBER_ROLES.OWNER && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -623,7 +627,7 @@ function InviteDialog({
   organizationId: string
 }) {
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<MemberRole>('member')
+  const [role, setRole] = useState<MemberRole>(MEMBER_ROLES.MEMBER)
 
   const inviteMutation = useInviteMember()
   const isLoading = inviteMutation.isPending
@@ -631,7 +635,7 @@ function InviteDialog({
   useEffect(() => {
     if (!open) {
       setEmail('')
-      setRole('member')
+      setRole(MEMBER_ROLES.MEMBER)
       inviteMutation.reset()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Only reset when dialog closes
@@ -696,7 +700,7 @@ function InviteDialog({
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width]">
                 {roles
-                  .filter((r) => r.value !== 'owner')
+                  .filter((r) => r.value !== MEMBER_ROLES.OWNER)
                   .map((r) => (
                     <DropdownMenuItem
                       key={r.value}

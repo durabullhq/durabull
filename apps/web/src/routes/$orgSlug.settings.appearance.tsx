@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Check, Monitor, Moon, Palette, Sun } from 'lucide-react'
-import { useMemo } from 'react'
+import { type ComponentType, useMemo } from 'react'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { useTheme } from '@/components/theme-provider'
 import { Button } from '@/components/ui/button'
@@ -42,7 +42,7 @@ function AppearanceSettingsPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3 p-4">
+        <CardContent className="space-y-3 p-4" role="radiogroup" aria-label="Theme preference">
           <ThemeOption
             title="System"
             description={`Use your device preference (currently ${resolvedTheme}).`}
@@ -79,7 +79,7 @@ function ThemeOption({
 }: {
   title: string
   description: string
-  icon: React.ComponentType<{ className?: string }>
+  icon: ComponentType<{ className?: string }>
   isActive: boolean
   onClick: () => void
 }) {
@@ -87,6 +87,8 @@ function ThemeOption({
     <Button
       type="button"
       variant="outline"
+      role="radio"
+      aria-checked={isActive}
       onClick={onClick}
       className={cn(
         'h-auto w-full justify-between rounded-lg border p-4 text-left',
