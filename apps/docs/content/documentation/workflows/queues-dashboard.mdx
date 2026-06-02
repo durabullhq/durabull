@@ -19,11 +19,12 @@ For queue-level native telemetry charts and worker metrics setup, see:
 
 - Queue summary cards:
   - Waiting
+  - Prioritized
   - Active
   - Delayed
   - Completed
   - Failed
-- Queue table with per-queue job counts and status
+- Queue table with per-queue job counts and status (including prioritized)
 - Empty state guidance when no BullMQ queues are discovered
 
 ## Data Source Behavior
@@ -43,6 +44,7 @@ This is why empty results usually indicate either:
 ## Operational Reading Tips
 
 - High waiting + low active often indicates worker capacity bottlenecks.
+- Prioritized counts surface urgent jobs that are processed ahead of the standard waiting set; watch these alongside waiting for at-a-glance triage.
 - Rising failed counts should be investigated from queue/job details.
 - Delayed growth can be expected for time-based workloads but should be correlated with scheduled jobs and invoke actions.
 

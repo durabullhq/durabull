@@ -6,6 +6,7 @@ import {
   Clock,
   Layers,
   Loader2,
+  Rocket,
   Search,
   Timer,
   Zap,
@@ -17,11 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  useDiscoverQueues,
-  useQueueDiscoveryStatus,
-  useQueues,
-} from '@/hooks/use-queues'
+import { useDiscoverQueues, useQueueDiscoveryStatus, useQueues } from '@/hooks/use-queues'
 import { REDIS_CONNECTION_ERROR_MESSAGE } from '@/lib/api'
 import { PAGINATION } from '@/lib/constants'
 import { cn, formatNumber } from '@/lib/utils'
@@ -161,7 +158,14 @@ function Dashboard() {
   }
 
   const queues = data?.queues ?? []
-  const totals = data?.totalJobCounts ?? { waiting: 0, active: 0, failed: 0, delayed: 0, completed: 0 }
+  const totals = data?.totalJobCounts ?? {
+    waiting: 0,
+    active: 0,
+    failed: 0,
+    delayed: 0,
+    completed: 0,
+    prioritized: 0,
+  }
 
   return (
     <TooltipProvider>
@@ -181,13 +185,21 @@ function Dashboard() {
         )}
 
         {/* Summary stats */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard
             title="Waiting"
             value={totals.waiting}
             icon={Clock}
             loading={isLoading}
             tooltip="Jobs waiting to be processed"
+          />
+          <StatCard
+            title="Prioritized"
+            value={totals.prioritized}
+            icon={Rocket}
+            loading={isLoading}
+            variant="violet"
+            tooltip="Prioritized jobs waiting ahead of the standard queue"
           />
           <StatCard
             title="Active"
@@ -262,6 +274,7 @@ function Dashboard() {
                     <Skeleton className="h-4 w-12" />
                     <Skeleton className="h-4 w-12" />
                     <Skeleton className="h-4 w-12" />
+                    <Skeleton className="h-4 w-12" />
                   </div>
                 ))}
               </div>
@@ -284,7 +297,7 @@ function Dashboard() {
   )
 }
 
-type StatVariant = 'default' | 'blue' | 'green' | 'orange' | 'red'
+type StatVariant = 'default' | 'blue' | 'green' | 'orange' | 'red' | 'violet'
 
 interface StatCardProps {
   title: string
@@ -334,6 +347,12 @@ const variantStyles: Record<
     value: 'text-red-600 dark:text-red-400',
     bg: 'bg-red-500/5 dark:bg-red-500/10',
     border: 'border-red-200 dark:border-red-900',
+  },
+  violet: {
+    icon: 'text-violet-500',
+    value: 'text-violet-600 dark:text-violet-400',
+    bg: 'bg-violet-500/5 dark:bg-violet-500/10',
+    border: 'border-violet-200 dark:border-violet-900',
   },
 }
 
