@@ -16,7 +16,9 @@ import { useAppTopBar } from '@/components/app-top-bar'
 import { QueueTable } from '@/components/queue-table'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useDiscoverQueues, useQueueDiscoveryStatus, useQueues } from '@/hooks/use-queues'
 import { REDIS_CONNECTION_ERROR_MESSAGE } from '@/lib/api'
@@ -50,6 +52,7 @@ function Dashboard() {
   const routeParams = useParams({ strict: false }) as { connectionId?: string }
   const connectionId = routeParams.connectionId ?? ''
   const [page, setPage] = useState(1)
+  const [nameFilter, setNameFilter] = useState('')
   const { data, isLoading, error, isPlaceholderData } = useQueues({
     page,
     pageSize: PAGINATION.QUEUES_PAGE_SIZE,
@@ -83,6 +86,7 @@ function Dashboard() {
     if (!connectionId) return
     hasAutoTriggeredDiscovery.current = false
     setPage(1)
+    setNameFilter('')
   }, [connectionId])
 
   useEffect(() => {
@@ -136,6 +140,13 @@ function Dashboard() {
 
   useAppTopBar(topBarConfig)
 
+  const debouncedNameFilter = useDebouncedValue(nameFilter.trim().toLowerCase())
+  const queues = data?.queues ?? []
+  const filteredQueues = useMemo(() => {
+    if (!debouncedNameFilter) return queues
+    return queues.filter((q) => q.name.toLowerCase().includes(debouncedNameFilter))
+  }, [queues, debouncedNameFilter])
+
   const shouldShowConnectionFailure =
     !error &&
     !isLoading &&
@@ -157,7 +168,6 @@ function Dashboard() {
     )
   }
 
-  const queues = data?.queues ?? []
   const totals = data?.totalJobCounts ?? {
     waiting: 0,
     active: 0,
@@ -258,6 +268,28 @@ function Dashboard() {
             )}
           </div>
 
+          {!isLoading && queues.length > 0 && (
+            <div className="relative max-w-md">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                type="search"
+                value={nameFilter}
+                onChange={(event) => setNameFilter(event.target.value)}
+                placeholder="Filter by queue name"
+                aria-label="Filter queues by name"
+                className="pl-9 bg-background"
+              />
+              {debouncedNameFilter && filteredQueues.length > 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {formatNumber(filteredQueues.length)} of {formatNumber(queues.length)} queues
+                </p>
+              )}
+            </div>
+          )}
+
           {isLoading ? (
             <div className="rounded-lg border bg-card">
               <div className="p-4 space-y-4">
@@ -281,9 +313,11 @@ function Dashboard() {
             </div>
           ) : (data?.total ?? 0) === 0 ? (
             <EmptyState />
+          ) : filteredQueues.length === 0 ? (
+            <NoMatchingQueuesState filter={debouncedNameFilter} />
           ) : (
             <QueueTable
-              queues={queues}
+              queues={filteredQueues}
               page={data?.page ?? 1}
               totalPages={data?.totalPages ?? 1}
               total={data?.total ?? 0}
@@ -403,6 +437,20 @@ function StatCard({
   }
 
   return cardContent
+}
+
+function NoMatchingQueuesState({ filter }: { filter: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 py-12">
+      <div className="rounded-full bg-muted p-3 mb-3">
+        <Search className="h-6 w-6 text-muted-foreground" />
+      </div>
+      <h3 className="text-base font-semibold mb-1">No matching queues</h3>
+      <p className="text-sm text-muted-foreground text-center max-w-md">
+        No queue names contain &quot;{filter}&quot;. Try a different filter.
+      </p>
+    </div>
+  )
 }
 
 function EmptyState() {
