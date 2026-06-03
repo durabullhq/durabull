@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, ilike, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { redisDiscoveredQueue } from '../db/schemas/redis-discovered-queue/schema'
 import type { RedisDiscoveredQueue } from '../db/schemas/redis-discovered-queue/types'
@@ -6,6 +6,20 @@ import type { RedisDiscoveredQueue } from '../db/schemas/redis-discovered-queue/
 export interface RedisDiscoveredQueueListOptions {
   offset: number
   limit: number
+  nameContains?: string
+}
+
+function connectionWhere(connectionId: string, nameContains?: string) {
+  const trimmed = nameContains?.trim()
+  if (!trimmed) {
+    return eq(redisDiscoveredQueue.connectionId, connectionId)
+  }
+
+  const escaped = trimmed.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+  return and(
+    eq(redisDiscoveredQueue.connectionId, connectionId),
+    ilike(redisDiscoveredQueue.name, `%${escaped}%`)
+  )
 }
 
 export interface RedisDiscoveredQueueSummary {
@@ -34,7 +48,7 @@ export const redisDiscoveredQueueRepository = {
     return db
       .select()
       .from(redisDiscoveredQueue)
-      .where(eq(redisDiscoveredQueue.connectionId, connectionId))
+      .where(connectionWhere(connectionId, options.nameContains))
       .orderBy(asc(redisDiscoveredQueue.name))
       .limit(options.limit)
       .offset(options.offset)
@@ -56,14 +70,14 @@ export const redisDiscoveredQueueRepository = {
     return rows[0] ?? null
   },
 
-  async countByConnection(connectionId: string): Promise<number> {
+  async countByConnection(connectionId: string, options?: { nameContains?: string }): Promise<number> {
     const db = await getDb()
     const [row] = await db
       .select({
         total: sql<number>`count(*)`,
       })
       .from(redisDiscoveredQueue)
-      .where(eq(redisDiscoveredQueue.connectionId, connectionId))
+      .where(connectionWhere(connectionId, options?.nameContains))
 
     return toNumber(row?.total)
   },

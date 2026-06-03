@@ -10,6 +10,9 @@ release/
 # Turbo
 .turbo/
 
+# Local API database (PGlite)
+apps/api/data/
+
 # Local env files
 .env
 .env.keys

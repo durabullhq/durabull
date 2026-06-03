@@ -164,4 +164,44 @@ describe('queues routes', () => {
     const emails = body.queues.find((q) => q.name === 'emails')
     expect(emails?.jobCounts.prioritized).toBe(4)
   })
+
+  it('filters queue list by name query', async () => {
+    const getQueueMock = mock(async () => ({
+      getJobCounts: async () => ({
+        waiting: 0,
+        active: 0,
+        delayed: 0,
+        completed: 0,
+        failed: 0,
+        paused: 0,
+        prioritized: 0,
+      }),
+      isPaused: async () => false,
+    }))
+
+    mock.module('../lib/redis', () => ({
+      getQueue: getQueueMock,
+      safeGetWorkers: async () => [],
+      debugGetBullKeys: async () => [],
+    }))
+
+    await seedDiscoveredQueue('emails')
+    await seedDiscoveredQueue('reports')
+    await seedDiscoveredQueue('email-digest')
+
+    const app = await createQueuesRouteApp()
+    const response = await app.request('/?name=email')
+
+    expect(response.status).toBe(200)
+
+    const body = (await response.json()) as {
+      total: number
+      totalPages: number
+      queues: Array<{ name: string }>
+    }
+
+    expect(body.total).toBe(2)
+    expect(body.totalPages).toBe(1)
+    expect(body.queues.map((queue) => queue.name).sort()).toEqual(['email-digest', 'emails'])
+  })
 })

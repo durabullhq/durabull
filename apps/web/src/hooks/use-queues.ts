@@ -204,9 +204,9 @@ export type {
  * Includes connection ID for proper cache isolation
  */
 export const queryKeys = {
-  queues: (connectionId: string, page?: number, pageSize?: number) =>
-    page !== undefined || pageSize !== undefined
-      ? (['queues', connectionId, { page, pageSize }] as const)
+  queues: (connectionId: string, page?: number, pageSize?: number, name?: string) =>
+    page !== undefined || pageSize !== undefined || name !== undefined
+      ? (['queues', connectionId, { page, pageSize, name }] as const)
       : (['queues', connectionId] as const),
   queueDiscovery: (connectionId: string) => ['queues', connectionId, 'discovery'] as const,
   queue: (connectionId: string, name: string) => ['queue', connectionId, name] as const,
@@ -239,17 +239,19 @@ function useConnectionIdFromContextOrRoute(): string | undefined {
 }
 
 // Queue Queries
-export function useQueues(options?: { page?: number; pageSize?: number }) {
+export function useQueues(options?: { page?: number; pageSize?: number; name?: string }) {
   const connectionId = useConnectionIdFromContextOrRoute()
   const page = options?.page
   const pageSize = options?.pageSize
+  const name = options?.name?.trim() || undefined
 
   return useQuery({
-    queryKey: queryKeys.queues(connectionId ?? '', page, pageSize),
+    queryKey: queryKeys.queues(connectionId ?? '', page, pageSize, name),
     queryFn: async () => {
       const params = new URLSearchParams()
       if (page !== undefined) params.set('page', String(page))
       if (pageSize !== undefined) params.set('pageSize', String(pageSize))
+      if (name) params.set('name', name)
       const query = params.toString()
 
       return fetchApi<ListQueuesResponse>(
@@ -260,7 +262,14 @@ export function useQueues(options?: { page?: number; pageSize?: number }) {
       const hasPendingDiscoveryRows = (query.state.data?.discovery?.indexed.pending ?? 0) > 0
       return query.state.data?.discovery?.running || hasPendingDiscoveryRows ? 2000 : 10_000
     },
-    placeholderData: (previousData) => previousData,
+    placeholderData: (previousData, previousQuery) => {
+      const prevParams = previousQuery?.queryKey?.[2] as
+        | { page?: number; pageSize?: number; name?: string }
+        | undefined
+      if (previousQuery?.queryKey?.[1] !== connectionId) return undefined
+      if (prevParams?.name !== name) return undefined
+      return previousData
+    },
     enabled: !!connectionId,
   })
 }

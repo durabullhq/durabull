@@ -56,4 +56,20 @@ describe('useDebouncedValue', () => {
     })
     expect(result.current).toBe('gamma')
   })
+
+  it('syncs immediately when resetKey changes', () => {
+    const { result, rerender } = renderHook(
+      ({ value, resetKey }) => useDebouncedValue(value, 300, { resetKey }),
+      { initialProps: { value: 'alpha', resetKey: 'conn-1' } }
+    )
+
+    rerender({ value: 'beta', resetKey: 'conn-1' })
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    expect(result.current).toBe('alpha')
+
+    rerender({ value: '', resetKey: 'conn-2' })
+    expect(result.current).toBe('')
+  })
 })

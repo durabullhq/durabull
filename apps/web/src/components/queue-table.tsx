@@ -124,13 +124,8 @@ export function QueueTable({
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div
-        className={cn(
-          'rounded-lg border bg-card overflow-hidden flex flex-col h-[calc(100vh-18rem)]',
-          className
-        )}
-      >
-        <div className="flex-1 overflow-auto min-h-0 [&>div]:overflow-visible">
+      <div className={cn('rounded-lg border bg-card overflow-hidden', className)}>
+        <div className="max-h-[calc(100vh-18rem)] overflow-auto [&>div]:overflow-visible">
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow className="hover:bg-transparent">

@@ -53,9 +53,13 @@ function Dashboard() {
   const connectionId = routeParams.connectionId ?? ''
   const [page, setPage] = useState(1)
   const [nameFilter, setNameFilter] = useState('')
-  const { data, isLoading, error, isPlaceholderData } = useQueues({
+  const debouncedNameFilter = useDebouncedValue(nameFilter.trim(), 300, {
+    resetKey: connectionId,
+  })
+  const { data, isLoading, isFetching, error, isPlaceholderData } = useQueues({
     page,
     pageSize: PAGINATION.QUEUES_PAGE_SIZE,
+    name: debouncedNameFilter || undefined,
   })
   const discoveryQuery = useQueueDiscoveryStatus()
   const discoverMutation = useDiscoverQueues()
@@ -89,8 +93,15 @@ function Dashboard() {
     setNameFilter('')
   }, [connectionId])
 
+  const [prevDebouncedNameFilter, setPrevDebouncedNameFilter] = useState(debouncedNameFilter)
+  if (debouncedNameFilter !== prevDebouncedNameFilter) {
+    setPrevDebouncedNameFilter(debouncedNameFilter)
+    setPage(1)
+  }
+
   useEffect(() => {
     if (hasAutoTriggeredDiscovery.current) return
+    if (debouncedNameFilter.length > 0) return
     if (isLoading) return
     if (!data) return
     if (discoveryRunning) return
@@ -98,7 +109,7 @@ function Dashboard() {
 
     hasAutoTriggeredDiscovery.current = true
     discoverMutation.mutate()
-  }, [data, discoverMutation, discoveryRunning, hasRecentDiscovery, isLoading])
+  }, [data, debouncedNameFilter, discoverMutation, discoveryRunning, hasRecentDiscovery, isLoading])
 
   const topBarConfig = useMemo(
     () => ({
@@ -140,16 +151,15 @@ function Dashboard() {
 
   useAppTopBar(topBarConfig)
 
-  const debouncedNameFilter = useDebouncedValue(nameFilter.trim().toLowerCase())
   const queues = data?.queues ?? []
-  const filteredQueues = useMemo(() => {
-    if (!debouncedNameFilter) return queues
-    return queues.filter((q) => q.name.toLowerCase().includes(debouncedNameFilter))
-  }, [queues, debouncedNameFilter])
+  const hasNameFilter = debouncedNameFilter.length > 0
+  const filterRefetching = hasNameFilter && (isFetching || isPlaceholderData)
+  const statsLoading = isLoading || filterRefetching
 
   const shouldShowConnectionFailure =
     !error &&
     !isLoading &&
+    !hasNameFilter &&
     (data?.total ?? 0) === 0 &&
     !discoveryRunning &&
     !!discoveryErrorMessage &&
@@ -200,14 +210,14 @@ function Dashboard() {
             title="Waiting"
             value={totals.waiting}
             icon={Clock}
-            loading={isLoading}
+            loading={statsLoading}
             tooltip="Jobs waiting to be processed"
           />
           <StatCard
             title="Prioritized"
             value={totals.prioritized}
             icon={Rocket}
-            loading={isLoading}
+            loading={statsLoading}
             variant="violet"
             tooltip="Prioritized jobs waiting ahead of the standard queue"
           />
@@ -215,16 +225,16 @@ function Dashboard() {
             title="Active"
             value={totals.active}
             icon={Activity}
-            loading={isLoading}
+            loading={statsLoading}
             variant="blue"
-            showPulse={totals.active > 0}
+            showPulse={!statsLoading && totals.active > 0}
             tooltip="Jobs currently being processed"
           />
           <StatCard
             title="Delayed"
             value={totals.delayed}
             icon={Timer}
-            loading={isLoading}
+            loading={statsLoading}
             variant="orange"
             tooltip="Jobs scheduled for later"
           />
@@ -232,7 +242,7 @@ function Dashboard() {
             title="Completed"
             value={totals.completed}
             icon={CheckCircle2}
-            loading={isLoading}
+            loading={statsLoading}
             variant="green"
             tooltip="Successfully completed jobs"
           />
@@ -240,7 +250,7 @@ function Dashboard() {
             title="Failed"
             value={totals.failed}
             icon={AlertCircle}
-            loading={isLoading}
+            loading={statsLoading}
             variant="red"
             tooltip="Jobs that failed to process"
           />
@@ -251,11 +261,14 @@ function Dashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold">Queues</h2>
-              {data && (
-                <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
-                  {data.total} total
-                </span>
-              )}
+              {data &&
+                (hasNameFilter && isFetching ? (
+                  <Skeleton className="h-5 w-20 rounded-full" />
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
+                    {formatNumber(data.total)} {hasNameFilter ? 'matching' : 'total'}
+                  </span>
+                ))}
             </div>
             {totals.active > 0 && (
               <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
@@ -268,25 +281,22 @@ function Dashboard() {
             )}
           </div>
 
-          {!isLoading && queues.length > 0 && (
-            <div className="relative max-w-md">
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                type="search"
-                value={nameFilter}
-                onChange={(event) => setNameFilter(event.target.value)}
-                placeholder="Filter by queue name"
-                aria-label="Filter queues by name"
-                className="pl-9 bg-background"
-              />
-              {debouncedNameFilter && filteredQueues.length > 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {formatNumber(filteredQueues.length)} of {formatNumber(queues.length)} queues
-                </p>
-              )}
+          {!isLoading && (queues.length > 0 || hasNameFilter) && (
+            <div className="max-w-md">
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute inset-y-0 left-3 my-auto h-4 w-4 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  type="search"
+                  value={nameFilter}
+                  onChange={(event) => setNameFilter(event.target.value)}
+                  placeholder="Filter by queue name"
+                  aria-label="Filter queues by name"
+                  className="pl-9 bg-background"
+                />
+              </div>
             </div>
           )}
 
@@ -311,13 +321,13 @@ function Dashboard() {
                 ))}
               </div>
             </div>
+          ) : (data?.total ?? 0) === 0 && hasNameFilter ? (
+            <NoMatchingQueuesState filter={debouncedNameFilter} />
           ) : (data?.total ?? 0) === 0 ? (
             <EmptyState />
-          ) : filteredQueues.length === 0 ? (
-            <NoMatchingQueuesState filter={debouncedNameFilter} />
           ) : (
             <QueueTable
-              queues={filteredQueues}
+              queues={queues}
               page={data?.page ?? 1}
               totalPages={data?.totalPages ?? 1}
               total={data?.total ?? 0}

@@ -21,6 +21,7 @@ import { debugGetBullKeys, getQueue, safeGetWorkers } from '../lib/redis'
 // Default and max page sizes for pagination
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
+const MAX_NAME_FILTER_LENGTH = 200
 const CLEAN_BATCH_SIZE = 1000
 const MAX_PURGE_BATCHES_PER_STATUS = 500
 const MAX_REMOVED_JOB_IDS_IN_RESPONSE = 100
@@ -67,6 +68,13 @@ function parseInteger(value: string | undefined): number | null {
 
 function parseBoolean(value: string | undefined): boolean {
   return value === '1' || value === 'true'
+}
+
+function normalizeNameFilter(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  if (trimmed.length <= MAX_NAME_FILTER_LENGTH) return trimmed
+  return trimmed.slice(0, MAX_NAME_FILTER_LENGTH)
 }
 
 function parsePriorities(value: string | undefined): number[] {
@@ -255,13 +263,16 @@ const app = new Hono()
       parseInteger(c.req.query('pageSize')) ?? DEFAULT_PAGE_SIZE,
       MAX_PAGE_SIZE
     )
+    const nameContains = normalizeNameFilter(c.req.query('name'))
 
     // Paginate the queue names BEFORE fetching details
     const start = (page - 1) * pageSize
     const end = start + pageSize
 
     let discovery = await getQueueDiscoveryStatus(connectionId)
-    let total = discovery.indexed.total
+    let total = nameContains
+      ? await redisDiscoveredQueueRepository.countByConnection(connectionId, { nameContains })
+      : discovery.indexed.total
     const hasDiscoveryAttempt =
       discovery.running ||
       discovery.startedAt !== null ||
@@ -274,12 +285,15 @@ const app = new Hono()
         allowSelfSignedCerts: redisOptions.allowSelfSignedCerts,
       })
       discovery = await getQueueDiscoveryStatus(connectionId)
-      total = discovery.indexed.total
+      total = nameContains
+        ? await redisDiscoveredQueueRepository.countByConnection(connectionId, { nameContains })
+        : discovery.indexed.total
     }
 
     const indexedQueues = await redisDiscoveredQueueRepository.listByConnection(connectionId, {
       offset: start,
       limit: pageSize,
+      nameContains,
     })
 
     const allIndexedQueues =
@@ -287,6 +301,7 @@ const app = new Hono()
         ? await redisDiscoveredQueueRepository.listByConnection(connectionId, {
             offset: 0,
             limit: total,
+            nameContains,
           })
         : indexedQueues
 
