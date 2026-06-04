@@ -227,6 +227,28 @@ export interface GetFailureEventsHandlerOutput {
   nextCursor: string | null
 }
 
+export interface ResolveAlertEventHandlerInput {
+  principal: ListConnectionsHandlerInput['principal']
+  connectionId: string
+  eventId: string
+}
+
+export interface ResolveAlertEventHandlerOutput {
+  [key: string]: unknown
+  connectionId: string
+  event: {
+    id: string
+    alertRuleId: string
+    queueName: string
+    type: string
+    status: string
+    summary: string
+    context: Record<string, unknown> | null
+    firedAt: string
+    resolvedAt: string | null
+  }
+}
+
 export interface GetQueueMetricsHandlerInput {
   principal: ListConnectionsHandlerInput['principal']
   connectionId: string
@@ -364,6 +386,7 @@ export interface RegisterReadToolsOptions {
     input: GetJobStacktracesHandlerInput
   ) => Promise<GetJobStacktracesHandlerOutput>
   getFailureEvents?: (input: GetFailureEventsHandlerInput) => Promise<GetFailureEventsHandlerOutput>
+  resolveAlertEvent?: (input: ResolveAlertEventHandlerInput) => Promise<ResolveAlertEventHandlerOutput>
   getQueueMetrics?: (input: GetQueueMetricsHandlerInput) => Promise<GetQueueMetricsHandlerOutput>
   getWorkers?: (input: GetWorkersHandlerInput) => Promise<GetWorkersHandlerOutput>
   explainJobFailure?: (
@@ -690,6 +713,25 @@ export function registerReadTools(server: McpServer, options: RegisterReadToolsO
             status: args.status,
             cursor: parseCursor(args.cursor),
             pageSize: parsePageSize(args.pageSize),
+          })
+        )
+    )
+  }
+
+  const resolveAlertEvent = options.resolveAlertEvent
+  if (resolveAlertEvent) {
+    server.tool(
+      'resolve_alert_event',
+      {
+        connectionId: z.string().min(1),
+        eventId: z.string().min(1),
+      },
+      async (args) =>
+        runReadTool(options, 'resolve_alert_event', args, () =>
+          resolveAlertEvent({
+            principal: getPrincipalFromContext(),
+            connectionId: args.connectionId,
+            eventId: args.eventId,
           })
         )
     )

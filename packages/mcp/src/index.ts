@@ -51,4 +51,6 @@ export type {
   ListQueuesHandlerInput,
   ListQueuesHandlerOutput,
   RegisterReadToolsOptions,
+  ResolveAlertEventHandlerInput,
+  ResolveAlertEventHandlerOutput,
 } from './tools/register-read-tools'

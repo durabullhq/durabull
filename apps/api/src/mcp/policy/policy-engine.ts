@@ -13,6 +13,7 @@ const TOOL_REQUIRED_SCOPES: Record<string, string[]> = {
   get_job_logs: ['mcp:logs:read'],
   get_job_stacktraces: ['mcp:logs:read'],
   get_failure_events: ['mcp:failures:read'],
+  resolve_alert_event: ['mcp:failures:read'],
   get_queue_metrics: ['mcp:diagnostics:read'],
   get_workers: ['mcp:jobs:read'],
   explain_job_failure: [
