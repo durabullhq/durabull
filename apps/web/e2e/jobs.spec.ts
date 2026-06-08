@@ -113,6 +113,53 @@ test.describe('Jobs', () => {
     }
   })
 
+  test('search filters jobs by data payload', async ({ page }) => {
+    await ensureActiveOrg(page)
+    const connectionId = await getDefaultConnectionId(page)
+    const queueName = await getTestQueueName(page, connectionId)
+    const createdJobs: string[] = []
+
+    try {
+      const token = `e2e-payload-${Date.now()}`
+      const jobId = await createJob(page, {
+        connectionId,
+        queueName,
+        name: `e2e-data-search-${Date.now()}`,
+        data: { message: token },
+        // Keep the job out of active processing so it stays findable.
+        delay: 10 * 60 * 1000,
+      })
+      createdJobs.push(jobId)
+
+      // API: searching the payload finds the job; a non-matching term does not.
+      await expect
+        .poll(
+          async () => {
+            const result = await getJobs(page, connectionId, queueName, { data: token })
+            return result.jobs.map((job) => String(job.id))
+          },
+          { timeout: 15000 }
+        )
+        .toContain(jobId)
+
+      const miss = await getJobs(page, connectionId, queueName, { data: `${token}-nope` })
+      expect(miss.jobs.map((job) => String(job.id))).not.toContain(jobId)
+
+      // UI: the data search input narrows the table to the matching job.
+      await page.goto(`/${TEST_ORG_SLUG}/c/${connectionId}/queues/${queueName}`)
+      const dataInput = page.getByLabel('Search jobs by data payload')
+      await expect(dataInput).toBeVisible({ timeout: 15000 })
+
+      await dataInput.fill(token)
+      await expect(page.getByTestId(`job-row-${jobId}`)).toBeVisible({ timeout: 15000 })
+
+      await dataInput.fill(`${token}-nope`)
+      await expect(page.getByTestId(`job-row-${jobId}`)).toHaveCount(0, { timeout: 15000 })
+    } finally {
+      await safeRemoveJobs(page, { connectionId, queueName, jobIds: createdJobs })
+    }
+  })
+
   test('invoke promotes a delayed job', async ({ page }) => {
     await ensureActiveOrg(page)
     const connectionId = await getDefaultConnectionId(page)
