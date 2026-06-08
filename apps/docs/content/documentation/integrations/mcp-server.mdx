@@ -30,6 +30,7 @@ Phase 1 ships diagnostic tools only — no queue mutations, retries, pauses, or 
 | `get_job_logs` | `mcp:logs:read` | Paginated job logs |
 | `get_job_stacktraces` | `mcp:logs:read` | Attempt-indexed stacktraces |
 | `get_failure_events` | `mcp:failures:read` | Alert/failure events |
+| `resolve_alert_event` | `mcp:failures:read` | Mark an alert event resolved |
 | `get_queue_metrics` | `mcp:diagnostics:read` | Queue metrics window |
 | `get_workers` | `mcp:jobs:read` | Worker snapshots |
 | `explain_job_failure` | `mcp:diagnostics:read` + `mcp:jobs:read` + `mcp:logs:read` + `mcp:failures:read` | Deterministic failure summary |

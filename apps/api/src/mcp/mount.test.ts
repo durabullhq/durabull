@@ -220,6 +220,7 @@ describe('api MCP ingress', () => {
     expect(toolNames).toContain('get_job_logs')
     expect(toolNames).toContain('get_job_stacktraces')
     expect(toolNames).toContain('get_failure_events')
+    expect(toolNames).toContain('resolve_alert_event')
     expect(toolNames).toContain('get_queue_metrics')
     expect(toolNames).toContain('get_workers')
     expect(toolNames).toContain('explain_job_failure')

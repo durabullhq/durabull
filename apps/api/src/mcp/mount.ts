@@ -11,6 +11,7 @@ import { recordMcpTelemetry } from './observability/mcp-telemetry'
 import { createMcpPolicyMiddleware } from './policy/mcp-policy-middleware'
 import { explainJobFailureHandler } from './tools/explain-job-failure-handler'
 import { getFailureEventsHandler } from './tools/get-failure-events-handler'
+import { resolveAlertEventHandler } from './tools/resolve-alert-event-handler'
 import { getJobHandler } from './tools/get-job-handler'
 import { getJobLogsHandler } from './tools/get-job-logs-handler'
 import { getJobStacktracesHandler } from './tools/get-job-stacktraces-handler'
@@ -50,6 +51,7 @@ export async function mountMcpIngress() {
       getJobLogs: getJobLogsHandler,
       getJobStacktraces: getJobStacktracesHandler,
       getFailureEvents: getFailureEventsHandler,
+      resolveAlertEvent: resolveAlertEventHandler,
       getQueueMetrics: getQueueMetricsHandler,
       getWorkers: getWorkersHandler,
       explainJobFailure: explainJobFailureHandler,
