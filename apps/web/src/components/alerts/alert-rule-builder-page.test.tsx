@@ -33,6 +33,12 @@ vi.mock('sonner', () => ({
   },
 }))
 
+vi.mock('@/hooks/use-alerts', () => ({
+  useTestWebhook: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useTestWebhookDestination: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useWebhookDestinations: () => ({ data: { destinations: [] } }),
+}))
+
 function createRule(overrides: Partial<AlertRuleRecord> = {}): AlertRuleRecord {
   return {
     id: 'rule-1',

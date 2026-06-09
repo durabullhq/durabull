@@ -181,6 +181,43 @@ describe('alertDeliveryRepository', () => {
     expect(claimed).toHaveLength(0)
   })
 
+  it('claims due deliveries across events for the monitor sweep', async () => {
+    const event = await seedAlertEvent()
+    await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'webhook',
+        target: 'https://example.com/hook',
+      },
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'email',
+        target: 'ops@example.com',
+      },
+    ])
+
+    const [retryable, permanent] = await alertDeliveryRepository.claimDueForEvent(event.id)
+    expect(retryable).toBeDefined()
+    expect(permanent).toBeDefined()
+
+    await alertDeliveryRepository.markFailed(retryable!.id, {
+      error: 'HTTP 500',
+      retryable: true,
+      nextRetryAt: new Date(Date.now() - 1000),
+      expectedClaimedAt: retryable!.claimedAt!,
+    })
+    await alertDeliveryRepository.markFailed(permanent!.id, {
+      error: 'HTTP 400',
+      retryable: false,
+      expectedClaimedAt: permanent!.claimedAt!,
+    })
+
+    const due = await alertDeliveryRepository.claimDue()
+    expect(due.map((delivery) => delivery.id)).toEqual([retryable!.id])
+  })
+
   it('only lets the current claim complete or fail a delivery', async () => {
     const event = await seedAlertEvent()
     await alertDeliveryRepository.enqueueMany([

@@ -155,6 +155,12 @@ function DeliveryRow({
 }) {
   const httpStatus = delivery.providerMetadata?.httpStatus
   const responseSnippet = delivery.providerMetadata?.responseBodySnippet
+  const deliveryTarget =
+    typeof delivery.providerMetadata?.destinationName === 'string'
+      ? delivery.providerMetadata.destinationName
+      : typeof delivery.providerMetadata?.url === 'string'
+        ? delivery.providerMetadata.url
+        : delivery.target
 
   return (
     <li className="rounded-lg border border-border/70 bg-background/70 p-3">
@@ -171,8 +177,8 @@ function DeliveryRow({
               </span>
             ) : null}
           </div>
-          {delivery.target ? (
-            <p className="truncate font-mono text-xs text-muted-foreground">{delivery.target}</p>
+          {deliveryTarget ? (
+            <p className="truncate font-mono text-xs text-muted-foreground">{deliveryTarget}</p>
           ) : null}
         </div>
         {isRetryable(delivery.status) ? (

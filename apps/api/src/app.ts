@@ -40,6 +40,7 @@ import teamRoutes from './routes/team'
 import telemetryRoutes, { getTelemetryStatus } from './routes/telemetry'
 import userSettingsRoutes from './routes/user-settings'
 import workersRoutes from './routes/workers'
+import alertWebhookDestinationsRoutes from './routes/alert-webhook-destinations'
 
 bootstrapServerAnalytics()
 
@@ -221,6 +222,7 @@ const apiRoutes = new Hono()
   .route('/team', teamRoutes)
   // User settings
   .route('/user-settings', userSettingsRoutes)
+  .route('/alerts/webhook-destinations', alertWebhookDestinationsRoutes)
   .route('/alerts', alertsGlobalRoutes)
   // Connected routes under /c/:connectionId
   .route('/c/:connectionId/alerts', alertsRoutes)
@@ -320,7 +322,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     '/api/*',
     cors({
       origin: corsOrigins,
-      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization'],
       credentials: true, // Required for auth cookies
     })
@@ -420,6 +422,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     .route('/team', teamRoutes)
     .route('/user-settings', userSettingsRoutes)
     .route('/mcp', mcpOAuthRoutes)
+    .route('/alerts/webhook-destinations', alertWebhookDestinationsRoutes)
     .route('/alerts', alertsGlobalRoutes)
     .route('/c/:connectionId/alerts', alertsRoutes)
     .route('/c/:connectionId/queues', queuesRoutes)

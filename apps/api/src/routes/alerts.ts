@@ -3,6 +3,8 @@ import {
   alertDeliveryRepository,
   alertEventRepository,
   alertRuleRepository,
+  alertWebhookDestinationRepository,
+  decryptSecret,
   eq,
   getDb,
   linearIntegrationRepository,
@@ -17,7 +19,7 @@ import { processAlertDeliveries } from '../lib/alert-notifier'
 import {
   mergeWebhookSecretsOnUpdate,
   resolveWebhookTestSecret,
-  sanitizeDeliveryProviderMetadata,
+  sanitizeAlertDeliveryForClient,
   sanitizeNotificationChannels,
   validateWebhookUrls,
 } from '../lib/alert-webhook-channels'
@@ -42,15 +44,24 @@ const linearNotificationChannelSchema = z.object({
   stateId: z.string().min(1).optional(),
   priority: z.number().int().min(0).max(4).optional(),
 })
-const webhookNotificationChannelSchema = z.object({
-  type: z.literal('webhook'),
-  url: z.string().url().max(2048),
-  secret: z.string().min(16).max(256).optional(),
-})
-const notificationChannelSchema = z.discriminatedUnion('type', [
+const webhookNotificationChannelSchema = z
+  .object({
+    type: z.literal('webhook'),
+    url: z.string().url().max(2048),
+    secret: z.string().min(16).max(256).optional(),
+  })
+  .strict()
+const savedWebhookNotificationChannelSchema = z
+  .object({
+    type: z.literal('webhook'),
+    destinationId: z.string().uuid(),
+  })
+  .strict()
+const notificationChannelSchema = z.union([
   emailNotificationChannelSchema,
   linearNotificationChannelSchema,
   webhookNotificationChannelSchema,
+  savedWebhookNotificationChannelSchema,
 ])
 
 const testWebhookSchema = z.object({
@@ -223,124 +234,140 @@ const app = new Hono()
       })
     ),
     async (c) => {
-    const { ruleId } = c.req.param()
-    const { deliver: deliverQuery } = c.req.valid('query')
-    const deliver = deliverQuery === 'true'
-    const connectionId = c.get('connectionId')
-    const connectionUrl = c.get('connectionUrl')
-    const connectionPrefix = c.get('connectionPrefix')
-    const redisOptions = getConnectionRedisOptions(c)
-    const connectionName = c.get('connectionName')
-    const organizationId = c.get('organizationId')
-    if (!organizationId) {
-      return c.json({ error: 'Organization is required' }, 403)
-    }
+      const { ruleId } = c.req.param()
+      const { deliver: deliverQuery } = c.req.valid('query')
+      const deliver = deliverQuery === 'true'
+      const connectionId = c.get('connectionId')
+      const connectionUrl = c.get('connectionUrl')
+      const connectionPrefix = c.get('connectionPrefix')
+      const redisOptions = getConnectionRedisOptions(c)
+      const connectionName = c.get('connectionName')
+      const organizationId = c.get('organizationId')
+      if (!organizationId) {
+        return c.json({ error: 'Organization is required' }, 403)
+      }
 
-    const rule = await alertRuleRepository.findById(ruleId, organizationId)
-    if (!rule) {
-      return c.json({ error: 'Rule not found' }, 404)
-    }
+      const rule = await alertRuleRepository.findById(ruleId, organizationId)
+      if (!rule) {
+        return c.json({ error: 'Rule not found' }, 404)
+      }
 
-    let queueName = rule.queueName
-    if (!queueName) {
-      const discovered = await redisDiscoveredQueueRepository.listByConnection(connectionId, {
-        offset: 0,
-        limit: 1,
-      })
-      queueName = discovered[0]?.name ?? null
-    }
-    if (!queueName) {
-      return c.json({ error: 'No queue available to test this rule yet' }, 400)
-    }
-
-    const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
-    const [jobCountsRaw, failedMetricsRaw, completedMetricsRaw] = await Promise.all([
-      queue.getJobCounts('failed', 'waiting', 'active', 'completed'),
-      queue.getMetrics('failed', 0, 60),
-      queue.getMetrics('completed', 0, 60),
-    ])
-
-    const snapshot: QueueSnapshot = {
-      queueName,
-      connectionName,
-      jobCounts: {
-        failed: jobCountsRaw.failed ?? 0,
-        waiting: jobCountsRaw.waiting ?? 0,
-        active: jobCountsRaw.active ?? 0,
-        completed: jobCountsRaw.completed ?? 0,
-      },
-      failedMetrics: {
-        count: failedMetricsRaw.meta.count,
-        dataPoints: failedMetricsRaw.data,
-      },
-      completedMetrics: {
-        count: completedMetricsRaw.meta.count,
-        dataPoints: completedMetricsRaw.data,
-      },
-    }
-
-    const cursorRow = await alertCheckCursorRepository.findByConnectionQueue(
-      connectionId,
-      queueName
-    )
-    const cursor: CursorState | null = cursorRow
-      ? {
-          lastCheckedAt: cursorRow.lastCheckedAt,
-          lastFailedCount: cursorRow.lastFailedCount,
-          lastCompletedCount: cursorRow.lastCompletedCount,
-        }
-      : null
-
-    const evaluation = evaluateRule(rule, snapshot, cursor)
-
-    const webhookChannels = (Array.isArray(rule.notificationChannels) ? rule.notificationChannels : [])
-      .filter(
-        (channel): channel is { type: 'webhook'; url: string; secret?: string } =>
-          typeof channel === 'object' &&
-          channel !== null &&
-          (channel as { type?: string }).type === 'webhook' &&
-          typeof (channel as { url?: string }).url === 'string'
-      )
-
-    let webhookTests:
-      | Array<{
-          url: string
-          success: boolean
-          httpStatus: number | null
-          durationMs: number
-          error?: string
-        }>
-      | undefined
-
-    if (deliver && webhookChannels.length > 0) {
-      const organizationSlug = await getOrganizationSlug(organizationId)
-      webhookTests = await Promise.all(
-        webhookChannels.map(async (channel) => {
-          const result = await sendRateLimitedTestWebhook({
-            url: channel.url,
-            secret: channel.secret,
-            organizationId,
-            organizationSlug,
-            connectionId,
-            connectionName,
-            ruleId: rule.id,
-            ruleName: rule.name,
-            ruleType: rule.type,
-            queueName,
-          })
-          return {
-            url: channel.url,
-            success: result.success,
-            httpStatus: result.httpStatus,
-            durationMs: result.durationMs,
-            error: result.error,
-          }
+      let queueName = rule.queueName
+      if (!queueName) {
+        const discovered = await redisDiscoveredQueueRepository.listByConnection(connectionId, {
+          offset: 0,
+          limit: 1,
         })
-      )
-    }
+        queueName = discovered[0]?.name ?? null
+      }
+      if (!queueName) {
+        return c.json({ error: 'No queue available to test this rule yet' }, 400)
+      }
 
-    return c.json({ evaluation, snapshot, webhookTests })
-  })
+      const queue = await getQueue(
+        connectionId,
+        connectionUrl,
+        queueName,
+        connectionPrefix,
+        redisOptions
+      )
+      const [jobCountsRaw, failedMetricsRaw, completedMetricsRaw] = await Promise.all([
+        queue.getJobCounts('failed', 'waiting', 'active', 'completed'),
+        queue.getMetrics('failed', 0, 60),
+        queue.getMetrics('completed', 0, 60),
+      ])
+
+      const snapshot: QueueSnapshot = {
+        queueName,
+        connectionName,
+        jobCounts: {
+          failed: jobCountsRaw.failed ?? 0,
+          waiting: jobCountsRaw.waiting ?? 0,
+          active: jobCountsRaw.active ?? 0,
+          completed: jobCountsRaw.completed ?? 0,
+        },
+        failedMetrics: {
+          count: failedMetricsRaw.meta.count,
+          dataPoints: failedMetricsRaw.data,
+        },
+        completedMetrics: {
+          count: completedMetricsRaw.meta.count,
+          dataPoints: completedMetricsRaw.data,
+        },
+      }
+
+      const cursorRow = await alertCheckCursorRepository.findByConnectionQueue(
+        connectionId,
+        queueName
+      )
+      const cursor: CursorState | null = cursorRow
+        ? {
+            lastCheckedAt: cursorRow.lastCheckedAt,
+            lastFailedCount: cursorRow.lastFailedCount,
+            lastCompletedCount: cursorRow.lastCompletedCount,
+          }
+        : null
+
+      const evaluation = evaluateRule(rule, snapshot, cursor)
+
+      const notificationChannels = Array.isArray(rule.notificationChannels)
+        ? rule.notificationChannels
+        : []
+
+      let webhookTests:
+        | Array<{
+            url: string
+            success: boolean
+            httpStatus: number | null
+            durationMs: number
+            error?: string
+          }>
+        | undefined
+
+      if (deliver) {
+        const webhookChannels = await resolveWebhookTestChannels(
+          notificationChannels,
+          organizationId
+        )
+        const organizationSlug = await getOrganizationSlug(organizationId)
+        webhookTests = await Promise.all(
+          webhookChannels.map(async (channel) => {
+            if ('error' in channel) {
+              return {
+                url: channel.url,
+                success: false,
+                httpStatus: null,
+                durationMs: 0,
+                error: channel.error,
+              }
+            }
+
+            const result = await sendRateLimitedTestWebhook({
+              url: channel.url,
+              secret: channel.secret,
+              organizationId,
+              organizationSlug,
+              connectionId,
+              connectionName,
+              ruleId: rule.id,
+              ruleName: rule.name,
+              ruleType: rule.type,
+              queueName,
+            })
+            return {
+              url: channel.url,
+              success: result.success,
+              httpStatus: result.httpStatus,
+              durationMs: result.durationMs,
+              error: result.error,
+            }
+          })
+        )
+      }
+
+      return c.json({ evaluation, snapshot, webhookTests })
+    }
+  )
   .post('/webhooks/test', zValidator('json', testWebhookSchema), async (c) => {
     const body = c.req.valid('json')
     const connectionId = c.get('connectionId')
@@ -476,12 +503,9 @@ async function attachDeliveries<T extends { id: string }>(events: T[]) {
   return Promise.all(
     events.map(async (event) => ({
       ...event,
-      deliveries: (await alertDeliveryRepository.listByEvent(event.id)).map((delivery) => ({
-        ...delivery,
-        providerMetadata: sanitizeDeliveryProviderMetadata(
-          delivery.providerMetadata as Record<string, unknown> | null | undefined
-        ),
-      })),
+      deliveries: (await alertDeliveryRepository.listByEvent(event.id)).map((delivery) =>
+        sanitizeAlertDeliveryForClient(delivery)
+      ),
     }))
   )
 }
@@ -528,10 +552,46 @@ async function validateNotificationChannels(
   channels: z.infer<typeof notificationChannelSchema>[],
   organizationId: string
 ): Promise<string | null> {
-  const webhookError = await validateWebhookUrls(
-    channels.filter((channel) => channel.type === 'webhook')
+  const inlineWebhookChannels = channels.filter(
+    (channel): channel is z.infer<typeof webhookNotificationChannelSchema> =>
+      channel.type === 'webhook' && 'url' in channel
   )
+  const inlineWebhookTargets = new Set<string>()
+  for (const channel of inlineWebhookChannels) {
+    if (inlineWebhookTargets.has(channel.url)) {
+      return 'Duplicate custom webhook URLs are not allowed on the same alert rule.'
+    }
+    inlineWebhookTargets.add(channel.url)
+  }
+  const webhookError = await validateWebhookUrls(inlineWebhookChannels)
   if (webhookError) return webhookError
+
+  const savedWebhookDestinationIds = new Set<string>()
+  for (const channel of channels) {
+    if (channel.type !== 'webhook' || !('destinationId' in channel)) continue
+    if (savedWebhookDestinationIds.has(channel.destinationId)) {
+      return 'Duplicate saved webhook destinations are not allowed on the same alert rule.'
+    }
+    savedWebhookDestinationIds.add(channel.destinationId)
+
+    const destination = await alertWebhookDestinationRepository.findById(
+      channel.destinationId,
+      organizationId
+    )
+    if (!destination) {
+      return 'Webhook destination not found.'
+    }
+    if (!destination.enabled) {
+      return `Webhook destination "${destination.name}" is disabled.`
+    }
+    if (destination.encryptedSigningSecret) {
+      try {
+        decryptSecret(destination.encryptedSigningSecret)
+      } catch {
+        return `Webhook destination "${destination.name}" signing secret could not be decrypted.`
+      }
+    }
+  }
 
   const linearChannels = channels.filter((channel) => channel.type === 'linear')
   if (linearChannels.length > 1) {
@@ -548,6 +608,83 @@ async function validateNotificationChannels(
     (channel) => !channel.teamId && !integration.defaultTeamId
   )
   return missingTeam ? 'Linear alert routing requires a teamId or organization default team.' : null
+}
+
+type WebhookTestChannel =
+  | {
+      url: string
+      secret?: string
+    }
+  | {
+      url: string
+      error: string
+    }
+
+async function resolveWebhookTestChannels(
+  channels: unknown[],
+  organizationId: string
+): Promise<WebhookTestChannel[]> {
+  const results: WebhookTestChannel[] = []
+
+  for (const channel of channels) {
+    if (
+      typeof channel !== 'object' ||
+      channel === null ||
+      (channel as { type?: string }).type !== 'webhook'
+    ) {
+      continue
+    }
+
+    const url = (channel as { url?: unknown }).url
+    if (typeof url === 'string') {
+      results.push({
+        url,
+        secret:
+          typeof (channel as { secret?: unknown }).secret === 'string'
+            ? (channel as { secret: string }).secret
+            : undefined,
+      })
+      continue
+    }
+
+    const destinationId = (channel as { destinationId?: unknown }).destinationId
+    if (typeof destinationId !== 'string') continue
+
+    const destination = await alertWebhookDestinationRepository.findById(
+      destinationId,
+      organizationId
+    )
+    if (!destination) {
+      results.push({
+        url: `destination:${destinationId}`,
+        error: 'Webhook destination not found.',
+      })
+      continue
+    }
+    if (!destination.enabled) {
+      results.push({
+        url: destination.url,
+        error: `Webhook destination "${destination.name}" is disabled.`,
+      })
+      continue
+    }
+
+    try {
+      results.push({
+        url: destination.url,
+        secret: destination.encryptedSigningSecret
+          ? decryptSecret(destination.encryptedSigningSecret)
+          : undefined,
+      })
+    } catch {
+      results.push({
+        url: destination.url,
+        error: `Webhook destination "${destination.name}" signing secret could not be decrypted.`,
+      })
+    }
+  }
+
+  return results
 }
 
 async function getOrganizationSlug(organizationId: string): Promise<string | null> {

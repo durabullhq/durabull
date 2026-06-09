@@ -10,6 +10,7 @@ import { env } from '@durabull/env'
 import { zValidator } from '@hono/zod-validator'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
+import { sanitizeAlertDeliveryForClient } from '../lib/alert-webhook-channels'
 import {
   exchangeLinearOauthCode,
   fetchLinearMetadata,
@@ -347,7 +348,9 @@ async function attachDeliveries<T extends { id: string }>(events: T[]) {
   return Promise.all(
     events.map(async (event) => ({
       ...event,
-      deliveries: await alertDeliveryRepository.listByEvent(event.id),
+      deliveries: (await alertDeliveryRepository.listByEvent(event.id)).map((delivery) =>
+        sanitizeAlertDeliveryForClient(delivery)
+      ),
     }))
   )
 }

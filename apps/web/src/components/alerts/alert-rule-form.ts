@@ -18,6 +18,8 @@ export interface NotificationRouteDraft {
   assigneeId?: string
   stateId?: string
   priority?: string
+  webhookMode?: 'saved' | 'custom'
+  webhookDestinationId?: string
   webhookUrl?: string
   webhookSecret?: string
   secretConfigured?: boolean
@@ -101,13 +103,20 @@ function extractNotificationRoutes(rule?: AlertRuleRecord | null): NotificationR
         },
       ]
     }
-    if (channel.type === 'webhook' && typeof channel.url === 'string') {
+    if (channel.type === 'webhook' && 'url' in channel && typeof channel.url === 'string') {
       return [
         createWebhookNotificationRouteDraft(index + 1, channel.url, {
           secretConfigured: channel.secretConfigured === true,
           secretLast4: channel.secretLast4,
         }),
       ]
+    }
+    if (
+      channel.type === 'webhook' &&
+      'destinationId' in channel &&
+      typeof channel.destinationId === 'string'
+    ) {
+      return [createSavedWebhookNotificationRouteDraft(index + 1, channel.destinationId)]
     }
     return []
   })
@@ -138,9 +147,26 @@ export function createWebhookNotificationRouteDraft(
         : `webhook-route-${Math.random().toString(36).slice(2, 10)}`,
     type: 'webhook',
     target: webhookUrl,
+    webhookMode: 'custom',
     webhookUrl,
     secretConfigured: options?.secretConfigured,
     secretLast4: options?.secretLast4,
+  }
+}
+
+export function createSavedWebhookNotificationRouteDraft(
+  sequence = 0,
+  destinationId = ''
+): NotificationRouteDraft {
+  return {
+    id:
+      sequence > 0
+        ? `webhook-destination-route-${sequence}`
+        : `webhook-destination-route-${Math.random().toString(36).slice(2, 10)}`,
+    type: 'webhook',
+    target: destinationId,
+    webhookMode: 'saved',
+    webhookDestinationId: destinationId,
   }
 }
 
@@ -211,6 +237,13 @@ export function validateAlertRuleDraft(draft: AlertRuleDraft): string | null {
   }
 
   for (const route of draft.notificationRoutes.filter((item) => item.type === 'webhook')) {
+    if (route.webhookMode === 'saved') {
+      if (!route.webhookDestinationId?.trim()) {
+        return 'Choose a saved webhook destination.'
+      }
+      continue
+    }
+
     const url = route.webhookUrl?.trim() ?? route.target.trim()
     if (!url) {
       return 'Webhook URL is required.'
@@ -323,6 +356,13 @@ export function serializeAlertRuleDraft(draft: AlertRuleDraft): AlertRuleMutatio
     ...draft.notificationRoutes
       .filter((route) => route.type === 'webhook')
       .map((route) => {
+        if (route.webhookMode === 'saved') {
+          return {
+            type: 'webhook' as const,
+            destinationId: route.webhookDestinationId?.trim() ?? route.target.trim(),
+          }
+        }
+
         const url = route.webhookUrl?.trim() ?? route.target.trim()
         const secret = route.webhookSecret?.trim()
         return {

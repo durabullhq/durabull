@@ -21,6 +21,7 @@ import {
   createAlertRuleDraft,
   createLinearNotificationRouteDraft,
   createNotificationRouteDraft,
+  createSavedWebhookNotificationRouteDraft,
   createWebhookNotificationRouteDraft,
   normalizeNotificationEmails,
   serializeAlertRuleDraftsForMode,
@@ -32,13 +33,19 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import type {
+  AlertWebhookDestinationRecord,
   AlertRuleMutationInput,
   AlertRuleRecord,
   AlertRuleType,
   AlertTestResult,
 } from '@/hooks/use-alerts'
-import { useTestWebhook } from '@/hooks/use-alerts'
+import {
+  useTestWebhook,
+  useTestWebhookDestination,
+  useWebhookDestinations,
+} from '@/hooks/use-alerts'
 import { cn, formatNumber } from '@/lib/utils'
 
 interface AlertRuleBuilderPageProps {
@@ -60,18 +67,50 @@ function NotificationRouteFields({
   index,
   ruleId,
   connectionId,
+  webhookDestinations,
   onUpdate,
 }: {
   route: AlertRuleDraft['notificationRoutes'][number]
   index: number
   ruleId?: string
   connectionId: string
+  webhookDestinations: AlertWebhookDestinationRecord[]
   onUpdate: (nextRoute: AlertRuleDraft['notificationRoutes'][number]) => void
 }) {
   const testWebhookMutation = useTestWebhook(connectionId)
+  const testWebhookDestinationMutation = useTestWebhookDestination()
   const [testingRouteId, setTestingRouteId] = useState<string | null>(null)
 
   async function handleTestWebhook() {
+    if (route.webhookMode === 'saved') {
+      const destinationId = route.webhookDestinationId?.trim()
+      if (!destinationId) {
+        toast.error('Choose a webhook destination before testing.')
+        return
+      }
+
+      setTestingRouteId(route.id)
+      try {
+        const result = await testWebhookDestinationMutation.mutateAsync(destinationId)
+        if (result.success) {
+          toast.success('Test webhook delivered', {
+            description: `HTTP ${result.httpStatus ?? 'unknown'} in ${result.durationMs}ms`,
+          })
+        } else {
+          toast.error('Test webhook failed', {
+            description: result.error ?? `HTTP ${result.httpStatus ?? 'unknown'}`,
+          })
+        }
+      } catch (error) {
+        toast.error('Test webhook failed', {
+          description: error instanceof Error ? error.message : 'Unable to send test webhook.',
+        })
+      } finally {
+        setTestingRouteId(null)
+      }
+      return
+    }
+
     const url = route.webhookUrl?.trim() ?? route.target.trim()
     if (!url) {
       toast.error('Webhook URL is required before testing.')
@@ -121,6 +160,7 @@ function NotificationRouteFields({
   }
 
   if (route.type === 'webhook') {
+    const webhookMode = route.webhookMode ?? 'custom'
     return (
       <>
         <div className="inline-flex items-center gap-2 text-sm font-medium">
@@ -128,38 +168,88 @@ function NotificationRouteFields({
           Webhook
         </div>
         <div className="grid gap-2">
-          <Input
-            aria-label={`Webhook URL ${index + 1}`}
-            value={route.webhookUrl ?? route.target}
-            onChange={(event) =>
-              onUpdate({
-                ...route,
-                target: event.target.value,
-                webhookUrl: event.target.value,
-              })
-            }
-            placeholder="https://example.com/webhooks/durabull"
-            data-testid={`alert-rule-webhook-url-${index}`}
-          />
-          <Input
-            aria-label={`Webhook signing secret ${index + 1}`}
-            type="password"
-            value={route.webhookSecret ?? ''}
-            onChange={(event) => onUpdate({ ...route, webhookSecret: event.target.value })}
-            placeholder={
-              route.secretConfigured
-                ? `Optional — leave blank to keep existing (…${route.secretLast4 ?? ''})`
-                : 'Optional signing secret (min 16 characters)'
-            }
-            data-testid={`alert-rule-webhook-secret-${index}`}
-          />
+          <Select
+            aria-label={`Webhook mode ${index + 1}`}
+            value={webhookMode}
+            onChange={(event) => {
+              const nextMode = event.target.value === 'saved' ? 'saved' : 'custom'
+              if (nextMode === 'saved') {
+                const firstDestination = webhookDestinations.find(
+                  (destination) => destination.enabled
+                )
+                onUpdate(
+                  createSavedWebhookNotificationRouteDraft(index + 1, firstDestination?.id ?? '')
+                )
+                return
+              }
+              onUpdate(createWebhookNotificationRouteDraft(index + 1))
+            }}
+          >
+            <option value="saved">Saved destination</option>
+            <option value="custom">Custom URL</option>
+          </Select>
+
+          {webhookMode === 'saved' ? (
+            <Select
+              aria-label={`Saved webhook destination ${index + 1}`}
+              value={route.webhookDestinationId ?? route.target}
+              onChange={(event) =>
+                onUpdate({
+                  ...route,
+                  target: event.target.value,
+                  webhookDestinationId: event.target.value,
+                })
+              }
+              data-testid={`alert-rule-webhook-destination-${index}`}
+            >
+              <option value="">Choose a saved destination</option>
+              {webhookDestinations.map((destination) => (
+                <option key={destination.id} value={destination.id} disabled={!destination.enabled}>
+                  {destination.name}
+                  {destination.enabled ? '' : ' (disabled)'}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <>
+              <Input
+                aria-label={`Webhook URL ${index + 1}`}
+                value={route.webhookUrl ?? route.target}
+                onChange={(event) =>
+                  onUpdate({
+                    ...route,
+                    target: event.target.value,
+                    webhookUrl: event.target.value,
+                  })
+                }
+                placeholder="https://example.com/webhooks/durabull"
+                data-testid={`alert-rule-webhook-url-${index}`}
+              />
+              <Input
+                aria-label={`Webhook signing secret ${index + 1}`}
+                type="password"
+                value={route.webhookSecret ?? ''}
+                onChange={(event) => onUpdate({ ...route, webhookSecret: event.target.value })}
+                placeholder={
+                  route.secretConfigured
+                    ? `Optional — leave blank to keep existing (…${route.secretLast4 ?? ''})`
+                    : 'Optional signing secret (min 16 characters)'
+                }
+                data-testid={`alert-rule-webhook-secret-${index}`}
+              />
+            </>
+          )}
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="justify-self-start"
             onClick={() => void handleTestWebhook()}
-            disabled={testingRouteId === route.id || testWebhookMutation.isPending}
+            disabled={
+              testingRouteId === route.id ||
+              testWebhookMutation.isPending ||
+              testWebhookDestinationMutation.isPending
+            }
           >
             {testingRouteId === route.id ? 'Sending test...' : 'Send test webhook'}
           </Button>
@@ -269,6 +359,8 @@ export function AlertRuleBuilderPage({
   const [draft, setDraft] = useState<AlertRuleDraft>(() => createAlertRuleDraft(rule))
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [lastTestResult, setLastTestResult] = useState<AlertTestResult | null>(null)
+  const webhookDestinationsQuery = useWebhookDestinations()
+  const webhookDestinations = webhookDestinationsQuery.data?.destinations ?? []
   const typeMeta = getAlertTypeMeta(draft.type)
   const exampleMeta = RULE_TYPE_EXAMPLES[draft.type]
 
@@ -603,6 +695,7 @@ export function AlertRuleBuilderPage({
                   index={index}
                   ruleId={rule?.id}
                   connectionId={connectionId}
+                  webhookDestinations={webhookDestinations}
                   onUpdate={(nextRoute) => {
                     const notificationRoutes = draft.notificationRoutes.slice()
                     notificationRoutes[index] = nextRoute
@@ -812,6 +905,30 @@ export function AlertRuleBuilderPage({
                 {lastTestResult.evaluation.summary ||
                   'The live queue snapshot did not trigger this rule.'}
               </p>
+              {lastTestResult.webhookTests && lastTestResult.webhookTests.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="font-medium text-foreground">Webhook delivery tests</div>
+                  <div className="space-y-2">
+                    {lastTestResult.webhookTests.map((test) => (
+                      <div
+                        key={test.url}
+                        className="border border-border/70 bg-muted/20 px-3 py-2 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="truncate font-mono">{test.url}</span>
+                          <Badge variant={test.success ? 'success' : 'destructive'}>
+                            {test.success ? 'Sent' : 'Failed'}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 text-muted-foreground">
+                          HTTP {test.httpStatus ?? 'n/a'} in {test.durationMs}ms
+                          {test.error ? ` - ${test.error}` : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </FlatPanel>
         ) : null}

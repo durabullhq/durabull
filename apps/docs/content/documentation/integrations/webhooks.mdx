@@ -9,12 +9,22 @@ that forwards alerts into Slack or PagerDuty.
 
 ## Setup
 
-1. Open a connection's alert rule builder.
-2. Add a **Webhook route** with your endpoint URL.
-3. Optionally add a signing secret (minimum 16 characters).
-4. Use **Send test webhook** to verify delivery before enabling the rule.
+You can configure webhooks in two ways:
 
-Webhook routes are configured per alert rule, alongside email and Linear destinations.
+- **Saved webhook destinations**: reusable organization-level endpoints managed from settings.
+- **Custom webhook URLs**: one-off endpoints configured directly on an alert rule.
+
+For reusable destinations:
+
+1. Open **Settings → Integrations**.
+2. Add a **Webhook alert destination** with a name and endpoint URL.
+3. Optionally add a signing secret (minimum 16 characters).
+4. Use **Test** to verify delivery.
+5. Open a connection's alert rule builder and choose the saved destination from a **Webhook route**.
+
+For one-off endpoints, open a connection's alert rule builder, add a **Webhook route**, switch it to **Custom URL**, and enter the endpoint URL and optional signing secret.
+
+Webhook routes are configured per alert rule, alongside email and Linear destinations. Saved destination edits apply to future alert deliveries only; deliveries already queued use the URL and signing secret snapshot captured when the alert was enqueued.
 
 ## Payload format
 
@@ -96,12 +106,14 @@ function verifyDurabullWebhook(rawBody: string, headers: Headers, secret: string
 - `408`, `429`, and `5xx` responses are retried.
 - Most other `4xx` responses are treated as permanent failures.
 - Requests time out after 10 seconds.
+- Due retry attempts are swept by the existing alert monitor, so retries can continue even after the original alert is no longer actively firing.
 - Retry attempts stop after **7 days** from the first delivery enqueue. The delivery row is marked permanently failed so dead endpoints do not retry forever.
 
 ## Security notes
 
 - Production webhook URLs must use HTTPS.
 - Durabull blocks private and localhost targets (SSRF protection).
-- Signing secrets are stored on the alert rule and masked in API responses after save.
+- Saved destination signing secrets are encrypted at rest and masked in API responses.
+- Custom per-rule webhook signing secrets remain scoped to that alert rule and are masked in API responses after save.
 
 For local development only, set `DURABULL_WEBHOOK_ALLOW_HTTP=true` to permit HTTP webhook URLs.

@@ -48,6 +48,18 @@ type LinearMetadataResponse = InferResponseType<
   (typeof api.alerts.integrations.linear.metadata)['$get'],
   200
 >
+type WebhookDestinationsResponse = InferResponseType<
+  (typeof api.alerts)['webhook-destinations']['$get'],
+  200
+>
+type WebhookDestinationResponse = InferResponseType<
+  (typeof api.alerts)['webhook-destinations']['$post'],
+  201
+>
+type TestWebhookDestinationResponse = InferResponseType<
+  (typeof api.alerts)['webhook-destinations'][':destinationId']['test']['$post'],
+  200
+>
 
 export type AlertSummaryConnection = AlertSummaryResponse['connections'][number]
 export type AlertRuleType = 'failure_threshold' | 'failure_rate' | 'queue_stalled' | 'job_failed'
@@ -72,6 +84,10 @@ export type AlertNotificationChannel =
       secret?: string
       secretConfigured?: boolean
       secretLast4?: string
+    }
+  | {
+      type: 'webhook'
+      destinationId: string
     }
 
 export interface AlertDeliveryRecord {
@@ -143,6 +159,25 @@ export interface LinearMetadataRecord {
   states: Array<{ id: string; name: string; teamId: string }>
 }
 
+export interface AlertWebhookDestinationRecord {
+  id: string
+  organizationId: string
+  name: string
+  url: string
+  enabled: boolean
+  secretConfigured: boolean
+  secretLast4?: string
+  createdAt?: string | Date
+  updatedAt?: string | Date
+}
+
+export interface AlertWebhookDestinationInput {
+  name: string
+  url: string
+  signingSecret?: string | null
+  enabled?: boolean
+}
+
 export interface AlertTestResult {
   evaluation: {
     triggered: boolean
@@ -201,6 +236,8 @@ export const alertKeys = {
     ['alerts', 'integrations', 'linear', organizationId ?? 'unknown'] as const,
   linearMetadata: (organizationId?: string | null) =>
     ['alerts', 'integrations', 'linear', organizationId ?? 'unknown', 'metadata'] as const,
+  webhookDestinations: (organizationId?: string | null) =>
+    ['alerts', 'webhook-destinations', organizationId ?? 'unknown'] as const,
   connectionRules: (connectionId: string) =>
     ['alerts', 'connection', connectionId, 'rules'] as const,
   connectionEvents: (connectionId: string, filters: AlertEventFilterOptions = {}) =>
@@ -253,9 +290,38 @@ function normalizeNotificationChannels(value: unknown): AlertNotificationChannel
         },
       ]
     }
+    if (entry.type === 'webhook' && typeof entry.destinationId === 'string') {
+      return [
+        {
+          type: 'webhook',
+          destinationId: entry.destinationId,
+        },
+      ]
+    }
     if (entry.type !== 'email' || typeof entry.target !== 'string') return []
     return [{ type: 'email', target: entry.target }]
   })
+}
+
+function normalizeWebhookDestination(value: unknown): AlertWebhookDestinationRecord {
+  const source = isRecord(value) ? value : {}
+  return {
+    id: typeof source.id === 'string' ? source.id : '',
+    organizationId: typeof source.organizationId === 'string' ? source.organizationId : '',
+    name: typeof source.name === 'string' ? source.name : 'Webhook destination',
+    url: typeof source.url === 'string' ? source.url : '',
+    enabled: source.enabled !== false,
+    secretConfigured: source.secretConfigured === true,
+    secretLast4: typeof source.secretLast4 === 'string' ? source.secretLast4 : undefined,
+    createdAt:
+      typeof source.createdAt === 'string' || source.createdAt instanceof Date
+        ? source.createdAt
+        : undefined,
+    updatedAt:
+      typeof source.updatedAt === 'string' || source.updatedAt instanceof Date
+        ? source.updatedAt
+        : undefined,
+  }
 }
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -583,6 +649,96 @@ export function useTestWebhook(connectionId: string | undefined) {
         json: input,
       })
       return handleRes<WebhookTestResult>(res)
+    },
+  })
+}
+
+export function useWebhookDestinations() {
+  const { data: activeOrganization } = useActiveOrganization()
+  const organizationId = activeOrganization?.id
+
+  return useQuery({
+    queryKey: alertKeys.webhookDestinations(organizationId),
+    queryFn: async () => {
+      const res = await api.alerts['webhook-destinations'].$get()
+      const data = await handleRes<WebhookDestinationsResponse>(res)
+      return {
+        destinations: Array.isArray(data.destinations)
+          ? data.destinations.map(normalizeWebhookDestination)
+          : [],
+      }
+    },
+    enabled: !!organizationId,
+  })
+}
+
+export function useCreateWebhookDestination() {
+  const queryClient = useQueryClient()
+  const { data: activeOrganization } = useActiveOrganization()
+  const organizationId = activeOrganization?.id
+
+  return useMutation({
+    mutationFn: async (input: AlertWebhookDestinationInput) => {
+      const res = await api.alerts['webhook-destinations'].$post({ json: input })
+      const data = await handleRes<WebhookDestinationResponse>(res)
+      return { destination: normalizeWebhookDestination(data.destination) }
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: alertKeys.webhookDestinations(organizationId) }),
+  })
+}
+
+export function useUpdateWebhookDestination() {
+  const queryClient = useQueryClient()
+  const { data: activeOrganization } = useActiveOrganization()
+  const organizationId = activeOrganization?.id
+
+  return useMutation({
+    mutationFn: async ({
+      destinationId,
+      input,
+    }: {
+      destinationId: string
+      input: Partial<AlertWebhookDestinationInput>
+    }) => {
+      const res = await api.alerts['webhook-destinations'][':destinationId'].$patch({
+        param: { destinationId },
+        json: input,
+      })
+      const data = await handleRes<WebhookDestinationResponse>(res)
+      return { destination: normalizeWebhookDestination(data.destination) }
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: alertKeys.webhookDestinations(organizationId) }),
+  })
+}
+
+export function useDeleteWebhookDestination() {
+  const queryClient = useQueryClient()
+  const { data: activeOrganization } = useActiveOrganization()
+  const organizationId = activeOrganization?.id
+
+  return useMutation({
+    mutationFn: async (destinationId: string) => {
+      const res = await api.alerts['webhook-destinations'][':destinationId'].$delete({
+        param: { destinationId },
+      })
+      return handleRes<{ ok: boolean }>(res)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: alertKeys.webhookDestinations(organizationId) })
+      queryClient.invalidateQueries({ queryKey: ['alerts', 'connection'] })
+    },
+  })
+}
+
+export function useTestWebhookDestination() {
+  return useMutation({
+    mutationFn: async (destinationId: string) => {
+      const res = await api.alerts['webhook-destinations'][':destinationId'].test.$post({
+        param: { destinationId },
+      })
+      return handleRes<TestWebhookDestinationResponse>(res)
     },
   })
 }

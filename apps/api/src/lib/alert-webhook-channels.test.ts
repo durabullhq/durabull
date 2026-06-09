@@ -60,6 +60,14 @@ describe('sanitizeNotificationChannels', () => {
       secretLast4: 'mnop',
     })
   })
+
+  it('preserves saved webhook destination references', () => {
+    const sanitized = sanitizeNotificationChannels([
+      { type: 'webhook', destinationId: 'destination-id' },
+    ])
+
+    expect(sanitized).toEqual([{ type: 'webhook', destinationId: 'destination-id' }])
+  })
 })
 
 describe('toWebhookDeliveryMetadata', () => {
@@ -121,6 +129,25 @@ describe('sanitizeDeliveryProviderMetadata', () => {
       type: 'webhook',
       url: 'https://example.com/hook',
       httpStatus: 200,
+      secretConfigured: true,
+      secretLast4: 'mnop',
+    })
+  })
+
+  it('removes encrypted webhook secrets from delivery metadata', () => {
+    expect(
+      sanitizeDeliveryProviderMetadata({
+        type: 'webhook',
+        destinationId: 'destination-id',
+        url: 'https://example.com/hook',
+        encryptedSigningSecret: 'enc:v1:redacted',
+        secretConfigured: true,
+        secretLast4: 'mnop',
+      })
+    ).toEqual({
+      type: 'webhook',
+      destinationId: 'destination-id',
+      url: 'https://example.com/hook',
       secretConfigured: true,
       secretLast4: 'mnop',
     })

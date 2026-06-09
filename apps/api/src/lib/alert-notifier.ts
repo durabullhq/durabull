@@ -1,8 +1,11 @@
 import {
   type AlertDelivery,
   type AlertEvent,
+  type AlertWebhookDestination,
   alertDeliveryRepository,
   alertRuleRepository,
+  alertWebhookDestinationRepository,
+  decryptSecret,
   eq,
   getDb,
   linearIntegrationRepository,
@@ -13,7 +16,11 @@ import {
 import { isEmailConfigured } from '@durabull/email'
 import { env } from '@durabull/env'
 import { buildAlertAppUrls } from './alert-app-urls'
-import { findWebhookSecretFromChannels, toWebhookDeliveryMetadata } from './alert-webhook-channels'
+import {
+  findWebhookSecretFromChannels,
+  sanitizeDeliveryProviderMetadata,
+  toWebhookDeliveryMetadata,
+} from './alert-webhook-channels'
 import {
   deliverWebhookOrThrow,
   isWebhookDeliveryExpired,
@@ -63,6 +70,10 @@ export type NotificationChannel =
       url: string
       secret?: string
     }
+  | {
+      type: 'webhook'
+      destinationId: string
+    }
 
 export async function dispatchAlertNotification(
   event: AlertEvent,
@@ -70,21 +81,48 @@ export async function dispatchAlertNotification(
   connection: AlertNotificationConnection,
   ruleName: string
 ): Promise<void> {
-  const deliveries = channels.map((channel) => ({
-    alertEventId: event.id,
-    organizationId: event.organizationId,
-    channelType: channel.type,
-    target: getDeliveryTarget(channel),
-    providerMetadata: getDeliveryProviderMetadata(channel),
-  }))
+  const deliveries = await Promise.all(
+    channels.map((channel) => buildDeliveryInput(channel, event.id, event.organizationId))
+  )
 
   await alertDeliveryRepository.enqueueMany(deliveries)
   await processAlertDeliveries(event, connection, ruleName)
 }
 
+async function buildDeliveryInput(
+  channel: NotificationChannel,
+  alertEventId: string,
+  organizationId: string
+) {
+  if (channel.type === 'webhook' && 'destinationId' in channel) {
+    const destination = await alertWebhookDestinationRepository.findById(
+      channel.destinationId,
+      organizationId
+    )
+
+    return {
+      alertEventId,
+      organizationId,
+      channelType: channel.type,
+      target: getSavedWebhookDeliveryTarget(channel.destinationId),
+      providerMetadata: resolveSavedWebhookDeliveryMetadata(channel.destinationId, destination),
+    }
+  }
+
+  return {
+    alertEventId,
+    organizationId,
+    channelType: channel.type,
+    target: getDeliveryTarget(channel),
+    providerMetadata: getDeliveryProviderMetadata(channel),
+  }
+}
+
 export type ProcessAlertDeliveriesOptions = {
   /** When set, claim and dispatch only this delivery (manual retry). */
   deliveryId?: string
+  /** Used by the monitor sweep after it has already claimed delivery rows. */
+  claimedDeliveries?: AlertDelivery[]
 }
 
 export async function processAlertDeliveries(
@@ -93,9 +131,11 @@ export async function processAlertDeliveries(
   ruleName: string,
   options?: ProcessAlertDeliveriesOptions
 ): Promise<void> {
-  const dueDeliveries = options?.deliveryId
-    ? await alertDeliveryRepository.claimById(options.deliveryId, event.id)
-    : await alertDeliveryRepository.claimDueForEvent(event.id)
+  const dueDeliveries =
+    options?.claimedDeliveries ??
+    (options?.deliveryId
+      ? await alertDeliveryRepository.claimById(options.deliveryId, event.id)
+      : await alertDeliveryRepository.claimDueForEvent(event.id))
   if (dueDeliveries.length === 0) return
 
   const organizationSlug = await getOrganizationSlug(event.organizationId)
@@ -139,16 +179,22 @@ export async function processAlertDeliveries(
   }
 }
 
-function getDeliveryProviderMetadata(channel: NotificationChannel): Record<string, unknown> {
+function getDeliveryProviderMetadata(
+  channel: Exclude<NotificationChannel, { destinationId: string }>
+): Record<string, unknown> {
   if (channel.type === 'webhook') {
     return { ...toWebhookDeliveryMetadata(channel) }
   }
   return channel as Record<string, unknown>
 }
 
-function getDeliveryTarget(channel: NotificationChannel): string {
+function getDeliveryTarget(
+  channel: Exclude<NotificationChannel, { destinationId: string }>
+): string {
   if (channel.type === 'email') return channel.target
-  if (channel.type === 'webhook') return getWebhookDeliveryTarget(channel.url)
+  if (channel.type === 'webhook') {
+    return getWebhookDeliveryTarget(channel.url)
+  }
   return [
     'org-default',
     channel.teamId ?? '',
@@ -158,6 +204,61 @@ function getDeliveryTarget(channel: NotificationChannel): string {
     channel.priority ?? '',
     ...(channel.labelIds ?? []),
   ].join(':')
+}
+
+function getSavedWebhookDeliveryTarget(destinationId: string): string {
+  return `destination:${destinationId}`
+}
+
+function resolveSavedWebhookDeliveryMetadata(
+  destinationId: string,
+  destination: AlertWebhookDestination | null
+): Record<string, unknown> {
+  if (!destination) {
+    return {
+      type: 'webhook',
+      destinationId,
+      deliveryError: 'Webhook destination was deleted before alert delivery was queued.',
+    }
+  }
+  if (!destination.enabled) {
+    return {
+      type: 'webhook',
+      destinationId,
+      destinationName: destination.name,
+      deliveryError: `Webhook destination "${destination.name}" is disabled.`,
+      deliveryErrorRetryable: true,
+    }
+  }
+
+  let secretLast4: string | undefined
+  if (destination.encryptedSigningSecret) {
+    try {
+      const secret = decryptSecret(destination.encryptedSigningSecret)
+      secretLast4 = secret.length >= 4 ? secret.slice(-4) : undefined
+    } catch {
+      return {
+        type: 'webhook',
+        destinationId,
+        destinationName: destination.name,
+        url: destination.url,
+        encryptedSigningSecret: destination.encryptedSigningSecret,
+        secretConfigured: true,
+        deliveryError: `Webhook destination "${destination.name}" signing secret could not be decrypted.`,
+        deliveryErrorRetryable: true,
+      }
+    }
+  }
+
+  return {
+    type: 'webhook',
+    destinationId,
+    destinationName: destination.name,
+    url: destination.url,
+    encryptedSigningSecret: destination.encryptedSigningSecret,
+    secretConfigured: Boolean(destination.encryptedSigningSecret),
+    ...(secretLast4 ? { secretLast4 } : {}),
+  }
 }
 
 async function sendAlertEmail(
@@ -377,8 +478,18 @@ async function sendWebhookAlert(
   ruleName: string,
   organizationSlug: string | null
 ): Promise<void> {
-  const channel = parseWebhookChannel(delivery.providerMetadata)
-  const secret = await resolveWebhookSigningSecret(event, channel.url, delivery.providerMetadata)
+  const metadata = await resolveWebhookMetadataForDispatch(
+    delivery.providerMetadata as Record<string, unknown> | null | undefined,
+    event.organizationId
+  )
+  if (metadata && typeof metadata.deliveryError === 'string') {
+    if (metadata.deliveryErrorRetryable === true) {
+      throw new WebhookDeliveryError(metadata.deliveryError, { retryable: true })
+    }
+    throw new NonRetryableDeliveryError(metadata.deliveryError)
+  }
+  const channel = parseWebhookChannel(metadata)
+  const secret = await resolveWebhookSigningSecret(event, channel.url, metadata)
   const payload = buildAlertWebhookPayloadFromEvent(
     event,
     delivery.id,
@@ -400,12 +511,13 @@ async function sendWebhookAlert(
   const marked = await alertDeliveryRepository.markDelivered(
     delivery.id,
     {
-      providerMetadata: {
+      providerMetadata: sanitizeDeliveryProviderMetadata({
         ...((delivery.providerMetadata ?? {}) as Record<string, unknown>),
+        ...(metadata ?? {}),
         httpStatus: result.httpStatus,
         responseTimeMs: result.durationMs,
         responseBodySnippet: result.responseBodySnippet,
-      },
+      }),
     },
     requireClaimedAt(delivery)
   )
@@ -417,7 +529,23 @@ async function sendWebhookAlert(
   }
 }
 
-function parseWebhookChannel(value: unknown): Extract<NotificationChannel, { type: 'webhook' }> {
+async function resolveWebhookMetadataForDispatch(
+  metadata: Record<string, unknown> | null | undefined,
+  organizationId: string
+): Promise<Record<string, unknown> | null | undefined> {
+  const destinationId = typeof metadata?.destinationId === 'string' ? metadata.destinationId : ''
+  if (!destinationId || typeof metadata?.deliveryError !== 'string') {
+    return metadata
+  }
+
+  const destination = await alertWebhookDestinationRepository.findById(
+    destinationId,
+    organizationId
+  )
+  return resolveSavedWebhookDeliveryMetadata(destinationId, destination)
+}
+
+function parseWebhookChannel(value: unknown): { type: 'webhook'; url: string } {
   const source =
     typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
   const url = typeof source.url === 'string' ? source.url : ''
@@ -437,6 +565,16 @@ async function resolveWebhookSigningSecret(
 ): Promise<string | undefined> {
   const source =
     typeof metadata === 'object' && metadata !== null ? (metadata as Record<string, unknown>) : {}
+  const encryptedSigningSecret =
+    typeof source.encryptedSigningSecret === 'string' ? source.encryptedSigningSecret : ''
+  if (encryptedSigningSecret) {
+    try {
+      return decryptSecret(encryptedSigningSecret)
+    } catch {
+      throw new NonRetryableDeliveryError('Webhook signing secret could not be decrypted.')
+    }
+  }
+
   const legacySecret = typeof source.secret === 'string' ? source.secret.trim() : ''
   if (legacySecret.length > 0) {
     return legacySecret
@@ -589,3 +727,9 @@ async function getOrganizationSlug(organizationId: string): Promise<string | nul
 }
 
 export { buildAlertAppUrls } from './alert-app-urls'
+
+export const __alertNotifierTestUtils = {
+  buildDeliveryInput,
+  getSavedWebhookDeliveryTarget,
+  resolveWebhookMetadataForDispatch,
+}
