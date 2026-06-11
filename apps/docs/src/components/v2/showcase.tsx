@@ -167,7 +167,7 @@ export function V2Showcase() {
                     ))}
                   </ul>
                 </div>
-                <div className="relative overflow-hidden border-t border-[var(--v2-line)] bg-[var(--v2-bg-2)] p-6 lg:border-l lg:border-t-0 lg:p-10">
+                <div className="v2-shot-bg relative overflow-hidden border-t border-[var(--v2-line)] p-6 lg:border-l lg:border-t-0 lg:p-10">
                   <div className="v2-frame relative rounded-lg">
                     <Image
                       src={tab.screenshot}

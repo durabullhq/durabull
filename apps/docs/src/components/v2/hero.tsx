@@ -71,16 +71,8 @@ export function V2Hero() {
         </motion.p>
       </div>
 
-      {/* dark band with top-cropped product screenshot */}
-      <div className="v2-dark relative mt-16 sm:mt-20">
-        <div
-          aria-hidden
-          className="absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(60% 90% at 50% 0%, rgba(249,115,22,0.16) 0%, transparent 60%)',
-          }}
-        />
+      {/* vibrant band with top-cropped product screenshot */}
+      <div className="v2-dark v2-shot-bg relative mt-16 sm:mt-20">
         <div className="relative mx-auto max-w-6xl px-5 pt-14 sm:px-8 sm:pt-20">
           <motion.div
             {...(reduceMotion
@@ -94,9 +86,9 @@ export function V2Hero() {
             {/* crop: show roughly the top third of the product */}
             <div className="v2-frame max-h-[230px] rounded-t-xl border-b-0 sm:max-h-[320px] lg:max-h-[380px]">
               <div className="flex items-center gap-1.5 border-b border-[var(--v2-line)] px-4 py-2.5">
-                <span className="size-2.5 rounded-full bg-[#2a2a28]" />
-                <span className="size-2.5 rounded-full bg-[#2a2a28]" />
-                <span className="size-2.5 rounded-full bg-[#2a2a28]" />
+                <span className="size-2.5 rounded-full bg-[#ff5f57]" />
+                <span className="size-2.5 rounded-full bg-[#febc2e]" />
+                <span className="size-2.5 rounded-full bg-[#28c840]" />
                 <span className="v2-mono ml-3 normal-case tracking-normal text-[var(--v2-faint)]">
                   app.durabull.io — fleet analytics
                 </span>

@@ -204,6 +204,21 @@
     0 0 80px -24px rgba(249, 115, 22, 0.18);
 }
 
+/* vibrant screenshot backdrop (showcase panel) */
+.v2-shot-bg {
+  background:
+    radial-gradient(110% 90% at 12% -5%, rgba(255, 237, 213, 0.45) 0%, rgba(255, 237, 213, 0) 55%),
+    radial-gradient(90% 100% at 100% 110%, rgba(124, 45, 18, 0.55) 0%, rgba(124, 45, 18, 0) 60%),
+    linear-gradient(135deg, #fb923c 0%, #ea580c 48%, #c2410c 100%);
+}
+
+.v2-dark .v2-shot-bg .v2-frame {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 28px 70px -18px rgba(67, 20, 7, 0.65),
+    0 2px 10px rgba(67, 20, 7, 0.35);
+}
+
 /* code/command block */
 .v2-cmd {
   border: 1px solid var(--v2-line);
