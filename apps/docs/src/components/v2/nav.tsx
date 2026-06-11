@@ -33,7 +33,7 @@ export function V2Nav() {
       }`}
     >
       <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
-        <Link href="/v2" className="flex items-center gap-2.5">
+        <Link href="/" className="flex items-center gap-2.5">
           <DurabullLogo className="h-7 w-7 text-[var(--v2-accent)]" />
           <DurabullWordmark className="h-[15px] text-[var(--v2-fg)]" />
         </Link>

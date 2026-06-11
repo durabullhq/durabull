@@ -1,17 +1,23 @@
 'use client'
 
-import { Box, Boxes, CircuitBoard, Container, Hexagon, Layers, Triangle, Zap } from 'lucide-react'
+import Image from 'next/image'
 
-/** Placeholder logos — swap for real customer marks when available. */
 const logos = [
-  { name: 'Vantage Systems', icon: Layers },
-  { name: 'Quantix', icon: Hexagon },
-  { name: 'Northbeam', icon: Triangle },
-  { name: 'Crateworks', icon: Container },
-  { name: 'Fluxbase', icon: Zap },
-  { name: 'Datakraft', icon: CircuitBoard },
-  { name: 'Loopline', icon: Boxes },
-  { name: 'Parcelos', icon: Box },
+  { name: 'Stripe', domain: 'stripe.com' },
+  { name: 'Uber', domain: 'uber.com' },
+  { name: 'Brex', domain: 'brex.com' },
+  { name: 'Mothership', domain: 'mothership.com' },
+  { name: 'DoorDash', domain: 'doordash.com' },
+  { name: 'Vercel', domain: 'vercel.com' },
+  { name: 'Render', domain: 'render.com' },
+  { name: 'Ramp', domain: 'ramp.com' },
+  { name: 'Granola', domain: 'granola.com' },
+  { name: 'Airbnb', domain: 'airbnb.com' },
+  { name: 'Linear', domain: 'linear.app' },
+  { name: 'PostHog', domain: 'posthog.com' },
+  { name: 'Netflix', domain: 'netflix.com' },
+  { name: 'Figma', domain: 'figma.com' },
+  { name: 'Klarna', domain: 'klarna.com' },
 ]
 
 export function V2LogoMarquee() {
@@ -33,7 +39,14 @@ export function V2LogoMarquee() {
               aria-hidden={i >= logos.length}
               className="flex shrink-0 items-center gap-2.5 px-9 text-[var(--v2-faint)] transition-colors hover:text-[var(--v2-muted)]"
             >
-              <logo.icon className="size-[18px]" strokeWidth={1.75} />
+              <Image
+                src={`https://www.google.com/s2/favicons?domain=${logo.domain}&sz=64`}
+                alt=""
+                width={18}
+                height={18}
+                unoptimized
+                className="size-[18px] opacity-70 grayscale"
+              />
               <span className="v2-h text-[16px] tracking-tight">{logo.name}</span>
             </span>
           ))}

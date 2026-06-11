@@ -61,7 +61,6 @@ const footerLinks = [
   { label: 'GitHub', href: 'https://github.com/durabullhq/durabull' },
   { label: 'Pricing', href: '#pricing' },
   { label: 'Contact', href: 'mailto:hello@durabull.io' },
-  { label: 'Current landing', href: '/' },
 ]
 
 export function V2Footer() {

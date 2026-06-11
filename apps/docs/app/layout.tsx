@@ -10,11 +10,11 @@ import '@/styles/docs-overrides.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'Durabull - BullMQ Admin Dashboard',
+    default: 'Durabull — See every job. Fix every failure.',
     template: '%s | Durabull',
   },
   description:
-    'The modern BullMQ dashboard for browser, macOS, Windows, and self-hosted teams. Monitor jobs, debug failures, and scale queues with confidence.',
+    'The BullMQ operations platform built for on-call speed. Zero code changes: point Durabull at Redis and get fleet analytics, failure debugging, scheduler control, and proactive alerts.',
   metadataBase: new URL('https://durabull.io'),
   keywords: [
     'BullMQ',
@@ -32,24 +32,24 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: 'https://durabull.io',
-    title: 'Durabull - BullMQ Admin Dashboard',
+    title: 'Durabull — See every job. Fix every failure.',
     description:
-      'The modern BullMQ dashboard for browser, macOS, Windows, and self-hosted teams. Monitor jobs, debug failures, and scale queues with confidence.',
+      'The BullMQ operations platform built for on-call speed. Zero code changes: point Durabull at Redis and get fleet analytics, failure debugging, scheduler control, and proactive alerts.',
     siteName: 'Durabull',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Durabull - BullMQ Admin Dashboard',
+        alt: 'Durabull — See every job. Fix every failure.',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Durabull - BullMQ Admin Dashboard',
+    title: 'Durabull — See every job. Fix every failure.',
     description:
-      'The modern BullMQ dashboard for browser, macOS, Windows, and self-hosted teams. Monitor jobs, debug failures, and scale queues with confidence.',
+      'The BullMQ operations platform built for on-call speed. Zero code changes: point Durabull at Redis and get fleet analytics, failure debugging, scheduler control, and proactive alerts.',
     images: ['/og-image.png'],
     creator: '@durabullhq',
   },
