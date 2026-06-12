@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  alertDeliveryRepository,
   type AlertRule,
   alertCheckCursorRepository,
   alertEventRepository,
@@ -402,6 +403,68 @@ describe('alert monitor', () => {
       expect.anything()
     )
     expect(await listRuleEvents(rule.id)).toHaveLength(1)
+  })
+
+  it('claims due deliveries and hands them to the notifier with event context', async () => {
+    const processAlertDeliveriesMock = mock(async () => {})
+    mock.module('./alert-notifier', () => ({
+      ...realAlertNotifierModule,
+      processAlertDeliveries: processAlertDeliveriesMock,
+    }))
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'Webhook retry',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      notificationChannels: [],
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Retry pending delivery',
+      context: {},
+      firedAt: new Date(),
+    })
+    await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'webhook',
+        target: 'destination:webhook-destination-id',
+        providerMetadata: {
+          type: 'webhook',
+          destinationId: 'webhook-destination-id',
+          url: 'https://example.com/durabull',
+        },
+      },
+    ])
+
+    await __alertMonitorTestUtils.processDueAlertDeliveries()
+
+    expect(processAlertDeliveriesMock).toHaveBeenCalledTimes(1)
+    expect(processAlertDeliveriesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: event.id }),
+      expect.objectContaining({ id: testConnectionId }),
+      'Webhook retry',
+      {
+        claimedDeliveries: [
+          expect.objectContaining({
+            alertEventId: event.id,
+            channelType: 'webhook',
+            status: 'claimed',
+          }),
+        ],
+      }
+    )
   })
 
   it('suppresses new events while the cooldown window is still active', async () => {

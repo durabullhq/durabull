@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  alertDeliveryRepository,
   alertEventRepository,
   alertRuleRepository,
   closeDb,
@@ -235,6 +236,60 @@ describe('global alerts routes', () => {
     })
   })
 
+  it('sanitizes webhook delivery metadata in organization-wide event history', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Webhook metadata',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: 'failure_threshold',
+      status: 'firing',
+      summary: 'Webhook delivery failed',
+      context: {},
+      firedAt: new Date(),
+    })
+    await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'webhook',
+        target: 'destination:destination-id',
+        providerMetadata: {
+          type: 'webhook',
+          destinationId: 'destination-id',
+          url: 'https://example.com/hook',
+          encryptedSigningSecret: 'enc:v1:redacted',
+          secretConfigured: true,
+          secretLast4: 'mnop',
+        },
+      },
+    ])
+
+    const app = await createGlobalAlertsRouteApp()
+    const response = await app.request('/events')
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      events: Array<{ deliveries: Array<{ providerMetadata: Record<string, unknown> }> }>
+    }
+    expect(body.events[0]?.deliveries[0]?.providerMetadata).toEqual({
+      type: 'webhook',
+      destinationId: 'destination-id',
+      url: 'https://example.com/hook',
+      secretConfigured: true,
+      secretLast4: 'mnop',
+    })
+  })
+
   it('returns open incident counts grouped by connection', async () => {
     const firstRule = await alertRuleRepository.create({
       organizationId: TEST_ORG_ID,
@@ -335,7 +390,9 @@ describe('global alerts routes', () => {
 
     const response = await app.request('/integrations/linear')
     expect(response.status).toBe(200)
-    const body = await response.json()
+    const body = (await response.json()) as {
+      integration: Record<string, unknown>
+    }
     expect(body).toMatchObject({
       integration: {
         connected: true,

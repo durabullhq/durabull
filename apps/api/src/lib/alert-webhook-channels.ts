@@ -6,11 +6,21 @@ export interface WebhookNotificationChannel {
   secret?: string
 }
 
+export interface SavedWebhookNotificationChannel {
+  type: 'webhook'
+  destinationId: string
+}
+
 export interface SanitizedWebhookNotificationChannel {
   type: 'webhook'
   url: string
   secretConfigured: boolean
   secretLast4?: string
+}
+
+export interface SanitizedSavedWebhookNotificationChannel {
+  type: 'webhook'
+  destinationId: string
 }
 
 export function toWebhookDeliveryMetadata(
@@ -55,14 +65,14 @@ export function sanitizeDeliveryProviderMetadata(
 ): Record<string, unknown> {
   if (!metadata || typeof metadata !== 'object') return {}
 
-  const { secret, ...rest } = metadata
-  if (rest.type !== 'webhook' || typeof rest.url !== 'string') {
+  const { secret, encryptedSigningSecret, ...rest } = metadata
+  if (rest.type !== 'webhook') {
     return rest
   }
+  if (typeof rest.url !== 'string') return rest
 
   const secretConfigured =
-    rest.secretConfigured === true ||
-    (typeof secret === 'string' && secret.trim().length > 0)
+    rest.secretConfigured === true || (typeof secret === 'string' && secret.trim().length > 0)
   const secretLast4 =
     typeof rest.secretLast4 === 'string'
       ? rest.secretLast4
@@ -74,6 +84,15 @@ export function sanitizeDeliveryProviderMetadata(
     ...rest,
     secretConfigured,
     ...(secretLast4 ? { secretLast4 } : {}),
+  }
+}
+
+export function sanitizeAlertDeliveryForClient<
+  T extends { providerMetadata?: Record<string, unknown> | null },
+>(delivery: T): T {
+  return {
+    ...delivery,
+    providerMetadata: sanitizeDeliveryProviderMetadata(delivery.providerMetadata),
   }
 }
 
@@ -96,17 +115,24 @@ export function sanitizeNotificationChannels(channels: unknown[]): unknown[] {
       channel !== null &&
       (channel as { type?: string }).type === 'webhook'
     ) {
-      const webhook = channel as WebhookNotificationChannel
-      return sanitizeWebhookChannel(webhook)
+      if (typeof (channel as { url?: string }).url === 'string') {
+        const webhook = channel as WebhookNotificationChannel
+        return sanitizeWebhookChannel(webhook)
+      }
+      if (typeof (channel as { destinationId?: string }).destinationId === 'string') {
+        return {
+          type: 'webhook',
+          destinationId: (channel as SavedWebhookNotificationChannel).destinationId,
+        } satisfies SanitizedSavedWebhookNotificationChannel
+      }
     }
     return channel as Record<string, unknown>
   })
 }
 
-export function mergeWebhookSecretsOnUpdate<T extends { type: string; url?: string; secret?: string }>(
-  incomingChannels: T[],
-  existingChannels: unknown[] | null | undefined
-): T[] {
+export function mergeWebhookSecretsOnUpdate<
+  T extends { type: string; url?: string; secret?: string },
+>(incomingChannels: T[], existingChannels: unknown[] | null | undefined): T[] {
   const existingByUrl = new Map<string, string>()
   for (const channel of existingChannels ?? []) {
     if (

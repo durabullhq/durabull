@@ -18,6 +18,11 @@ export type { AlertEvent, NewAlertEvent } from './alert-event/types'
 // Alert Rule schema exports
 export { type AlertRuleType, alertRule, alertRuleTypes } from './alert-rule/schema'
 export type { AlertRule, NewAlertRule } from './alert-rule/types'
+export { alertWebhookDestination } from './alert-webhook-destination/schema'
+export type {
+  AlertWebhookDestination,
+  NewAlertWebhookDestination,
+} from './alert-webhook-destination/types'
 // Auth schema exports
 export { authAccount, authSession, authVerification } from './auth/schema'
 export type {

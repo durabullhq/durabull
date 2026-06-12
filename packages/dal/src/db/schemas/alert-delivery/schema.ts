@@ -8,6 +8,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { alertEvent } from '../alert-event/schema'
 import { baseColumns } from '../common'
 import { organization } from '../organization/schema'
@@ -47,6 +48,15 @@ export const alertDelivery = pgTable(
       table.status,
       table.nextRetryAt
     ),
+    pendingCreatedIdx: index('alert_delivery_pending_created_idx')
+      .on(table.createdAt)
+      .where(sql`${table.status} = 'pending'`),
+    failedRetryCreatedIdx: index('alert_delivery_failed_retry_created_idx')
+      .on(table.nextRetryAt, table.createdAt)
+      .where(sql`${table.status} = 'failed' AND ${table.nextRetryAt} IS NOT NULL`),
+    claimedStaleIdx: index('alert_delivery_claimed_stale_idx')
+      .on(table.claimedAt)
+      .where(sql`${table.status} = 'claimed'`),
     eventChannelTargetIdx: uniqueIndex('alert_delivery_event_channel_target_idx').on(
       table.alertEventId,
       table.channelType,

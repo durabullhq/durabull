@@ -7,7 +7,10 @@ import {
   alertDeliveryRepository,
   alertEventRepository,
   alertRuleRepository,
+  alertWebhookDestination,
+  alertWebhookDestinationRepository,
   closeDb,
+  eq,
   getDb,
   organization,
   redisConnection,
@@ -158,6 +161,198 @@ describe('alerts routes', () => {
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({
       error: 'Only one Linear notification channel is supported per rule.',
+    })
+  })
+
+  it('rejects saved webhook destinations that do not exist', async () => {
+    const app = await createAlertsRouteApp()
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Missing webhook destination',
+        type: 'failure_threshold',
+        queueName: 'email-send',
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [
+          { type: 'webhook', destinationId: '11111111-1111-4111-8111-111111111111' },
+        ],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'Webhook destination not found.' })
+  })
+
+  it('rejects disabled saved webhook destinations', async () => {
+    const app = await createAlertsRouteApp()
+    const destination = await alertWebhookDestinationRepository.create({
+      organizationId: TEST_ORG_ID,
+      name: 'Incident intake',
+      url: 'https://example.com/durabull',
+      enabled: false,
+    })
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Disabled webhook destination',
+        type: 'failure_threshold',
+        queueName: 'email-send',
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [{ type: 'webhook', destinationId: destination.id }],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'Webhook destination "Incident intake" is disabled.',
+    })
+  })
+
+  it('creates rules with valid saved webhook destinations', async () => {
+    const app = await createAlertsRouteApp()
+    const destination = await alertWebhookDestinationRepository.create({
+      organizationId: TEST_ORG_ID,
+      name: 'Incident intake',
+      url: 'https://example.com/durabull',
+    })
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Saved webhook destination',
+        type: 'failure_threshold',
+        queueName: 'email-send',
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [{ type: 'webhook', destinationId: destination.id }],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({
+      rule: {
+        notificationChannels: [{ type: 'webhook', destinationId: destination.id }],
+      },
+    })
+  })
+
+  it('rejects saved webhook destinations with unreadable signing secrets', async () => {
+    const app = await createAlertsRouteApp()
+    const destination = await alertWebhookDestinationRepository.create({
+      organizationId: TEST_ORG_ID,
+      name: 'Corrupt secret',
+      url: 'https://example.com/durabull',
+      signingSecret: 'super-secret-webhook-value',
+    })
+    const db = await getDb()
+    await db
+      .update(alertWebhookDestination)
+      .set({ encryptedSigningSecret: 'enc:v1:corrupt' })
+      .where(eq(alertWebhookDestination.id, destination.id))
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Corrupt saved webhook destination',
+        type: 'failure_threshold',
+        queueName: 'email-send',
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [{ type: 'webhook', destinationId: destination.id }],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'Webhook destination "Corrupt secret" signing secret could not be decrypted.',
+    })
+  })
+
+  it('rejects webhook channels with both custom URL and saved destination fields', async () => {
+    const app = await createAlertsRouteApp()
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Ambiguous webhook channel',
+        type: 'failure_threshold',
+        queueName: 'email-send',
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [
+          {
+            type: 'webhook',
+            url: 'https://example.com/durabull',
+            destinationId: '11111111-1111-4111-8111-111111111111',
+          },
+        ],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(400)
+  })
+
+  it('rejects duplicate custom webhook URLs on one rule', async () => {
+    const app = await createAlertsRouteApp()
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Duplicate custom webhooks',
+        type: 'failure_threshold',
+        queueName: 'email-send',
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [
+          { type: 'webhook', url: 'https://example.com/durabull' },
+          { type: 'webhook', url: 'https://example.com/durabull' },
+        ],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'Duplicate custom webhook URLs are not allowed on the same alert rule.',
+    })
+  })
+
+  it('rejects duplicate saved webhook destinations on one rule', async () => {
+    const app = await createAlertsRouteApp()
+    const destination = await alertWebhookDestinationRepository.create({
+      organizationId: TEST_ORG_ID,
+      name: 'Incident intake',
+      url: 'https://example.com/durabull',
+    })
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Duplicate saved webhooks',
+        type: 'failure_threshold',
+        queueName: 'email-send',
+        config: { count: 5, windowMinutes: 5 },
+        notificationChannels: [
+          { type: 'webhook', destinationId: destination.id },
+          { type: 'webhook', destinationId: destination.id },
+        ],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'Duplicate saved webhook destinations are not allowed on the same alert rule.',
     })
   })
 

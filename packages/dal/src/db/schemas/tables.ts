@@ -8,6 +8,7 @@ export { alertCheckCursor } from './alert-check-cursor/schema'
 export { alertDelivery } from './alert-delivery/schema'
 export { alertEvent } from './alert-event/schema'
 export { alertRule } from './alert-rule/schema'
+export { alertWebhookDestination } from './alert-webhook-destination/schema'
 // Auth schema tables
 export { authAccount, authSession, authVerification } from './auth/schema'
 export { linearIntegration } from './linear-integration/schema'

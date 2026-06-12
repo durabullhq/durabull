@@ -230,7 +230,7 @@ describe('EditAlertRuleRoute', () => {
     expect(screen.getByText('builder-mode:edit')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Test from builder' }))
-    expect(testRuleMutateAsyncMock).toHaveBeenCalledWith('rule-1')
+    expect(testRuleMutateAsyncMock).toHaveBeenCalledWith({ ruleId: 'rule-1', deliver: false })
 
     await user.click(screen.getByRole('button', { name: 'Save from builder' }))
 

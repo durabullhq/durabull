@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   createAlertRuleDraft,
   createLinearNotificationRouteDraft,
+  createSavedWebhookNotificationRouteDraft,
   normalizeNotificationEmails,
   normalizeQueueNames,
   serializeAlertRuleDraft,
@@ -280,6 +281,33 @@ describe('alert rule form helpers', () => {
         { type: 'linear', target: 'org-default' },
       ],
     })
+  })
+
+  it('serializes saved webhook destination routes', () => {
+    const payload = serializeAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Reusable webhook',
+      queueFilterMode: 'exclude',
+      notificationRoutes: [createSavedWebhookNotificationRouteDraft(1, 'destination-id')],
+    })
+
+    expect(payload.notificationChannels).toEqual([
+      {
+        type: 'webhook',
+        destinationId: 'destination-id',
+      },
+    ])
+  })
+
+  it('requires a destination for saved webhook routes', () => {
+    const error = validateAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Missing destination',
+      queueFilterMode: 'exclude',
+      notificationRoutes: [createSavedWebhookNotificationRouteDraft(1, '')],
+    })
+
+    expect(error).toBe('Choose a saved webhook destination.')
   })
 
   it('serializes Linear priority zero as an explicit value', () => {
