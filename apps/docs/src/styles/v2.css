@@ -1,0 +1,654 @@
+/* ============================================================
+   Durabull home landing — "Engineering Grade" design system
+   Scoped under .v2 so it never leaks into the rest of the site.
+   White/black section contrast, architectural grid, restrained
+   ember accent. Light-first; sections opt into .v2-dark.
+   ============================================================ */
+
+.v2 {
+  --v2-bg: #ffffff;
+  --v2-bg-2: #fafaf9;
+  --v2-fg: #0c0c0c;
+  --v2-muted: #57534e;
+  --v2-faint: #8e8a85;
+  --v2-line: #e7e5e4;
+  --v2-line-strong: #d6d3d1;
+  --v2-card: #ffffff;
+  --v2-accent: #ea580c;
+  --v2-accent-soft: rgba(234, 88, 12, 0.08);
+  --v2-ok: #15803d;
+  --v2-bad: #dc2626;
+  --v2-grid-line: rgba(12, 12, 12, 0.025);
+  --v2-grid-major: rgba(12, 12, 12, 0.045);
+
+  background-color: var(--v2-bg);
+  color: var(--v2-fg);
+}
+
+.v2 .v2-dark {
+  --v2-bg: #0a0a0a;
+  --v2-bg-2: #111110;
+  --v2-fg: #fafaf9;
+  --v2-muted: #a8a29e;
+  --v2-faint: #6f6a64;
+  --v2-line: #232220;
+  --v2-line-strong: #34322f;
+  --v2-card: #131312;
+  --v2-accent: #f97316;
+  --v2-accent-soft: rgba(249, 115, 22, 0.12);
+  --v2-ok: #4ade80;
+  --v2-bad: #f87171;
+  --v2-grid-line: rgba(250, 250, 249, 0.02);
+  --v2-grid-major: rgba(250, 250, 249, 0.04);
+
+  background-color: var(--v2-bg);
+  color: var(--v2-fg);
+}
+
+.v2 ::selection {
+  background: var(--v2-accent);
+  color: #fff;
+}
+
+/* ---------- typography ---------- */
+
+.v2-h {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.v2-mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ---------- architectural grid ---------- */
+
+/* fine engineering grid with a heavier major line every 4 cells */
+.v2-blueprint {
+  background-image:
+    linear-gradient(to right, var(--v2-grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--v2-grid-line) 1px, transparent 1px),
+    linear-gradient(to right, var(--v2-grid-major) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--v2-grid-major) 1px, transparent 1px);
+  background-size:
+    24px 24px,
+    24px 24px,
+    96px 96px,
+    96px 96px;
+}
+
+.v2-blueprint-fade {
+  mask-image: radial-gradient(ellipse 75% 60% at 50% 0%, black 0%, transparent 80%);
+}
+
+/* drafting cross marks placed at section corners */
+.v2-plus {
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  color: var(--v2-line-strong);
+  pointer-events: none;
+}
+
+.v2-plus::before,
+.v2-plus::after {
+  content: '';
+  position: absolute;
+  background: currentColor;
+}
+
+.v2-plus::before {
+  left: 8px;
+  top: 0;
+  width: 1px;
+  height: 17px;
+}
+
+.v2-plus::after {
+  top: 8px;
+  left: 0;
+  height: 1px;
+  width: 17px;
+}
+
+/* ---------- buttons ---------- */
+
+.v2-btn-primary {
+  background: var(--v2-fg);
+  color: var(--v2-bg);
+  border: 1px solid var(--v2-fg);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.v2-btn-primary:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+.v2-btn-ghost {
+  border: 1px solid var(--v2-line-strong);
+  color: var(--v2-fg);
+  background: var(--v2-card);
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.v2-btn-ghost:hover {
+  border-color: var(--v2-faint);
+  transform: translateY(-1px);
+}
+
+.v2-btn-accent {
+  background: var(--v2-accent);
+  color: #fff;
+  border: 1px solid var(--v2-accent);
+  transition: filter 0.2s ease, transform 0.2s ease;
+}
+
+.v2-btn-accent:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+/* ---------- cells & cards ---------- */
+
+/* bordered grid cells (vite-plus style value grid) */
+.v2-cellgrid {
+  border: 1px solid var(--v2-line);
+}
+
+.v2-cell {
+  position: relative;
+  border-color: var(--v2-line);
+  background: var(--v2-card);
+  transition: background-color 0.25s ease;
+}
+
+.v2-cell:hover {
+  background: var(--v2-bg-2);
+}
+
+/* blueprint pen-trace: accent line draws clockwise around the cell on hover */
+.v2-cell::before,
+.v2-cell::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.v2-cell::before {
+  top: 0;
+  left: 0;
+  border-top: 1px solid var(--v2-accent);
+  border-right: 1px solid var(--v2-accent);
+  transition:
+    opacity 0.2s ease 0.1s,
+    width 0s 0.3s,
+    height 0s 0.3s;
+}
+
+.v2-cell::after {
+  bottom: 0;
+  right: 0;
+  border-bottom: 1px solid var(--v2-accent);
+  border-left: 1px solid var(--v2-accent);
+  transition:
+    opacity 0.2s ease 0.1s,
+    width 0s 0.3s,
+    height 0s 0.3s;
+}
+
+.v2-cell:hover::before {
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  transition:
+    width 0.16s ease-out,
+    height 0.16s ease-out 0.16s;
+}
+
+.v2-cell:hover::after {
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  transition:
+    width 0.16s ease-out 0.32s,
+    height 0.16s ease-out 0.48s;
+}
+
+/* drafting ticks that ink in at the cell corners on hover */
+.v2-cell-ticks {
+  position: absolute;
+  inset: 5px;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  color: var(--v2-accent);
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-size:
+    7px 1px, 1px 7px,
+    7px 1px, 1px 7px,
+    7px 1px, 1px 7px,
+    7px 1px, 1px 7px;
+  background-position:
+    left top, left top,
+    right top, right top,
+    left bottom, left bottom,
+    right bottom, right bottom;
+}
+
+.v2-cell:hover .v2-cell-ticks {
+  opacity: 0.9;
+  transform: scale(1);
+  transition-delay: 0.55s;
+}
+
+.v2-card {
+  border: 1px solid var(--v2-line);
+  background: var(--v2-card);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.v2-card:hover {
+  border-color: var(--v2-line-strong);
+  box-shadow: 0 8px 28px -12px rgba(12, 12, 12, 0.14);
+  transform: translateY(-2px);
+}
+
+.v2-chip {
+  border: 1px solid var(--v2-line);
+  background: var(--v2-bg-2);
+}
+
+/* screenshot frame */
+.v2-frame {
+  border: 1px solid var(--v2-line-strong);
+  background: var(--v2-card);
+  box-shadow:
+    0 1px 2px rgba(12, 12, 12, 0.08),
+    0 24px 64px -24px rgba(12, 12, 12, 0.3);
+  overflow: hidden;
+}
+
+.v2-dark .v2-frame {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 32px 80px -24px rgba(0, 0, 0, 0.75),
+    0 0 80px -24px rgba(249, 115, 22, 0.18);
+}
+
+/* vibrant screenshot backdrop (showcase panel) */
+.v2-shot-bg {
+  background:
+    radial-gradient(110% 90% at 12% -5%, rgba(255, 237, 213, 0.45) 0%, rgba(255, 237, 213, 0) 55%),
+    radial-gradient(90% 100% at 100% 110%, rgba(124, 45, 18, 0.55) 0%, rgba(124, 45, 18, 0) 60%),
+    linear-gradient(135deg, #fb923c 0%, #ea580c 48%, #c2410c 100%);
+}
+
+.v2-dark .v2-shot-bg .v2-frame {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 28px 70px -18px rgba(67, 20, 7, 0.65),
+    0 2px 10px rgba(67, 20, 7, 0.35);
+}
+
+/* code/command block — terminal look (pair with .v2-dark for token vars) */
+.v2-cmd {
+  border: 1px solid var(--v2-line);
+  background: var(--v2-bg-2);
+  transition: border-color 0.2s ease;
+}
+
+.v2 .v2-dark.v2-cmd {
+  background: #0c0c0b;
+}
+
+.v2-cmd:hover {
+  border-color: var(--v2-accent);
+}
+
+/* ---------- hosting cards: 3D tilt, cursor sheen, animated border ---------- */
+
+@property --v2-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.v2-tilt {
+  transform-style: preserve-3d;
+  transition:
+    transform 0.16s ease-out,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+  will-change: transform;
+}
+
+/* accent ring that sweeps around the border on hover */
+.v2-tilt::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--v2-angle),
+    transparent 0deg,
+    var(--v2-accent) 45deg,
+    rgba(253, 186, 116, 0.95) 80deg,
+    transparent 135deg
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
+.v2-tilt:hover::before {
+  opacity: 1;
+  animation: v2-border-spin 2.6s linear infinite;
+}
+
+@keyframes v2-border-spin {
+  to {
+    --v2-angle: 360deg;
+  }
+}
+
+/* soft shimmer that follows the cursor */
+.v2-tilt::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(249, 115, 22, 0.07),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.v2-tilt:hover::after {
+  opacity: 1;
+}
+
+.v2-card-premium.v2-tilt::after {
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(253, 186, 116, 0.14),
+    transparent 65%
+  );
+}
+
+/* ---------- premium (featured) hosting card ---------- */
+
+.v2 .v2-dark.v2-card-premium {
+  background:
+    radial-gradient(120% 95% at 12% 112%, rgba(249, 115, 22, 0.32) 0%, rgba(124, 45, 18, 0.14) 42%, transparent 72%),
+    radial-gradient(85% 60% at 92% -8%, rgba(253, 186, 116, 0.12), transparent 62%),
+    linear-gradient(162deg, #171310 0%, #0b0a09 52%, #140d08 100%);
+  border-color: rgba(249, 115, 22, 0.45);
+  box-shadow:
+    0 16px 52px -16px rgba(249, 115, 22, 0.38),
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.v2 .v2-dark.v2-card-premium:hover {
+  border-color: rgba(253, 186, 116, 0.7);
+  box-shadow:
+    0 22px 64px -16px rgba(249, 115, 22, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* slow drifting ember glow inside the premium card */
+.v2-premium-glow {
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+  background:
+    radial-gradient(45% 40% at 25% 85%, rgba(249, 115, 22, 0.34), transparent 70%),
+    radial-gradient(40% 35% at 80% 10%, rgba(234, 88, 12, 0.2), transparent 70%);
+  animation: v2-premium-drift 9s ease-in-out infinite alternate;
+}
+
+@keyframes v2-premium-drift {
+  from {
+    transform: translate3d(-3%, 2%, 0);
+  }
+  to {
+    transform: translate3d(3%, -3%, 0) scale(1.07);
+  }
+}
+
+/* always-on rotating gold-ember border ring */
+.v2-premium-ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--v2-angle),
+    rgba(249, 115, 22, 0.08),
+    rgba(253, 186, 116, 0.85) 70deg,
+    rgba(249, 115, 22, 0.12) 160deg,
+    rgba(255, 215, 170, 0.6) 250deg,
+    rgba(249, 115, 22, 0.08) 360deg
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: v2-border-spin 7s linear infinite;
+}
+
+/* periodic light sweep across the card face */
+.v2-premium-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.v2-premium-sheen::after {
+  content: '';
+  position: absolute;
+  top: -60%;
+  bottom: -60%;
+  left: -45%;
+  width: 38%;
+  background: linear-gradient(
+    105deg,
+    transparent,
+    rgba(255, 255, 255, 0.07) 38%,
+    rgba(253, 186, 116, 0.13) 52%,
+    transparent
+  );
+  transform: translateX(0) skewX(-18deg);
+  animation: v2-sheen-sweep 6s ease-in-out infinite;
+}
+
+@keyframes v2-sheen-sweep {
+  0%,
+  55% {
+    transform: translateX(0) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(520%) skewX(-18deg);
+  }
+}
+
+/* ---------- tabs (dark showcase) ---------- */
+
+.v2-tab {
+  position: relative;
+  color: var(--v2-faint);
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.v2-tab:hover {
+  color: var(--v2-muted);
+}
+
+.v2-tab[data-active='true'] {
+  color: var(--v2-fg);
+}
+
+.v2-tab[data-active='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--v2-accent);
+}
+
+/* ---------- logo marquee ---------- */
+
+.v2-marquee {
+  display: flex;
+  width: max-content;
+  animation: v2-marquee 40s linear infinite;
+}
+
+.v2-marquee:hover {
+  animation-play-state: paused;
+}
+
+@keyframes v2-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.v2-marquee-mask {
+  mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+}
+
+/* ---------- ambient feature stream (orange band behind hero video) ---------- */
+
+.v2-stream-row {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(67, 20, 7, 0.42);
+  white-space: nowrap;
+}
+
+.v2-stream-hi {
+  color: rgba(255, 237, 213, 0.6);
+}
+
+/* ---------- status dot ---------- */
+
+.v2-pulse-dot {
+  position: relative;
+}
+
+.v2-pulse-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  animation: v2-ping 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes v2-ping {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+/* copied-check micro pop */
+.v2-pop {
+  animation: v2-pop 0.32s cubic-bezier(0.2, 0.8, 0.2, 1.4);
+}
+
+@keyframes v2-pop {
+  0% {
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* typing caret for self-typing command blocks */
+.v2-caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 1px;
+  vertical-align: -2px;
+  background: var(--v2-accent);
+  animation: v2-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes v2-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-pulse-dot::after,
+  .v2-marquee,
+  .v2-pop,
+  .v2-caret {
+    animation: none !important;
+  }
+
+  .v2-cell::before,
+  .v2-cell::after,
+  .v2-cell-ticks {
+    display: none;
+  }
+
+  .v2-tilt::before,
+  .v2-premium-glow,
+  .v2-premium-ring,
+  .v2-premium-sheen::after {
+    animation: none !important;
+  }
+
+  .v2-tilt {
+    transition: none;
+  }
+}

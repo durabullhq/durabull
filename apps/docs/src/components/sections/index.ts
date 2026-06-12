@@ -1,5 +1,3 @@
-export { CTA } from './cta'
 export { FAQ } from './faq'
 export { Features } from './features'
-export { Hero } from './hero'
 export { Screenshots } from './screenshots'

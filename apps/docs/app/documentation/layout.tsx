@@ -1,5 +1,7 @@
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
 import { RootProvider } from 'fumadocs-ui/provider/next'
+import 'fumadocs-ui/style.css'
+import '@/styles/docs-overrides.css'
 import type { ReactNode } from 'react'
 import { WEB_APP_URL } from '@/lib/config'
 import { source } from '../../source'

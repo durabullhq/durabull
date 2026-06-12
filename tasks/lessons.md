@@ -1,5 +1,8 @@
 # Lessons
 
+- Never run `next build` (or any production build) in an app directory while its dev server is running — it overwrites `.next` and the dev server starts 404ing its own CSS/JS assets. Build in a separate checkout, or stop/restart the dev server around the build.
+- Landing-page aesthetic direction must be confirmed against the brand's intent before committing: "creative/editorial" fonts and theatrical palettes read as unprofessional for engineering-tool brands. Default to clean technical type (e.g. Geist), white/black section contrast, and restrained accent color unless the user asks for something expressive.
+
 - When the user asks for a UI change that references another app, match the requested scope first instead of expanding it into a broader chrome redesign.
 - For Electron app branding bugs, verify which surface shows the wrong name before changing code: `app.setName()` only affects Electron's internal app name, while macOS Dock/app-switcher labels in dev still come from the `electron .` runtime bundle.
 - When changing the Electron dev launch path, verify the runtime asset root still resolves correctly for `bin/` and bundled resources before considering the launcher fix complete.
@@ -14,3 +17,4 @@
 - When a user asks for a list of operational items to become a table, use an actual `Table` layout with row-level navigation instead of visually rich cards. Prioritize scanability first for admin/operator surfaces.
 - After UI refactors that swap component structures, do a quick runtime-oriented validation for missing imported symbols, not just structural changes. Missing shared UI imports can slip through if the refactor touches helper render functions later in the file.
 - For full-page editor flows, include breadcrumb-style parent navigation in the primary header when there is an obvious parent workspace like `Alerts`. Do not rely only on a detached back button.
+- "The code has it" is not proof the UI shows it — verify rendering in a real browser before telling the user a feature exists. In `apps/docs`, `fumadocs-ui/style.css` is a complete prebuilt Tailwind build; importing it in the root layout after `globals.css` puts its `.hidden` later in the merged `utilities` cascade layer than the app's `sm:`/`md:` variants, permanently hiding any `hidden sm:block`-style responsive element. Keep fumadocs CSS scoped to `app/documentation/layout.tsx`.
