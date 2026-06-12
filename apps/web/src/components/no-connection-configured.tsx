@@ -80,7 +80,7 @@ export function NoConnectionConfigured({
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...shellTransition, delay: 0.05 }}
           >
-            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+            <Sparkles className="h-3.5 w-3.5 text-status-warning" />
             Connection Required
           </motion.div>
 
@@ -137,19 +137,19 @@ export function NoConnectionConfigured({
                 copy: envConnections
                   ? 'Provide the Redis URLs Durabull should mount at boot.'
                   : 'Attach the Redis instance that powers your BullMQ queues.',
-                gradient: 'from-sky-500/18 via-sky-500/6 to-transparent',
+                gradient: 'from-status-active/18 via-status-active/6 to-transparent',
               },
               {
                 icon: AreaIcon,
                 label: `Unlock ${area}`,
                 copy: `${area} comes online automatically once a connection is available.`,
-                gradient: 'from-emerald-500/18 via-emerald-500/6 to-transparent',
+                gradient: 'from-status-success/18 via-status-success/6 to-transparent',
               },
               {
                 icon: Compass,
                 label: 'Return to onboarding',
                 copy: 'Reopen the guided setup if you want the full checklist again.',
-                gradient: 'from-amber-500/18 via-amber-500/6 to-transparent',
+                gradient: 'from-status-warning/18 via-status-warning/6 to-transparent',
               },
             ].map((item, index) => (
               <Card
@@ -220,9 +220,9 @@ export function NoConnectionConfigured({
                         <motion.div
                           className={cn(
                             'h-full rounded-full',
-                            index === 0 && 'bg-sky-500/65',
-                            index === 1 && 'bg-emerald-500/60',
-                            index === 2 && 'bg-amber-500/65'
+                            index === 0 && 'bg-status-active/65',
+                            index === 1 && 'bg-status-success/60',
+                            index === 2 && 'bg-status-warning/65'
                           )}
                           initial={{ width: 0 }}
                           animate={{ width: `${52 + index * 16}%` }}

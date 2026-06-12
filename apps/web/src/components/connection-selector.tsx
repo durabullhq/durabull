@@ -39,20 +39,20 @@ const environmentConfig: Record<
   development: {
     label: 'Development',
     icon: Code,
-    color: 'text-emerald-600 dark:text-emerald-400',
-    bgColor: 'bg-emerald-500/10',
+    color: 'text-status-success',
+    bgColor: 'bg-status-success/10',
   },
   staging: {
     label: 'Staging',
     icon: Server,
-    color: 'text-amber-600 dark:text-amber-400',
-    bgColor: 'bg-amber-500/10',
+    color: 'text-status-warning',
+    bgColor: 'bg-status-warning/10',
   },
   production: {
     label: 'Production',
     icon: Cloud,
-    color: 'text-rose-600 dark:text-rose-400',
-    bgColor: 'bg-rose-500/10',
+    color: 'text-status-danger',
+    bgColor: 'bg-status-danger/10',
   },
 }
 
@@ -86,9 +86,9 @@ export function ConnectionSelector() {
 
   if (connections.length === 0) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-yellow-500/50 bg-yellow-500/10 px-3 py-2.5">
-        <AlertCircle className="h-4 w-4 text-yellow-600" />
-        <span className="text-sm text-yellow-600">No connections</span>
+      <div className="flex items-center gap-2 rounded-lg border border-status-warning/50 bg-status-warning/10 px-3 py-2.5">
+        <AlertCircle className="h-4 w-4 text-status-warning" />
+        <span className="text-sm text-status-warning">No connections</span>
       </div>
     )
   }

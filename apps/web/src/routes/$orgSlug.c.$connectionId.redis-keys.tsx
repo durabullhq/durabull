@@ -84,12 +84,12 @@ const typeIcons: Record<RedisDataType, React.ComponentType<{ className?: string 
 
 // Type colors
 const typeColors: Record<RedisDataType, string> = {
-  string: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-  hash: 'text-violet-500 bg-violet-500/10 border-violet-500/20',
-  list: 'text-blue-500 bg-blue-500/10 border-blue-500/20',
-  set: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
-  zset: 'text-orange-500 bg-orange-500/10 border-orange-500/20',
-  stream: 'text-pink-500 bg-pink-500/10 border-pink-500/20',
+  string: 'text-status-success bg-status-success/10 border-status-success/20',
+  hash: 'text-status-priority bg-status-priority/10 border-status-priority/20',
+  list: 'text-status-active bg-status-active/10 border-status-active/20',
+  set: 'text-status-warning bg-status-warning/10 border-status-warning/20',
+  zset: 'text-status-delayed bg-status-delayed/10 border-status-delayed/20',
+  stream: 'text-status-priority bg-status-priority/10 border-status-priority/20',
   none: 'text-gray-500 bg-gray-500/10 border-gray-500/20',
   unknown: 'text-gray-500 bg-gray-500/10 border-gray-500/20',
 }
@@ -291,7 +291,8 @@ function RedisKeysPage() {
                       size="sm"
                       className={cn(
                         'h-7 text-xs gap-1.5 shrink-0',
-                        excludeBullKeys && 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20'
+                        excludeBullKeys &&
+                          'bg-status-warning/10 text-status-warning hover:bg-status-warning/20'
                       )}
                       onClick={() => {
                         const newValue = !excludeBullKeys
@@ -498,7 +499,7 @@ function KeyRow({ keyInfo, isSelected, onClick, onDelete, style }: KeyRowProps) 
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+                  <AlertTriangle className="h-3 w-3 text-status-warning shrink-0" />
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>BullMQ managed key</p>
@@ -548,7 +549,7 @@ function KeyRow({ keyInfo, isSelected, onClick, onDelete, style }: KeyRowProps) 
           <TooltipContent className={cn(isBullManaged && 'max-w-xs')}>
             {isBullManaged ? (
               <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <AlertTriangle className="h-4 w-4 text-status-warning shrink-0 mt-0.5" />
                 <div>
                   <p className="font-medium">Cannot delete BullMQ keys</p>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -611,7 +612,12 @@ function ValuePanel({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onClose}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={onClose}
+                  >
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -695,7 +701,7 @@ function CopyButton({ text }: { text: string }) {
         <TooltipTrigger asChild>
           <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleCopy}>
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-green-500" />
+              <Check className="h-3.5 w-3.5 text-status-success" />
             ) : (
               <Copy className="h-3.5 w-3.5" />
             )}
@@ -718,39 +724,26 @@ interface StatCardProps {
   variant?: StatVariant
 }
 
-const variantStyles: Record<
-  StatVariant,
-  { icon: string; value: string; bg: string; border: string }
-> = {
+const variantStyles: Record<StatVariant, { icon: string; accent: string }> = {
   default: {
     icon: 'text-muted-foreground',
-    value: 'text-foreground',
-    bg: 'bg-muted/50',
-    border: 'border-border',
+    accent: 'bg-status-neutral/40',
   },
   blue: {
-    icon: 'text-blue-500',
-    value: 'text-blue-600 dark:text-blue-400',
-    bg: 'bg-blue-500/5 dark:bg-blue-500/10',
-    border: 'border-blue-200 dark:border-blue-900',
+    icon: 'text-status-active',
+    accent: 'bg-status-active',
   },
   green: {
-    icon: 'text-green-500',
-    value: 'text-green-600 dark:text-green-400',
-    bg: 'bg-green-500/5 dark:bg-green-500/10',
-    border: 'border-green-200 dark:border-green-900',
+    icon: 'text-status-success',
+    accent: 'bg-status-success',
   },
   purple: {
-    icon: 'text-purple-500',
-    value: 'text-purple-600 dark:text-purple-400',
-    bg: 'bg-purple-500/5 dark:bg-purple-500/10',
-    border: 'border-purple-200 dark:border-purple-900',
+    icon: 'text-status-priority',
+    accent: 'bg-status-priority',
   },
   red: {
-    icon: 'text-red-500',
-    value: 'text-red-600 dark:text-red-400',
-    bg: 'bg-red-500/5 dark:bg-red-500/10',
-    border: 'border-red-200 dark:border-red-900',
+    icon: 'text-status-danger',
+    accent: 'bg-status-danger',
   },
 }
 
@@ -758,16 +751,19 @@ function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: St
   const styles = variantStyles[variant]
 
   return (
-    <Card className={cn('transition-all hover:shadow-md', styles.bg, styles.border)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+        <CardTitle className="eyebrow">{title}</CardTitle>
         <Icon className={cn('h-4 w-4', styles.icon)} />
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         {loading ? (
           <Skeleton className="h-7 w-24" />
         ) : (
-          <div className={cn('text-xl font-bold truncate', styles.value)}>{value}</div>
+          <div className="truncate font-mono text-xl font-semibold tracking-tight tabular-nums">
+            {value}
+          </div>
         )}
       </CardContent>
     </Card>

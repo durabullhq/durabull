@@ -69,17 +69,17 @@ function RedisNode({ data }: NodeProps) {
       <Handle
         type="source"
         position={Position.Right}
-        className="!bg-red-500 !w-3 !h-3 !border-2 !border-red-200"
+        className="!bg-status-danger !w-3 !h-3 !border-2 !border-status-danger"
       />
       <div
         className={cn(
           'relative px-6 py-4 rounded-2xl border-2 shadow-2xl min-w-[200px]',
-          'bg-gradient-to-br from-red-500 to-red-600 border-red-400',
+          'bg-gradient-to-br from-status-danger to-status-danger border-status-danger/30',
           'animate-pulse-soft'
         )}
       >
         {/* Glow effect */}
-        <div className="absolute inset-0 rounded-2xl bg-red-500/20 blur-xl -z-10" />
+        <div className="absolute inset-0 rounded-2xl bg-status-danger/20 blur-xl -z-10" />
 
         <div className="flex items-center gap-3 text-white">
           <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
@@ -87,15 +87,15 @@ function RedisNode({ data }: NodeProps) {
           </div>
           <div>
             <div className="font-bold text-lg">Redis</div>
-            <div className="text-red-100 text-sm font-mono">{data.label as string}</div>
+            <div className="text-white/80 text-sm font-mono">{data.label as string}</div>
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-2 text-red-100">
+        <div className="mt-3 flex items-center gap-2 text-white/80">
           <div className="flex items-center gap-1.5">
             <Wifi className="h-3.5 w-3.5" />
             <span className="text-xs font-medium">Connected</span>
           </div>
-          <span className="text-red-300">•</span>
+          <span className="text-white/60">•</span>
           <span className="text-xs">{data.totalQueues as number} queues</span>
         </div>
       </div>
@@ -115,12 +115,12 @@ function QueueNode({ data }: NodeProps) {
       <Handle
         type="target"
         position={Position.Left}
-        className="!bg-blue-500 !w-3 !h-3 !border-2 !border-blue-200"
+        className="!bg-status-active !w-3 !h-3 !border-2 !border-status-active"
       />
       <Handle
         type="source"
         position={Position.Right}
-        className="!bg-green-500 !w-3 !h-3 !border-2 !border-green-200"
+        className="!bg-status-success !w-3 !h-3 !border-2 !border-status-success"
       />
       <TooltipProvider delayDuration={200}>
         <Tooltip>
@@ -129,9 +129,9 @@ function QueueNode({ data }: NodeProps) {
               className={cn(
                 'relative px-5 py-4 rounded-xl border-2 shadow-xl w-[260px] transition-all duration-300 cursor-default',
                 isActive
-                  ? 'bg-gradient-to-br from-blue-500/10 to-blue-600/5 border-blue-500/50 dark:from-blue-500/20 dark:to-blue-600/10'
-                  : 'bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-500/50 dark:from-amber-500/20 dark:to-amber-600/10',
-                hasWorkers && 'ring-2 ring-green-500/30 ring-offset-2 ring-offset-background'
+                  ? 'bg-gradient-to-br from-status-active/10 to-status-active/5 border-status-active/50 dark:from-status-active/20 dark:to-status-active/10'
+                  : 'bg-gradient-to-br from-status-warning/10 to-status-warning/5 border-status-warning/50 dark:from-status-warning/20 dark:to-status-warning/10',
+                hasWorkers && 'ring-2 ring-status-success/30 ring-offset-2 ring-offset-background'
               )}
             >
               <div className="flex items-center gap-3">
@@ -139,8 +139,8 @@ function QueueNode({ data }: NodeProps) {
                   className={cn(
                     'p-2 rounded-lg shrink-0',
                     isActive
-                      ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400'
-                      : 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                      ? 'bg-status-active/20 text-status-active'
+                      : 'bg-status-warning/20 text-status-warning'
                   )}
                 >
                   <Layers className="h-5 w-5" />
@@ -188,21 +188,23 @@ function WorkerNode({ data }: NodeProps) {
       <Handle
         type="target"
         position={Position.Left}
-        className="!bg-green-500 !w-2.5 !h-2.5 !border-2 !border-green-200"
+        className="!bg-status-success !w-2.5 !h-2.5 !border-2 !border-status-success"
       />
       <div
         className={cn(
           'relative px-4 py-3 rounded-lg border shadow-lg min-w-[220px] transition-all duration-300',
           'bg-gradient-to-br from-card to-card/80 hover:shadow-xl',
-          isIdle ? 'border-muted-foreground/30' : 'border-green-500/50 ring-1 ring-green-500/20'
+          isIdle
+            ? 'border-muted-foreground/30'
+            : 'border-status-success/50 ring-1 ring-status-success/20'
         )}
       >
         {/* Activity indicator */}
         {!isIdle && (
           <div className="absolute -top-1 -right-1">
             <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-success opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-status-success" />
             </span>
           </div>
         )}
@@ -211,9 +213,7 @@ function WorkerNode({ data }: NodeProps) {
           <div
             className={cn(
               'p-2 rounded-lg transition-colors',
-              isIdle
-                ? 'bg-muted text-muted-foreground'
-                : 'bg-green-500/10 text-green-600 dark:text-green-400'
+              isIdle ? 'bg-muted text-muted-foreground' : 'bg-status-success/10 text-status-success'
             )}
           >
             <Server className="h-4 w-4" />
@@ -232,7 +232,10 @@ function WorkerNode({ data }: NodeProps) {
             <span>Age: {formatDuration(worker.age * 1000)}</span>
           </div>
           <div
-            className={cn('flex items-center gap-1', isIdle ? 'text-amber-500' : 'text-green-500')}
+            className={cn(
+              'flex items-center gap-1',
+              isIdle ? 'text-status-warning' : 'text-status-success'
+            )}
           >
             <Cpu className="h-3 w-3" />
             <span>{isIdle ? 'Idle' : 'Active'}</span>
@@ -413,8 +416,8 @@ function WorkersPage() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <div className="rounded-full bg-red-100 dark:bg-red-900/20 p-4 mb-4">
-          <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+        <div className="rounded-full bg-status-danger/10 p-4 mb-4">
+          <AlertCircle className="h-8 w-8 text-status-danger" />
         </div>
         <h2 className="text-xl font-semibold mb-2">Failed to load workers</h2>
         <p className="text-muted-foreground text-center max-w-md">{error.message}</p>
@@ -466,19 +469,19 @@ function WorkersPage() {
             </CardTitle>
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-500" />
+                <span className="w-2 h-2 rounded-full bg-status-danger" />
                 Redis
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                <span className="w-2 h-2 rounded-full bg-status-active" />
                 Queue
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-green-500" />
+                <span className="w-2 h-2 rounded-full bg-status-success" />
                 Worker
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-4 h-0.5 bg-gradient-to-r from-green-500 to-green-300 animate-pulse" />
+                <span className="w-4 h-0.5 bg-gradient-to-r from-status-success to-status-success animate-pulse" />
                 Active
               </div>
             </div>
@@ -617,40 +620,28 @@ const variantStyles: Record<
   StatVariant,
   {
     icon: string
-    value: string
-    bg: string
-    border: string
+    accent: string
   }
 > = {
   default: {
     icon: 'text-muted-foreground',
-    value: 'text-foreground',
-    bg: 'bg-muted/50',
-    border: 'border-border',
+    accent: 'bg-status-neutral/40',
   },
   blue: {
-    icon: 'text-blue-500',
-    value: 'text-blue-600 dark:text-blue-400',
-    bg: 'bg-blue-500/5 dark:bg-blue-500/10',
-    border: 'border-blue-200 dark:border-blue-900',
+    icon: 'text-status-active',
+    accent: 'bg-status-active',
   },
   green: {
-    icon: 'text-green-500',
-    value: 'text-green-600 dark:text-green-400',
-    bg: 'bg-green-500/5 dark:bg-green-500/10',
-    border: 'border-green-200 dark:border-green-900',
+    icon: 'text-status-success',
+    accent: 'bg-status-success',
   },
   orange: {
-    icon: 'text-orange-500',
-    value: 'text-orange-600 dark:text-orange-400',
-    bg: 'bg-orange-500/5 dark:bg-orange-500/10',
-    border: 'border-orange-200 dark:border-orange-900',
+    icon: 'text-status-delayed',
+    accent: 'bg-status-delayed',
   },
   red: {
-    icon: 'text-red-500',
-    value: 'text-red-600 dark:text-red-400',
-    bg: 'bg-red-500/5 dark:bg-red-500/10',
-    border: 'border-red-200 dark:border-red-900',
+    icon: 'text-status-danger',
+    accent: 'bg-status-danger',
   },
 }
 
@@ -665,24 +656,25 @@ function StatCard({
   const styles = variantStyles[variant]
 
   return (
-    <Card className={cn('transition-all hover:shadow-md', styles.bg, styles.border)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+        <CardTitle className="eyebrow">{title}</CardTitle>
         <div className="relative">
           <Icon className={cn('h-4 w-4', styles.icon)} />
           {showPulse && (
             <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-success opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-status-success" />
             </span>
           )}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         {loading ? (
           <Skeleton className="h-8 w-20" />
         ) : (
-          <div className={cn('text-2xl font-bold tabular-nums', styles.value)}>{value}</div>
+          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
         )}
       </CardContent>
     </Card>

@@ -64,16 +64,16 @@ const socialProviders: Array<{
     id: 'google',
     name: 'Google',
     icon: GoogleIcon,
-    accent: 'text-rose-600 dark:text-rose-300',
-    bg: 'bg-rose-500/12',
+    accent: 'text-status-danger',
+    bg: 'bg-status-danger/12',
     description: 'Bring Google sign-in online for less friction across the team.',
   },
   {
     id: 'github',
     name: 'GitHub',
     icon: Github,
-    accent: 'text-slate-700 dark:text-slate-200',
-    bg: 'bg-slate-500/12',
+    accent: 'text-status-neutral',
+    bg: 'bg-status-neutral/12',
     description: 'Keep engineering access one click away with GitHub auth.',
   },
 ]
@@ -216,7 +216,7 @@ export function OrganizationOnboarding({
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...shellTransition, delay: 0.06 }}
             >
-              <Sparkles className="h-3.5 w-3.5 text-sky-500" />
+              <Sparkles className="h-3.5 w-3.5 text-status-active" />
               New Organization
             </motion.div>
 
@@ -232,8 +232,8 @@ export function OrganizationOnboarding({
                   fontFamily: '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif',
                 }}
               >
-                Turn <span className="text-sky-500">{organizationName}</span> into a live BullMQ
-                control room.
+                Turn <span className="text-status-active">{organizationName}</span> into a live
+                BullMQ control room.
               </h2>
               <p className="max-w-2xl text-base leading-8 text-muted-foreground sm:text-lg">
                 Add your first Redis connection, pull teammates into the workspace, and connect the
@@ -298,7 +298,7 @@ export function OrganizationOnboarding({
             animate={{ opacity: 1, x: 0 }}
             transition={{ ...shellTransition, delay: 0.2 }}
           >
-            <div className="absolute inset-0 rounded-[30px] bg-gradient-to-br from-sky-500/10 via-transparent to-amber-500/10 blur-3xl" />
+            <div className="absolute inset-0 rounded-[30px] bg-gradient-to-br from-status-active/10 via-transparent to-status-warning/10 blur-3xl" />
             <Card className="relative overflow-hidden rounded-[30px] border border-border/70 bg-background/80 shadow-[0_24px_90px_-54px_rgba(15,23,42,0.92)] backdrop-blur">
               <CardContent className="space-y-6 p-6">
                 <div className="flex items-start justify-between gap-4">
@@ -326,21 +326,21 @@ export function OrganizationOnboarding({
                         ? 'Add the env-backed Redis URLs Durabull should read at boot.'
                         : 'Save a Redis endpoint and let queue discovery index the surface area.',
                       progress: 72,
-                      tone: 'bg-sky-500/70',
+                      tone: 'bg-status-active/70',
                     },
                     {
                       step: '02',
                       title: 'Invite collaborators',
                       copy: 'Loop in teammates before production alerts start landing here.',
                       progress: teamReady ? 100 : 46,
-                      tone: 'bg-emerald-500/70',
+                      tone: 'bg-status-success/70',
                     },
                     {
                       step: '03',
                       title: 'Link Google or GitHub',
                       copy: 'Reduce auth friction now, not during the first urgent incident.',
                       progress: accountsReady ? 100 : 38,
-                      tone: 'bg-amber-500/75',
+                      tone: 'bg-status-warning/75',
                     },
                   ].map((item, index) => (
                     <div
@@ -387,7 +387,7 @@ export function OrganizationOnboarding({
               ? 'This workspace uses environment-managed connections. Wire the Redis URLs once and the whole platform wakes up on restart.'
               : 'Create a connection, kick off queue discovery, and land directly in the queues dashboard.'
           }
-          accent="from-sky-500/18 via-sky-500/5 to-transparent"
+          accent="from-status-active/18 via-status-active/5 to-transparent"
         >
           <div className="space-y-4">
             <div className="rounded-[24px] border border-border/70 bg-background/75 p-4">
@@ -400,7 +400,7 @@ export function OrganizationOnboarding({
                       : 'Store a Redis URL, set the environment, and let Durabull discover queues automatically.'}
                   </p>
                 </div>
-                <Cloud className="h-5 w-5 shrink-0 text-sky-500" />
+                <Cloud className="h-5 w-5 shrink-0 text-status-active" />
               </div>
             </div>
 
@@ -439,7 +439,7 @@ export function OrganizationOnboarding({
           icon={UserPlus}
           title="Invite your team"
           description="Shared visibility is worth more than a polished dashboard used by one person."
-          accent="from-emerald-500/18 via-emerald-500/5 to-transparent"
+          accent="from-status-success/18 via-status-success/5 to-transparent"
         >
           {isAuthless ? (
             <div className="rounded-[22px] border border-border/70 bg-muted/25 p-4 text-sm leading-6 text-muted-foreground">
@@ -448,7 +448,7 @@ export function OrganizationOnboarding({
           ) : canManageMembers ? (
             <form onSubmit={handleInvite} className="space-y-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Users className="h-4 w-4 text-emerald-500" />
+                <Users className="h-4 w-4 text-status-success" />
                 <span>
                   {membersLoading || invitationsLoading
                     ? 'Loading team posture...'
@@ -479,7 +479,7 @@ export function OrganizationOnboarding({
                     className={cn(
                       'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors',
                       inviteRole === roleOption.value
-                        ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                        ? 'border-status-success/50 bg-status-success/10 text-status-success'
                         : 'border-border/70 bg-background/70 text-muted-foreground hover:text-foreground'
                     )}
                   >
@@ -490,7 +490,7 @@ export function OrganizationOnboarding({
               </div>
 
               {inviteSuccess ? (
-                <div className="flex items-center gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+                <div className="flex items-center gap-2 rounded-2xl border border-status-success/30 bg-status-success/10 px-3 py-2 text-sm text-status-success">
                   <Check className="h-4 w-4" />
                   Invitation sent to {inviteSuccess}
                 </div>
@@ -547,7 +547,7 @@ export function OrganizationOnboarding({
           icon={BadgeCheck}
           title="Connect Google or GitHub"
           description="Make future sign-ins boring. That is exactly the point."
-          accent="from-amber-500/18 via-amber-500/5 to-transparent"
+          accent="from-status-warning/18 via-status-warning/5 to-transparent"
         >
           {isAuthless ? (
             <div className="rounded-[22px] border border-border/70 bg-muted/25 p-4 text-sm leading-6 text-muted-foreground">
@@ -578,7 +578,7 @@ export function OrganizationOnboarding({
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-foreground">{provider.name}</p>
                             {linked ? (
-                              <Badge className="rounded-full bg-emerald-500/12 text-emerald-700 shadow-none dark:text-emerald-300">
+                              <Badge className="rounded-full bg-status-success/12 text-status-success shadow-none dark:text-status-success">
                                 Connected
                               </Badge>
                             ) : null}

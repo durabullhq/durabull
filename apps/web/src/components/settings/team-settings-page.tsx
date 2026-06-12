@@ -78,24 +78,24 @@ const roles: {
     value: MEMBER_ROLES.OWNER,
     label: 'Owner',
     icon: Crown,
-    color: 'text-amber-600 dark:text-amber-400',
-    bgColor: 'bg-amber-500/10',
+    color: 'text-status-warning',
+    bgColor: 'bg-status-warning/10',
     description: 'Full access including billing and danger zone',
   },
   {
     value: MEMBER_ROLES.ADMIN,
     label: 'Admin',
     icon: Shield,
-    color: 'text-purple-600 dark:text-purple-400',
-    bgColor: 'bg-purple-500/10',
+    color: 'text-status-priority',
+    bgColor: 'bg-status-priority/10',
     description: 'Can manage members and settings',
   },
   {
     value: MEMBER_ROLES.MEMBER,
     label: 'Member',
     icon: User,
-    color: 'text-blue-600 dark:text-blue-400',
-    bgColor: 'bg-blue-500/10',
+    color: 'text-status-active',
+    bgColor: 'bg-status-active/10',
     description: 'Can view and use resources',
   },
 ]
@@ -131,8 +131,7 @@ export function TeamSettingsPage() {
 
   const currentMembership = members?.find((m) => m.userId === user?.id)
   const canManageMembers =
-    currentMembership?.role === MEMBER_ROLES.OWNER ||
-    currentMembership?.role === MEMBER_ROLES.ADMIN
+    currentMembership?.role === MEMBER_ROLES.OWNER || currentMembership?.role === MEMBER_ROLES.ADMIN
   const topBarConfig = useMemo(
     () => ({
       left: (
@@ -167,8 +166,8 @@ export function TeamSettingsPage() {
   if (!activeOrg && !orgLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <div className="rounded-full bg-amber-100 dark:bg-amber-900/20 p-4 mb-4">
-          <AlertCircle className="h-8 w-8 text-amber-600 dark:text-amber-400" />
+        <div className="rounded-full bg-status-warning/10 p-4 mb-4">
+          <AlertCircle className="h-8 w-8 text-status-warning" />
         </div>
         <h2 className="text-xl font-semibold mb-2">No Organization Selected</h2>
         <p className="text-muted-foreground text-center max-w-md">
@@ -390,7 +389,7 @@ function MemberRow({
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8 rounded-md border">
             <AvatarImage src={member.user.image ?? undefined} alt={member.user.name} />
-            <AvatarFallback className="rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+            <AvatarFallback className="rounded-md border bg-secondary font-mono text-xs font-medium text-secondary-foreground">
               {member.user.name
                 .split(' ')
                 .map((n) => n[0])
@@ -459,10 +458,7 @@ function MemberRow({
 
       {/* Status */}
       <TableCell>
-        <Badge
-          variant="outline"
-          className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-        >
+        <Badge variant="outline" className="bg-status-success/10 text-status-success">
           <Check className="mr-1 h-3 w-3" />
           Active
         </Badge>
@@ -566,7 +562,7 @@ function InvitationRow({
 
       {/* Status */}
       <TableCell>
-        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400">
+        <Badge variant="outline" className="bg-status-warning/10 text-status-warning">
           <Clock className="mr-1 h-3 w-3" />
           Pending
         </Badge>
@@ -793,7 +789,7 @@ function RemoveMemberDialog({
           <div className="flex items-center gap-3 p-3 rounded-lg border border-destructive/20 bg-destructive/5">
             <Avatar className="h-8 w-8 rounded-md border">
               <AvatarImage src={member.user.image ?? undefined} alt={member.user.name} />
-              <AvatarFallback className="rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+              <AvatarFallback className="rounded-md border bg-secondary font-mono text-xs font-medium text-secondary-foreground">
                 {member.user.name
                   .split(' ')
                   .map((n) => n[0])
@@ -934,34 +930,24 @@ const variantStyles: Record<
   StatVariant,
   {
     icon: string
-    value: string
-    bg: string
-    border: string
+    accent: string
   }
 > = {
   default: {
     icon: 'text-muted-foreground',
-    value: 'text-foreground',
-    bg: 'bg-muted/50',
-    border: 'border-border',
+    accent: 'bg-status-neutral/40',
   },
   violet: {
-    icon: 'text-violet-500',
-    value: 'text-violet-600 dark:text-violet-400',
-    bg: 'bg-violet-500/5 dark:bg-violet-500/10',
-    border: 'border-violet-200 dark:border-violet-900',
+    icon: 'text-status-priority',
+    accent: 'bg-status-priority',
   },
   purple: {
-    icon: 'text-purple-500',
-    value: 'text-purple-600 dark:text-purple-400',
-    bg: 'bg-purple-500/5 dark:bg-purple-500/10',
-    border: 'border-purple-200 dark:border-purple-900',
+    icon: 'text-status-priority',
+    accent: 'bg-status-priority',
   },
   amber: {
-    icon: 'text-amber-500',
-    value: 'text-amber-600 dark:text-amber-400',
-    bg: 'bg-amber-500/5 dark:bg-amber-500/10',
-    border: 'border-amber-200 dark:border-amber-900',
+    icon: 'text-status-warning',
+    accent: 'bg-status-warning',
   },
 }
 
@@ -969,16 +955,17 @@ function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: St
   const styles = variantStyles[variant]
 
   return (
-    <Card className={cn('transition-all hover:shadow-md', styles.bg, styles.border)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+        <CardTitle className="eyebrow">{title}</CardTitle>
         <Icon className={cn('h-4 w-4', styles.icon)} />
       </CardHeader>
       <CardContent>
         {loading ? (
           <Skeleton className="h-8 w-12" />
         ) : (
-          <div className={cn('text-2xl font-bold tabular-nums', styles.value)}>{value}</div>
+          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
         )}
       </CardContent>
     </Card>

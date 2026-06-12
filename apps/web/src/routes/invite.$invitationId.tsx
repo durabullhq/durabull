@@ -484,10 +484,10 @@ function InviteAcceptPage() {
 
           {/* Email mismatch warning */}
           {emailMismatch && (
-            <div className="mb-6 flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/10 p-3">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <div className="mb-6 flex items-start gap-2 rounded-md border border-status-warning/20 bg-status-warning/10 p-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-status-warning" />
               <div className="text-sm">
-                <p className="font-medium text-amber-600 dark:text-amber-400">Email Mismatch</p>
+                <p className="font-medium text-status-warning">Email Mismatch</p>
                 <p className="text-muted-foreground">
                   This invitation was sent to <strong>{invitation.email}</strong>, but you're signed
                   in as <strong>{user?.email}</strong>. You may need to sign out and use the correct

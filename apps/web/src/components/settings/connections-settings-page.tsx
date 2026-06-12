@@ -84,25 +84,25 @@ const environments: {
     value: 'production',
     label: 'Production',
     icon: Cloud,
-    color: 'text-rose-600 dark:text-rose-400',
-    bgColor: 'bg-rose-500/10',
-    borderColor: 'border-rose-500/30',
+    color: 'text-status-danger',
+    bgColor: 'bg-status-danger/10',
+    borderColor: 'border-status-danger/30',
   },
   {
     value: 'staging',
     label: 'Staging',
     icon: Server,
-    color: 'text-amber-600 dark:text-amber-400',
-    bgColor: 'bg-amber-500/10',
-    borderColor: 'border-amber-500/30',
+    color: 'text-status-warning',
+    bgColor: 'bg-status-warning/10',
+    borderColor: 'border-status-warning/30',
   },
   {
     value: 'development',
     label: 'Development',
     icon: Code,
-    color: 'text-emerald-600 dark:text-emerald-400',
-    bgColor: 'bg-emerald-500/10',
-    borderColor: 'border-emerald-500/30',
+    color: 'text-status-success',
+    bgColor: 'bg-status-success/10',
+    borderColor: 'border-status-success/30',
   },
 ]
 
@@ -200,16 +200,18 @@ function EnvironmentSectionSkeleton({ envConfig }: { envConfig: (typeof environm
   )
 }
 
-export function ConnectionsSettingsPage({ createFromSearch = false }: { createFromSearch?: boolean }) {
+export function ConnectionsSettingsPage({
+  createFromSearch = false,
+}: {
+  createFromSearch?: boolean
+}) {
   const { envConnections, isAuthless } = useAppMode()
   const { connections, isLoading, error } = useConnection()
   const { user } = useAuth()
   const { data: members } = useOrganizationMembers()
   const currentMembership = members?.find((m) => m.userId === user?.id)
   const canViewSecrets =
-    isAuthless ||
-    currentMembership?.role === 'owner' ||
-    currentMembership?.role === 'admin'
+    isAuthless || currentMembership?.role === 'owner' || currentMembership?.role === 'admin'
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editingConnection, setEditingConnection] = useState<RedisConnection | null>(null)
   const [deletingConnection, setDeletingConnection] = useState<RedisConnection | null>(null)
@@ -261,8 +263,8 @@ export function ConnectionsSettingsPage({ createFromSearch = false }: { createFr
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <div className="rounded-full bg-red-100 dark:bg-red-900/20 p-4 mb-4">
-          <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+        <div className="rounded-full bg-status-danger/10 p-4 mb-4">
+          <AlertCircle className="h-8 w-8 text-status-danger" />
         </div>
         <h2 className="text-xl font-semibold mb-2">Failed to load connections</h2>
         <p className="text-muted-foreground text-center max-w-md">{error.message}</p>
@@ -495,9 +497,7 @@ function ConnectionCard({
               )}
             >
               {!canViewSecrets ? (
-                <span className="text-muted-foreground">
-                  ••••••••••••••••••••••••
-                </span>
+                <span className="text-muted-foreground">••••••••••••••••••••••••</span>
               ) : detailLoading ? (
                 <span className="text-muted-foreground">Loading...</span>
               ) : showUrl && detail?.url ? (
@@ -828,8 +828,8 @@ function ConnectionFormDialog({
                   className={cn(
                     'flex items-center gap-2 text-sm p-2 rounded-md',
                     testResult.success
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-red-500/10 text-red-600 dark:text-red-400'
+                      ? 'bg-status-success/10 text-status-success'
+                      : 'bg-status-danger/10 text-status-danger'
                   )}
                 >
                   {testResult.success ? (
@@ -1060,7 +1060,7 @@ function DeleteConnectionDialog({
 
           {/* Warning for default connection */}
           {connection.isDefault && (
-            <div className="flex items-start gap-2 text-sm p-3 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <div className="flex items-start gap-2 text-sm p-3 rounded-md bg-status-warning/10 text-status-warning">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>
                 This is the default connection. If other connections remain, one of them will be
@@ -1140,40 +1140,28 @@ const variantStyles: Record<
   StatVariant,
   {
     icon: string
-    value: string
-    bg: string
-    border: string
+    accent: string
   }
 > = {
   default: {
     icon: 'text-muted-foreground',
-    value: 'text-foreground',
-    bg: 'bg-muted/50',
-    border: 'border-border',
+    accent: 'bg-status-neutral/40',
   },
   indigo: {
-    icon: 'text-indigo-500',
-    value: 'text-indigo-600 dark:text-indigo-400',
-    bg: 'bg-indigo-500/5 dark:bg-indigo-500/10',
-    border: 'border-indigo-200 dark:border-indigo-900',
+    icon: 'text-status-priority',
+    accent: 'bg-status-priority',
   },
   emerald: {
-    icon: 'text-emerald-500',
-    value: 'text-emerald-600 dark:text-emerald-400',
-    bg: 'bg-emerald-500/5 dark:bg-emerald-500/10',
-    border: 'border-emerald-200 dark:border-emerald-900',
+    icon: 'text-status-success',
+    accent: 'bg-status-success',
   },
   amber: {
-    icon: 'text-amber-500',
-    value: 'text-amber-600 dark:text-amber-400',
-    bg: 'bg-amber-500/5 dark:bg-amber-500/10',
-    border: 'border-amber-200 dark:border-amber-900',
+    icon: 'text-status-warning',
+    accent: 'bg-status-warning',
   },
   rose: {
-    icon: 'text-rose-500',
-    value: 'text-rose-600 dark:text-rose-400',
-    bg: 'bg-rose-500/5 dark:bg-rose-500/10',
-    border: 'border-rose-200 dark:border-rose-900',
+    icon: 'text-status-danger',
+    accent: 'bg-status-danger',
   },
 }
 
@@ -1181,16 +1169,17 @@ function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: St
   const styles = variantStyles[variant]
 
   return (
-    <Card className={cn('transition-all hover:shadow-md', styles.bg, styles.border)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+        <CardTitle className="eyebrow">{title}</CardTitle>
         <Icon className={cn('h-4 w-4', styles.icon)} />
       </CardHeader>
       <CardContent>
         {loading ? (
           <div className="h-8 w-12 bg-muted rounded animate-pulse" />
         ) : (
-          <div className={cn('text-2xl font-bold tabular-nums', styles.value)}>{value}</div>
+          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
         )}
       </CardContent>
     </Card>

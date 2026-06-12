@@ -24,8 +24,8 @@ const providers = [
     name: 'Google',
     icon: GoogleIcon,
     description: 'Sign in with your Google account',
-    color: 'text-red-500',
-    bgColor: 'bg-red-500/10',
+    color: 'text-status-danger',
+    bgColor: 'bg-status-danger/10',
     disabled: false,
   },
   {
@@ -33,8 +33,8 @@ const providers = [
     name: 'GitHub',
     icon: Github,
     description: 'Sign in with your GitHub account',
-    color: 'text-slate-700 dark:text-slate-300',
-    bgColor: 'bg-slate-500/10',
+    color: 'text-status-neutral',
+    bgColor: 'bg-status-neutral/10',
     disabled: false,
   },
 ] as const
@@ -146,7 +146,9 @@ export function AuthenticationSettingsPanel() {
   const hasPasswordAccount = accounts.some((account) => account.providerId === 'credential')
   const linkedSocialCount = accounts.filter((account) => account.providerId !== 'credential').length
   const canUnlink = (providerId: string) =>
-    providerId === 'credential' ? linkedSocialCount > 0 : hasPasswordAccount || linkedSocialCount > 1
+    providerId === 'credential'
+      ? linkedSocialCount > 0
+      : hasPasswordAccount || linkedSocialCount > 1
   const isLoading = sessionLoading || isLoadingAccounts
 
   return (
@@ -188,8 +190,8 @@ export function AuthenticationSettingsPanel() {
                   hasPasswordAccount ? 'Sign in with your email and password' : 'No password set'
                 }
                 isLinked={hasPasswordAccount}
-                color="text-blue-500"
-                bgColor="bg-blue-500/10"
+                color="text-status-active"
+                bgColor="bg-status-active/10"
                 canUnlink={false}
                 showActions={false}
               />
@@ -255,9 +257,9 @@ export function AuthenticationSettingsPanel() {
               <div className="flex items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                   {unlinkingAccount.providerId === 'google' ? (
-                    <GoogleIcon className="h-5 w-5 text-red-500" />
+                    <GoogleIcon className="h-5 w-5 text-status-danger" />
                   ) : (
-                    <Github className="h-5 w-5 text-slate-700 dark:text-slate-300" />
+                    <Github className="h-5 w-5 text-status-neutral" />
                   )}
                 </div>
                 <div>
@@ -339,7 +341,7 @@ function AccountRow({
             {isLinked ? (
               <Badge
                 variant="outline"
-                className="bg-emerald-500/10 px-1.5 text-[10px] text-emerald-600 dark:text-emerald-400"
+                className="bg-status-success/10 px-1.5 text-[10px] text-status-success"
               >
                 <Check className="mr-1 h-3 w-3" />
                 Connected

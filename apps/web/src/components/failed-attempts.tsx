@@ -536,7 +536,7 @@ function AttemptCard({ attempt, isExpanded, onToggle }: AttemptCardProps) {
                     <TooltipTrigger asChild>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopy}>
                         {copied ? (
-                          <Check className="h-3.5 w-3.5 text-green-500" />
+                          <Check className="h-3.5 w-3.5 text-status-success" />
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
                         )}

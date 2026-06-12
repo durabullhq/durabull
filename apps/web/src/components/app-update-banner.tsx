@@ -48,10 +48,10 @@ export function AppUpdateBanner({ onUpdate = reloadToLatestBuild }: AppUpdateBan
     <aside
       aria-label="Application update"
       aria-live="polite"
-      className="fixed right-4 bottom-4 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-lg border border-amber-500/30 bg-background/95 p-3 text-foreground shadow-2xl shadow-black/25 backdrop-blur supports-[backdrop-filter]:bg-background/85"
+      className="fixed right-4 bottom-4 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-lg border border-status-warning/30 bg-background/95 p-3 text-foreground shadow-2xl shadow-black/25 backdrop-blur supports-[backdrop-filter]:bg-background/85"
     >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-500/15 text-amber-500">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-status-warning/15 text-status-warning">
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">

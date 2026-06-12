@@ -330,7 +330,7 @@ const QueueTableRow = memo(function QueueTableRow({ queue }: QueueTableRowProps)
       </TableCell>
 
       {/* Waiting */}
-      <TableCell className="text-right tabular-nums text-muted-foreground">
+      <TableCell className="text-right font-mono text-[13px] tabular-nums text-muted-foreground">
         {formatNumber(queue.jobCounts.waiting)}
       </TableCell>
 
@@ -338,9 +338,9 @@ const QueueTableRow = memo(function QueueTableRow({ queue }: QueueTableRowProps)
       <TableCell className="text-right">
         <span
           className={cn(
-            'inline-flex items-center gap-1.5 tabular-nums',
+            'inline-flex items-center gap-1.5 font-mono text-[13px] tabular-nums',
             queue.jobCounts.prioritized > 0
-              ? 'text-violet-600 dark:text-violet-400 font-medium'
+              ? 'text-status-priority font-medium'
               : 'text-muted-foreground'
           )}
         >
@@ -353,10 +353,8 @@ const QueueTableRow = memo(function QueueTableRow({ queue }: QueueTableRowProps)
       <TableCell className="text-right">
         <span
           className={cn(
-            'tabular-nums',
-            queue.jobCounts.active > 0
-              ? 'text-blue-600 dark:text-blue-400 font-medium'
-              : 'text-muted-foreground'
+            'font-mono text-[13px] tabular-nums',
+            queue.jobCounts.active > 0 ? 'text-status-active font-medium' : 'text-muted-foreground'
           )}
         >
           {formatNumber(queue.jobCounts.active)}
@@ -367,10 +365,8 @@ const QueueTableRow = memo(function QueueTableRow({ queue }: QueueTableRowProps)
       <TableCell className="text-right">
         <span
           className={cn(
-            'tabular-nums',
-            queue.jobCounts.delayed > 0
-              ? 'text-orange-600 dark:text-orange-400'
-              : 'text-muted-foreground'
+            'font-mono text-[13px] tabular-nums',
+            queue.jobCounts.delayed > 0 ? 'text-status-delayed' : 'text-muted-foreground'
           )}
         >
           {formatNumber(queue.jobCounts.delayed)}
@@ -381,10 +377,8 @@ const QueueTableRow = memo(function QueueTableRow({ queue }: QueueTableRowProps)
       <TableCell className="text-right">
         <span
           className={cn(
-            'tabular-nums',
-            queue.jobCounts.completed > 0
-              ? 'text-green-600 dark:text-green-400'
-              : 'text-muted-foreground'
+            'font-mono text-[13px] tabular-nums',
+            queue.jobCounts.completed > 0 ? 'text-status-success' : 'text-muted-foreground'
           )}
         >
           {formatNumber(queue.jobCounts.completed)}
@@ -395,10 +389,8 @@ const QueueTableRow = memo(function QueueTableRow({ queue }: QueueTableRowProps)
       <TableCell className="text-right">
         <span
           className={cn(
-            'inline-flex items-center gap-1.5 tabular-nums',
-            queue.jobCounts.failed > 0
-              ? 'text-red-600 dark:text-red-400 font-medium'
-              : 'text-muted-foreground'
+            'inline-flex items-center gap-1.5 font-mono text-[13px] tabular-nums',
+            queue.jobCounts.failed > 0 ? 'text-status-danger font-medium' : 'text-muted-foreground'
           )}
         >
           {queue.jobCounts.failed > 0 && <AlertCircle className="h-3.5 w-3.5" />}
@@ -434,7 +426,7 @@ const QueueTableRow = memo(function QueueTableRow({ queue }: QueueTableRowProps)
             <DropdownMenuItem
               onClick={handleTogglePause}
               disabled={isToggling}
-              className={queue.isPaused ? 'text-green-600' : 'text-amber-600'}
+              className={queue.isPaused ? 'text-status-success' : 'text-status-warning'}
             >
               {queue.isPaused ? (
                 <>
@@ -474,7 +466,7 @@ export function QueueMetricsBar({ queue }: { queue: QueueSummary }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <div
-              className="bg-green-500 transition-all duration-500"
+              className="bg-status-success transition-all duration-500"
               style={{ width: getWidth(queue.jobCounts.completed) }}
             />
           </TooltipTrigger>
@@ -483,7 +475,7 @@ export function QueueMetricsBar({ queue }: { queue: QueueSummary }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <div
-              className="bg-blue-500 transition-all duration-500"
+              className="bg-status-active transition-all duration-500"
               style={{ width: getWidth(queue.jobCounts.active) }}
             />
           </TooltipTrigger>
@@ -492,7 +484,7 @@ export function QueueMetricsBar({ queue }: { queue: QueueSummary }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <div
-              className="bg-slate-400 transition-all duration-500"
+              className="bg-status-neutral transition-all duration-500"
               style={{ width: getWidth(queue.jobCounts.waiting) }}
             />
           </TooltipTrigger>
@@ -501,7 +493,7 @@ export function QueueMetricsBar({ queue }: { queue: QueueSummary }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <div
-              className="bg-orange-500 transition-all duration-500"
+              className="bg-status-delayed transition-all duration-500"
               style={{ width: getWidth(queue.jobCounts.delayed) }}
             />
           </TooltipTrigger>
@@ -510,7 +502,7 @@ export function QueueMetricsBar({ queue }: { queue: QueueSummary }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <div
-              className="bg-red-500 transition-all duration-500"
+              className="bg-status-danger transition-all duration-500"
               style={{ width: getWidth(queue.jobCounts.failed) }}
             />
           </TooltipTrigger>

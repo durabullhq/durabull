@@ -57,7 +57,7 @@ export function NavUser({ user, settingsPath = '/settings' }: NavUserProps) {
         <div className="flex items-center gap-2 px-2 py-2 text-left text-sm transition-all">
           <Avatar className="h-7 w-7 rounded-md border">
             <AvatarImage src={user.avatar} alt={user.name} />
-            <AvatarFallback className="rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+            <AvatarFallback className="rounded-md border bg-secondary font-mono text-xs font-medium text-secondary-foreground">
               {initials}
             </AvatarFallback>
           </Avatar>
@@ -73,7 +73,7 @@ export function NavUser({ user, settingsPath = '/settings' }: NavUserProps) {
           <div className="flex items-center gap-2 px-2 py-2 text-left text-sm">
             <Avatar className="h-7 w-7 rounded-md">
               <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback className="rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+              <AvatarFallback className="rounded-md border bg-secondary font-mono text-xs font-medium text-secondary-foreground">
                 {initials}
               </AvatarFallback>
             </Avatar>

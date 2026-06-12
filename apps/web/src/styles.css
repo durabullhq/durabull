@@ -1,78 +1,147 @@
 @import "tailwindcss";
 
-@theme {
-  --radius: 0.5rem;
-  
-  /* Light mode (default) */
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(224 71.4% 4.1%);
-  --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(224 71.4% 4.1%);
-  --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(224 71.4% 4.1%);
-  --color-primary: hsl(220.9 39.3% 11%);
-  --color-primary-foreground: hsl(210 20% 98%);
-  --color-secondary: hsl(220 14.3% 95.9%);
-  --color-secondary-foreground: hsl(220.9 39.3% 11%);
-  --color-muted: hsl(220 14.3% 95.9%);
-  --color-muted-foreground: hsl(220 8.9% 46.1%);
-  --color-accent: hsl(220 14.3% 95.9%);
-  --color-accent-foreground: hsl(220.9 39.3% 11%);
-  --color-destructive: hsl(0 84.2% 60.2%);
-  --color-destructive-foreground: hsl(210 20% 98%);
-  --color-border: hsl(220 13% 91%);
-  --color-input: hsl(220 13% 91%);
-  --color-ring: hsl(224 71.4% 4.1%);
-  --color-chart-1: hsl(12 76% 61%);
-  --color-chart-2: hsl(173 58% 39%);
-  --color-chart-3: hsl(197 37% 24%);
-  --color-chart-4: hsl(43 74% 66%);
-  --color-chart-5: hsl(27 87% 67%);
-  --color-sidebar-background: hsl(0 0% 98%);
-  --color-sidebar-foreground: hsl(240 5.3% 26.1%);
-  --color-sidebar-primary: hsl(240 5.9% 10%);
-  --color-sidebar-primary-foreground: hsl(0 0% 98%);
-  --color-sidebar-accent: hsl(240 4.8% 95.9%);
-  --color-sidebar-accent-foreground: hsl(240 5.9% 10%);
-  --color-sidebar-border: hsl(220 13% 91%);
-  --color-sidebar-ring: hsl(217.2 91.2% 59.8%);
+/* ------------------------------------------------------------------ */
+/* Typeface: Geist Sans + Geist Mono (variable, self-hosted)           */
+/* ------------------------------------------------------------------ */
+
+@font-face {
+  font-family: 'Geist Sans';
+  src: url('/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
 
-/* Dark mode - Premium developer-grade off-black */
-.dark {
-  --color-background: hsl(0 0% 6%);
-  --color-foreground: hsl(0 0% 95%);
-  --color-card: hsl(0 0% 8%);
-  --color-card-foreground: hsl(0 0% 95%);
-  --color-popover: hsl(0 0% 8%);
-  --color-popover-foreground: hsl(0 0% 95%);
-  --color-primary: hsl(0 0% 98%);
-  --color-primary-foreground: hsl(0 0% 9%);
-  --color-secondary: hsl(0 0% 12%);
-  --color-secondary-foreground: hsl(0 0% 95%);
-  --color-muted: hsl(0 0% 12%);
-  --color-muted-foreground: hsl(0 0% 55%);
-  --color-accent: hsl(0 0% 14%);
-  --color-accent-foreground: hsl(0 0% 95%);
-  --color-destructive: hsl(0 72% 55%);
-  --color-destructive-foreground: hsl(0 0% 98%);
-  --color-border: hsl(0 0% 16%);
-  --color-input: hsl(0 0% 14%);
-  --color-ring: hsl(0 0% 80%);
-  --color-chart-1: hsl(220 70% 50%);
-  --color-chart-2: hsl(160 60% 45%);
-  --color-chart-3: hsl(30 80% 55%);
-  --color-chart-4: hsl(280 65% 60%);
-  --color-chart-5: hsl(340 75% 55%);
-  --color-sidebar-background: hsl(0 0% 5%);
-  --color-sidebar-foreground: hsl(0 0% 90%);
-  --color-sidebar-primary: hsl(142 70% 45%);
-  --color-sidebar-primary-foreground: hsl(0 0% 100%);
-  --color-sidebar-accent: hsl(0 0% 10%);
-  --color-sidebar-accent-foreground: hsl(0 0% 90%);
-  --color-sidebar-border: hsl(0 0% 14%);
-  --color-sidebar-ring: hsl(0 0% 80%);
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
 }
+
+/* ------------------------------------------------------------------ */
+/* Design tokens — "Signal" ops-console theme                          */
+/*                                                                     */
+/* Graphite chrome, hairline borders, a single emerald "signal"        */
+/* accent, and a tokenized status palette shared by both modes.        */
+/* ------------------------------------------------------------------ */
+
+@theme {
+  --font-sans: 'Geist Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+
+  /* Sharper, more technical radius scale */
+  --radius: 0.375rem;
+  --radius-sm: 0.1875rem;
+  --radius-md: 0.3125rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.75rem;
+
+  /* Light mode (default) — crisp paper-white console */
+  --color-background: hsl(220 20% 98.5%);
+  --color-foreground: hsl(222 32% 9%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(222 32% 9%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(222 32% 9%);
+  --color-primary: hsl(222 32% 11%);
+  --color-primary-foreground: hsl(210 20% 98%);
+  --color-secondary: hsl(220 16% 94.5%);
+  --color-secondary-foreground: hsl(222 32% 11%);
+  --color-muted: hsl(220 16% 95.5%);
+  --color-muted-foreground: hsl(220 10% 42%);
+  --color-accent: hsl(220 16% 93.5%);
+  --color-accent-foreground: hsl(222 32% 11%);
+  --color-destructive: hsl(0 72% 48%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(220 14% 89%);
+  --color-input: hsl(220 14% 86%);
+  --color-ring: hsl(161 84% 30%);
+
+  /* Brand signal accent — reserved for live/active/brand moments */
+  --color-signal: hsl(161 84% 30%);
+  --color-signal-foreground: hsl(0 0% 100%);
+
+  /* Status palette — single source of truth for job/queue states */
+  --color-status-success: hsl(152 65% 34%);
+  --color-status-active: hsl(217 85% 50%);
+  --color-status-warning: hsl(38 92% 42%);
+  --color-status-danger: hsl(0 72% 48%);
+  --color-status-delayed: hsl(24 90% 46%);
+  --color-status-priority: hsl(262 70% 54%);
+  --color-status-neutral: hsl(220 10% 50%);
+
+  /* Charts — cohesive technical palette */
+  --color-chart-1: hsl(161 84% 32%);
+  --color-chart-2: hsl(217 85% 52%);
+  --color-chart-3: hsl(38 92% 46%);
+  --color-chart-4: hsl(262 70% 56%);
+  --color-chart-5: hsl(0 72% 52%);
+
+  --color-sidebar-background: hsl(220 18% 97%);
+  --color-sidebar-foreground: hsl(222 16% 28%);
+  --color-sidebar-primary: hsl(161 84% 30%);
+  --color-sidebar-primary-foreground: hsl(0 0% 100%);
+  --color-sidebar-accent: hsl(220 14% 92%);
+  --color-sidebar-accent-foreground: hsl(222 32% 11%);
+  --color-sidebar-border: hsl(220 14% 89%);
+  --color-sidebar-ring: hsl(161 84% 30%);
+}
+
+/* Dark mode — graphite control room */
+.dark {
+  --color-background: hsl(220 10% 4.5%);
+  --color-foreground: hsl(220 14% 93%);
+  --color-card: hsl(220 9% 6.5%);
+  --color-card-foreground: hsl(220 14% 93%);
+  --color-popover: hsl(220 9% 7%);
+  --color-popover-foreground: hsl(220 14% 93%);
+  --color-primary: hsl(220 14% 96%);
+  --color-primary-foreground: hsl(220 10% 8%);
+  --color-secondary: hsl(220 8% 12%);
+  --color-secondary-foreground: hsl(220 14% 93%);
+  --color-muted: hsl(220 8% 11%);
+  --color-muted-foreground: hsl(220 8% 56%);
+  --color-accent: hsl(220 8% 14%);
+  --color-accent-foreground: hsl(220 14% 96%);
+  --color-destructive: hsl(0 70% 56%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(220 8% 14.5%);
+  --color-input: hsl(220 8% 16%);
+  --color-ring: hsl(158 64% 46%);
+
+  --color-signal: hsl(158 64% 48%);
+  --color-signal-foreground: hsl(220 10% 5%);
+
+  --color-status-success: hsl(152 58% 50%);
+  --color-status-active: hsl(214 90% 62%);
+  --color-status-warning: hsl(40 90% 56%);
+  --color-status-danger: hsl(0 78% 62%);
+  --color-status-delayed: hsl(26 92% 58%);
+  --color-status-priority: hsl(258 84% 70%);
+  --color-status-neutral: hsl(220 8% 58%);
+
+  --color-chart-1: hsl(158 64% 48%);
+  --color-chart-2: hsl(214 90% 62%);
+  --color-chart-3: hsl(40 90% 56%);
+  --color-chart-4: hsl(258 84% 70%);
+  --color-chart-5: hsl(0 78% 62%);
+
+  --color-sidebar-background: hsl(220 10% 3.5%);
+  --color-sidebar-foreground: hsl(220 10% 72%);
+  --color-sidebar-primary: hsl(158 64% 48%);
+  --color-sidebar-primary-foreground: hsl(220 10% 5%);
+  --color-sidebar-accent: hsl(220 8% 10%);
+  --color-sidebar-accent-foreground: hsl(220 14% 96%);
+  --color-sidebar-border: hsl(220 8% 12%);
+  --color-sidebar-ring: hsl(158 64% 46%);
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
 
 * {
   border-color: var(--color-border);
@@ -81,7 +150,51 @@
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv01', 'cv03', 'cv04';
+  text-rendering: optimizeLegibility;
 }
+
+/* Data reads like data: every mono context gets aligned figures */
+code,
+pre,
+kbd,
+samp,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--color-signal) 25%, transparent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Utilities                                                           */
+/* ------------------------------------------------------------------ */
+
+/* Eyebrow labels: the mono section markers used across the console */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+@layer utilities {
+  .app-region-drag {
+    -webkit-app-region: drag;
+  }
+
+  .app-region-no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Motion                                                              */
+/* ------------------------------------------------------------------ */
 
 @keyframes accordion-down {
   from {
@@ -101,7 +214,6 @@ body {
   }
 }
 
-/* Custom animations */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -123,7 +235,8 @@ body {
 }
 
 @keyframes pulse-soft {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -157,26 +270,43 @@ tbody tr {
   animation: fade-in 0.15s ease-out forwards;
 }
 
-/* Smooth scrollbar for tables */
-.overflow-auto::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
+/* ------------------------------------------------------------------ */
+/* Scrollbars                                                          */
+/* ------------------------------------------------------------------ */
+
+.overflow-auto::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
 }
 
-.overflow-auto::-webkit-scrollbar-track {
+.overflow-auto::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.overflow-auto::-webkit-scrollbar-thumb {
+.overflow-auto::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 3px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
-.overflow-auto::-webkit-scrollbar-thumb:hover {
+.overflow-auto::-webkit-scrollbar-thumb:hover,
+.overflow-y-auto::-webkit-scrollbar-thumb:hover,
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
   background: var(--color-muted-foreground);
+  background-clip: padding-box;
 }
 
-/* React Flow custom styles */
+/* ------------------------------------------------------------------ */
+/* React Flow                                                          */
+/* ------------------------------------------------------------------ */
+
 .react-flow__node {
   font-family: inherit;
 }
@@ -204,16 +334,24 @@ tbody tr {
   animation: flow-animation 0.5s linear infinite;
 }
 
-/* React Flow Controls styling */
 .react-flow__controls {
-  border-radius: 0.5rem;
+  border-radius: var(--radius);
   overflow: hidden;
+  border: 1px solid var(--color-border);
+  box-shadow: none;
 }
 
 .react-flow__controls-button {
   border-radius: 0 !important;
   width: 28px !important;
   height: 28px !important;
+  background: var(--color-card) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+  fill: var(--color-foreground);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--color-accent) !important;
 }
 
 .react-flow__controls-button svg {
@@ -221,22 +359,23 @@ tbody tr {
   max-height: 14px !important;
 }
 
-/* MiniMap styling */
 .react-flow__minimap {
-  border-radius: 0.5rem;
+  border-radius: var(--radius);
   overflow: hidden;
+  border: 1px solid var(--color-border);
 }
 
-/* Background pattern */
 .react-flow__background pattern circle {
   fill: var(--color-muted-foreground);
   opacity: 0.1;
 }
 
-/*
- * Electron desktop shell: avoid incidental text selection on labels and chrome.
- * Restore selection where copying matters: forms, tables, dialogs, code/JSON.
- */
+/* ------------------------------------------------------------------ */
+/* Electron desktop shell                                              */
+/* Avoid incidental text selection on labels and chrome; restore       */
+/* selection where copying matters: forms, tables, dialogs, code/JSON. */
+/* ------------------------------------------------------------------ */
+
 html.electron-shell {
   -webkit-user-select: none;
   user-select: none;
@@ -272,15 +411,4 @@ html.electron-shell :where(pre, pre *, code) {
 html.electron-shell :where(.json-viewer, .json-viewer *) {
   -webkit-user-select: text;
   user-select: text;
-}
-
-/* Electron: drag-to-move when using a hidden / inset title bar */
-@layer utilities {
-  .app-region-drag {
-    -webkit-app-region: drag;
-  }
-
-  .app-region-no-drag {
-    -webkit-app-region: no-drag;
-  }
 }

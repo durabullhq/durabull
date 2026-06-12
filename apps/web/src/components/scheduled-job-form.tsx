@@ -121,7 +121,9 @@ export function ScheduledJobForm({
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [limit, setLimit] = useState('')
-  const [jobOptions, setJobOptions] = useState<JobOptionsFormValue>(createDefaultJobOptionsFormValue())
+  const [jobOptions, setJobOptions] = useState<JobOptionsFormValue>(
+    createDefaultJobOptionsFormValue()
+  )
 
   useEffect(() => {
     if (mode === 'edit' && !initialValue) {
@@ -262,10 +264,7 @@ export function ScheduledJobForm({
     return undefined
   }, [limit, limitValue])
 
-  const jobOptionsErrors = useMemo(
-    () => validateJobOptionsFormValue(jobOptions),
-    [jobOptions]
-  )
+  const jobOptionsErrors = useMemo(() => validateJobOptionsFormValue(jobOptions), [jobOptions])
 
   const canSubmit =
     isJsonValid &&
@@ -630,9 +629,9 @@ export function ScheduledJobForm({
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-2 text-base">
                 {mode === 'create' ? (
-                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  <Sparkles className="h-4 w-4 text-status-warning" />
                 ) : (
-                  <PencilLine className="h-4 w-4 text-sky-500" />
+                  <PencilLine className="h-4 w-4 text-status-active" />
                 )}
                 Scheduler Preview
               </CardTitle>
@@ -705,7 +704,7 @@ export function ScheduledJobForm({
               {mode === 'edit' && initialValue ? (
                 <div className="space-y-3 rounded-xl border border-border/70 bg-muted/15 p-4 text-sm">
                   <div className="flex items-center gap-2 font-medium text-foreground">
-                    <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                    <ShieldCheck className="h-4 w-4 text-status-success" />
                     Existing scheduler state
                   </div>
                   <div className="space-y-2 text-muted-foreground">

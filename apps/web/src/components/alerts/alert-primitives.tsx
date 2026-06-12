@@ -98,7 +98,7 @@ export function AlertSeverityChip({
         'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium',
         count > 0
           ? 'border-destructive/25 bg-destructive/10 text-destructive'
-          : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          : 'border-status-success/25 bg-status-success/10 text-status-success'
       )}
     >
       <BellRing className="h-3.5 w-3.5" />

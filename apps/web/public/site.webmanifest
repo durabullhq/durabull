@@ -4,8 +4,8 @@
   "description": "The modern, powerful dashboard for BullMQ. Monitor jobs, debug failures, and scale your background processing with confidence.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#10b981",
+  "background_color": "#0a0b0d",
+  "theme_color": "#0a0b0d",
   "icons": [
     {
       "src": "/favicon-48x48.png",

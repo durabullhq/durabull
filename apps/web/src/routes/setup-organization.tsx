@@ -357,9 +357,9 @@ function SetupOrganizationPage() {
                     disabled={createOrganization.isPending}
                     className={
                       slugAvailable === true
-                        ? 'border-green-500 pr-10'
+                        ? 'border-status-success/30 pr-10'
                         : slugAvailable === false
-                          ? 'border-red-500 pr-10'
+                          ? 'border-status-danger/30 pr-10'
                           : 'pr-10'
                     }
                   />
@@ -368,10 +368,10 @@ function SetupOrganizationPage() {
                       <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                     )}
                     {!isCheckingSlug && slugAvailable === true && (
-                      <Check className="h-4 w-4 text-green-500" />
+                      <Check className="h-4 w-4 text-status-success" />
                     )}
                     {!isCheckingSlug && slugAvailable === false && (
-                      <X className="h-4 w-4 text-red-500" />
+                      <X className="h-4 w-4 text-status-danger" />
                     )}
                   </div>
                 </div>

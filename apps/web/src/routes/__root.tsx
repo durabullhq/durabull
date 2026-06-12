@@ -286,9 +286,7 @@ function RootLayout() {
 
             {/* Connection Selector */}
             <div className="shrink-0 border-b p-3">
-              <div className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Connection
-              </div>
+              <div className="eyebrow mb-2 px-2">Connection</div>
               <ConnectionSelector />
             </div>
 
@@ -357,9 +355,7 @@ function RootLayout() {
 
               {/* Connection Selector */}
               <div className="shrink-0 border-b p-3">
-                <div className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Connection
-                </div>
+                <div className="eyebrow mb-2 px-2">Connection</div>
                 <ConnectionSelector />
               </div>
 
@@ -397,9 +393,7 @@ function SidebarNav() {
 
   return (
     <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
-      <div className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Platform
-      </div>
+      <div className="eyebrow mb-2 px-2">Platform</div>
       <NavLink to={basePath} icon={Layers}>
         Queues
       </NavLink>
@@ -446,9 +440,7 @@ function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
 
   return (
     <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
-      <div className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-        Platform
-      </div>
+      <div className="eyebrow mb-2 px-2">Platform</div>
       <MobileNavLink to={basePath} icon={Layers} onNavigate={onNavigate}>
         Queues
       </MobileNavLink>
@@ -508,11 +500,12 @@ function MobileNavLink({
       to={to}
       onClick={onNavigate}
       className={cn(
-        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground'
+        'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        isActive &&
+          'bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:left-0 before:top-1/2 before:h-4 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-signal'
       )}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className={cn('h-4 w-4', isActive ? 'text-signal' : 'text-muted-foreground')} />
       <span className="flex-1">{children}</span>
       {badge && badge > 0 ? (
         <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">
@@ -544,11 +537,12 @@ function NavLink({
     <Link
       to={to}
       className={cn(
-        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-        isActive && 'bg-sidebar-accent text-sidebar-accent-foreground'
+        'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+        isActive &&
+          'bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:left-0 before:top-1/2 before:h-4 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-signal'
       )}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className={cn('h-4 w-4', isActive ? 'text-signal' : 'text-muted-foreground')} />
       <span className="flex-1">{children}</span>
       {badge && badge > 0 ? (
         <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">

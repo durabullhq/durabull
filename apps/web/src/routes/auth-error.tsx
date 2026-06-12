@@ -53,8 +53,8 @@ function AccountExistsError({ providerName }: { providerName: string }) {
   return (
     <>
       {/* Error Icon */}
-      <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/20">
-        <AlertTriangle className="h-8 w-8 text-amber-600 dark:text-amber-400" />
+      <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-status-warning/10">
+        <AlertTriangle className="h-8 w-8 text-status-warning" />
       </div>
 
       {/* Error Message */}
