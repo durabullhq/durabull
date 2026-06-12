@@ -1,4 +1,7 @@
-import { createFileRoute, useParams } from '@tanstack/react-router'
+import { trackEvent } from '@durabull/analytics/browser'
+import { AnalyticsEvents } from '@durabull/analytics/events'
+import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
+import { zodValidator } from '@tanstack/zod-adapter'
 import {
   Activity,
   AlertCircle,
@@ -11,16 +14,30 @@ import {
   Timer,
   Zap,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { z } from 'zod'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { QueueTable } from '@/components/queue-table'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { useDiscoverQueues, useQueueDiscoveryStatus, useQueues } from '@/hooks/use-queues'
+import {
+  QUEUE_SORT_FIELDS,
+  type QueueSortField,
+  type QueueSortOrder,
+  type QueueStatusFilter,
+  useDiscoverQueues,
+  useQueueDiscoveryStatus,
+  useQueues,
+} from '@/hooks/use-queues'
 import { REDIS_CONNECTION_ERROR_MESSAGE } from '@/lib/api'
 import { PAGINATION } from '@/lib/constants'
+import {
+  getDefaultQueuesView,
+  isSameQueuesView,
+  saveDefaultQueuesView,
+} from '@/lib/queues-default-view'
 import { cn, formatNumber } from '@/lib/utils'
 
 const AUTO_DISCOVERY_MIN_INTERVAL_MS = 5 * 60 * 1000
@@ -42,17 +59,81 @@ function isRedisConnectionFailure(message: string): boolean {
   ].some((indicator) => normalized.includes(indicator))
 }
 
+// Missing/invalid params fall back to the user's saved default view
+const dashboardSearchSchema = z.object({
+  page: z.number().int().positive().catch(1),
+  q: z.string().catch(() => getDefaultQueuesView().q),
+  status: z.enum(['', 'active', 'paused']).catch(() => getDefaultQueuesView().status),
+  sortBy: z.enum(QUEUE_SORT_FIELDS).catch(() => getDefaultQueuesView().sortBy),
+  sortOrder: z.enum(['asc', 'desc']).catch(() => getDefaultQueuesView().sortOrder),
+})
+
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/')({
+  validateSearch: zodValidator(dashboardSearchSchema),
   component: Dashboard,
 })
 
 function Dashboard() {
   const routeParams = useParams({ strict: false }) as { connectionId?: string }
   const connectionId = routeParams.connectionId ?? ''
-  const [page, setPage] = useState(1)
+  const { page, q, status, sortBy, sortOrder } = Route.useSearch()
+  const navigate = useNavigate()
+
+  const updateSearch = useCallback(
+    (patch: Partial<z.infer<typeof dashboardSearchSchema>>) => {
+      void navigate({
+        from: Route.fullPath,
+        search: (prev) => ({ ...prev, ...patch }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const setPage = useCallback(
+    (nextPage: number) => updateSearch({ page: nextPage }),
+    [updateSearch]
+  )
+
+  // Any change to filters or sorting invalidates the current page offset
+  const handleSortChange = useCallback(
+    (nextSortBy: QueueSortField, nextSortOrder: QueueSortOrder) =>
+      updateSearch({ sortBy: nextSortBy, sortOrder: nextSortOrder, page: 1 }),
+    [updateSearch]
+  )
+  const handleSearchChange = useCallback(
+    (nextSearch: string) => updateSearch({ q: nextSearch, page: 1 }),
+    [updateSearch]
+  )
+  const handleStatusFilterChange = useCallback(
+    (nextStatus: QueueStatusFilter | '') => updateSearch({ status: nextStatus, page: 1 }),
+    [updateSearch]
+  )
+
+  const [savedView, setSavedView] = useState(getDefaultQueuesView)
+  const currentView = useMemo(
+    () => ({ q, status, sortBy, sortOrder }),
+    [q, status, sortBy, sortOrder]
+  )
+  const isCurrentViewSaved = isSameQueuesView(currentView, savedView)
+  const handleSaveDefaultView = useCallback(() => {
+    trackEvent(AnalyticsEvents.QUEUE_LIST_DEFAULT_VIEW_SAVED, {
+      sort_by: currentView.sortBy,
+      sort_order: currentView.sortOrder,
+      status: currentView.status || 'all',
+      has_search: currentView.q !== '',
+    })
+    saveDefaultQueuesView(currentView)
+    setSavedView(currentView)
+  }, [currentView])
+
   const { data, isLoading, error, isPlaceholderData } = useQueues({
     page,
     pageSize: PAGINATION.QUEUES_PAGE_SIZE,
+    sortBy,
+    sortOrder,
+    search: q || undefined,
+    status: status || undefined,
   })
   const discoveryQuery = useQueueDiscoveryStatus()
   const discoverMutation = useDiscoverQueues()
@@ -83,7 +164,7 @@ function Dashboard() {
     if (!connectionId) return
     hasAutoTriggeredDiscovery.current = false
     setPage(1)
-  }, [connectionId])
+  }, [connectionId, setPage])
 
   useEffect(() => {
     if (hasAutoTriggeredDiscovery.current) return
@@ -139,7 +220,7 @@ function Dashboard() {
   const shouldShowConnectionFailure =
     !error &&
     !isLoading &&
-    (data?.total ?? 0) === 0 &&
+    (data?.totalUnfiltered ?? data?.total ?? 0) === 0 &&
     !discoveryRunning &&
     !!discoveryErrorMessage &&
     isRedisConnectionFailure(discoveryErrorMessage)
@@ -279,7 +360,7 @@ function Dashboard() {
                 ))}
               </div>
             </div>
-          ) : (data?.total ?? 0) === 0 ? (
+          ) : (data?.totalUnfiltered ?? data?.total ?? 0) === 0 ? (
             <EmptyState />
           ) : (
             <QueueTable
@@ -289,6 +370,14 @@ function Dashboard() {
               total={data?.total ?? 0}
               isPlaceholderData={isPlaceholderData}
               onPageChange={setPage}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              onSortChange={handleSortChange}
+              search={q}
+              onSearchChange={handleSearchChange}
+              statusFilter={status}
+              onStatusFilterChange={handleStatusFilterChange}
+              onSaveDefaultView={isCurrentViewSaved ? undefined : handleSaveDefaultView}
             />
           )}
         </div>

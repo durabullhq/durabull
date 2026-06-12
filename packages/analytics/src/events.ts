@@ -56,6 +56,9 @@ export const AnalyticsEvents = {
   QUEUE_VIEWED: 'queue_viewed',
   QUEUE_LIST_VIEWED: 'queue_list_viewed',
   QUEUE_EMPTY_TOGGLE: 'queue_empty_toggle',
+  QUEUE_LIST_SORTED: 'queue_list_sorted',
+  QUEUE_LIST_FILTERED: 'queue_list_filtered',
+  QUEUE_LIST_DEFAULT_VIEW_SAVED: 'queue_list_default_view_saved',
 
   // Job Events
   JOB_VIEWED: 'job_viewed',
