@@ -203,10 +203,33 @@ export type {
  * Query key factory for queue-related queries
  * Includes connection ID for proper cache isolation
  */
+export const QUEUE_SORT_FIELDS = [
+  'name',
+  'status',
+  'waiting',
+  'prioritized',
+  'active',
+  'delayed',
+  'completed',
+  'failed',
+] as const
+export type QueueSortField = (typeof QUEUE_SORT_FIELDS)[number]
+export type QueueSortOrder = 'asc' | 'desc'
+export type QueueStatusFilter = 'active' | 'paused'
+
+export interface UseQueuesOptions {
+  page?: number
+  pageSize?: number
+  sortBy?: QueueSortField
+  sortOrder?: QueueSortOrder
+  search?: string
+  status?: QueueStatusFilter
+}
+
 export const queryKeys = {
-  queues: (connectionId: string, page?: number, pageSize?: number) =>
-    page !== undefined || pageSize !== undefined
-      ? (['queues', connectionId, { page, pageSize }] as const)
+  queues: (connectionId: string, options?: UseQueuesOptions) =>
+    options && Object.values(options).some((value) => value !== undefined)
+      ? (['queues', connectionId, options] as const)
       : (['queues', connectionId] as const),
   queueDiscovery: (connectionId: string) => ['queues', connectionId, 'discovery'] as const,
   queue: (connectionId: string, name: string) => ['queue', connectionId, name] as const,
@@ -239,17 +262,20 @@ function useConnectionIdFromContextOrRoute(): string | undefined {
 }
 
 // Queue Queries
-export function useQueues(options?: { page?: number; pageSize?: number }) {
+export function useQueues(options?: UseQueuesOptions) {
   const connectionId = useConnectionIdFromContextOrRoute()
-  const page = options?.page
-  const pageSize = options?.pageSize
+  const { page, pageSize, sortBy, sortOrder, search, status } = options ?? {}
 
   return useQuery({
-    queryKey: queryKeys.queues(connectionId ?? '', page, pageSize),
+    queryKey: queryKeys.queues(connectionId ?? '', options),
     queryFn: async () => {
       const params = new URLSearchParams()
       if (page !== undefined) params.set('page', String(page))
       if (pageSize !== undefined) params.set('pageSize', String(pageSize))
+      if (sortBy !== undefined) params.set('sortBy', sortBy)
+      if (sortOrder !== undefined) params.set('sortOrder', sortOrder)
+      if (search) params.set('search', search)
+      if (status !== undefined) params.set('status', status)
       const query = params.toString()
 
       return fetchApi<ListQueuesResponse>(

@@ -38,6 +38,54 @@ const PURGEABLE_QUEUE_STATUSES = [
 type PurgeableQueueStatus = (typeof PURGEABLE_QUEUE_STATUSES)[number]
 
 const PURGE_STATUS_OPTIONS = ['all', ...PURGEABLE_QUEUE_STATUSES] as const
+const QUEUE_SORT_FIELDS = [
+  'name',
+  'status',
+  'waiting',
+  'prioritized',
+  'active',
+  'delayed',
+  'completed',
+  'failed',
+] as const
+type QueueSortField = (typeof QUEUE_SORT_FIELDS)[number]
+
+const listQueuesQuerySchema = z.object({
+  page: z.string().optional(),
+  pageSize: z.string().optional(),
+  sortBy: z.enum(QUEUE_SORT_FIELDS).optional(),
+  sortOrder: z.enum(['asc', 'desc']).optional(),
+  search: z.string().optional(),
+  status: z.enum(['active', 'paused']).optional(),
+})
+
+interface QueueListEntry {
+  name: string
+  status: 'active' | 'paused'
+  jobCounts: {
+    waiting: number
+    active: number
+    delayed: number
+    completed: number
+    failed: number
+    paused: number
+    prioritized: number
+  }
+  isPaused: boolean
+  discoveryState: 'pending' | 'confirmed'
+}
+
+function compareQueueEntries(a: QueueListEntry, b: QueueListEntry, sortBy: QueueSortField): number {
+  switch (sortBy) {
+    case 'name':
+      return a.name.localeCompare(b.name)
+    case 'status':
+      return a.status.localeCompare(b.status)
+    default:
+      return a.jobCounts[sortBy] - b.jobCounts[sortBy]
+  }
+}
+
 const queueMetricsQuerySchema = z.object({
   windowMinutes: z.string().optional(),
   start: z.string().optional(),
@@ -244,53 +292,44 @@ const app = new Hono()
 
     return c.json(status, 202)
   })
-  // List all queues (paginated)
-  .get('/', async (c) => {
+  // List all queues (paginated, sortable, filterable)
+  .get('/', zValidator('query', listQueuesQuerySchema), async (c) => {
     const connectionId = c.get('connectionId')
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
-    const page = Math.max(1, parseInteger(c.req.query('page')) ?? 1)
-    const pageSize = Math.min(
-      parseInteger(c.req.query('pageSize')) ?? DEFAULT_PAGE_SIZE,
-      MAX_PAGE_SIZE
-    )
-
-    // Paginate the queue names BEFORE fetching details
-    const start = (page - 1) * pageSize
-    const end = start + pageSize
+    const query = c.req.valid('query')
+    const page = Math.max(1, parseInteger(query.page) ?? 1)
+    const pageSize = Math.min(parseInteger(query.pageSize) ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE)
+    const sortBy: QueueSortField = query.sortBy ?? 'name'
+    const sortOrder = query.sortOrder ?? 'asc'
+    const search = query.search?.trim().toLowerCase() ?? ''
+    const statusFilter = query.status
 
     let discovery = await getQueueDiscoveryStatus(connectionId)
-    let total = discovery.indexed.total
+    let indexedTotal = discovery.indexed.total
     const hasDiscoveryAttempt =
       discovery.running ||
       discovery.startedAt !== null ||
       discovery.completedAt !== null ||
       discovery.lastError !== null
 
-    if (total === 0 && !hasDiscoveryAttempt) {
+    if (indexedTotal === 0 && !hasDiscoveryAttempt) {
       await startQueueDiscovery(connectionId, connectionUrl, {
         prefix: connectionPrefix,
         allowSelfSignedCerts: redisOptions.allowSelfSignedCerts,
       })
       discovery = await getQueueDiscoveryStatus(connectionId)
-      total = discovery.indexed.total
+      indexedTotal = discovery.indexed.total
     }
 
+    // Sorting and filtering must happen BEFORE pagination, so fetch live
+    // counts for every indexed queue (also required to aggregate totals).
     const indexedQueues = await redisDiscoveredQueueRepository.listByConnection(connectionId, {
-      offset: start,
-      limit: pageSize,
+      offset: 0,
+      limit: Math.max(indexedTotal, pageSize),
     })
 
-    const allIndexedQueues =
-      total > pageSize
-        ? await redisDiscoveredQueueRepository.listByConnection(connectionId, {
-            offset: 0,
-            limit: total,
-          })
-        : indexedQueues
-
-    const pageQueueNames = new Set(indexedQueues.map((q) => q.name))
     const totalJobCounts = {
       waiting: 0,
       active: 0,
@@ -300,29 +339,21 @@ const app = new Hono()
       prioritized: 0,
     }
 
-    function accumulateCounts(counts: Record<string, number>) {
-      totalJobCounts.waiting += counts.waiting ?? 0
-      totalJobCounts.active += counts.active ?? 0
-      totalJobCounts.delayed += counts.delayed ?? 0
-      totalJobCounts.completed += counts.completed ?? 0
-      totalJobCounts.failed += counts.failed ?? 0
-      totalJobCounts.prioritized += counts.prioritized ?? 0
-    }
+    const allQueues: QueueListEntry[] = await Promise.all(
+      indexedQueues.map(async (indexedQueue) => {
+        const queue = await getQueue(
+          connectionId,
+          connectionUrl,
+          indexedQueue.name,
+          connectionPrefix,
+          redisOptions
+        )
+        const [counts, isPaused] = await Promise.all([queue.getJobCounts(), queue.isPaused()])
 
-    const [queuesData] = await Promise.all([
-      Promise.all(
-        indexedQueues.map(async (indexedQueue) => {
-          const queue = await getQueue(
-            connectionId,
-            connectionUrl,
-            indexedQueue.name,
-            connectionPrefix,
-            redisOptions
-          )
-          const [counts, isPaused] = await Promise.all([queue.getJobCounts(), queue.isPaused()])
-
-          const status: 'paused' | 'active' = isPaused ? 'paused' : 'active'
-          const jobCounts = {
+        return {
+          name: indexedQueue.name,
+          status: isPaused ? ('paused' as const) : ('active' as const),
+          jobCounts: {
             waiting: counts.waiting ?? 0,
             active: counts.active ?? 0,
             delayed: counts.delayed ?? 0,
@@ -330,41 +361,48 @@ const app = new Hono()
             failed: counts.failed ?? 0,
             paused: counts.paused ?? 0,
             prioritized: counts.prioritized ?? 0,
-          }
+          },
+          isPaused,
+          discoveryState: indexedQueue.state,
+        }
+      })
+    )
 
-          accumulateCounts(jobCounts)
+    // Connection-wide totals always reflect ALL queues, independent of filters
+    for (const queue of allQueues) {
+      totalJobCounts.waiting += queue.jobCounts.waiting
+      totalJobCounts.active += queue.jobCounts.active
+      totalJobCounts.delayed += queue.jobCounts.delayed
+      totalJobCounts.completed += queue.jobCounts.completed
+      totalJobCounts.failed += queue.jobCounts.failed
+      totalJobCounts.prioritized += queue.jobCounts.prioritized
+    }
 
-          return {
-            name: indexedQueue.name,
-            status,
-            jobCounts,
-            isPaused,
-            discoveryState: indexedQueue.state,
-          }
-        })
-      ),
-      Promise.all(
-        allIndexedQueues
-          .filter((iq) => !pageQueueNames.has(iq.name))
-          .map(async (iq) => {
-            const queue = await getQueue(
-              connectionId,
-              connectionUrl,
-              iq.name,
-              connectionPrefix,
-              redisOptions
-            )
-            accumulateCounts(await queue.getJobCounts())
-          })
-      ),
-    ])
+    const filteredQueues = allQueues.filter((queue) => {
+      if (search && !queue.name.toLowerCase().includes(search)) return false
+      if (statusFilter && queue.status !== statusFilter) return false
+      return true
+    })
+
+    const direction = sortOrder === 'desc' ? -1 : 1
+    filteredQueues.sort((a, b) => {
+      const diff = compareQueueEntries(a, b, sortBy)
+      if (diff !== 0) return direction * diff
+      // Stable, predictable tiebreaker regardless of sort direction
+      return a.name.localeCompare(b.name)
+    })
+
+    const total = filteredQueues.length
+    const start = (page - 1) * pageSize
+    const end = start + pageSize
 
     return c.json({
-      queues: queuesData,
+      queues: filteredQueues.slice(start, end),
       total,
+      totalUnfiltered: Math.max(indexedTotal, allQueues.length),
       page,
       pageSize,
-      totalPages: Math.ceil(total / pageSize),
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
       hasMore: end < total,
       totalJobCounts,
       discovery,
