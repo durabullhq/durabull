@@ -5,8 +5,6 @@ import { MarketingGoogleAnalytics } from '@/components/google-analytics'
 import { PostHogProvider } from '@/components/posthog-provider'
 import '@/styles/globals.css'
 import '@/styles/landing.css'
-import 'fumadocs-ui/style.css'
-import '@/styles/docs-overrides.css'
 
 export const metadata: Metadata = {
   title: {

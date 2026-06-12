@@ -2,9 +2,9 @@
 
 import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight, BookOpen } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { WEB_APP_URL } from '@/lib/config'
+import { HeroGridShimmer } from './hero-grid-shimmer'
 
 export function V2Hero() {
   const reduceMotion = useReducedMotion()
@@ -20,6 +20,7 @@ export function V2Hero() {
   return (
     <section className="relative overflow-hidden bg-[var(--v2-bg)] pt-36 sm:pt-44">
       <div aria-hidden className="v2-blueprint v2-blueprint-fade absolute inset-0" />
+      <HeroGridShimmer />
 
       <div className="relative mx-auto max-w-4xl px-5 text-center sm:px-8">
         <motion.div {...fadeUp(0)}>
@@ -84,7 +85,7 @@ export function V2Hero() {
                 })}
           >
             {/* crop: show roughly the top third of the product */}
-            <div className="v2-frame max-h-[230px] rounded-t-xl border-b-0 sm:max-h-[320px] lg:max-h-[380px]">
+            <div className="v2-frame max-h-[290px] rounded-t-xl border-b-0 sm:max-h-[400px] lg:max-h-[480px]">
               <div className="flex items-center gap-1.5 border-b border-[var(--v2-line)] px-4 py-2.5">
                 <span className="size-2.5 rounded-full bg-[#ff5f57]" />
                 <span className="size-2.5 rounded-full bg-[#febc2e]" />
@@ -93,12 +94,15 @@ export function V2Hero() {
                   app.durabull.io — fleet analytics
                 </span>
               </div>
-              <Image
-                src="/screenshots/fleet-analytics-dash.png"
-                alt="Durabull Fleet Analytics dashboard with fleet-wide queue health, throughput, and operational telemetry."
-                width={1600}
-                height={1000}
-                priority
+              <video
+                src="/videos/product-showcase.mp4"
+                poster="/screenshots/fleet-analytics-dash.png"
+                autoPlay={!reduceMotion}
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                aria-label="Durabull product walkthrough showing fleet-wide queue health, throughput, and operational telemetry."
                 className="w-full"
               />
             </div>

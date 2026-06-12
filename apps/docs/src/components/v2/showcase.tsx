@@ -1,6 +1,6 @@
 'use client'
 
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Activity, Bug, CalendarClock, Check, ScrollText, TrendingUp } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
@@ -99,7 +99,6 @@ const tabs: Tab[] = [
 export function V2Showcase() {
   const [active, setActive] = useState(0)
   const reduceMotion = useReducedMotion()
-  const tab = tabs[active]
 
   return (
     <section id="product" className="v2-dark relative scroll-mt-20 bg-[var(--v2-bg)] py-24">
@@ -136,50 +135,61 @@ export function V2Showcase() {
             ))}
           </div>
 
-          {/* panel */}
-          <div className="border border-t-0 border-[var(--v2-line)]">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={tab.id}
-                initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reduceMotion ? undefined : { opacity: 0, y: -8 }}
-                transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-                className="grid lg:grid-cols-[0.85fr_1.15fr]"
-              >
-                <div className="flex flex-col justify-center p-8 sm:p-10">
-                  <p className="v2-mono text-[var(--v2-accent)]">{tab.kicker}</p>
-                  <h3 className="v2-h mt-3 text-2xl text-[var(--v2-fg)] sm:text-[28px]">
-                    {tab.title}
-                  </h3>
-                  <p className="mt-4 text-[14.5px] leading-relaxed text-[var(--v2-muted)]">
-                    {tab.body}
-                  </p>
-                  <ul className="mt-6 space-y-3">
-                    {tab.bullets.map((bullet) => (
-                      <li
-                        key={bullet}
-                        className="flex items-start gap-2.5 text-[14px] text-[var(--v2-muted)]"
-                      >
-                        <Check className="mt-0.5 size-4 shrink-0 text-[var(--v2-accent)]" />
-                        {bullet}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="v2-shot-bg relative overflow-hidden border-t border-[var(--v2-line)] p-6 lg:border-l lg:border-t-0 lg:p-10">
-                  <div className="v2-frame relative rounded-lg">
-                    <Image
-                      src={tab.screenshot}
-                      alt={tab.alt}
-                      width={1400}
-                      height={875}
-                      className="w-full"
-                    />
+          {/* panel — all tabs stay mounted, stacked in the same grid cell, so the
+              container height never collapses mid-transition (no layout glitch). */}
+          <div className="grid border border-t-0 border-[var(--v2-line)]">
+            {tabs.map((tab, i) => {
+              const isActive = active === i
+              return (
+                <motion.div
+                  key={tab.id}
+                  role="tabpanel"
+                  aria-hidden={!isActive}
+                  initial={false}
+                  animate={
+                    reduceMotion
+                      ? { opacity: isActive ? 1 : 0 }
+                      : { opacity: isActive ? 1 : 0, y: isActive ? 0 : 12 }
+                  }
+                  transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+                  className={`grid [grid-area:1/1] lg:grid-cols-[0.85fr_1.15fr] ${
+                    isActive ? '' : 'pointer-events-none'
+                  }`}
+                >
+                  <div className="flex flex-col justify-center p-8 sm:p-10">
+                    <p className="v2-mono text-[var(--v2-accent)]">{tab.kicker}</p>
+                    <h3 className="v2-h mt-3 text-2xl text-[var(--v2-fg)] sm:text-[28px]">
+                      {tab.title}
+                    </h3>
+                    <p className="mt-4 text-[14.5px] leading-relaxed text-[var(--v2-muted)]">
+                      {tab.body}
+                    </p>
+                    <ul className="mt-6 space-y-3">
+                      {tab.bullets.map((bullet) => (
+                        <li
+                          key={bullet}
+                          className="flex items-start gap-2.5 text-[14px] text-[var(--v2-muted)]"
+                        >
+                          <Check className="mt-0.5 size-4 shrink-0 text-[var(--v2-accent)]" />
+                          {bullet}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </div>
-              </motion.div>
-            </AnimatePresence>
+                  <div className="v2-shot-bg relative overflow-hidden border-t border-[var(--v2-line)] p-6 lg:border-l lg:border-t-0 lg:p-10">
+                    <div className="v2-frame relative rounded-lg">
+                      <Image
+                        src={tab.screenshot}
+                        alt={tab.alt}
+                        width={1400}
+                        height={875}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            })}
           </div>
         </Reveal>
       </div>
