@@ -6,6 +6,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { FullscreenToggle } from '@/components/fullscreen-toggle'
 import { useIsElectronShell } from '@/hooks/use-electron-shell'
 import { cn } from '@/lib/utils'
 
@@ -138,12 +139,17 @@ export function AppTopBar({
           )}
         >
           {actions}
+          <FullscreenToggle />
         </div>
 
-        {mobileActions ? (
-          <div
-            className={cn('md:hidden', isElectronShell && 'pointer-events-auto app-region-no-drag')}
-          >
+        <div
+          className={cn(
+            'flex items-center md:hidden',
+            isElectronShell && 'pointer-events-auto app-region-no-drag'
+          )}
+        >
+          <FullscreenToggle />
+          {mobileActions ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Open page actions">
@@ -154,8 +160,8 @@ export function AppTopBar({
                 {mobileActions}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </header>
   )
