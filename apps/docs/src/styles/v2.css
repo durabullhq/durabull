@@ -161,6 +161,7 @@
 }
 
 .v2-cell {
+  position: relative;
   border-color: var(--v2-line);
   background: var(--v2-card);
   transition: background-color 0.25s ease;
@@ -168,6 +169,94 @@
 
 .v2-cell:hover {
   background: var(--v2-bg-2);
+}
+
+/* blueprint pen-trace: accent line draws clockwise around the cell on hover */
+.v2-cell::before,
+.v2-cell::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.v2-cell::before {
+  top: 0;
+  left: 0;
+  border-top: 1px solid var(--v2-accent);
+  border-right: 1px solid var(--v2-accent);
+  transition:
+    opacity 0.2s ease 0.1s,
+    width 0s 0.3s,
+    height 0s 0.3s;
+}
+
+.v2-cell::after {
+  bottom: 0;
+  right: 0;
+  border-bottom: 1px solid var(--v2-accent);
+  border-left: 1px solid var(--v2-accent);
+  transition:
+    opacity 0.2s ease 0.1s,
+    width 0s 0.3s,
+    height 0s 0.3s;
+}
+
+.v2-cell:hover::before {
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  transition:
+    width 0.16s ease-out,
+    height 0.16s ease-out 0.16s;
+}
+
+.v2-cell:hover::after {
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  transition:
+    width 0.16s ease-out 0.32s,
+    height 0.16s ease-out 0.48s;
+}
+
+/* drafting ticks that ink in at the cell corners on hover */
+.v2-cell-ticks {
+  position: absolute;
+  inset: 5px;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  color: var(--v2-accent);
+  background-image:
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor);
+  background-repeat: no-repeat;
+  background-size:
+    7px 1px, 1px 7px,
+    7px 1px, 1px 7px,
+    7px 1px, 1px 7px,
+    7px 1px, 1px 7px;
+  background-position:
+    left top, left top,
+    right top, right top,
+    left bottom, left bottom,
+    right bottom, right bottom;
+}
+
+.v2-cell:hover .v2-cell-ticks {
+  opacity: 0.9;
+  transform: scale(1);
+  transition-delay: 0.55s;
 }
 
 .v2-card {
@@ -305,11 +394,53 @@
   }
 }
 
+/* copied-check micro pop */
+.v2-pop {
+  animation: v2-pop 0.32s cubic-bezier(0.2, 0.8, 0.2, 1.4);
+}
+
+@keyframes v2-pop {
+  0% {
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* typing caret for self-typing command blocks */
+.v2-caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 1px;
+  vertical-align: -2px;
+  background: var(--v2-accent);
+  animation: v2-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes v2-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
   .v2-pulse-dot::after,
-  .v2-marquee {
+  .v2-marquee,
+  .v2-pop,
+  .v2-caret {
     animation: none !important;
+  }
+
+  .v2-cell::before,
+  .v2-cell::after,
+  .v2-cell-ticks {
+    display: none;
   }
 }

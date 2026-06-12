@@ -1,5 +1,6 @@
 'use client'
 
+import { motion, useReducedMotion } from 'framer-motion'
 import { Check, Cloud, Laptop, Lock, Server } from 'lucide-react'
 import Link from 'next/link'
 import { GITHUB_RELEASE_URL, WEB_APP_URL } from '@/lib/config'
@@ -82,6 +83,36 @@ export function V2Deploy() {
 
 /* ---------------- pricing ---------------- */
 
+/** Checkmark that draws its stroke in when scrolled into view. */
+function DrawnCheck({ delay }: { delay: number }) {
+  const reduceMotion = useReducedMotion()
+
+  if (reduceMotion) {
+    return <Check className="size-4 shrink-0 text-[var(--v2-accent)]" />
+  }
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="size-4 shrink-0 text-[var(--v2-accent)]"
+    >
+      <motion.path
+        d="M4 12.5 9.5 18 20 6.5"
+        initial={{ pathLength: 0, opacity: 0 }}
+        whileInView={{ pathLength: 1, opacity: 1 }}
+        viewport={{ once: true, margin: '-80px' }}
+        transition={{ duration: 0.4, delay, ease: 'easeOut' }}
+      />
+    </svg>
+  )
+}
+
 const included = [
   'Unlimited Redis connections',
   'Unlimited queues & jobs',
@@ -120,12 +151,12 @@ export function V2Pricing() {
                 </p>
               </div>
               <ul className="mt-8 grid gap-3 sm:grid-cols-2">
-                {included.map((item) => (
+                {included.map((item, i) => (
                   <li
                     key={item}
                     className="flex items-center gap-2.5 text-[13.5px] text-[var(--v2-fg)]"
                   >
-                    <Check className="size-4 shrink-0 text-[var(--v2-accent)]" />
+                    <DrawnCheck delay={0.3 + i * 0.07} />
                     {item}
                   </li>
                 ))}

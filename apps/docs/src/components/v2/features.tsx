@@ -1,7 +1,8 @@
 'use client'
 
+import { motion, useInView, useReducedMotion } from 'framer-motion'
 import { Check, Copy, Terminal } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { HOMEBREW_INSTALL_COMMAND } from '@/lib/config'
 import { CornerMarks, Eyebrow, Reveal } from './reveal'
 
@@ -9,6 +10,18 @@ import { CornerMarks, Eyebrow, Reveal } from './reveal'
 
 function CommandBlock({ label, command }: { label: string; command: string }) {
   const [copied, setCopied] = useState(false)
+  const reduceMotion = useReducedMotion()
+  const codeRef = useRef<HTMLElement>(null)
+  const inView = useInView(codeRef, { once: true, margin: '-80px' })
+  const [typed, setTyped] = useState(0)
+
+  const done = reduceMotion || typed >= command.length
+
+  useEffect(() => {
+    if (!inView || done) return
+    const tick = setTimeout(() => setTyped((n) => n + 1), 22)
+    return () => clearTimeout(tick)
+  }, [inView, done, typed])
 
   const copy = async () => {
     try {
@@ -31,15 +44,19 @@ function CommandBlock({ label, command }: { label: string; command: string }) {
           className="text-[var(--v2-faint)] transition-colors hover:text-[var(--v2-fg)]"
         >
           {copied ? (
-            <Check className="size-3.5 text-[var(--v2-ok)]" />
+            <Check className="v2-pop size-3.5 text-[var(--v2-ok)]" />
           ) : (
             <Copy className="size-3.5" />
           )}
         </button>
       </div>
-      <code className="block overflow-x-auto whitespace-nowrap px-4 py-3 font-mono text-[13px] text-[var(--v2-fg)]">
+      <code
+        ref={codeRef}
+        className="block overflow-x-auto whitespace-nowrap px-4 py-3 font-mono text-[13px] text-[var(--v2-fg)]"
+      >
         <span className="select-none text-[var(--v2-faint)]">$ </span>
-        {command}
+        {done ? command : command.slice(0, typed)}
+        {!done && inView ? <span aria-hidden className="v2-caret" /> : null}
       </code>
     </div>
   )
@@ -127,6 +144,7 @@ export function V2ValueGrid() {
           <div className="mt-12 grid gap-px border border-[var(--v2-line)] bg-[var(--v2-line)] sm:grid-cols-2 lg:grid-cols-3">
             {cells.map((cell) => (
               <div key={cell.title} className="v2-cell flex flex-col p-7">
+                <span aria-hidden className="v2-cell-ticks" />
                 <h3 className="v2-h text-lg">{cell.title}</h3>
                 <p className="mt-2.5 flex-1 text-[14px] leading-relaxed text-[var(--v2-muted)]">
                   {cell.body}
@@ -157,6 +175,117 @@ const afterRows = [
   ['03:21', 'Linear issue auto-filed. Backlog drains. Back to bed.'],
 ]
 
+/** Incident rows replay like a live log when the column scrolls into view. */
+function TimelineColumn({
+  label,
+  rows,
+  tone,
+  footer,
+  resolved,
+  startDelay,
+}: {
+  label: string
+  rows: string[][]
+  tone: string
+  footer: string
+  resolved?: boolean
+  startDelay: number
+}) {
+  const reduceMotion = useReducedMotion()
+  // each row lands 0.45s after the previous; footer arrives after the last row
+  const footerDelay = startDelay + rows.length * 0.45 + 0.3
+
+  const staticBody = (
+    <>
+      <ul className="mt-5 space-y-4">
+        {rows.map(([time, text]) => (
+          <li key={time} className="flex gap-4">
+            <span className="shrink-0 pt-px font-mono text-[12px]" style={{ color: tone }}>
+              {time}
+            </span>
+            <span className="text-[14.5px] leading-relaxed text-[var(--v2-muted)]">{text}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-6 flex items-center gap-2 border-t border-[var(--v2-line)] pt-4 font-mono text-[12px] text-[var(--v2-faint)]">
+        {resolved ? (
+          <span
+            aria-hidden
+            className="v2-pulse-dot inline-block size-1.5 shrink-0 rounded-full"
+            style={{ color: tone, background: tone }}
+          />
+        ) : null}
+        {footer}
+      </p>
+    </>
+  )
+
+  return (
+    <div className="v2-card h-full rounded-xl p-7">
+      <p className="v2-mono" style={{ color: tone }}>
+        {label}
+      </p>
+      {reduceMotion ? (
+        staticBody
+      ) : (
+        <>
+          <motion.ul
+            className="mt-5 space-y-4"
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true, margin: '-100px' }}
+            transition={{ staggerChildren: 0.45, delayChildren: startDelay }}
+          >
+            {rows.map(([time, text]) => (
+              <motion.li
+                key={time}
+                className="flex gap-4"
+                variants={{
+                  hidden: { opacity: 0, y: 8 },
+                  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
+                }}
+              >
+                <motion.span
+                  className="shrink-0 pt-px font-mono text-[12px]"
+                  style={{ color: tone }}
+                  variants={{
+                    hidden: { opacity: 0 },
+                    // terminal-style flicker as the timestamp lands
+                    show: { opacity: [0, 1, 0.25, 1], transition: { duration: 0.4, times: [0, 0.3, 0.6, 1] } },
+                  }}
+                >
+                  {time}
+                </motion.span>
+                <span className="text-[14.5px] leading-relaxed text-[var(--v2-muted)]">{text}</span>
+              </motion.li>
+            ))}
+          </motion.ul>
+          <motion.p
+            className="mt-6 flex items-center gap-2 border-t border-[var(--v2-line)] pt-4 font-mono text-[12px] text-[var(--v2-faint)]"
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
+            viewport={{ once: true, margin: '-100px' }}
+            transition={{ duration: 0.5, delay: footerDelay }}
+          >
+            {resolved ? (
+              <motion.span
+                aria-hidden
+                className="v2-pulse-dot inline-block size-1.5 shrink-0 rounded-full"
+                style={{ color: tone, background: tone }}
+                initial={{ scale: 0 }}
+                whileInView={{ scale: 1 }}
+                viewport={{ once: true, margin: '-100px' }}
+                transition={{ delay: footerDelay, type: 'spring', stiffness: 400, damping: 16 }}
+              />
+            ) : null}
+            {footer}
+          </motion.p>
+        </>
+      )}
+    </div>
+  )
+}
+
 export function V2Problem() {
   return (
     <section className="relative border-y border-[var(--v2-line)] bg-[var(--v2-bg-2)] py-24">
@@ -169,46 +298,25 @@ export function V2Problem() {
         </Reveal>
 
         <div className="mt-12 grid gap-5 lg:grid-cols-2">
-          {[
-            {
-              label: 'Without Durabull',
-              rows: beforeRows,
-              tone: 'var(--v2-bad)',
-              footer: 'Time to resolution: 5+ hours. Tools: ssh, redis-cli, grep.',
-            },
-            {
-              label: 'With Durabull',
-              rows: afterRows,
-              tone: 'var(--v2-ok)',
-              footer: 'Time to resolution: 9 minutes. Tools: one browser tab.',
-            },
-          ].map((col, i) => (
-            <Reveal key={col.label} delay={0.08 * (i + 1)}>
-              <div className="v2-card h-full rounded-xl p-7">
-                <p className="v2-mono" style={{ color: col.tone }}>
-                  {col.label}
-                </p>
-                <ul className="mt-5 space-y-4">
-                  {col.rows.map(([time, text]) => (
-                    <li key={time} className="flex gap-4">
-                      <span
-                        className="shrink-0 pt-px font-mono text-[12px]"
-                        style={{ color: col.tone }}
-                      >
-                        {time}
-                      </span>
-                      <span className="text-[14.5px] leading-relaxed text-[var(--v2-muted)]">
-                        {text}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-6 border-t border-[var(--v2-line)] pt-4 font-mono text-[12px] text-[var(--v2-faint)]">
-                  {col.footer}
-                </p>
-              </div>
-            </Reveal>
-          ))}
+          <Reveal delay={0.08}>
+            <TimelineColumn
+              label="Without Durabull"
+              rows={beforeRows}
+              tone="var(--v2-bad)"
+              footer="Time to resolution: 5+ hours. Tools: ssh, redis-cli, grep."
+              startDelay={0.3}
+            />
+          </Reveal>
+          <Reveal delay={0.16}>
+            <TimelineColumn
+              label="With Durabull"
+              rows={afterRows}
+              tone="var(--v2-ok)"
+              footer="Time to resolution: 9 minutes. Tools: one browser tab."
+              resolved
+              startDelay={0.5}
+            />
+          </Reveal>
         </div>
       </div>
     </section>

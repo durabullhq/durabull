@@ -4,6 +4,7 @@ import { ArrowRight, Github } from 'lucide-react'
 import Link from 'next/link'
 import { DurabullLogo, DurabullWordmark } from '@/components/durabull-logo'
 import { GITHUB_RELEASE_URL, WEB_APP_URL } from '@/lib/config'
+import { EmberField } from './ember-field'
 import { Reveal } from './reveal'
 
 export function V2FinalCta() {
@@ -17,6 +18,7 @@ export function V2FinalCta() {
             'radial-gradient(55% 80% at 50% 100%, rgba(249,115,22,0.14) 0%, transparent 60%)',
         }}
       />
+      <EmberField />
       <div className="relative mx-auto max-w-3xl px-5 text-center sm:px-8">
         <Reveal>
           <p className="v2-mono text-[var(--v2-accent)]">Your queues are running right now</p>
@@ -71,7 +73,7 @@ export function V2Footer() {
           <DurabullLogo className="h-6 w-6 text-[var(--v2-accent)]" />
           <DurabullWordmark className="h-[13px] text-[var(--v2-fg)]" />
           <span className="v2-mono ml-3 flex items-center gap-1.5 text-[var(--v2-ok)]">
-            <span className="inline-block size-1.5 rounded-full bg-[var(--v2-ok)]" />
+            <span className="v2-pulse-dot inline-block size-1.5 rounded-full bg-[var(--v2-ok)]" />
             all systems operational
           </span>
         </div>

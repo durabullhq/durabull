@@ -25,7 +25,7 @@ export function V2Hero() {
       <div className="relative mx-auto max-w-4xl px-5 text-center sm:px-8">
         <motion.div {...fadeUp(0)}>
           <span className="v2-chip v2-mono inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[var(--v2-muted)]">
-            <span className="inline-block size-1.5 rounded-full bg-[var(--v2-accent)]" />
+            <span className="v2-pulse-dot inline-block size-1.5 rounded-full bg-[var(--v2-accent)] text-[var(--v2-accent)]" />
             Open source · Free during beta
           </span>
         </motion.div>
