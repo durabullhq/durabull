@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowRight, BookOpen } from 'lucide-react'
 import Link from 'next/link'
 import { WEB_APP_URL } from '@/lib/config'
+import { FeatureStream } from './feature-stream'
 import { HeroGridShimmer } from './hero-grid-shimmer'
 
 export function V2Hero() {
@@ -74,6 +75,7 @@ export function V2Hero() {
 
       {/* vibrant band with top-cropped product screenshot */}
       <div className="v2-dark v2-shot-bg relative mt-16 sm:mt-20">
+        <FeatureStream />
         <div className="relative mx-auto max-w-6xl px-5 pt-14 sm:px-8 sm:pt-20">
           <motion.div
             {...(reduceMotion
