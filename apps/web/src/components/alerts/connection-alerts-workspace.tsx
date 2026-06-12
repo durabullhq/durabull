@@ -328,8 +328,8 @@ function MetricCard({
 }) {
   const toneClasses: Record<typeof tone, string> = {
     neutral: 'bg-background/75 border-border/70',
-    good: 'bg-emerald-500/[0.08] border-emerald-500/30',
-    warn: 'bg-amber-500/[0.1] border-amber-500/35',
+    good: 'bg-status-success/[0.08] border-status-success/30',
+    warn: 'bg-status-warning/[0.1] border-status-warning/35',
     critical: 'bg-destructive/10 border-destructive/30',
   }
 

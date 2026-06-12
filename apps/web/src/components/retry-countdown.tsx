@@ -177,9 +177,7 @@ export function RetryCountdown({
       <div
         className={cn(
           'inline-flex items-center gap-1.5 text-xs font-medium',
-          timeRemaining === 0
-            ? 'text-green-600 dark:text-green-400'
-            : 'text-orange-600 dark:text-orange-400',
+          timeRemaining === 0 ? 'text-status-success' : 'text-status-delayed',
           className
         )}
       >
@@ -194,8 +192,8 @@ export function RetryCountdown({
       className={cn(
         'flex items-center gap-2 rounded-md px-3 py-2',
         timeRemaining === 0
-          ? 'bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20'
-          : 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20',
+          ? 'bg-status-success/10 text-status-success border border-status-success/20'
+          : 'bg-status-delayed/10 text-status-delayed border border-status-delayed/20',
         className
       )}
     >

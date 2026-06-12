@@ -256,7 +256,7 @@ function OrganizationAlertsPage() {
       {!hasAnyAlerts && hasConnections ? (
         <Card className="border-border/70 bg-muted/15">
           <CardContent className="flex flex-col items-center justify-center py-14 text-center">
-            <div className="rounded-full border border-emerald-500/25 bg-emerald-500/10 p-4 text-emerald-600 dark:text-emerald-400">
+            <div className="rounded-full border border-status-success/25 bg-status-success/10 p-4 text-status-success">
               <Sparkles className="h-8 w-8" />
             </div>
             <h3 className="mt-5 text-xl font-semibold">The alert surface is calm</h3>
@@ -334,8 +334,8 @@ function MetricCard({
 }) {
   const toneClasses: Record<typeof tone, string> = {
     neutral: 'bg-background/75 border-border/70',
-    good: 'bg-emerald-500/[0.08] border-emerald-500/30',
-    warn: 'bg-amber-500/[0.1] border-amber-500/35',
+    good: 'bg-status-success/[0.08] border-status-success/30',
+    warn: 'bg-status-warning/[0.1] border-status-warning/35',
     critical: 'bg-destructive/10 border-destructive/30',
   }
 

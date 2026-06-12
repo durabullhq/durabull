@@ -1088,7 +1088,7 @@ function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             {schedulesError ? (
-              <div className="rounded-md border border-amber-300/60 bg-amber-50/50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300">
+              <div className="rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
                 Scheduled jobs analytics unavailable: {schedulesError.message}
               </div>
             ) : !analytics.scheduleChartData.length ? (
@@ -1225,10 +1225,10 @@ function AnalyticsPage() {
                 const pct = (state.value / total) * 100
                 const barColor =
                   state.key === 'active'
-                    ? 'bg-emerald-500'
+                    ? 'bg-status-success'
                     : state.key === 'warm'
-                      ? 'bg-amber-500'
-                      : 'bg-rose-500'
+                      ? 'bg-status-warning'
+                      : 'bg-status-danger'
 
                 return (
                   <div key={state.key} className="space-y-1">
@@ -1437,7 +1437,7 @@ function AnalyticsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {analytics.warningRows.length === 0 ? (
-            <div className="rounded-md border border-emerald-300/60 bg-emerald-50/60 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300">
+            <div className="rounded-md border border-status-success/30 bg-status-success/10 px-3 py-2 text-xs text-status-success">
               No queue-level metrics warnings were reported in this sample.
             </div>
           ) : (
@@ -2033,9 +2033,9 @@ function AnalyticsMetricCard({
 }) {
   const toneClasses: Record<typeof tone, string> = {
     neutral: 'bg-card/70',
-    good: 'bg-emerald-500/[0.08] border-emerald-500/30',
-    warn: 'bg-amber-500/[0.1] border-amber-500/35',
-    critical: 'bg-rose-500/[0.12] border-rose-500/40',
+    good: 'bg-status-success/[0.08] border-status-success/30',
+    warn: 'bg-status-warning/[0.1] border-status-warning/35',
+    critical: 'bg-status-danger/[0.12] border-status-danger/40',
   }
 
   return (

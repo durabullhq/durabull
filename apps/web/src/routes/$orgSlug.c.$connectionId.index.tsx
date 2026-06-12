@@ -148,8 +148,8 @@ function Dashboard() {
     const message = error?.message ?? REDIS_CONNECTION_ERROR_MESSAGE
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <div className="rounded-full bg-red-100 dark:bg-red-900/20 p-4 mb-4">
-          <AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+        <div className="rounded-full bg-status-danger/10 p-4 mb-4">
+          <AlertCircle className="h-8 w-8 text-status-danger" />
         </div>
         <h2 className="text-xl font-semibold mb-2">Failed to load queues</h2>
         <p className="text-muted-foreground text-center max-w-md">{message}</p>
@@ -178,7 +178,7 @@ function Dashboard() {
         )}
 
         {!discoveryRunning && discoveryErrorMessage && (
-          <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
+          <div className="flex items-center gap-2 rounded-lg border border-status-danger/30 bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
             <AlertCircle className="h-4 w-4" />
             Discovery failed: {discoveryErrorMessage}
           </div>
@@ -248,10 +248,10 @@ function Dashboard() {
               )}
             </div>
             {totals.active > 0 && (
-              <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+              <div className="flex items-center gap-2 text-sm text-status-active">
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-active opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-status-active" />
                 </span>
                 {formatNumber(totals.active)} jobs processing
               </div>
@@ -313,46 +313,32 @@ const variantStyles: Record<
   StatVariant,
   {
     icon: string
-    value: string
-    bg: string
-    border: string
+    accent: string
   }
 > = {
   default: {
     icon: 'text-muted-foreground',
-    value: 'text-foreground',
-    bg: 'bg-muted/50',
-    border: 'border-border',
+    accent: 'bg-status-neutral/40',
   },
   blue: {
-    icon: 'text-blue-500',
-    value: 'text-blue-600 dark:text-blue-400',
-    bg: 'bg-blue-500/5 dark:bg-blue-500/10',
-    border: 'border-blue-200 dark:border-blue-900',
+    icon: 'text-status-active',
+    accent: 'bg-status-active',
   },
   green: {
-    icon: 'text-green-500',
-    value: 'text-green-600 dark:text-green-400',
-    bg: 'bg-green-500/5 dark:bg-green-500/10',
-    border: 'border-green-200 dark:border-green-900',
+    icon: 'text-status-success',
+    accent: 'bg-status-success',
   },
   orange: {
-    icon: 'text-orange-500',
-    value: 'text-orange-600 dark:text-orange-400',
-    bg: 'bg-orange-500/5 dark:bg-orange-500/10',
-    border: 'border-orange-200 dark:border-orange-900',
+    icon: 'text-status-delayed',
+    accent: 'bg-status-delayed',
   },
   red: {
-    icon: 'text-red-500',
-    value: 'text-red-600 dark:text-red-400',
-    bg: 'bg-red-500/5 dark:bg-red-500/10',
-    border: 'border-red-200 dark:border-red-900',
+    icon: 'text-status-danger',
+    accent: 'bg-status-danger',
   },
   violet: {
-    icon: 'text-violet-500',
-    value: 'text-violet-600 dark:text-violet-400',
-    bg: 'bg-violet-500/5 dark:bg-violet-500/10',
-    border: 'border-violet-200 dark:border-violet-900',
+    icon: 'text-status-priority',
+    accent: 'bg-status-priority',
   },
 }
 
@@ -368,24 +354,25 @@ function StatCard({
   const styles = variantStyles[variant]
 
   const cardContent = (
-    <Card className={cn('transition-all hover:shadow-md', styles.bg, styles.border)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+        <CardTitle className="eyebrow">{title}</CardTitle>
         <div className="relative">
           <Icon className={cn('h-4 w-4', styles.icon)} />
           {showPulse && (
             <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-active opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-status-active" />
             </span>
           )}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4 pt-0">
         {loading ? (
           <Skeleton className="h-8 w-20" />
         ) : (
-          <div className={cn('text-2xl font-bold tabular-nums', styles.value)}>
+          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
             {formatNumber(value)}
           </div>
         )}

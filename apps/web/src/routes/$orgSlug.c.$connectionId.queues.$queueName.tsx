@@ -242,9 +242,7 @@ function QueueDetailPage() {
   )
   const visibleJobs = useMemo(
     () =>
-      hasClientSideJobFilter
-        ? filteredVisibleJobs.slice(0, visibleJobCount)
-        : filteredVisibleJobs,
+      hasClientSideJobFilter ? filteredVisibleJobs.slice(0, visibleJobCount) : filteredVisibleJobs,
     [filteredVisibleJobs, hasClientSideJobFilter, visibleJobCount]
   )
   const hasMoreVisibleJobs = hasClientSideJobFilter
@@ -725,91 +723,97 @@ function QueueDetailPage() {
       {/* Stats cards */}
       {section === 'jobs' && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Waiting</CardTitle>
+          <Card className="relative overflow-hidden">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-neutral/40" aria-hidden="true" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+              <CardTitle className="eyebrow">Waiting</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               {queueLoading ? (
                 <Skeleton className="h-8 w-20" />
               ) : (
-                <div className="text-2xl font-bold">
+                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
                   {formatNumber(queue?.jobCounts.waiting ?? 0)}
                 </div>
               )}
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active</CardTitle>
-              <Zap className="h-4 w-4 text-blue-600" />
+          <Card className="relative overflow-hidden">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-active" aria-hidden="true" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+              <CardTitle className="eyebrow">Active</CardTitle>
+              <Zap className="h-4 w-4 text-status-active" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               {queueLoading ? (
                 <Skeleton className="h-8 w-20" />
               ) : (
-                <div className="text-2xl font-bold text-blue-600">
+                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
                   {formatNumber(queue?.jobCounts.active ?? 0)}
                 </div>
               )}
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Delayed</CardTitle>
-              <Clock className="h-4 w-4 text-amber-500" />
+          <Card className="relative overflow-hidden">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-warning" aria-hidden="true" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+              <CardTitle className="eyebrow">Delayed</CardTitle>
+              <Clock className="h-4 w-4 text-status-warning" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               {queueLoading ? (
                 <Skeleton className="h-8 w-20" />
               ) : (
-                <div className="text-2xl font-bold text-amber-600">
+                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
                   {formatNumber(queue?.jobCounts.delayed ?? 0)}
                 </div>
               )}
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Prioritized</CardTitle>
-              <Rocket className="h-4 w-4 text-violet-500" />
+          <Card className="relative overflow-hidden">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-priority" aria-hidden="true" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+              <CardTitle className="eyebrow">Prioritized</CardTitle>
+              <Rocket className="h-4 w-4 text-status-priority" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               {queueLoading ? (
                 <Skeleton className="h-8 w-20" />
               ) : (
-                <div className="text-2xl font-bold text-violet-600">
+                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
                   {formatNumber(queue?.jobCounts.prioritized ?? 0)}
                 </div>
               )}
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Failed</CardTitle>
-              <AlertCircle className="h-4 w-4 text-red-600" />
+          <Card className="relative overflow-hidden">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-danger" aria-hidden="true" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+              <CardTitle className="eyebrow">Failed</CardTitle>
+              <AlertCircle className="h-4 w-4 text-status-danger" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               {queueLoading ? (
                 <Skeleton className="h-8 w-20" />
               ) : (
-                <div className="text-2xl font-bold text-red-600">
+                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
                   {formatNumber(queue?.jobCounts.failed ?? 0)}
                 </div>
               )}
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Waiting Children</CardTitle>
-              <BarChart3 className="h-4 w-4 text-teal-600" />
+          <Card className="relative overflow-hidden">
+            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-success" aria-hidden="true" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+              <CardTitle className="eyebrow">Waiting Children</CardTitle>
+              <BarChart3 className="h-4 w-4 text-status-success" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 pt-0">
               {metricsLoading ? (
                 <Skeleton className="h-8 w-20" />
               ) : (
-                <div className="text-2xl font-bold text-teal-600">
+                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
                   {formatNumber(metrics?.counts.waitingChildren ?? 0)}
                 </div>
               )}
@@ -1418,7 +1422,7 @@ function QueueDetailPage() {
             </Card>
 
             {metrics?.warnings.length ? (
-              <div className="rounded-md border border-amber-300/60 bg-amber-50/30 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300">
+              <div className="rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
                 Some metrics were unavailable in this Redis environment:{' '}
                 {metrics.warnings.join('; ')}
               </div>
@@ -2145,14 +2149,14 @@ function JobRow({
         >
           {isScheduledJob ? (
             <>
-              <Repeat className="h-4 w-4 text-violet-500 shrink-0" />
+              <Repeat className="h-4 w-4 text-status-priority shrink-0" />
               <span className="text-sm text-foreground group-hover:text-primary transition-colors">
                 Scheduled Job
               </span>
             </>
           ) : (
             <>
-              <SquarePlay className="h-4 w-4 text-emerald-500 shrink-0" />
+              <SquarePlay className="h-4 w-4 text-status-success shrink-0" />
               {isTruncated ? (
                 <TooltipProvider>
                   <Tooltip>
@@ -2174,7 +2178,7 @@ function JobRow({
                         aria-label="Copy job ID"
                       >
                         {copied ? (
-                          <Check className="h-3.5 w-3.5 text-green-400" />
+                          <Check className="h-3.5 w-3.5 text-status-success" />
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
                         )}

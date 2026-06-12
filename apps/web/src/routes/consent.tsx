@@ -36,10 +36,7 @@ function ConsentPage() {
     return `${window.location.pathname}${window.location.search}`
   }, [search])
 
-  const labeledScopes = useMemo(
-    () => labelConsentScopes(context?.scopes ?? []),
-    [context?.scopes]
-  )
+  const labeledScopes = useMemo(() => labelConsentScopes(context?.scopes ?? []), [context?.scopes])
 
   useEffect(() => {
     if (sessionLoading) {
@@ -89,10 +86,7 @@ function ConsentPage() {
           throw new Error(data.message ?? data.error ?? 'Unable to load authorization request')
         }
 
-        if (
-          search.client_id &&
-          data.clientId !== search.client_id
-        ) {
+        if (search.client_id && data.clientId !== search.client_id) {
           throw new Error('Authorization link does not match the requesting application')
         }
 
@@ -131,10 +125,13 @@ function ConsentPage() {
         accept,
         consentCode: search.consent_code,
       })
-      trackEvent(accept ? AnalyticsEvents.MCP_CONSENT_GRANTED : AnalyticsEvents.MCP_CONSENT_DENIED, {
-        success: accept,
-        scope_count: context?.scopes.length ?? 0,
-      })
+      trackEvent(
+        accept ? AnalyticsEvents.MCP_CONSENT_GRANTED : AnalyticsEvents.MCP_CONSENT_DENIED,
+        {
+          success: accept,
+          scope_count: context?.scopes.length ?? 0,
+        }
+      )
       window.location.assign(result.redirectURI)
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Failed to complete authorization')
@@ -209,7 +206,7 @@ function ConsentPage() {
                       <p className="text-sm font-medium">
                         {entry.title}
                         {entry.unknownScope ? (
-                          <span className="ml-2 text-xs font-normal text-amber-600">
+                          <span className="ml-2 text-xs font-normal text-status-warning">
                             (unrecognized scope)
                           </span>
                         ) : null}

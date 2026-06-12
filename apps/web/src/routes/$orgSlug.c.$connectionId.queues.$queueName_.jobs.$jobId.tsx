@@ -58,10 +58,10 @@ const LOG_FORMATTING_DOCS_URL =
 
 const JOB_STATUS_CONFIG: Record<string, { variant: string; color: string }> = {
   waiting: { variant: 'secondary', color: 'text-muted-foreground' },
-  active: { variant: 'default', color: 'text-blue-600 dark:text-blue-400' },
-  delayed: { variant: 'warning', color: 'text-orange-600 dark:text-orange-400' },
-  completed: { variant: 'success', color: 'text-green-600 dark:text-green-400' },
-  failed: { variant: 'destructive', color: 'text-red-600 dark:text-red-400' },
+  active: { variant: 'default', color: 'text-status-active' },
+  delayed: { variant: 'warning', color: 'text-status-delayed' },
+  completed: { variant: 'success', color: 'text-status-success' },
+  failed: { variant: 'destructive', color: 'text-status-danger' },
 }
 
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/queues/$queueName_/jobs/$jobId')({
@@ -227,7 +227,7 @@ function JobDetailPage() {
               size="xs"
               onClick={handleRetry}
               disabled={retryMutation.isPending}
-              className="border-green-500/30 text-green-600 hover:bg-green-500/10 hover:text-green-600"
+              className="border-status-success/30 text-status-success hover:bg-status-success/10 hover:text-status-success"
             >
               <RefreshCw className="mr-2 h-4 w-4" />
               Retry Job
@@ -536,7 +536,7 @@ function JobDetailPage() {
           {job?.returnvalue != null && (
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle className="text-sm font-medium flex items-center gap-2 text-green-600">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 text-status-success">
                   <Check className="h-4 w-4" />
                   Return Value
                 </CardTitle>
@@ -684,7 +684,7 @@ function ErrorDisplay({ error }: { error: string }) {
               onClick={handleCopy}
             >
               {copied ? (
-                <Check className="h-3.5 w-3.5 text-green-500" />
+                <Check className="h-3.5 w-3.5 text-status-success" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}
@@ -906,7 +906,7 @@ function LogViewer({ queueName, jobId }: { queueName: string; jobId: string }) {
                   disabled={filteredLogs.length === 0}
                 >
                   {copied ? (
-                    <Check className="h-3.5 w-3.5 text-green-500" />
+                    <Check className="h-3.5 w-3.5 text-status-success" />
                   ) : (
                     <Copy className="h-3.5 w-3.5" />
                   )}
@@ -1323,7 +1323,7 @@ function CopyJobIdButton({ jobId }: { jobId: string }) {
             onClick={handleCopy}
           >
             {copied ? (
-              <Check className="h-3.5 w-3.5 text-green-500" />
+              <Check className="h-3.5 w-3.5 text-status-success" />
             ) : (
               <Copy className="h-3.5 w-3.5" />
             )}

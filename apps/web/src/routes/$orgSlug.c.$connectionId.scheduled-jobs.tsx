@@ -91,9 +91,9 @@ function CronPatternTooltip({ pattern, timezone }: { pattern: string; timezone?:
   return (
     <div className="space-y-3 py-1">
       <div className="flex items-start gap-2">
-        <Globe className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
+        <Globe className="h-4 w-4 text-status-active mt-0.5 shrink-0" />
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-blue-400 font-medium">
+          <div className="text-[10px] uppercase tracking-wider text-status-active font-medium">
             Configured Schedule
           </div>
           <div className="text-sm font-medium text-primary-foreground">{description}</div>
@@ -105,9 +105,9 @@ function CronPatternTooltip({ pattern, timezone }: { pattern: string; timezone?:
         <>
           <div className="border-t border-primary-foreground/20" />
           <div className="flex items-start gap-2">
-            <MapPin className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
+            <MapPin className="h-4 w-4 text-status-success mt-0.5 shrink-0" />
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-medium">
+              <div className="text-[10px] uppercase tracking-wider text-status-success font-medium">
                 Your Local Time
               </div>
               <div className="text-sm font-medium text-primary-foreground">{localTime}</div>
@@ -408,7 +408,7 @@ function QueueJobGroup({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-red-500">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-status-danger">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     {group.totalFailures} failure{group.totalFailures !== 1 ? 's' : ''}
                   </span>
@@ -457,14 +457,14 @@ function JobRow({ job, isLast, orgSlug, connectionId }: JobRowProps) {
         {/* Vertical line running through */}
         <div
           className={cn(
-            'absolute left-3 w-[2px] bg-emerald-500/30',
+            'absolute left-3 w-[2px] bg-status-success/30',
             isLast ? '-top-2.5 h-[calc(50%+0.625rem)]' : '-top-2.5 -bottom-2.5'
           )}
         />
         {/* Horizontal branch line */}
-        <div className="absolute left-3 w-4 h-[2px] bg-emerald-500/30" />
+        <div className="absolute left-3 w-4 h-[2px] bg-status-success/30" />
         {/* Branch node dot */}
-        <div className="absolute left-[calc(0.75rem+1rem-0.25rem)] w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-background shadow-sm shadow-emerald-500/50" />
+        <div className="absolute left-[calc(0.75rem+1rem-0.25rem)] w-2 h-2 rounded-full bg-status-success ring-2 ring-background shadow-sm shadow-emerald-500/50" />
       </div>
 
       {/* Job name - clickable link to scheduler editor */}
@@ -539,7 +539,7 @@ function JobRow({ job, isLast, orgSlug, connectionId }: JobRowProps) {
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-red-500">
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-status-danger">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   {job.recentFailedCount}
                 </span>
@@ -581,28 +581,20 @@ const variantStyles: Record<
   StatVariant,
   {
     icon: string
-    value: string
-    bg: string
-    border: string
+    accent: string
   }
 > = {
   default: {
     icon: 'text-primary',
-    value: 'text-foreground',
-    bg: 'bg-primary/5',
-    border: 'border-primary/20',
+    accent: 'bg-status-neutral/40',
   },
   green: {
-    icon: 'text-emerald-500',
-    value: 'text-emerald-600 dark:text-emerald-400',
-    bg: 'bg-emerald-500/5 dark:bg-emerald-500/10',
-    border: 'border-emerald-200 dark:border-emerald-900',
+    icon: 'text-status-success',
+    accent: 'bg-status-success',
   },
   red: {
     icon: 'text-destructive',
-    value: 'text-destructive',
-    bg: 'bg-destructive/5 dark:bg-destructive/10',
-    border: 'border-destructive/20',
+    accent: 'bg-status-neutral/40',
   },
 }
 
@@ -610,16 +602,17 @@ function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: St
   const styles = variantStyles[variant]
 
   return (
-    <Card className={cn('transition-all hover:shadow-md', styles.bg, styles.border)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
+        <CardTitle className="eyebrow">{title}</CardTitle>
         <Icon className={cn('h-4 w-4', styles.icon)} />
       </CardHeader>
       <CardContent>
         {loading ? (
           <Skeleton className="h-8 w-12" />
         ) : (
-          <div className={cn('text-2xl font-bold tabular-nums', styles.value)}>{value}</div>
+          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
         )}
       </CardContent>
     </Card>
