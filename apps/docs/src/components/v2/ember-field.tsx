@@ -3,8 +3,6 @@
 import { useEffect, useRef } from 'react'
 import { useReducedMotion } from 'framer-motion'
 
-const EMBER_COUNT = 22
-
 interface Ember {
   x: number
   y: number
@@ -20,12 +18,21 @@ interface Ember {
   decay: number
 }
 
+interface EmberFieldProps {
+  /** number of concurrent particles */
+  count?: number
+  /** 0..1 multiplier on particle brightness */
+  intensity?: number
+  /** 0..1 horizontal spawn spread: small = clustered center, 1 = full width */
+  spread?: number
+}
+
 /**
- * Ambient ember particles drifting up out of the CTA's orange glow,
- * like sparks off a forge. Very low density, very slow. Pauses when
- * offscreen; renders nothing for reduced-motion users.
+ * Ambient ember particles drifting upward, like sparks off a forge.
+ * Very low density, very slow. Pauses when offscreen; renders nothing
+ * for reduced-motion users.
  */
-export function EmberField() {
+export function EmberField({ count = 22, intensity = 1, spread = 0.7 }: EmberFieldProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const reduceMotion = useReducedMotion()
 
@@ -57,7 +64,7 @@ export function EmberField() {
 
     const spawn = (initial: boolean): Ember => ({
       // bias spawns toward the horizontal center where the glow sits
-      x: width * (0.5 + (Math.random() - 0.5) * 0.7),
+      x: width * (0.5 + (Math.random() - 0.5) * spread),
       y: initial ? height * Math.random() : height + 6,
       vy: 12 + Math.random() * 18,
       sway: 6 + Math.random() * 14,
@@ -67,7 +74,7 @@ export function EmberField() {
       decay: 0.06 + Math.random() * 0.05,
     })
 
-    const embers: Ember[] = Array.from({ length: EMBER_COUNT }, () => spawn(true))
+    const embers: Ember[] = Array.from({ length: count }, () => spawn(true))
 
     const draw = (now: number) => {
       if (!visible) return
@@ -88,7 +95,7 @@ export function EmberField() {
         const x = e.x + Math.sin(time * 0.7 + e.phase) * e.sway
         // brightest mid-life, fading at both ends; flicker gently
         const flicker = 0.75 + 0.25 * Math.sin(time * 3 + e.phase * 2)
-        const alpha = Math.sin(e.life * Math.PI) * 0.55 * flicker
+        const alpha = Math.sin(e.life * Math.PI) * 0.55 * flicker * intensity
         if (alpha < 0.01) continue
 
         const glow = ctx.createRadialGradient(x, e.y, 0, x, e.y, e.size * 5)
@@ -122,7 +129,7 @@ export function EmberField() {
       ro.disconnect()
       cancelAnimationFrame(raf)
     }
-  }, [reduceMotion])
+  }, [reduceMotion, count, intensity, spread])
 
   if (reduceMotion) return null
 

@@ -3,8 +3,55 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { Check, Cloud, Laptop, Lock, Server } from 'lucide-react'
 import Link from 'next/link'
+import { useRef } from 'react'
 import { GITHUB_RELEASE_URL, WEB_APP_URL } from '@/lib/config'
+import { EmberField } from './ember-field'
 import { Eyebrow, Reveal } from './reveal'
+
+/** Card with cursor-tracked 3D tilt, shimmer, and a sweeping border ring. */
+function TiltCard({ featured, children }: { featured?: boolean; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const reduceMotion = useReducedMotion()
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (reduceMotion) return
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const px = (e.clientX - rect.left) / rect.width
+    const py = (e.clientY - rect.top) / rect.height
+    el.style.setProperty('--mx', `${(px * 100).toFixed(1)}%`)
+    el.style.setProperty('--my', `${(py * 100).toFixed(1)}%`)
+    el.style.transform = `perspective(700px) rotateY(${((px - 0.5) * 7).toFixed(2)}deg) rotateX(${((0.5 - py) * 7).toFixed(2)}deg) translateY(-2px)`
+  }
+
+  const onMouseLeave = () => {
+    const el = ref.current
+    if (el) el.style.transform = ''
+  }
+
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: mouse tracking is purely decorative (tilt/sheen); the card's link remains the interactive element
+    <div
+      ref={ref}
+      onMouseMove={onMouseMove}
+      onMouseLeave={onMouseLeave}
+      className={`v2-card v2-tilt relative h-full overflow-hidden rounded-xl p-6 ${
+        featured ? 'v2-dark v2-card-premium' : ''
+      }`}
+    >
+      {featured ? (
+        <>
+          <span aria-hidden className="v2-premium-glow" />
+          <span aria-hidden className="v2-premium-sheen" />
+          <EmberField count={9} intensity={0.7} spread={1} />
+          <span aria-hidden className="v2-premium-ring" />
+        </>
+      ) : null}
+      <div className="relative flex h-full flex-col">{children}</div>
+    </div>
+  )
+}
 
 /* ---------------- deploy your way ---------------- */
 
@@ -53,26 +100,39 @@ export function V2Deploy() {
 
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {modes.map((mode, i) => (
-            <Reveal key={mode.title} delay={0.06 * i}>
-              <div
-                className={`v2-card flex h-full flex-col rounded-xl p-6 ${
-                  mode.featured ? 'border-[var(--v2-fg)]' : ''
-                }`}
-              >
-                <mode.icon className="size-5 text-[var(--v2-accent)]" />
-                <h3 className="v2-h mt-4 text-lg">{mode.title}</h3>
+            <Reveal key={mode.title} delay={0.06 * i} className="h-full">
+              <TiltCard featured={mode.featured}>
+                <div className="flex items-center justify-between">
+                  <mode.icon
+                    className={`size-5 text-[var(--v2-accent)] ${
+                      mode.featured ? 'drop-shadow-[0_0_8px_rgba(249,115,22,0.8)]' : ''
+                    }`}
+                  />
+                  {mode.featured ? (
+                    <span className="v2-mono text-[10px] text-[#fdba74]">recommended</span>
+                  ) : null}
+                </div>
+                <h3
+                  className={`v2-h mt-4 text-lg ${
+                    mode.featured
+                      ? 'bg-linear-to-br from-[#fff7ed] to-[#d8d2cb] bg-clip-text text-transparent'
+                      : 'text-[var(--v2-fg)]'
+                  }`}
+                >
+                  {mode.title}
+                </h3>
                 <p className="mt-2 flex-1 text-[13.5px] leading-relaxed text-[var(--v2-muted)]">
                   {mode.body}
                 </p>
                 <Link
                   href={mode.cta.href}
                   className={`mt-5 inline-flex w-fit items-center rounded-lg px-4 py-2 text-[13px] font-medium ${
-                    mode.featured ? 'v2-btn-primary font-semibold' : 'v2-btn-ghost'
+                    mode.featured ? 'v2-btn-accent font-semibold' : 'v2-btn-ghost'
                   }`}
                 >
                   {mode.cta.label}
                 </Link>
-              </div>
+              </TiltCard>
             </Reveal>
           ))}
         </div>
@@ -99,7 +159,7 @@ function DrawnCheck({ delay }: { delay: number }) {
       strokeWidth={2.5}
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden
+      aria-hidden="true"
       className="size-4 shrink-0 text-[var(--v2-accent)]"
     >
       <motion.path

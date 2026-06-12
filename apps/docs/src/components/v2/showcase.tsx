@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { Activity, Bug, CalendarClock, Check, ScrollText, TrendingUp } from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
+import { EmberField } from './ember-field'
 import { Reveal } from './reveal'
 
 interface Tab {
@@ -101,8 +102,9 @@ export function V2Showcase() {
   const reduceMotion = useReducedMotion()
 
   return (
-    <section id="product" className="v2-dark relative scroll-mt-20 bg-[var(--v2-bg)] py-24">
-      <div className="mx-auto max-w-7xl px-5 sm:px-8">
+    <section id="product" className="v2-dark relative scroll-mt-20 overflow-hidden bg-[var(--v2-bg)] py-24">
+      <EmberField count={34} intensity={0.9} spread={1} />
+      <div className="relative mx-auto max-w-7xl px-5 sm:px-8">
         <Reveal className="text-center">
           <h2 className="v2-h text-balance text-3xl leading-tight text-[var(--v2-fg)] sm:text-4xl">
             Everything you need to operate queues

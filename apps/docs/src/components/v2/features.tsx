@@ -8,6 +8,44 @@ import { CornerMarks, Eyebrow, Reveal } from './reveal'
 
 /* ---------------- getting started / install ---------------- */
 
+/**
+ * Shell syntax highlighting for the first `upTo` characters of a command:
+ * command name green, flags accent orange, arguments light.
+ */
+function CommandTokens({ command, upTo }: { command: string; upTo: number }) {
+  const tokens = command.split(/(\s+)/)
+  const parts: React.ReactNode[] = []
+  let consumed = 0
+  let seenCommand = false
+
+  for (let i = 0; i < tokens.length && consumed < upTo; i++) {
+    const token = tokens[i]
+    const visible = token.slice(0, upTo - consumed)
+    consumed += token.length
+    if (!visible) continue
+
+    if (/^\s+$/.test(token)) {
+      parts.push(visible)
+      continue
+    }
+
+    let className = 'text-[var(--v2-fg)]'
+    if (!seenCommand) {
+      className = 'text-[var(--v2-ok)]'
+      seenCommand = true
+    } else if (token.startsWith('-')) {
+      className = 'text-[var(--v2-accent)]'
+    }
+    parts.push(
+      <span key={i} className={className}>
+        {visible}
+      </span>,
+    )
+  }
+
+  return <>{parts}</>
+}
+
 function CommandBlock({ label, command }: { label: string; command: string }) {
   const [copied, setCopied] = useState(false)
   const reduceMotion = useReducedMotion()
@@ -17,6 +55,7 @@ function CommandBlock({ label, command }: { label: string; command: string }) {
 
   const done = reduceMotion || typed >= command.length
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `typed` re-arms the timeout after every character, driving the typing loop
   useEffect(() => {
     if (!inView || done) return
     const tick = setTimeout(() => setTyped((n) => n + 1), 22)
@@ -34,7 +73,7 @@ function CommandBlock({ label, command }: { label: string; command: string }) {
   }
 
   return (
-    <div className="v2-cmd rounded-lg">
+    <div className="v2-cmd v2-dark rounded-lg">
       <div className="flex items-center justify-between border-b border-[var(--v2-line)] px-4 py-2">
         <span className="v2-mono text-[var(--v2-faint)]">{label}</span>
         <button
@@ -52,11 +91,11 @@ function CommandBlock({ label, command }: { label: string; command: string }) {
       </div>
       <code
         ref={codeRef}
-        className="block overflow-x-auto whitespace-nowrap px-4 py-3 font-mono text-[13px] text-[var(--v2-fg)]"
+        className="block overflow-x-auto whitespace-nowrap px-4 py-3 font-mono text-[13px]"
       >
         <span className="select-none text-[var(--v2-faint)]">$ </span>
-        {done ? command : command.slice(0, typed)}
-        {!done && inView ? <span aria-hidden className="v2-caret" /> : null}
+        <CommandTokens command={command} upTo={done ? command.length : typed} />
+        <span aria-hidden className="v2-caret" />
       </code>
     </div>
   )

@@ -308,15 +308,197 @@
     0 2px 10px rgba(67, 20, 7, 0.35);
 }
 
-/* code/command block */
+/* code/command block — terminal look (pair with .v2-dark for token vars) */
 .v2-cmd {
   border: 1px solid var(--v2-line);
   background: var(--v2-bg-2);
   transition: border-color 0.2s ease;
 }
 
+.v2 .v2-dark.v2-cmd {
+  background: #0c0c0b;
+}
+
 .v2-cmd:hover {
   border-color: var(--v2-accent);
+}
+
+/* ---------- hosting cards: 3D tilt, cursor sheen, animated border ---------- */
+
+@property --v2-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.v2-tilt {
+  transform-style: preserve-3d;
+  transition:
+    transform 0.16s ease-out,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+  will-change: transform;
+}
+
+/* accent ring that sweeps around the border on hover */
+.v2-tilt::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--v2-angle),
+    transparent 0deg,
+    var(--v2-accent) 45deg,
+    rgba(253, 186, 116, 0.95) 80deg,
+    transparent 135deg
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  pointer-events: none;
+}
+
+.v2-tilt:hover::before {
+  opacity: 1;
+  animation: v2-border-spin 2.6s linear infinite;
+}
+
+@keyframes v2-border-spin {
+  to {
+    --v2-angle: 360deg;
+  }
+}
+
+/* soft shimmer that follows the cursor */
+.v2-tilt::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(249, 115, 22, 0.07),
+    transparent 65%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.v2-tilt:hover::after {
+  opacity: 1;
+}
+
+.v2-card-premium.v2-tilt::after {
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(253, 186, 116, 0.14),
+    transparent 65%
+  );
+}
+
+/* ---------- premium (featured) hosting card ---------- */
+
+.v2 .v2-dark.v2-card-premium {
+  background:
+    radial-gradient(120% 95% at 12% 112%, rgba(249, 115, 22, 0.32) 0%, rgba(124, 45, 18, 0.14) 42%, transparent 72%),
+    radial-gradient(85% 60% at 92% -8%, rgba(253, 186, 116, 0.12), transparent 62%),
+    linear-gradient(162deg, #171310 0%, #0b0a09 52%, #140d08 100%);
+  border-color: rgba(249, 115, 22, 0.45);
+  box-shadow:
+    0 16px 52px -16px rgba(249, 115, 22, 0.38),
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.v2 .v2-dark.v2-card-premium:hover {
+  border-color: rgba(253, 186, 116, 0.7);
+  box-shadow:
+    0 22px 64px -16px rgba(249, 115, 22, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* slow drifting ember glow inside the premium card */
+.v2-premium-glow {
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+  background:
+    radial-gradient(45% 40% at 25% 85%, rgba(249, 115, 22, 0.34), transparent 70%),
+    radial-gradient(40% 35% at 80% 10%, rgba(234, 88, 12, 0.2), transparent 70%);
+  animation: v2-premium-drift 9s ease-in-out infinite alternate;
+}
+
+@keyframes v2-premium-drift {
+  from {
+    transform: translate3d(-3%, 2%, 0);
+  }
+  to {
+    transform: translate3d(3%, -3%, 0) scale(1.07);
+  }
+}
+
+/* always-on rotating gold-ember border ring */
+.v2-premium-ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--v2-angle),
+    rgba(249, 115, 22, 0.08),
+    rgba(253, 186, 116, 0.85) 70deg,
+    rgba(249, 115, 22, 0.12) 160deg,
+    rgba(255, 215, 170, 0.6) 250deg,
+    rgba(249, 115, 22, 0.08) 360deg
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: v2-border-spin 7s linear infinite;
+}
+
+/* periodic light sweep across the card face */
+.v2-premium-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.v2-premium-sheen::after {
+  content: '';
+  position: absolute;
+  top: -60%;
+  bottom: -60%;
+  left: -45%;
+  width: 38%;
+  background: linear-gradient(
+    105deg,
+    transparent,
+    rgba(255, 255, 255, 0.07) 38%,
+    rgba(253, 186, 116, 0.13) 52%,
+    transparent
+  );
+  transform: translateX(0) skewX(-18deg);
+  animation: v2-sheen-sweep 6s ease-in-out infinite;
+}
+
+@keyframes v2-sheen-sweep {
+  0%,
+  55% {
+    transform: translateX(0) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(520%) skewX(-18deg);
+  }
 }
 
 /* ---------- tabs (dark showcase) ---------- */
@@ -442,5 +624,16 @@
   .v2-cell::after,
   .v2-cell-ticks {
     display: none;
+  }
+
+  .v2-tilt::before,
+  .v2-premium-glow,
+  .v2-premium-ring,
+  .v2-premium-sheen::after {
+    animation: none !important;
+  }
+
+  .v2-tilt {
+    transition: none;
   }
 }
