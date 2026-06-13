@@ -15,6 +15,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { z } from 'zod'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { QueueTable } from '@/components/queue-table'
@@ -41,6 +42,7 @@ import {
 import { cn, formatNumber } from '@/lib/utils'
 
 const AUTO_DISCOVERY_MIN_INTERVAL_MS = 5 * 60 * 1000
+const QUEUE_DISCOVERY_TOAST_ID = 'queue-discovery'
 
 function isRedisConnectionFailure(message: string): boolean {
   const normalized = message.toLowerCase()
@@ -138,6 +140,8 @@ function Dashboard() {
   const discoveryQuery = useQueueDiscoveryStatus()
   const discoverMutation = useDiscoverQueues()
   const hasAutoTriggeredDiscovery = useRef(false)
+  const wasDiscoveryRunningRef = useRef(false)
+  const lastDiscoveryErrorShownRef = useRef<string | null>(null)
   const discoveryPendingCount = Math.max(
     discoveryQuery.data?.indexed.pending ?? 0,
     data?.discovery?.indexed.pending ?? 0
@@ -177,6 +181,43 @@ function Dashboard() {
     discoverMutation.mutate()
   }, [data, discoverMutation, discoveryRunning, hasRecentDiscovery, isLoading])
 
+  useEffect(() => {
+    if (discoveryRunning) {
+      lastDiscoveryErrorShownRef.current = null
+      toast.loading(
+        'Discovering queues in Redis. Pending queues will appear dimmed until confirmed.',
+        { id: QUEUE_DISCOVERY_TOAST_ID }
+      )
+      wasDiscoveryRunningRef.current = true
+      return
+    }
+
+    if (wasDiscoveryRunningRef.current) {
+      toast.dismiss(QUEUE_DISCOVERY_TOAST_ID)
+      wasDiscoveryRunningRef.current = false
+
+      if (discoveryErrorMessage) {
+        lastDiscoveryErrorShownRef.current = discoveryErrorMessage
+        toast.error(`Discovery failed: ${discoveryErrorMessage}`)
+      }
+      return
+    }
+
+    if (
+      discoveryErrorMessage &&
+      discoveryErrorMessage !== lastDiscoveryErrorShownRef.current
+    ) {
+      lastDiscoveryErrorShownRef.current = discoveryErrorMessage
+      toast.error(`Discovery failed: ${discoveryErrorMessage}`)
+    }
+  }, [discoveryRunning, discoveryErrorMessage])
+
+  useEffect(() => {
+    return () => {
+      toast.dismiss(QUEUE_DISCOVERY_TOAST_ID)
+    }
+  }, [connectionId])
+
   const topBarConfig = useMemo(
     () => ({
       left: (
@@ -200,14 +241,15 @@ function Dashboard() {
             size="xs"
             onClick={() => discoverMutation.mutate()}
             disabled={discoveryRunning}
+            aria-busy={discoveryRunning}
             className="gap-2"
           >
             {discoveryRunning ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-              <Search className="h-4 w-4" />
+              <Search className="h-4 w-4" aria-hidden="true" />
             )}
-            Discover Queues
+            {discoveryRunning ? 'Discovering…' : 'Discover Queues'}
           </Button>
         </div>
       ),
@@ -251,20 +293,6 @@ function Dashboard() {
   return (
     <TooltipProvider>
       <div className="space-y-8">
-        {discoveryRunning && (
-          <div className="flex items-center gap-2 rounded-lg border border-muted-foreground/20 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Discovering queues in Redis. Pending queues will appear dimmed until confirmed.
-          </div>
-        )}
-
-        {!discoveryRunning && discoveryErrorMessage && (
-          <div className="flex items-center gap-2 rounded-lg border border-status-danger/30 bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
-            <AlertCircle className="h-4 w-4" />
-            Discovery failed: {discoveryErrorMessage}
-          </div>
-        )}
-
         {/* Summary stats */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard
