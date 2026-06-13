@@ -3,8 +3,12 @@ name: React Doctor
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "apps/web/**"
   push:
     branches: [main, master]
+    paths:
+      - "apps/web/**"
 
 permissions:
   contents: read
@@ -28,7 +32,7 @@ jobs:
 
       - uses: millionco/react-doctor@v2
         with:
-          project: "@durabull/web,@durabull/docs,@durabull/email"
+          project: "@durabull/web"
           scope: changed
           blocking: error
           version: "0.5.4"

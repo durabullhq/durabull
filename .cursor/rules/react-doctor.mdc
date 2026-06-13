@@ -1,16 +1,16 @@
 ---
 description: Run React Doctor on React/UI changes to catch regressions before merge
-globs: apps/web/**/*.{tsx,ts}, apps/docs/**/*.{tsx,ts}, packages/email/**/*.{tsx,ts}
+globs: apps/web/**/*.{tsx,ts}
 alwaysApply: false
 ---
 
 # React Doctor
 
-This repo uses [React Doctor](https://react.doctor/docs) for React-specific security, performance, correctness, and accessibility checks.
+This repo uses [React Doctor](https://react.doctor/docs) for React-specific security, performance, correctness, and accessibility checks in `apps/web`.
 
 ## When editing React code
 
-After substantive React changes (components, hooks, routes, email templates):
+After substantive React changes (components, hooks, routes):
 
 1. Run `bun run doctor:changed` to scan only issues introduced vs the base branch.
 2. Fix any new **errors** before finishing; warnings are advisory unless CI is configured to block them.
@@ -18,8 +18,8 @@ After substantive React changes (components, hooks, routes, email templates):
 
 ## Configuration
 
-- Monorepo config: `doctor.config.ts` at the repo root (`@durabull/web`, `@durabull/docs`, `@durabull/email`).
-- CI: `.github/workflows/react-doctor.yml` gates pull requests on **new** error-severity findings in changed files.
+- Monorepo config: `doctor.config.ts` at the repo root (scoped to `@durabull/web`).
+- CI: `.github/workflows/react-doctor.yml` runs only when `apps/web/**` changes and gates PRs on **new** error-severity findings in changed files.
 - Agent skill: `.agents/skills/react-doctor/SKILL.md` — load it when triaging or fixing React Doctor diagnostics.
 
 ## Rule changes

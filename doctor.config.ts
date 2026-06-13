@@ -1,5 +1,5 @@
 export default {
-  projects: ["@durabull/web", "@durabull/docs", "@durabull/email"],
+  projects: ["@durabull/web"],
   supplyChain: {
     includeDevDependencies: false,
   },
