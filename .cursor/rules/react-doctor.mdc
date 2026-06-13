@@ -1,0 +1,27 @@
+---
+description: Run React Doctor on React/UI changes to catch regressions before merge
+globs: apps/web/**/*.{tsx,ts}
+alwaysApply: false
+---
+
+# React Doctor
+
+This repo uses [React Doctor](https://react.doctor/docs) for React-specific security, performance, correctness, and accessibility checks in `apps/web`.
+
+## When editing React code
+
+After substantive React changes (components, hooks, routes):
+
+1. Run `bun run doctor:changed` to scan only issues introduced vs the base branch.
+2. Fix any new **errors** before finishing; warnings are advisory unless CI is configured to block them.
+3. For broad cleanup passes, run `bun run doctor` (full scan) or ask the user to run `/doctor`.
+
+## Configuration
+
+- Monorepo config: `doctor.config.ts` at the repo root (scoped to `@durabull/web`).
+- CI: `.github/workflows/react-doctor.yml` runs only when `apps/web/**` changes and gates PRs on **new** error-severity findings in changed files.
+- Agent skill: `.agents/skills/react-doctor/SKILL.md` — load it when triaging or fixing React Doctor diagnostics.
+
+## Rule changes
+
+To disable or tune a rule, use the react-doctor skill's explain workflow (`react-doctor rules explain|disable|set …`) rather than ad-hoc suppressions in source.
