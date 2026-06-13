@@ -28,6 +28,9 @@
     "format:check": "turbo format:check",
     "check": "biome check .",
     "check:fix": "biome check --write .",
+    "doctor": "react-doctor -y --no-score",
+    "doctor:changed": "react-doctor -y --no-score --scope changed",
+    "doctor:score": "react-doctor -y --score",
     "docker": "sh -c 'if [ -f .env ]; then docker compose --env-file .env -f tooling/docker/docker-compose.yaml up -d; else docker compose -f tooling/docker/docker-compose.yaml up -d; fi && echo \"✅ Docker services running. Run: bun docker:seed\"'",
     "docker:seed": "bun tooling/scripts/seed/index.ts",
     "docker:seed:workers": "bun tooling/scripts/seed/index.ts --workers",
@@ -53,7 +56,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
-    "@types/bun": "latest",
+    "@types/bun": "^1.3.8",
+    "react-doctor": "0.5.4",
     "release-it": "^19.2.4",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
