@@ -245,6 +245,7 @@ export const DialogType = {
   UNLINK_ACCOUNT: 'unlink_account',
   DELETE_REDIS_KEY: 'delete_redis_key',
   INVOKE_JOB: 'invoke_job',
+  RETRY_JOB: 'retry_job',
   DUPLICATE_JOB: 'duplicate_job',
   ADD_JOB: 'add_job',
   ADD_SCHEDULED_JOB: 'add_scheduled_job',

@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { routeState, topBarState, navigateMock, removeMutateMock, retryMutateMock, trackEventMock } =
+const { routeState, topBarState, navigateMock, removeMutateMock, trackEventMock } =
   vi.hoisted(() => ({
     routeState: {
       params: {
@@ -16,7 +16,6 @@ const { routeState, topBarState, navigateMock, removeMutateMock, retryMutateMock
     topBarState: { config: null as null | { actions?: React.ReactNode } },
     navigateMock: vi.fn(),
     removeMutateMock: vi.fn(),
-    retryMutateMock: vi.fn(),
     trackEventMock: vi.fn(),
   }))
 
@@ -75,6 +74,10 @@ vi.mock('@/components/retry-countdown', () => ({
   RetryCountdown: () => null,
 }))
 
+vi.mock('@/components/retry-job-dialog', () => ({
+  RetryJobDialog: () => null,
+}))
+
 vi.mock('@/hooks/use-alerts', () => ({
   useConnectionAlertEvents: () => ({
     data: { events: [] },
@@ -116,10 +119,6 @@ vi.mock('@/hooks/use-queues', () => ({
     mutate: removeMutateMock,
     isPending: false,
   }),
-  useRetryJobs: () => ({
-    mutate: retryMutateMock,
-    isPending: false,
-  }),
 }))
 
 import { Route } from '@/routes/$orgSlug.c.$connectionId.queues.$queueName_.jobs.$jobId'
@@ -131,7 +130,6 @@ describe('job detail scheduled removal', () => {
     topBarState.config = null
     navigateMock.mockReset()
     removeMutateMock.mockReset()
-    retryMutateMock.mockReset()
     trackEventMock.mockReset()
   })
 

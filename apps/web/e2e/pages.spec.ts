@@ -291,7 +291,7 @@ test.describe("Pages", () => {
     ).toBeVisible();
   });
 
-  test("failed job retry returns job to queue", async ({ page }) => {
+  test("failed job retry shows success modal and requeues job", async ({ page }) => {
     const { connectionId } = await getConnectionAndQueue(page);
     const failedJob = await findJobByStatus(page, connectionId, "failed");
 
@@ -302,8 +302,16 @@ test.describe("Pages", () => {
     await expect(retryButton).toBeVisible();
     await retryButton.click();
 
-    await page.waitForURL(
-      new RegExp(`/${TEST_ORG_SLUG}/c/${connectionId}/queues/${failedJob.queueName}`)
+    await expect(page.getByRole("heading", { name: "Job Retried" })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByText(/Retry succeeded/i)).toBeVisible();
+
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page).toHaveURL(
+      new RegExp(
+        `/${TEST_ORG_SLUG}/c/${connectionId}/queues/${failedJob.queueName}/jobs/${failedJob.jobId}`
+      )
     );
 
     await expect
