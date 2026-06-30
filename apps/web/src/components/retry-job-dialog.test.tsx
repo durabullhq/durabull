@@ -1,10 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RetryJobDialog } from '@/components/retry-job-dialog'
 
-const { mutateAsyncMock, trackEventMock } = vi.hoisted(() => ({
-  mutateAsyncMock: vi.fn(),
+const { trackEventMock } = vi.hoisted(() => ({
   trackEventMock: vi.fn(),
 }))
 
@@ -25,122 +24,74 @@ vi.mock('@durabull/analytics/events', () => ({
   },
 }))
 
-vi.mock('@/hooks/use-queues', () => ({
-  useRetryJobs: () => ({
-    mutateAsync: mutateAsyncMock,
-    isPending: false,
-  }),
-}))
+const defaultProps = {
+  open: true,
+  onOpenChange: vi.fn(),
+  queueName: 'emails',
+  jobId: 'job-123',
+  jobName: 'send-email',
+  phase: 'retrying' as const,
+  errorMessage: null,
+  onRetry: vi.fn(),
+}
 
 describe('RetryJobDialog', () => {
   beforeEach(() => {
-    mutateAsyncMock.mockReset()
     trackEventMock.mockReset()
+    defaultProps.onOpenChange.mockReset()
+    defaultProps.onRetry.mockReset()
   })
 
-  it('shows success state when retry succeeds', async () => {
-    mutateAsyncMock.mockResolvedValue({ success: 1, failed: 0, errors: [] })
+  it('shows success state', () => {
+    render(<RetryJobDialog {...defaultProps} phase="success" />)
 
-    render(
-      <RetryJobDialog
-        open
-        onOpenChange={vi.fn()}
-        queueName="emails"
-        jobId="job-123"
-        jobName="send-email"
-      />
-    )
-
-    await waitFor(() => {
-      expect(screen.getByText('Job Retried')).toBeInTheDocument()
-    })
-
+    expect(screen.getByText('Job Retried')).toBeInTheDocument()
     expect(screen.getByText(/Retry succeeded/i)).toBeInTheDocument()
-    expect(mutateAsyncMock).toHaveBeenCalledWith({
-      queueName: 'emails',
-      jobIds: ['job-123'],
-    })
   })
 
-  it('shows error state when retry fails', async () => {
-    mutateAsyncMock.mockResolvedValue({
-      success: 0,
-      failed: 1,
-      errors: [{ jobId: 'job-123', error: 'Job is locked' }],
-    })
-
+  it('shows error state with message', () => {
     render(
-      <RetryJobDialog
-        open
-        onOpenChange={vi.fn()}
-        queueName="emails"
-        jobId="job-123"
-        jobName="send-email"
-      />
+      <RetryJobDialog {...defaultProps} phase="error" errorMessage="Job is locked" />
     )
 
-    await waitFor(() => {
-      expect(screen.getByText('Retry Failed')).toBeInTheDocument()
-    })
-
+    expect(screen.getByText('Retry Failed')).toBeInTheDocument()
     expect(screen.getByText('Job is locked')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument()
   })
 
-  it('retries again when Try Again is clicked', async () => {
+  it('calls onRetry when Try Again is clicked', async () => {
     const user = userEvent.setup()
-    mutateAsyncMock
-      .mockResolvedValueOnce({
-        success: 0,
-        failed: 1,
-        errors: [{ jobId: 'job-123', error: 'Temporary failure' }],
-      })
-      .mockResolvedValueOnce({ success: 1, failed: 0, errors: [] })
+    const onRetry = vi.fn()
 
     render(
       <RetryJobDialog
-        open
-        onOpenChange={vi.fn()}
-        queueName="emails"
-        jobId="job-123"
-        jobName="send-email"
+        {...defaultProps}
+        phase="error"
+        errorMessage="Temporary failure"
+        onRetry={onRetry}
       />
     )
 
-    await waitFor(() => {
-      expect(screen.getByText('Temporary failure')).toBeInTheDocument()
-    })
-
     await user.click(screen.getByRole('button', { name: 'Try Again' }))
 
-    await waitFor(() => {
-      expect(screen.getByText('Job Retried')).toBeInTheDocument()
-    })
-
-    expect(mutateAsyncMock).toHaveBeenCalledTimes(2)
+    expect(onRetry).toHaveBeenCalledTimes(1)
   })
 
   it('closes when Done is clicked after success', async () => {
     const user = userEvent.setup()
-    mutateAsyncMock.mockResolvedValue({ success: 1, failed: 0, errors: [] })
     const onOpenChange = vi.fn()
 
-    render(
-      <RetryJobDialog
-        open
-        onOpenChange={onOpenChange}
-        queueName="emails"
-        jobId="job-123"
-        jobName="send-email"
-      />
-    )
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument()
-    })
+    render(<RetryJobDialog {...defaultProps} phase="success" onOpenChange={onOpenChange} />)
 
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('shows retrying state while in progress', () => {
+    render(<RetryJobDialog {...defaultProps} phase="retrying" />)
+
+    expect(screen.getByText('Retrying Job')).toBeInTheDocument()
+    expect(screen.getByText('Retry in progress...')).toBeInTheDocument()
   })
 })

@@ -1,7 +1,6 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,9 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { useRetryJobs } from '@/hooks/use-queues'
 
-type RetryPhase = 'retrying' | 'success' | 'error'
+export type RetryJobPhase = 'retrying' | 'success' | 'error'
 
 interface RetryJobDialogProps {
   open: boolean
@@ -21,6 +19,9 @@ interface RetryJobDialogProps {
   queueName: string
   jobId: string
   jobName: string
+  phase: RetryJobPhase
+  errorMessage: string | null
+  onRetry: () => void
 }
 
 export function RetryJobDialog({
@@ -29,56 +30,10 @@ export function RetryJobDialog({
   queueName,
   jobId,
   jobName,
+  phase,
+  errorMessage,
+  onRetry,
 }: RetryJobDialogProps) {
-  const { mutateAsync: retryJobs } = useRetryJobs()
-  const [phase, setPhase] = useState<RetryPhase>('retrying')
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const previousOpenRef = useRef(false)
-
-  const runRetry = useCallback(async () => {
-    setPhase('retrying')
-    setErrorMessage(null)
-
-    try {
-      const result = await retryJobs({
-        queueName,
-        jobIds: [jobId],
-      })
-
-      if (result.success > 0 && result.failed === 0) {
-        setPhase('success')
-        return
-      }
-
-      const apiError =
-        result.errors.find((entry) => entry.jobId === jobId)?.error ??
-        (result.failed > 0
-          ? 'The job could not be retried.'
-          : 'The job was not in a failed state and could not be retried.')
-
-      setErrorMessage(apiError)
-      setPhase('error')
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : 'An unexpected error occurred while retrying.'
-      )
-      setPhase('error')
-    }
-  }, [jobId, queueName, retryJobs])
-
-  useEffect(() => {
-    const didOpen = open && !previousOpenRef.current
-
-    if (!open) {
-      setPhase('retrying')
-      setErrorMessage(null)
-    } else if (didOpen) {
-      void runRetry()
-    }
-
-    previousOpenRef.current = open
-  }, [open, runRetry])
-
   const handleOpenChange = (nextOpen: boolean) => {
     trackEvent(nextOpen ? AnalyticsEvents.DIALOG_OPENED : AnalyticsEvents.DIALOG_CLOSED, {
       [AnalyticsProperties.DIALOG_TYPE]: DialogType.RETRY_JOB,
@@ -171,7 +126,7 @@ export function RetryJobDialog({
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 Close
               </Button>
-              <Button onClick={() => void runRetry()}>
+              <Button onClick={onRetry}>
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Try Again
               </Button>

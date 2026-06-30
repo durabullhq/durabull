@@ -119,6 +119,10 @@ vi.mock('@/hooks/use-queues', () => ({
     mutate: removeMutateMock,
     isPending: false,
   }),
+  useRetryJobs: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
 }))
 
 import { Route } from '@/routes/$orgSlug.c.$connectionId.queues.$queueName_.jobs.$jobId'

@@ -37,7 +37,7 @@ import { JobRemoveButton } from '@/components/job-remove-button'
 import { JsonViewer } from '@/components/json-viewer'
 import { QueueNameTag } from '@/components/queue-name-tag'
 import { RetryCountdown } from '@/components/retry-countdown'
-import { RetryJobDialog } from '@/components/retry-job-dialog'
+import { RetryJobDialog, type RetryJobPhase } from '@/components/retry-job-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -47,7 +47,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConnectionAlertEvents } from '@/hooks/use-alerts'
-import { useJob, useJobLogs, useRemoveJobs } from '@/hooks/use-queues'
+import { useJob, useJobLogs, useRemoveJobs, useRetryJobs } from '@/hooks/use-queues'
 import { cn, formatDate, formatDuration, getTimezoneAbbreviation } from '@/lib/utils'
 
 const jobSearchSchema = z.object({
@@ -77,6 +77,8 @@ function JobDetailPage() {
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
   const [invokeDialogOpen, setInvokeDialogOpen] = useState(false)
   const [retryDialogOpen, setRetryDialogOpen] = useState(false)
+  const [retryPhase, setRetryPhase] = useState<RetryJobPhase>('retrying')
+  const [retryErrorMessage, setRetryErrorMessage] = useState<string | null>(null)
 
   const { data: job, isLoading, error } = useJob(queueName, jobId)
   const { data: logsData } = useJobLogs(queueName, jobId)
@@ -87,6 +89,7 @@ function JobDetailPage() {
   })
 
   const removeMutation = useRemoveJobs()
+  const { mutateAsync: retryJobs } = useRetryJobs()
 
   // Track job view when job data is loaded
   useEffect(() => {
@@ -120,8 +123,48 @@ function JobDetailPage() {
   const hasFailedAttempts = (job?.stacktraceCount ?? 0) > 0
   const hasFailed = job?.status === 'failed'
 
+  const runJobRetry = useCallback(async () => {
+    setRetryPhase('retrying')
+    setRetryErrorMessage(null)
+
+    try {
+      const result = await retryJobs({
+        queueName,
+        jobIds: [jobId],
+      })
+
+      if (result.success > 0 && result.failed === 0) {
+        setRetryPhase('success')
+        return
+      }
+
+      const apiError =
+        result.errors.find((entry) => entry.jobId === jobId)?.error ??
+        (result.failed > 0
+          ? 'The job could not be retried.'
+          : 'The job was not in a failed state and could not be retried.')
+
+      setRetryErrorMessage(apiError)
+      setRetryPhase('error')
+    } catch (error) {
+      setRetryErrorMessage(
+        error instanceof Error ? error.message : 'An unexpected error occurred while retrying.'
+      )
+      setRetryPhase('error')
+    }
+  }, [jobId, queueName, retryJobs])
+
   const handleOpenRetryDialog = useCallback(() => {
     setRetryDialogOpen(true)
+    void runJobRetry()
+  }, [runJobRetry])
+
+  const handleRetryDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) {
+      setRetryPhase('retrying')
+      setRetryErrorMessage(null)
+    }
+    setRetryDialogOpen(open)
   }, [])
 
   const isScheduledJob = jobId.startsWith('repeat:')
@@ -602,10 +645,13 @@ function JobDetailPage() {
       {job && job.status === 'failed' && (
         <RetryJobDialog
           open={retryDialogOpen}
-          onOpenChange={setRetryDialogOpen}
+          onOpenChange={handleRetryDialogOpenChange}
           queueName={queueName}
           jobId={job.id}
           jobName={job.name}
+          phase={retryPhase}
+          errorMessage={retryErrorMessage}
+          onRetry={() => void runJobRetry()}
         />
       )}
 
