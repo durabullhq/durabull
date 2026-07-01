@@ -54,6 +54,29 @@ jobs:
         if: github.event_name == 'push'
         run: bun run dist:desktop
 
+      - name: Generate macOS SHA256 verification file
+        if: github.event_name == 'push' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          dmg_assets=(apps/desktop/release/Durabull-*-arm64.dmg)
+
+          if [ ${#dmg_assets[@]} -ne 1 ]; then
+            echo "Expected one macOS arm64 DMG, found ${#dmg_assets[@]}." >&2
+            printf '%s\n' "${dmg_assets[@]}" >&2
+            exit 1
+          fi
+
+          dmg="${dmg_assets[0]}"
+          checksum_file="apps/desktop/release/durabull-macos-arm64.sha256"
+
+          (
+            cd "$(dirname "$dmg")"
+            shasum -a 256 "$(basename "$dmg")" > "$(basename "$checksum_file")"
+          )
+
+          echo "Wrote $checksum_file"
+
       - name: Wait for GitHub release
         if: github.event_name == 'push'
         shell: bash
@@ -83,6 +106,7 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
+            apps/desktop/release/*.sha256
           )
 
           if [ ${#assets[@]} -eq 0 ]; then
@@ -107,4 +131,5 @@ jobs:
             apps/desktop/release/*.zip
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
+            apps/desktop/release/*.sha256
           if-no-files-found: error

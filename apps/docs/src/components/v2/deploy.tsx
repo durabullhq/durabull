@@ -1,10 +1,10 @@
 'use client'
 
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, Cloud, Laptop, Lock, Server } from 'lucide-react'
+import { Check, Cloud, Laptop, Lock, Server, type LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useRef } from 'react'
-import { GITHUB_RELEASE_URL, WEB_APP_URL } from '@/lib/config'
+import { GITHUB_RELEASE_URL, MAC_CHECKSUM_URL, WEB_APP_URL } from '@/lib/config'
 import { EmberField } from './ember-field'
 import { Eyebrow, Reveal } from './reveal'
 
@@ -55,7 +55,16 @@ function TiltCard({ featured, children }: { featured?: boolean; children: React.
 
 /* ---------------- deploy your way ---------------- */
 
-const modes = [
+type DeployMode = {
+  icon: LucideIcon
+  title: string
+  body: string
+  cta: { label: string; href: string }
+  featured?: boolean
+  verification?: { label: string; href: string }
+}
+
+const modes: DeployMode[] = [
   {
     icon: Cloud,
     title: 'Durabull Cloud',
@@ -74,6 +83,7 @@ const modes = [
     title: 'Desktop app',
     body: 'Native on Apple Silicon macOS and Windows. Local-first with encrypted saved connections.',
     cta: { label: 'Download', href: GITHUB_RELEASE_URL },
+    verification: { label: 'Verify macOS DMG SHA-256', href: MAC_CHECKSUM_URL },
   },
   {
     icon: Lock,
@@ -132,6 +142,14 @@ export function V2Deploy() {
                 >
                   {mode.cta.label}
                 </Link>
+                {mode.verification ? (
+                  <Link
+                    href={mode.verification.href}
+                    className="v2-mono mt-3 text-[11px] text-[var(--v2-faint)] underline decoration-[var(--v2-line-strong)] underline-offset-4 transition-colors hover:text-[var(--v2-fg)]"
+                  >
+                    {mode.verification.label}
+                  </Link>
+                ) : null}
               </TiltCard>
             </Reveal>
           ))}

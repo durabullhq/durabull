@@ -11,6 +11,8 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://durabull.io
 // Desktop distribution and release links
 export const GITHUB_RELEASE_URL = 'https://github.com/durabullhq/durabull/releases/latest'
 export const MAC_DOWNLOAD_URL = GITHUB_RELEASE_URL
+export const MAC_CHECKSUM_URL =
+  'https://github.com/durabullhq/durabull/releases/latest/download/durabull-macos-arm64.sha256'
 export const WINDOWS_DOWNLOAD_URL =
   'https://github.com/durabullhq/durabull/releases/download/v1.3.0/Durabull.Setup.1.3.0.exe'
 export const WINDOWS_ZIP_DOWNLOAD_URL =
