@@ -85,6 +85,17 @@ vi.mock('@/hooks/use-alerts', () => ({
   }),
 }))
 
+vi.mock('@/hooks/use-job-retry-dialog', () => ({
+  useJobRetryDialog: () => ({
+    open: false,
+    phase: 'retrying',
+    errorMessage: null,
+    openDialog: vi.fn(),
+    setOpen: vi.fn(),
+    runRetry: vi.fn(),
+  }),
+}))
+
 vi.mock('@/hooks/use-queues', () => ({
   useJob: () => ({
     data: {
