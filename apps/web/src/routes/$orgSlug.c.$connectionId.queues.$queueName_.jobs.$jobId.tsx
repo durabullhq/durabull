@@ -37,6 +37,7 @@ import { JobRemoveButton } from '@/components/job-remove-button'
 import { JsonViewer } from '@/components/json-viewer'
 import { QueueNameTag } from '@/components/queue-name-tag'
 import { RetryCountdown } from '@/components/retry-countdown'
+import { RetryJobDialog } from '@/components/retry-job-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,7 +47,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConnectionAlertEvents } from '@/hooks/use-alerts'
-import { useJob, useJobLogs, useRemoveJobs, useRetryJobs } from '@/hooks/use-queues'
+import { useJobRetryDialog } from '@/hooks/use-job-retry-dialog'
+import { useJob, useJobLogs, useRemoveJobs } from '@/hooks/use-queues'
 import { cn, formatDate, formatDuration, getTimezoneAbbreviation } from '@/lib/utils'
 
 const jobSearchSchema = z.object({
@@ -75,6 +77,7 @@ function JobDetailPage() {
   const navigate = useNavigate()
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
   const [invokeDialogOpen, setInvokeDialogOpen] = useState(false)
+  const retryDialog = useJobRetryDialog(queueName, jobId)
 
   const { data: job, isLoading, error } = useJob(queueName, jobId)
   const { data: logsData } = useJobLogs(queueName, jobId)
@@ -84,7 +87,6 @@ function JobDetailPage() {
     limit: 20,
   })
 
-  const retryMutation = useRetryJobs()
   const removeMutation = useRemoveJobs()
 
   // Track job view when job data is loaded
@@ -118,21 +120,6 @@ function JobDetailPage() {
 
   const hasFailedAttempts = (job?.stacktraceCount ?? 0) > 0
   const hasFailed = job?.status === 'failed'
-
-  const handleRetry = useCallback(() => {
-    retryMutation.mutate(
-      { queueName, jobIds: [jobId] },
-      {
-        onSuccess: () => {
-          navigate({
-            to: '/$orgSlug/c/$connectionId/queues/$queueName',
-            params: { orgSlug, connectionId, queueName },
-            search: {},
-          })
-        },
-      }
-    )
-  }, [connectionId, jobId, navigate, orgSlug, queueName, retryMutation])
 
   const isScheduledJob = jobId.startsWith('repeat:')
 
@@ -225,8 +212,7 @@ function JobDetailPage() {
             <Button
               variant="outline"
               size="xs"
-              onClick={handleRetry}
-              disabled={retryMutation.isPending}
+              onClick={retryDialog.openDialog}
               className="border-status-success/30 text-status-success hover:bg-status-success/10 hover:text-status-success"
             >
               <RefreshCw className="mr-2 h-4 w-4" />
@@ -260,7 +246,7 @@ function JobDetailPage() {
       mobileActions: (
         <>
           {job?.status === 'failed' && (
-            <DropdownMenuItem onClick={handleRetry} disabled={retryMutation.isPending}>
+            <DropdownMenuItem onClick={retryDialog.openDialog}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Retry Job
             </DropdownMenuItem>
@@ -301,13 +287,12 @@ function JobDetailPage() {
     [
       connectionId,
       handleRemove,
-      handleRetry,
+      retryDialog.openDialog,
       isLoading,
       job,
       orgSlug,
       queueName,
       removeMutation.isPending,
-      retryMutation.isPending,
       isScheduledJob,
     ]
   )
@@ -607,6 +592,20 @@ function JobDetailPage() {
               search: {},
             })
           }}
+        />
+      )}
+
+      {/* Retry Job Dialog */}
+      {job && job.status === 'failed' && (
+        <RetryJobDialog
+          open={retryDialog.open}
+          onOpenChange={retryDialog.setOpen}
+          queueName={queueName}
+          jobId={job.id}
+          jobName={job.name}
+          phase={retryDialog.phase}
+          errorMessage={retryDialog.errorMessage}
+          onRetry={() => void retryDialog.runRetry()}
         />
       )}
 

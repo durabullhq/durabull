@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { routeState, topBarState, navigateMock, removeMutateMock, retryMutateMock, trackEventMock } =
+const { routeState, topBarState, navigateMock, removeMutateMock, trackEventMock } =
   vi.hoisted(() => ({
     routeState: {
       params: {
@@ -16,7 +16,6 @@ const { routeState, topBarState, navigateMock, removeMutateMock, retryMutateMock
     topBarState: { config: null as null | { actions?: React.ReactNode } },
     navigateMock: vi.fn(),
     removeMutateMock: vi.fn(),
-    retryMutateMock: vi.fn(),
     trackEventMock: vi.fn(),
   }))
 
@@ -75,10 +74,25 @@ vi.mock('@/components/retry-countdown', () => ({
   RetryCountdown: () => null,
 }))
 
+vi.mock('@/components/retry-job-dialog', () => ({
+  RetryJobDialog: () => null,
+}))
+
 vi.mock('@/hooks/use-alerts', () => ({
   useConnectionAlertEvents: () => ({
     data: { events: [] },
     isLoading: false,
+  }),
+}))
+
+vi.mock('@/hooks/use-job-retry-dialog', () => ({
+  useJobRetryDialog: () => ({
+    open: false,
+    phase: 'retrying',
+    errorMessage: null,
+    openDialog: vi.fn(),
+    setOpen: vi.fn(),
+    runRetry: vi.fn(),
   }),
 }))
 
@@ -117,7 +131,7 @@ vi.mock('@/hooks/use-queues', () => ({
     isPending: false,
   }),
   useRetryJobs: () => ({
-    mutate: retryMutateMock,
+    mutateAsync: vi.fn(),
     isPending: false,
   }),
 }))
@@ -131,7 +145,6 @@ describe('job detail scheduled removal', () => {
     topBarState.config = null
     navigateMock.mockReset()
     removeMutateMock.mockReset()
-    retryMutateMock.mockReset()
     trackEventMock.mockReset()
   })
 
