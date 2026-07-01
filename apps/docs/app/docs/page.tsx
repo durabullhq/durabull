@@ -49,7 +49,7 @@ export default function DocsPage() {
             items: [
               'Direct Apple Silicon macOS download',
               'Windows installer and zip options',
-              'Homebrew cask command and verification steps',
+              'Visible macOS SHA-256 verification steps',
             ],
           },
           {

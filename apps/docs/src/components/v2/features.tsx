@@ -3,7 +3,7 @@
 import { motion, useInView, useReducedMotion } from 'framer-motion'
 import { Check, Copy, Terminal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { HOMEBREW_INSTALL_COMMAND } from '@/lib/config'
+import { HOMEBREW_INSTALL_COMMAND, MAC_VERIFY_DOWNLOAD_COMMAND } from '@/lib/config'
 import { CornerMarks, Eyebrow, Reveal } from './reveal'
 
 /* ---------------- getting started / install ---------------- */
@@ -122,6 +122,7 @@ export function V2GettingStarted() {
           </Reveal>
           <Reveal delay={0.12} className="space-y-3">
             <CommandBlock label="macOS (Homebrew)" command={HOMEBREW_INSTALL_COMMAND} />
+            <CommandBlock label="Verify macOS DMG" command={MAC_VERIFY_DOWNLOAD_COMMAND} />
             <CommandBlock
               label="Self-hosted (Docker)"
               command="docker run -p 3000:3000 durabullhq/durabull"
