@@ -1,7 +1,7 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { useCallback, useState } from 'react'
-import { RetryJobPhase } from '@/components/retry-job-dialog'
+import { RetryJobPhase } from '@/components/retry-job-phase'
 import { useRetryJobs } from '@/hooks/use-queues'
 
 interface JobRetryDialogState {

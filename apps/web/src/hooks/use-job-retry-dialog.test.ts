@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { RetryJobPhase } from '@/components/retry-job-dialog'
+import { RetryJobPhase } from '@/components/retry-job-phase'
 import { useJobRetryDialog } from '@/hooks/use-job-retry-dialog'
 
 const { mutateAsyncMock, trackEventMock } = vi.hoisted(() => ({

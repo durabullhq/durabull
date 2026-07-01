@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { RetryJobDialog, RetryJobPhase } from '@/components/retry-job-dialog'
+import { RetryJobDialog } from '@/components/retry-job-dialog'
+import { RetryJobPhase } from '@/components/retry-job-phase'
 
 const { trackEventMock } = vi.hoisted(() => ({
   trackEventMock: vi.fn(),

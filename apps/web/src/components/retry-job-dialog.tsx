@@ -1,6 +1,7 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react'
+import { RetryJobPhase } from '@/components/retry-job-phase'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -10,14 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-
-export const RetryJobPhase = {
-  RETRYING: 'retrying',
-  SUCCESS: 'success',
-  ERROR: 'error',
-} as const
-
-export type RetryJobPhase = (typeof RetryJobPhase)[keyof typeof RetryJobPhase]
 
 interface RetryJobDialogProps {
   open: boolean
