@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { RetryJobDialog } from '@/components/retry-job-dialog'
+import { RetryJobDialog, RetryJobPhase } from '@/components/retry-job-dialog'
 
 const { trackEventMock } = vi.hoisted(() => ({
   trackEventMock: vi.fn(),
@@ -30,7 +30,7 @@ const defaultProps = {
   queueName: 'emails',
   jobId: 'job-123',
   jobName: 'send-email',
-  phase: 'retrying' as const,
+  phase: RetryJobPhase.RETRYING,
   errorMessage: null,
   onRetry: vi.fn(),
 }
@@ -43,7 +43,7 @@ describe('RetryJobDialog', () => {
   })
 
   it('shows success state', () => {
-    render(<RetryJobDialog {...defaultProps} phase="success" />)
+    render(<RetryJobDialog {...defaultProps} phase={RetryJobPhase.SUCCESS} />)
 
     expect(screen.getByText('Job Retried')).toBeInTheDocument()
     expect(screen.getByText(/Retry succeeded/i)).toBeInTheDocument()
@@ -51,7 +51,7 @@ describe('RetryJobDialog', () => {
 
   it('shows error state with message', () => {
     render(
-      <RetryJobDialog {...defaultProps} phase="error" errorMessage="Job is locked" />
+      <RetryJobDialog {...defaultProps} phase={RetryJobPhase.ERROR} errorMessage="Job is locked" />
     )
 
     expect(screen.getByText('Retry Failed')).toBeInTheDocument()
@@ -66,7 +66,7 @@ describe('RetryJobDialog', () => {
     render(
       <RetryJobDialog
         {...defaultProps}
-        phase="error"
+        phase={RetryJobPhase.ERROR}
         errorMessage="Temporary failure"
         onRetry={onRetry}
       />
@@ -81,7 +81,7 @@ describe('RetryJobDialog', () => {
     const user = userEvent.setup()
     const onOpenChange = vi.fn()
 
-    render(<RetryJobDialog {...defaultProps} phase="success" onOpenChange={onOpenChange} />)
+    render(<RetryJobDialog {...defaultProps} phase={RetryJobPhase.SUCCESS} onOpenChange={onOpenChange} />)
 
     await user.click(screen.getByRole('button', { name: 'Done' }))
 
@@ -89,7 +89,7 @@ describe('RetryJobDialog', () => {
   })
 
   it('shows retrying state while in progress', () => {
-    render(<RetryJobDialog {...defaultProps} phase="retrying" />)
+    render(<RetryJobDialog {...defaultProps} phase={RetryJobPhase.RETRYING} />)
 
     expect(screen.getByText('Retrying Job')).toBeInTheDocument()
     expect(screen.getByText('Retry in progress...')).toBeInTheDocument()

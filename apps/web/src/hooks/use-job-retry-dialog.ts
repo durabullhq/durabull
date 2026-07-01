@@ -1,5 +1,7 @@
+import { trackEvent } from '@durabull/analytics/browser'
+import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { useCallback, useState } from 'react'
-import type { RetryJobPhase } from '@/components/retry-job-dialog'
+import { RetryJobPhase } from '@/components/retry-job-dialog'
 import { useRetryJobs } from '@/hooks/use-queues'
 
 interface JobRetryDialogState {
@@ -10,7 +12,7 @@ interface JobRetryDialogState {
 
 const initialState: JobRetryDialogState = {
   open: false,
-  phase: 'retrying',
+  phase: RetryJobPhase.RETRYING,
   errorMessage: null,
 }
 
@@ -21,7 +23,7 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
   const runRetry = useCallback(async () => {
     setState((current) => ({
       ...current,
-      phase: 'retrying',
+      phase: RetryJobPhase.RETRYING,
       errorMessage: null,
     }))
 
@@ -32,7 +34,7 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
       })
 
       if (result.success > 0 && result.failed === 0) {
-        setState((current) => ({ ...current, phase: 'success' }))
+        setState((current) => ({ ...current, phase: RetryJobPhase.SUCCESS }))
         return
       }
 
@@ -44,13 +46,13 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
 
       setState((current) => ({
         ...current,
-        phase: 'error',
+        phase: RetryJobPhase.ERROR,
         errorMessage: apiError,
       }))
     } catch (error) {
       setState((current) => ({
         ...current,
-        phase: 'error',
+        phase: RetryJobPhase.ERROR,
         errorMessage:
           error instanceof Error ? error.message : 'An unexpected error occurred while retrying.',
       }))
@@ -59,6 +61,9 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
 
   const openDialog = useCallback(() => {
     setState({ ...initialState, open: true })
+    trackEvent(AnalyticsEvents.DIALOG_OPENED, {
+      [AnalyticsProperties.DIALOG_TYPE]: DialogType.RETRY_JOB,
+    })
     void runRetry()
   }, [runRetry])
 

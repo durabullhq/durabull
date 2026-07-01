@@ -1,9 +1,27 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { RetryJobPhase } from '@/components/retry-job-dialog'
 import { useJobRetryDialog } from '@/hooks/use-job-retry-dialog'
 
-const { mutateAsyncMock } = vi.hoisted(() => ({
+const { mutateAsyncMock, trackEventMock } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn(),
+  trackEventMock: vi.fn(),
+}))
+
+vi.mock('@durabull/analytics/browser', () => ({
+  trackEvent: trackEventMock,
+}))
+
+vi.mock('@durabull/analytics/events', () => ({
+  AnalyticsEvents: {
+    DIALOG_OPENED: 'DIALOG_OPENED',
+  },
+  AnalyticsProperties: {
+    DIALOG_TYPE: 'dialog_type',
+  },
+  DialogType: {
+    RETRY_JOB: 'retry_job',
+  },
 }))
 
 vi.mock('@/hooks/use-queues', () => ({
@@ -16,6 +34,7 @@ vi.mock('@/hooks/use-queues', () => ({
 describe('useJobRetryDialog', () => {
   beforeEach(() => {
     mutateAsyncMock.mockReset()
+    trackEventMock.mockReset()
   })
 
   it('opens dialog and runs retry from openDialog', async () => {
@@ -36,7 +55,21 @@ describe('useJobRetryDialog', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.phase).toBe('success')
+      expect(result.current.phase).toBe(RetryJobPhase.SUCCESS)
+    })
+  })
+
+  it('tracks dialog opened analytics from openDialog', async () => {
+    mutateAsyncMock.mockResolvedValue({ success: 1, failed: 0, errors: [] })
+
+    const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
+
+    await act(async () => {
+      result.current.openDialog()
+    })
+
+    expect(trackEventMock).toHaveBeenCalledWith('DIALOG_OPENED', {
+      dialog_type: 'retry_job',
     })
   })
 
@@ -54,7 +87,7 @@ describe('useJobRetryDialog', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.phase).toBe('error')
+      expect(result.current.phase).toBe(RetryJobPhase.ERROR)
       expect(result.current.errorMessage).toBe('Job is locked')
     })
   })
@@ -69,7 +102,7 @@ describe('useJobRetryDialog', () => {
     })
 
     await waitFor(() => {
-      expect(result.current.phase).toBe('success')
+      expect(result.current.phase).toBe(RetryJobPhase.SUCCESS)
     })
 
     await act(() => {
@@ -79,7 +112,7 @@ describe('useJobRetryDialog', () => {
     await waitFor(() => {
       expect(result.current.open).toBe(false)
     })
-    expect(result.current.phase).toBe('retrying')
+    expect(result.current.phase).toBe(RetryJobPhase.RETRYING)
     expect(result.current.errorMessage).toBeNull()
   })
 })

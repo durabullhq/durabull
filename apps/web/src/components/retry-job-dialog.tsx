@@ -11,7 +11,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-export type RetryJobPhase = 'retrying' | 'success' | 'error'
+export const RetryJobPhase = {
+  RETRYING: 'retrying',
+  SUCCESS: 'success',
+  ERROR: 'error',
+} as const
+
+export type RetryJobPhase = (typeof RetryJobPhase)[keyof typeof RetryJobPhase]
 
 interface RetryJobDialogProps {
   open: boolean
@@ -42,16 +48,16 @@ export function RetryJobDialog({
   }
 
   const title =
-    phase === 'retrying'
+    phase === RetryJobPhase.RETRYING
       ? 'Retrying Job'
-      : phase === 'success'
+      : phase === RetryJobPhase.SUCCESS
         ? 'Job Retried'
         : 'Retry Failed'
 
   const description =
-    phase === 'retrying'
+    phase === RetryJobPhase.RETRYING
       ? 'Sending this job back to the queue. This usually takes just a moment.'
-      : phase === 'success'
+      : phase === RetryJobPhase.SUCCESS
         ? 'The job was requeued successfully and should start processing again soon.'
         : 'We could not retry this job. Review the details below and try again if needed.'
 
@@ -59,16 +65,16 @@ export function RetryJobDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen && phase === 'retrying') return
+        if (!nextOpen && phase === RetryJobPhase.RETRYING) return
         handleOpenChange(nextOpen)
       }}
     >
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {phase === 'retrying' ? (
+            {phase === RetryJobPhase.RETRYING ? (
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            ) : phase === 'success' ? (
+            ) : phase === RetryJobPhase.SUCCESS ? (
               <CheckCircle2 className="h-5 w-5 text-status-success" />
             ) : (
               <AlertCircle className="h-5 w-5 text-status-danger" />
@@ -91,14 +97,14 @@ export function RetryJobDialog({
             </div>
           </div>
 
-          {phase === 'retrying' && (
+          {phase === RetryJobPhase.RETRYING && (
             <div className="flex items-center gap-3 rounded-lg border border-border/70 bg-background/60 px-4 py-3">
               <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
               <p className="text-sm text-muted-foreground">Retry in progress...</p>
             </div>
           )}
 
-          {phase === 'success' && (
+          {phase === RetryJobPhase.SUCCESS && (
             <div className="rounded-lg border border-status-success/30 bg-status-success/10 px-4 py-3">
               <p className="text-sm text-status-success">
                 Retry succeeded. The job status on this page will update shortly.
@@ -106,7 +112,7 @@ export function RetryJobDialog({
             </div>
           )}
 
-          {phase === 'error' && errorMessage && (
+          {phase === RetryJobPhase.ERROR && errorMessage && (
             <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
               <p className="text-sm text-status-danger">{errorMessage}</p>
             </div>
@@ -114,12 +120,12 @@ export function RetryJobDialog({
         </div>
 
         <DialogFooter>
-          {phase === 'retrying' ? (
+          {phase === RetryJobPhase.RETRYING ? (
             <Button variant="outline" disabled>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Retrying...
             </Button>
-          ) : phase === 'success' ? (
+          ) : phase === RetryJobPhase.SUCCESS ? (
             <Button onClick={() => handleOpenChange(false)}>Done</Button>
           ) : (
             <>
