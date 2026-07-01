@@ -18,4 +18,3 @@ export const WINDOWS_DOWNLOAD_URL =
 export const WINDOWS_ZIP_DOWNLOAD_URL =
   'https://github.com/durabullhq/durabull/releases/download/v1.3.0/Durabull-1.3.0-win.zip'
 export const HOMEBREW_INSTALL_COMMAND = 'brew install --cask durabullhq/tap/durabull'
-export const MAC_VERIFY_DOWNLOAD_COMMAND = `curl -fsSLO ${MAC_CHECKSUM_URL} && shasum -a 256 -c durabull-macos-arm64.sha256`
