@@ -56,6 +56,7 @@ export function useCreateConnection() {
       isDefault?: boolean
       prefix?: string
       allowSelfSignedCerts?: boolean
+      mode?: 'standalone' | 'cluster'
     }) => {
       const res = await api.connections.$post({
         json: data,
@@ -102,6 +103,7 @@ export function useUpdateConnection() {
         isDefault?: boolean
         prefix?: string
         allowSelfSignedCerts?: boolean
+        mode?: 'standalone' | 'cluster'
       }
     }) => {
       const res = await api.connections[':id'].$patch({
@@ -169,12 +171,14 @@ export function useTestConnection() {
     mutationFn: async ({
       url,
       allowSelfSignedCerts,
+      mode,
     }: {
       url: string
       allowSelfSignedCerts?: boolean
+      mode?: 'standalone' | 'cluster'
     }) => {
       const res = await api.connections.test.$post({
-        json: { url, allowSelfSignedCerts },
+        json: { url, allowSelfSignedCerts, mode },
       })
       return handleRes<TestConnectionResponse>(res)
     },

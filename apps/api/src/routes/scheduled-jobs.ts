@@ -1,7 +1,7 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { discoverQueues, getQueue } from '../lib/redis'
 import { getConnectionRedisOptions } from '../lib/connection-options'
+import { discoverQueues, getQueue } from '../lib/redis'
 import {
   buildScheduledJobCreateInput,
   buildScheduledJobUpdateInput,
@@ -72,6 +72,7 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const pageStr = c.req.query('page')
     const pageSizeStr = c.req.query('pageSize')
 
@@ -81,7 +82,13 @@ const app = new Hono()
       MAX_PAGE_SIZE
     )
 
-    const allQueueNames = await discoverQueues(connectionId, connectionUrl, connectionPrefix, redisOptions)
+    const allQueueNames = await discoverQueues(
+      connectionId,
+      connectionUrl,
+      connectionPrefix,
+      redisOptions,
+      connectionMode
+    )
     const totalQueues = allQueueNames.length
 
     // Paginate at the queue level to prevent loading scheduled jobs from thousands of queues
@@ -92,7 +99,14 @@ const app = new Hono()
     const allScheduledJobs: ScheduledJobSummary[] = []
 
     for (const queueName of paginatedQueueNames) {
-      const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+      const queue = await getQueue(
+        connectionId,
+        connectionUrl,
+        queueName,
+        connectionPrefix,
+        redisOptions,
+        connectionMode
+      )
       const schedulers = await queue.getJobSchedulers()
 
       // Get unique job names from schedulers
@@ -124,8 +138,16 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
-    const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+    const queue = await getQueue(
+      connectionId,
+      connectionUrl,
+      queueName,
+      connectionPrefix,
+      redisOptions,
+      connectionMode
+    )
     const schedulers = await queue.getJobSchedulers()
 
     // Get unique job names from schedulers
@@ -148,10 +170,18 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const schedulerId = c.req.param('schedulerId')
 
-    const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+    const queue = await getQueue(
+      connectionId,
+      connectionUrl,
+      queueName,
+      connectionPrefix,
+      redisOptions,
+      connectionMode
+    )
     const scheduler = (await queue.getJobSchedulers()).find((item) => item.key === schedulerId)
 
     if (!scheduler) {
@@ -170,10 +200,18 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const payload = c.req.valid('json')
 
-    const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+    const queue = await getQueue(
+      connectionId,
+      connectionUrl,
+      queueName,
+      connectionPrefix,
+      redisOptions,
+      connectionMode
+    )
     const existingSchedulers = await queue.getJobSchedulers()
     const existingScheduler = existingSchedulers.find(
       (scheduler) => scheduler.key === payload.schedulerId
@@ -225,12 +263,20 @@ const app = new Hono()
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
       const connectionPrefix = c.get('connectionPrefix')
-    const redisOptions = getConnectionRedisOptions(c)
+      const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const queueName = c.req.param('queueName')
       const schedulerId = c.req.param('schedulerId')
       const payload = c.req.valid('json')
 
-      const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+      const queue = await getQueue(
+        connectionId,
+        connectionUrl,
+        queueName,
+        connectionPrefix,
+        redisOptions,
+        connectionMode
+      )
       const existingScheduler = (await queue.getJobSchedulers()).find(
         (scheduler) => scheduler.key === schedulerId
       )
@@ -274,10 +320,18 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const schedulerId = c.req.param('schedulerId')
 
-    const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+    const queue = await getQueue(
+      connectionId,
+      connectionUrl,
+      queueName,
+      connectionPrefix,
+      redisOptions,
+      connectionMode
+    )
     await queue.removeJobScheduler(schedulerId)
     return c.json({ success: true })
   })

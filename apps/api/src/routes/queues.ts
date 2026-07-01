@@ -240,7 +240,14 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
-    const keys = await debugGetBullKeys(connectionId, connectionUrl, connectionPrefix, redisOptions)
+    const connectionMode = c.get('connectionMode')
+    const keys = await debugGetBullKeys(
+      connectionId,
+      connectionUrl,
+      connectionPrefix,
+      redisOptions,
+      connectionMode
+    )
 
     // Group keys by pattern to make it easier to understand
     const metaKeys = keys.filter((k) => k.endsWith(':meta'))
@@ -272,6 +279,7 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
 
     const scanCountParam = c.req.query('scanCount')
     const waitParam = c.req.query('wait')
@@ -283,6 +291,7 @@ const app = new Hono()
       allowSelfSignedCerts: redisOptions.allowSelfSignedCerts,
       scanCount:
         requestedScanCount && Number.isFinite(requestedScanCount) ? requestedScanCount : undefined,
+      mode: connectionMode,
     })
 
     if (waitForCompletion) {
@@ -298,6 +307,7 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const query = c.req.valid('query')
     const page = Math.max(1, parseInteger(query.page) ?? 1)
     const pageSize = Math.min(parseInteger(query.pageSize) ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE)
@@ -318,6 +328,7 @@ const app = new Hono()
       await startQueueDiscovery(connectionId, connectionUrl, {
         prefix: connectionPrefix,
         allowSelfSignedCerts: redisOptions.allowSelfSignedCerts,
+        mode: connectionMode,
       })
       discovery = await getQueueDiscoveryStatus(connectionId)
       indexedTotal = discovery.indexed.total
@@ -346,7 +357,8 @@ const app = new Hono()
           connectionUrl,
           indexedQueue.name,
           connectionPrefix,
-          redisOptions
+          redisOptions,
+          connectionMode
         )
         const [counts, isPaused] = await Promise.all([queue.getJobCounts(), queue.isPaused()])
 
@@ -414,13 +426,15 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const queue = await getQueue(
       connectionId,
       connectionUrl,
       queueName,
       connectionPrefix,
-      redisOptions
+      redisOptions,
+      connectionMode
     )
     const [counts, isPaused, workers, schedulers] = await Promise.all([
       queue.getJobCounts(),
@@ -460,6 +474,7 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const query = c.req.valid('query')
 
@@ -500,7 +515,8 @@ const app = new Hono()
       connectionUrl,
       queueName,
       connectionPrefix,
-      redisOptions
+      redisOptions,
+      connectionMode
     )
     const metrics = await collectQueueNativeMetrics(queue, {
       queueName,
@@ -519,13 +535,15 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const queue = await getQueue(
       connectionId,
       connectionUrl,
       queueName,
       connectionPrefix,
-      redisOptions
+      redisOptions,
+      connectionMode
     )
     await queue.pause()
     return c.json({ success: true })
@@ -536,13 +554,15 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const queue = await getQueue(
       connectionId,
       connectionUrl,
       queueName,
       connectionPrefix,
-      redisOptions
+      redisOptions,
+      connectionMode
     )
     await queue.resume()
     return c.json({ success: true })
@@ -563,6 +583,7 @@ const app = new Hono()
       const connectionUrl = c.get('connectionUrl')
       const connectionPrefix = c.get('connectionPrefix')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const queueName = c.req.param('queueName')
       const { status, gracePeriod = 0, limit = 1000 } = c.req.valid('json')
       const queue = await getQueue(
@@ -570,7 +591,8 @@ const app = new Hono()
         connectionUrl,
         queueName,
         connectionPrefix,
-        redisOptions
+        redisOptions,
+        connectionMode
       )
 
       const cleanStatus = cleanStatusMap[status as PurgeableQueueStatus]
@@ -602,6 +624,7 @@ const app = new Hono()
       const connectionUrl = c.get('connectionUrl')
       const connectionPrefix = c.get('connectionPrefix')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const queueName = c.req.param('queueName')
       const { confirmName, statuses, keepMostRecent } = c.req.valid('json')
 
@@ -629,7 +652,8 @@ const app = new Hono()
         connectionUrl,
         queueName,
         connectionPrefix,
-        redisOptions
+        redisOptions,
+        connectionMode
       )
       const removedByStatus = Object.fromEntries(
         statusesToPurge.map((status) => [status, 0])
@@ -839,13 +863,15 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const queue = await getQueue(
       connectionId,
       connectionUrl,
       queueName,
       connectionPrefix,
-      redisOptions
+      redisOptions,
+      connectionMode
     )
     await deleteQueueWithDiscoveryCleanup(connectionId, queueName, queue)
     return c.json({ success: true })
@@ -864,6 +890,7 @@ const app = new Hono()
       const connectionUrl = c.get('connectionUrl')
       const connectionPrefix = c.get('connectionPrefix')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const queueName = c.req.param('queueName')
       const { confirmName } = c.req.valid('json')
 
@@ -877,7 +904,8 @@ const app = new Hono()
         connectionUrl,
         queueName,
         connectionPrefix,
-        redisOptions
+        redisOptions,
+        connectionMode
       )
       const counts = await queue.getJobCounts()
 
@@ -918,13 +946,15 @@ const app = new Hono()
     const connectionUrl = c.get('connectionUrl')
     const connectionPrefix = c.get('connectionPrefix')
     const redisOptions = getConnectionRedisOptions(c)
+    const connectionMode = c.get('connectionMode')
     const queueName = c.req.param('queueName')
     const queue = await getQueue(
       connectionId,
       connectionUrl,
       queueName,
       connectionPrefix,
-      redisOptions
+      redisOptions,
+      connectionMode
     )
     const counts = await queue.getJobCounts()
 

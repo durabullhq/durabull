@@ -134,7 +134,9 @@ export type {
 } from './db/schemas/organization/types'
 export {
   type ConnectionEnvironment,
+  type ConnectionMode,
   connectionEnvironments,
+  connectionModes,
   redisConnection,
 } from './db/schemas/redis-connection/schema'
 export type { NewRedisConnection, RedisConnection } from './db/schemas/redis-connection/types'

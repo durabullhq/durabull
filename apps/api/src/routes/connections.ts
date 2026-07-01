@@ -1,5 +1,6 @@
 import {
   and,
+  connectionModes,
   eq,
   getDb,
   member,
@@ -10,10 +11,11 @@ import {
 import { env } from '@durabull/env'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { Redis } from 'ioredis'
+import { Cluster, Redis } from 'ioredis'
 import { z } from 'zod'
 import { buildIoRedisConnectionOptions } from '../lib/connection-options'
 import { resetQueueDiscoveryState } from '../lib/queue-discovery'
+import type { RedisClient } from '../lib/redis'
 import { validateRedisUrlForEnvironment } from '../lib/url-validation'
 import { requireOrganization } from '../middleware/auth'
 import { connectionTestRateLimiter } from '../middleware/rate-limit'
@@ -44,6 +46,7 @@ const app = new Hono()
     const connections = dbConnections.map((conn) => ({
       id: conn.id,
       name: conn.name,
+      mode: conn.mode ?? 'standalone',
       isDefault: conn.isDefault,
       environment: conn.environment,
       prefix: conn.prefix,
@@ -71,6 +74,7 @@ const app = new Hono()
         id: conn.id,
         name: conn.name,
         url: canViewSecret ? conn.url : null,
+        mode: conn.mode ?? 'standalone',
         isDefault: conn.isDefault,
         environment: conn.environment,
         prefix: conn.prefix,
@@ -89,6 +93,7 @@ const app = new Hono()
       z.object({
         name: z.string().min(1).max(100),
         url: z.string().min(1),
+        mode: z.enum(connectionModes).optional().default('standalone'),
         environment: z.enum(['development', 'staging', 'production']).optional(),
         isDefault: z.boolean().optional(),
         prefix: connectionPrefixSchema.default('bull'),
@@ -134,6 +139,7 @@ const app = new Hono()
       const conn = await redisConnectionRepository.create({
         name: body.name,
         url: body.url,
+        mode: body.mode,
         environment: body.environment ?? 'development',
         isDefault: body.isDefault ?? false,
         prefix: body.prefix,
@@ -146,6 +152,7 @@ const app = new Hono()
           connection: {
             id: conn.id,
             name: conn.name,
+            mode: conn.mode ?? 'standalone',
             isDefault: conn.isDefault,
             environment: conn.environment,
             prefix: conn.prefix,
@@ -165,6 +172,7 @@ const app = new Hono()
       z.object({
         name: z.string().min(1).max(100).optional(),
         url: z.string().min(1).optional(),
+        mode: z.enum(connectionModes).optional(),
         environment: z.enum(['development', 'staging', 'production']).optional(),
         isDefault: z.boolean().optional(),
         prefix: connectionPrefixSchema.optional(),
@@ -220,6 +228,7 @@ const app = new Hono()
       const updateData: Parameters<typeof redisConnectionRepository.update>[2] = {}
       if (body.name !== undefined) updateData.name = body.name
       if (body.url !== undefined) updateData.url = body.url
+      if (body.mode !== undefined) updateData.mode = body.mode
       if (body.environment !== undefined) updateData.environment = body.environment
       if (body.isDefault === false) updateData.isDefault = false
       if (body.prefix !== undefined) updateData.prefix = body.prefix
@@ -241,6 +250,7 @@ const app = new Hono()
         connection: {
           id: conn.id,
           name: conn.name,
+          mode: conn.mode ?? 'standalone',
           isDefault: conn.isDefault,
           environment: conn.environment,
           prefix: conn.prefix,
@@ -297,10 +307,11 @@ const app = new Hono()
       z.object({
         url: z.string().min(1),
         allowSelfSignedCerts: z.boolean().optional(),
+        mode: z.enum(connectionModes).optional().default('standalone'),
       })
     ),
     async (c) => {
-      const { url, allowSelfSignedCerts } = c.req.valid('json')
+      const { url, allowSelfSignedCerts, mode } = c.req.valid('json')
 
       // Validate URL to prevent SSRF attacks
       const validation = validateRedisUrlForEnvironment(url)
@@ -315,18 +326,45 @@ const app = new Hono()
       }
 
       const startTime = Date.now()
-      let redis: Redis | null = null
+      let client: RedisClient | null = null
 
       try {
-        redis = new Redis(url, {
-          connectTimeout: 5000,
-          maxRetriesPerRequest: 1,
-          lazyConnect: true,
-          ...buildIoRedisConnectionOptions({ allowSelfSignedCerts }),
-        })
+        if (mode === 'cluster') {
+          const parsed = new URL(url)
+          const clusterHost = parsed.hostname
+          const clusterPort = parsed.port ? parseInt(parsed.port, 10) : 6379
+          const isTunneled =
+            clusterHost === 'localhost' || clusterHost === '127.0.0.1' || clusterHost === '::1'
+          client = new Cluster([{ host: clusterHost, port: clusterPort }], {
+            lazyConnect: true,
+            redisOptions: {
+              connectTimeout: 5000,
+              maxRetriesPerRequest: 1,
+              ...(parsed.password ? { password: decodeURIComponent(parsed.password) } : {}),
+              ...(parsed.username && parsed.username !== 'default'
+                ? { username: decodeURIComponent(parsed.username) }
+                : {}),
+              ...(parsed.protocol === 'rediss:' ? { tls: {} } : {}),
+              ...buildIoRedisConnectionOptions({ allowSelfSignedCerts }),
+            },
+            ...(isTunneled
+              ? {
+                  natMap: () => ({ host: clusterHost, port: clusterPort }),
+                  scaleReads: 'master' as const,
+                }
+              : {}),
+          })
+        } else {
+          client = new Redis(url, {
+            connectTimeout: 5000,
+            maxRetriesPerRequest: 1,
+            lazyConnect: true,
+            ...buildIoRedisConnectionOptions({ allowSelfSignedCerts }),
+          })
+        }
 
-        await redis.connect()
-        await redis.ping()
+        await client.connect()
+        await client.ping()
 
         const latencyMs = Date.now() - startTime
 
@@ -352,8 +390,8 @@ const app = new Hono()
           400
         )
       } finally {
-        if (redis) {
-          await redis.quit().catch(() => {})
+        if (client) {
+          await client.quit().catch(() => {})
         }
       }
     }

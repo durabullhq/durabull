@@ -1,8 +1,104 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
+import { Cluster } from 'ioredis'
 import { z } from 'zod'
-import { getRedis } from '../lib/redis'
 import { getConnectionRedisOptions } from '../lib/connection-options'
+import { getRedis, type RedisClient } from '../lib/redis'
+
+/**
+ * Cursor state for cluster SCAN pagination. Encodes the current master being
+ * scanned and per-master Redis SCAN cursors so each page picks up where the
+ * previous one left off — without re-scanning the whole cluster.
+ */
+interface ClusterScanState {
+  /** Index of the master currently being scanned in the cluster.nodes('master') list */
+  i: number
+  /** Per-master SCAN cursors, parallel to cluster.nodes('master') */
+  c: string[]
+}
+
+const CLUSTER_CURSOR_PREFIX = 'cluster:'
+
+function encodeClusterCursor(state: ClusterScanState): string {
+  return `${CLUSTER_CURSOR_PREFIX}${Buffer.from(JSON.stringify(state), 'utf8').toString('base64url')}`
+}
+
+function decodeClusterCursor(cursor: string, masterCount: number): ClusterScanState {
+  if (!cursor.startsWith(CLUSTER_CURSOR_PREFIX) || cursor === '0') {
+    return { i: 0, c: new Array(masterCount).fill('0') }
+  }
+  try {
+    const decoded = Buffer.from(cursor.slice(CLUSTER_CURSOR_PREFIX.length), 'base64url').toString(
+      'utf8'
+    )
+    const parsed = JSON.parse(decoded) as ClusterScanState
+    // Defensive: pad/trim per-master cursors if cluster topology shifted between calls
+    const cursors = Array.isArray(parsed.c) ? parsed.c.slice(0, masterCount) : []
+    while (cursors.length < masterCount) cursors.push('0')
+    return {
+      i: Math.max(0, Math.min(parsed.i ?? 0, masterCount)),
+      c: cursors,
+    }
+  } catch {
+    return { i: 0, c: new Array(masterCount).fill('0') }
+  }
+}
+
+/**
+ * Cluster-aware SCAN: scans all master nodes in a cluster, or uses standard SCAN for standalone.
+ * For cluster mode, returns an encoded cursor that contains per-master SCAN cursors and the
+ * current node index, so successive calls resume where the previous page left off instead of
+ * re-scanning the entire cluster each page.
+ */
+async function clusterAwareScan(
+  client: RedisClient,
+  cursor: string,
+  pattern: string,
+  count: number
+): Promise<[string, string[]]> {
+  if (client instanceof Cluster) {
+    const masters = client.nodes('master')
+    if (masters.length === 0) return ['0', []]
+
+    const state = decodeClusterCursor(cursor, masters.length)
+    const collected: string[] = []
+
+    // Advance through masters, scanning each incrementally until we have enough keys
+    // or all masters are exhausted.
+    while (state.i < masters.length && collected.length < count) {
+      const master = masters[state.i]
+      const nodeCursor = state.c[state.i] ?? '0'
+      const [next, keys] = await master.scan(nodeCursor, 'MATCH', pattern, 'COUNT', count)
+      state.c[state.i] = next
+      collected.push(...keys)
+
+      if (next === '0') {
+        // This master is exhausted, move to the next one
+        state.i += 1
+      }
+    }
+
+    const allDone = state.i >= masters.length
+    const nextCursor = allDone ? '0' : encodeClusterCursor(state)
+    return [nextCursor, collected]
+  }
+  return client.scan(cursor, 'MATCH', pattern, 'COUNT', count)
+}
+
+/**
+ * Cluster-aware DBSIZE: sums dbsize across all master nodes for cluster mode.
+ */
+async function clusterAwareDbSize(client: RedisClient): Promise<number> {
+  if (client instanceof Cluster) {
+    const masters = client.nodes('master')
+    let total = 0
+    for (const master of masters) {
+      total += await master.dbsize()
+    }
+    return total
+  }
+  return client.dbsize()
+}
 
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
@@ -10,9 +106,23 @@ const MAX_PAGE_SIZE = 100
 // Redis data types
 type RedisDataType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'none' | 'unknown'
 
-// Helper to check if a key is a BullMQ-managed key
-function isBullKey(key: string): boolean {
-  return key.startsWith('bull:') || key.startsWith('bullmq:')
+/**
+ * Check if a key is a BullMQ-managed key for this connection.
+ *
+ * BullMQ keys follow the pattern `<prefix>:<queueName>:<...>`. The prefix is
+ * usually `bull` but can be customized per connection (e.g. `{bull}` or
+ * `{myprefix}` for cluster-safe hash tagging).
+ *
+ * We always block the BullMQ default prefixes (`bull:`, `bullmq:`) as a safety
+ * net for misconfigured connections, and additionally block the connection's
+ * configured prefix when it differs from the defaults.
+ */
+function isBullKey(key: string, connectionPrefix?: string): boolean {
+  if (key.startsWith('bull:') || key.startsWith('bullmq:')) return true
+  if (connectionPrefix && connectionPrefix !== 'bull' && connectionPrefix !== 'bullmq') {
+    return key.startsWith(`${connectionPrefix}:`)
+  }
+  return false
 }
 
 const app = new Hono()
@@ -34,18 +144,28 @@ const app = new Hono()
     async (c) => {
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
+      const connectionPrefix = c.get('connectionPrefix')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const { pattern, cursor, pageSize, excludeBull } = c.req.valid('query')
 
-      const redis = await getRedis(connectionId, connectionUrl, undefined, redisOptions)
+      const redis = await getRedis(
+        connectionId,
+        connectionUrl,
+        undefined,
+        redisOptions,
+        connectionMode
+      )
 
       // Use SCAN for efficient key discovery
       // When excluding bull keys, we need to scan more to get enough non-bull keys
       const scanCount = excludeBull ? pageSize * 4 : pageSize * 2
-      const [nextCursor, rawKeys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', scanCount)
+      const [nextCursor, rawKeys] = await clusterAwareScan(redis, cursor, pattern, scanCount)
 
       // Filter out bull keys if requested
-      const filteredKeys = excludeBull ? rawKeys.filter((key) => !isBullKey(key)) : rawKeys
+      const filteredKeys = excludeBull
+        ? rawKeys.filter((key) => !isBullKey(key, connectionPrefix))
+        : rawKeys
 
       // Get key info for each key (type, TTL)
       const keyInfoPromises = filteredKeys.slice(0, pageSize).map(async (key) => {
@@ -73,7 +193,7 @@ const app = new Hono()
       // Try to get approximate total count
       let total: number | undefined
       try {
-        total = await redis.dbsize()
+        total = await clusterAwareDbSize(redis)
       } catch {
         // DBSIZE not available
       }
@@ -108,13 +228,20 @@ const app = new Hono()
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const { key } = c.req.valid('param')
       const { limit, offset } = c.req.valid('query')
 
       // URL decode the key since it might contain special characters
       const decodedKey = decodeURIComponent(key)
 
-      const redis = await getRedis(connectionId, connectionUrl, undefined, redisOptions)
+      const redis = await getRedis(
+        connectionId,
+        connectionUrl,
+        undefined,
+        redisOptions,
+        connectionMode
+      )
 
       // Get key type and TTL
       const [type, ttl] = await Promise.all([redis.type(decodedKey), redis.ttl(decodedKey)])
@@ -264,12 +391,14 @@ const app = new Hono()
     async (c) => {
       const connectionId = c.get('connectionId')
       const connectionUrl = c.get('connectionUrl')
+      const connectionPrefix = c.get('connectionPrefix')
       const redisOptions = getConnectionRedisOptions(c)
+      const connectionMode = c.get('connectionMode')
       const { key } = c.req.valid('param')
       const decodedKey = decodeURIComponent(key)
 
       // Prevent deletion of BullMQ-managed keys
-      if (isBullKey(decodedKey)) {
+      if (isBullKey(decodedKey, connectionPrefix)) {
         return c.json(
           {
             error: 'Cannot delete BullMQ keys',
@@ -280,7 +409,13 @@ const app = new Hono()
         )
       }
 
-      const redis = await getRedis(connectionId, connectionUrl, undefined, redisOptions)
+      const redis = await getRedis(
+        connectionId,
+        connectionUrl,
+        undefined,
+        redisOptions,
+        connectionMode
+      )
       const deleted = await redis.del(decodedKey)
 
       return c.json({ success: deleted > 0, deleted })

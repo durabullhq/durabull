@@ -73,6 +73,7 @@ function createConnection(): RedisConnection {
     organizationId: TEST_ORG_ID,
     name: 'Primary Redis',
     url: 'redis://localhost:6379/0',
+    mode: 'standalone',
     environment: 'development',
     isDefault: true,
     prefix: 'bull',

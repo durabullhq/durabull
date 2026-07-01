@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { redisDiscoveredQueueRepository } from '@durabull/dal'
-import type { RedisConnectionOptions } from './redis'
-import { scanQueuesPage } from './redis'
+import { type ConnectionMode, redisDiscoveredQueueRepository } from '@durabull/dal'
+import { type RedisConnectionOptions, scanQueuesPage } from './redis'
 
 const DEFAULT_DISCOVERY_SCAN_COUNT = 1000
 
@@ -74,7 +73,8 @@ async function runQueueDiscovery(
   connectionUrl: string,
   scanCount: number,
   prefix = 'bull',
-  redisOptions?: RedisConnectionOptions
+  redisOptions?: RedisConnectionOptions,
+  mode: ConnectionMode = 'standalone'
 ): Promise<void> {
   const runtime = discoveryStateByConnection.get(connectionId)
   if (!runtime) return
@@ -91,7 +91,8 @@ async function runQueueDiscovery(
       cursor,
       scanCount,
       prefix,
-      redisOptions
+      redisOptions,
+      mode
     )
     cursor = page.cursor
     runtime.scannedPages += 1
@@ -132,6 +133,7 @@ export async function startQueueDiscovery(
     scanCount?: number
     prefix?: string
     allowSelfSignedCerts?: boolean
+    mode?: ConnectionMode
   }
 ): Promise<QueueDiscoveryStatus> {
   const existingRun = activeDiscoveryRuns.get(connectionId)
@@ -159,12 +161,14 @@ export async function startQueueDiscovery(
 
   discoveryStateByConnection.set(connectionId, runtime)
 
+  const mode = options?.mode ?? 'standalone'
   const runPromise = runQueueDiscovery(
     connectionId,
     connectionUrl,
     scanCount,
     prefix,
-    redisOptions
+    redisOptions,
+    mode
   )
     .catch((error) => {
       if (discoveryStateByConnection.get(connectionId) === runtime) {

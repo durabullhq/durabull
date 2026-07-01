@@ -10,5 +10,5 @@ export type RedisConnection = typeof redisConnection.$inferSelect
  */
 export type NewRedisConnection = typeof redisConnection.$inferInsert
 
-// Re-export ConnectionEnvironment from schema for backwards compatibility
-export type { ConnectionEnvironment } from './schema'
+// Re-export types from schema for backwards compatibility
+export type { ConnectionEnvironment, ConnectionMode } from './schema'

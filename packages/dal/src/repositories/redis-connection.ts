@@ -170,7 +170,7 @@ export const redisConnectionRepository = {
     data: Partial<
       Pick<
         RedisConnection,
-        'name' | 'url' | 'isDefault' | 'environment' | 'prefix' | 'allowSelfSignedCerts'
+        'name' | 'url' | 'mode' | 'isDefault' | 'environment' | 'prefix' | 'allowSelfSignedCerts'
       >
     >
   ): Promise<RedisConnection | null> {
@@ -180,7 +180,7 @@ export const redisConnectionRepository = {
     const updateData: Partial<
       Pick<
         RedisConnection,
-        'name' | 'url' | 'isDefault' | 'environment' | 'prefix' | 'allowSelfSignedCerts'
+        'name' | 'url' | 'mode' | 'isDefault' | 'environment' | 'prefix' | 'allowSelfSignedCerts'
       >
     > = { ...data }
     if (updateData.url !== undefined) {
