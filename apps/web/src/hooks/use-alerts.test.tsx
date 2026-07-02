@@ -9,6 +9,8 @@ import {
   useCreateAlertRule,
   useGlobalAlertEvents,
   useResolveAlertEvent,
+  useSnoozeAlertRule,
+  useUnsnoozeAlertRule,
 } from '@/hooks/use-alerts'
 
 const {
@@ -22,6 +24,8 @@ const {
   resolveEventPostMock,
   acknowledgeEventPostMock,
   acknowledgeEventDeleteMock,
+  snoozeRulePostMock,
+  snoozeRuleDeleteMock,
   testRulePostMock,
   handleResMock,
 } = vi.hoisted(() => ({
@@ -35,6 +39,8 @@ const {
   resolveEventPostMock: vi.fn(),
   acknowledgeEventPostMock: vi.fn(),
   acknowledgeEventDeleteMock: vi.fn(),
+  snoozeRulePostMock: vi.fn(),
+  snoozeRuleDeleteMock: vi.fn(),
   testRulePostMock: vi.fn(),
   handleResMock: vi.fn(),
 }))
@@ -58,6 +64,10 @@ vi.mock('@/lib/api', () => ({
             ':ruleId': {
               $patch: updateRulePatchMock,
               $delete: deleteRuleDeleteMock,
+              snooze: {
+                $post: snoozeRulePostMock,
+                $delete: snoozeRuleDeleteMock,
+              },
               test: {
                 $post: testRulePostMock,
               },
@@ -145,6 +155,8 @@ describe('use-alerts', () => {
     resolveEventPostMock.mockReset()
     acknowledgeEventPostMock.mockReset()
     acknowledgeEventDeleteMock.mockReset()
+    snoozeRulePostMock.mockReset()
+    snoozeRuleDeleteMock.mockReset()
     testRulePostMock.mockReset()
     handleResMock.mockReset()
   })
@@ -304,6 +316,88 @@ describe('use-alerts', () => {
     })
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'summary'] })
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'global-events'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ['alerts', 'connection', 'conn-1'],
+    })
+  })
+
+  it('snoozes a rule, normalizes the snoozed state, and invalidates alert queries', async () => {
+    const queryClient = createQueryClient()
+    const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    const mutedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+
+    snoozeRulePostMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      rule: {
+        id: 'rule-1',
+        organizationId: 'org-1',
+        connectionId: 'conn-1',
+        queueName: null,
+        queueFilterMode: 'include',
+        filterQueueNames: ['email-send'],
+        name: 'Delivery failures',
+        type: 'failure_threshold',
+        config: { count: 5, windowMinutes: 5 },
+        enabled: true,
+        notificationChannels: [],
+        cooldownMinutes: 30,
+        mutedUntil,
+        state: 'snoozed',
+      },
+    })
+
+    const { result } = renderHook(() => useSnoozeAlertRule('conn-1'), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    const data = await result.current.mutateAsync({ ruleId: 'rule-1', minutes: 60 })
+
+    expect(snoozeRulePostMock).toHaveBeenCalledWith({
+      param: { connectionId: 'conn-1', ruleId: 'rule-1' },
+      json: { minutes: 60 },
+    })
+    expect(data.rule).toMatchObject({ mutedUntil, state: 'snoozed' })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'summary'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'global-events'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ['alerts', 'connection', 'conn-1'],
+    })
+  })
+
+  it('unsnoozes a rule via DELETE and invalidates connection queries', async () => {
+    const queryClient = createQueryClient()
+    const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    snoozeRuleDeleteMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      rule: {
+        id: 'rule-1',
+        organizationId: 'org-1',
+        connectionId: 'conn-1',
+        queueName: null,
+        queueFilterMode: 'include',
+        filterQueueNames: ['email-send'],
+        name: 'Delivery failures',
+        type: 'failure_threshold',
+        config: { count: 5, windowMinutes: 5 },
+        enabled: true,
+        notificationChannels: [],
+        cooldownMinutes: 30,
+        mutedUntil: null,
+        state: 'active',
+      },
+    })
+
+    const { result } = renderHook(() => useUnsnoozeAlertRule('conn-1'), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    const data = await result.current.mutateAsync('rule-1')
+
+    expect(snoozeRuleDeleteMock).toHaveBeenCalledWith({
+      param: { connectionId: 'conn-1', ruleId: 'rule-1' },
+    })
+    expect(data.rule).toMatchObject({ mutedUntil: null, state: 'active' })
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ['alerts', 'connection', 'conn-1'],
     })

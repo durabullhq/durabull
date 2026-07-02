@@ -2,11 +2,16 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { BellRing, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertTypeBadge, getAlertTypeMeta } from '@/components/alerts/alert-primitives'
+import {
+  AlertTypeBadge,
+  formatAlertDate,
+  getAlertTypeMeta,
+  RuleStateBadge,
+} from '@/components/alerts/alert-primitives'
 import { AlertsViewSwitcher } from '@/components/alerts/alerts-view-switcher'
+import { SnoozeMenu } from '@/components/alerts/snooze-menu'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { useConnection } from '@/components/connection-provider'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -18,13 +23,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   type AlertRuleRecord,
   useConnectionAlertRules,
   useDeleteAlertRule,
   useUpdateAlertRule,
 } from '@/hooks/use-alerts'
-import { formatNumber } from '@/lib/utils'
+import { cn, formatNumber } from '@/lib/utils'
 
 export function ConnectionRulesView({
   orgSlug,
@@ -127,6 +133,7 @@ export function ConnectionRulesView({
       ) : (
         <RulesTable
           rules={rules}
+          connectionId={connectionId}
           mutatingRuleId={mutatingRuleId}
           onRowOpen={(ruleId) =>
             navigate({
@@ -151,6 +158,7 @@ export function ConnectionRulesView({
 
 function RulesTable({
   rules,
+  connectionId,
   mutatingRuleId,
   onRowOpen,
   onToggleRule,
@@ -158,6 +166,7 @@ function RulesTable({
   onDeleteRule,
 }: {
   rules: AlertRuleRecord[]
+  connectionId: string
   mutatingRuleId: string | null
   onRowOpen: (ruleId: string) => void
   onToggleRule: (rule: AlertRuleRecord, enabled: boolean) => void
@@ -184,11 +193,12 @@ function RulesTable({
             const meta = getAlertTypeMeta(rule.type)
             const channels = rule.notificationChannels.filter((channel) => channel.type === 'email')
             const isBusy = mutatingRuleId === rule.id
+            const isSnoozed = rule.state === 'snoozed'
 
             return (
               <TableRow
                 key={rule.id}
-                className="cursor-pointer"
+                className={cn('cursor-pointer', isSnoozed && 'text-muted-foreground')}
                 onClick={() => onRowOpen(rule.id)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
@@ -210,9 +220,26 @@ function RulesTable({
                   <AlertTypeBadge type={rule.type} compact />
                 </TableCell>
                 <TableCell>
-                  <Badge variant={rule.enabled ? 'success' : 'secondary'}>
-                    {rule.enabled ? 'Enabled' : 'Muted'}
-                  </Badge>
+                  {isSnoozed ? (
+                    <TooltipProvider delayDuration={200}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex">
+                            <RuleStateBadge state={rule.state} mutedUntil={rule.mutedUntil} />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-64 space-y-1">
+                          <p>Snoozed until {formatAlertDate(rule.mutedUntil)}</p>
+                          <p className="text-primary-foreground/80">
+                            Snoozing silences checks temporarily — open incidents stay until it
+                            wakes. Muting is permanent until re-enabled.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <RuleStateBadge state={rule.state} mutedUntil={rule.mutedUntil} />
+                  )}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {rule.queueFilterMode === 'include' && rule.filterQueueNames.length > 0
@@ -238,6 +265,7 @@ function RulesTable({
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
+                    <SnoozeMenu rule={rule} connectionId={connectionId} disabled={isBusy} />
                     <Button
                       type="button"
                       variant={rule.enabled ? 'outline' : 'default'}

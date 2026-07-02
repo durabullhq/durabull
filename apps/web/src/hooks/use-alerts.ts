@@ -24,6 +24,14 @@ type DeleteAlertRuleResponse = InferResponseType<
   ConnectionAlertsEndpoint['rules'][':ruleId']['$delete'],
   200
 >
+type SnoozeAlertRuleResponse = InferResponseType<
+  ConnectionAlertsEndpoint['rules'][':ruleId']['snooze']['$post'],
+  200
+>
+type UnsnoozeAlertRuleResponse = InferResponseType<
+  ConnectionAlertsEndpoint['rules'][':ruleId']['snooze']['$delete'],
+  200
+>
 type ResolveAlertEventResponse = InferResponseType<
   ConnectionAlertsEndpoint['events'][':eventId']['resolve']['$post'],
   200
@@ -630,6 +638,37 @@ export function useDeleteAlertRule(connectionId: string | undefined) {
         param: { connectionId: connectionId!, ruleId },
       })
       return handleRes<DeleteAlertRuleResponse>(res)
+    },
+    onSuccess: () => invalidateAlertQueries(queryClient, connectionId),
+  })
+}
+
+export function useSnoozeAlertRule(connectionId: string | undefined) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ ruleId, minutes }: { ruleId: string; minutes: number }) => {
+      const res = await api.c[':connectionId'].alerts.rules[':ruleId'].snooze.$post({
+        param: { connectionId: connectionId!, ruleId },
+        json: { minutes },
+      })
+      const data = await handleRes<SnoozeAlertRuleResponse>(res)
+      return { rule: normalizeAlertRule(data.rule) }
+    },
+    onSuccess: () => invalidateAlertQueries(queryClient, connectionId),
+  })
+}
+
+export function useUnsnoozeAlertRule(connectionId: string | undefined) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (ruleId: string) => {
+      const res = await api.c[':connectionId'].alerts.rules[':ruleId'].snooze.$delete({
+        param: { connectionId: connectionId!, ruleId },
+      })
+      const data = await handleRes<UnsnoozeAlertRuleResponse>(res)
+      return { rule: normalizeAlertRule(data.rule) }
     },
     onSuccess: () => invalidateAlertQueries(queryClient, connectionId),
   })
