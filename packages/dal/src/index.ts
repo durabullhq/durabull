@@ -56,11 +56,21 @@ export {
   queueFilterModes,
 } from './db/schemas/alert-rule/schema'
 export type { AlertRule, NewAlertRule } from './db/schemas/alert-rule/types'
-export { alertWebhookDestination } from './db/schemas/alert-webhook-destination/schema'
+export {
+  type AlertDestinationConfig,
+  type AlertDestinationType,
+  type AlertEmailDestinationConfig,
+  type AlertLinearDestinationConfig,
+  alertDestination,
+  alertDestinationTypes,
+  alertWebhookDestination,
+} from './db/schemas/alert-destination/schema'
 export type {
+  AlertDestination,
   AlertWebhookDestination,
+  NewAlertDestination,
   NewAlertWebhookDestination,
-} from './db/schemas/alert-webhook-destination/types'
+} from './db/schemas/alert-destination/types'
 export * as authSchema from './db/schemas/auth/schema'
 // Auth schema exports for Better Auth integration
 export { authAccount, authSession, authVerification } from './db/schemas/auth/schema'
@@ -164,7 +174,10 @@ export { alertCheckCursorRepository } from './repositories/alert-check-cursor'
 export { alertDeliveryRepository } from './repositories/alert-delivery'
 export { alertEventRepository } from './repositories/alert-event'
 export { alertRuleRepository } from './repositories/alert-rule'
-export { alertWebhookDestinationRepository } from './repositories/alert-webhook-destination'
+export {
+  alertDestinationRepository,
+  alertWebhookDestinationRepository,
+} from './repositories/alert-destination'
 export { linearIntegrationRepository } from './repositories/linear-integration'
 export { linearJobIssueRepository } from './repositories/linear-job-issue'
 export { linearOauthStateRepository } from './repositories/linear-oauth-state'

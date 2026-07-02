@@ -89,7 +89,7 @@ export const relations = defineRelations(tables, (r) => ({
     redisConnections: r.many.redisConnection(),
     alertRules: r.many.alertRule(),
     alertEvents: r.many.alertEvent(),
-    alertWebhookDestinations: r.many.alertWebhookDestination(),
+    alertDestinations: r.many.alertDestination(),
     linearIntegration: r.one.linearIntegration(),
     linearOauthStates: r.many.linearOauthState(),
     linearJobIssues: r.many.linearJobIssue(),
@@ -175,9 +175,9 @@ export const relations = defineRelations(tables, (r) => ({
       to: r.organization.id,
     }),
   },
-  alertWebhookDestination: {
+  alertDestination: {
     organization: r.one.organization({
-      from: r.alertWebhookDestination.organizationId,
+      from: r.alertDestination.organizationId,
       to: r.organization.id,
     }),
   },

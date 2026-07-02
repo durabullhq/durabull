@@ -59,6 +59,7 @@ function createRule(overrides: Partial<AlertRule> = {}): AlertRule {
     enabled: true,
     notificationChannels: [],
     cooldownMinutes: 30,
+    mutedUntil: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

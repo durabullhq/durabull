@@ -1,8 +1,8 @@
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { alertRule } from '../db/schemas/alert-rule/schema'
-import { alertWebhookDestination } from '../db/schemas/alert-webhook-destination/schema'
-import type { AlertWebhookDestination } from '../db/schemas/alert-webhook-destination/types'
+import { alertWebhookDestination } from '../db/schemas/alert-destination/schema'
+import type { AlertWebhookDestination } from '../db/schemas/alert-destination/types'
 import { encryptSecret } from '../db/secret-encryption'
 
 export interface CreateAlertWebhookDestinationInput {
@@ -141,3 +141,5 @@ export const alertWebhookDestinationRepository = {
     return count === undefined ? 0 : Number(count)
   },
 }
+
+export const alertDestinationRepository = alertWebhookDestinationRepository

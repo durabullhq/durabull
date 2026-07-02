@@ -7,7 +7,7 @@ import { closeDb, getDb } from '../db/client'
 import { organization } from '../db/schemas/organization/schema'
 import { decryptSecret } from '../db/secret-encryption'
 import { alertRuleRepository } from './alert-rule'
-import { alertWebhookDestinationRepository } from './alert-webhook-destination'
+import { alertWebhookDestinationRepository } from './alert-destination'
 import { redisConnectionRepository } from './redis-connection'
 
 const TEST_ORG_ID = 'alert-webhook-destination-org'

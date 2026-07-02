@@ -147,7 +147,7 @@ const app = new Hono()
       destinationId,
       organizationId
     )
-    if (!destination) {
+    if (!destination || !destination.url) {
       return c.json({ error: 'Webhook destination not found' }, 404)
     }
 

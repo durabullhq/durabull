@@ -18,11 +18,22 @@ export type { AlertEvent, NewAlertEvent } from './alert-event/types'
 // Alert Rule schema exports
 export { type AlertRuleType, alertRule, alertRuleTypes } from './alert-rule/schema'
 export type { AlertRule, NewAlertRule } from './alert-rule/types'
-export { alertWebhookDestination } from './alert-webhook-destination/schema'
+// Alert Destination schema exports
+export {
+  type AlertDestinationConfig,
+  type AlertDestinationType,
+  type AlertEmailDestinationConfig,
+  type AlertLinearDestinationConfig,
+  alertDestination,
+  alertDestinationTypes,
+  alertWebhookDestination,
+} from './alert-destination/schema'
 export type {
+  AlertDestination,
   AlertWebhookDestination,
+  NewAlertDestination,
   NewAlertWebhookDestination,
-} from './alert-webhook-destination/types'
+} from './alert-destination/types'
 // Auth schema exports
 export { authAccount, authSession, authVerification } from './auth/schema'
 export type {

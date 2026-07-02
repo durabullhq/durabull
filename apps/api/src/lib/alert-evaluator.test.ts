@@ -234,6 +234,7 @@ describe('alert evaluator', () => {
       enabled: true,
       notificationChannels: [],
       cooldownMinutes: 30,
+      mutedUntil: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } satisfies AlertRule

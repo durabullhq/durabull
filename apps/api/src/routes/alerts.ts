@@ -654,16 +654,17 @@ async function resolveWebhookTestChannels(
       destinationId,
       organizationId
     )
-    if (!destination) {
+    if (!destination || !destination.url) {
       results.push({
         url: `destination:${destinationId}`,
         error: 'Webhook destination not found.',
       })
       continue
     }
+    const destinationUrl = destination.url
     if (!destination.enabled) {
       results.push({
-        url: destination.url,
+        url: destinationUrl,
         error: `Webhook destination "${destination.name}" is disabled.`,
       })
       continue
@@ -671,14 +672,14 @@ async function resolveWebhookTestChannels(
 
     try {
       results.push({
-        url: destination.url,
+        url: destinationUrl,
         secret: destination.encryptedSigningSecret
           ? decryptSecret(destination.encryptedSigningSecret)
           : undefined,
       })
     } catch {
       results.push({
-        url: destination.url,
+        url: destinationUrl,
         error: `Webhook destination "${destination.name}" signing secret could not be decrypted.`,
       })
     }
