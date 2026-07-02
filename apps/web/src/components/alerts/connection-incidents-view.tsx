@@ -206,14 +206,19 @@ export function ConnectionIncidentsView({
       </div>
 
       {eventsQuery.isError ? (
-        <IncidentsErrorCard message="Failed to load alert events. Please try refreshing the page." />
+        <IncidentsErrorCard
+          message="Failed to load alert events. Retry, or refresh the page."
+          onRetry={() => void eventsQuery.refetch()}
+        />
       ) : eventsQuery.isLoading ? (
         <IncidentsLoadingState />
+      ) : status === 'open' && events.length === 0 ? (
+        <NoOpenIncidentsState orgSlug={orgSlug} connectionId={connectionId} />
       ) : (
         <AlertEventsTable
           orgSlug={orgSlug}
           events={events}
-          emptyTitle={status === 'open' ? 'No open incidents' : 'No incidents recorded yet'}
+          emptyTitle="No incidents match this filter"
           emptyCopy="As alert rules evaluate in the background, firing and resolved incidents will appear here with queue-level context."
           getRuleName={(event) => ruleNameById.get(event.alertRuleId)}
           onResolve={(event) => handleResolveEvent(event.id)}
@@ -223,6 +228,41 @@ export function ConnectionIncidentsView({
         />
       )}
     </div>
+  )
+}
+
+function NoOpenIncidentsState({
+  orgSlug,
+  connectionId,
+}: {
+  orgSlug: string
+  connectionId: string
+}) {
+  return (
+    <Card className="border-border/70 bg-muted/15">
+      <CardContent className="flex flex-col items-center justify-center py-14 text-center">
+        <div className="rounded-full border border-status-success/25 bg-status-success/10 p-4 text-status-success">
+          <CircleCheck className="h-8 w-8" />
+        </div>
+        <h3 className="mt-5 text-xl font-semibold">No open incidents</h3>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+          Nothing is firing on this connection right now. As alert rules evaluate in the background,
+          new incidents will appear here with queue-level context.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link to="/$orgSlug/c/$connectionId/alerts/rules" params={{ orgSlug, connectionId }}>
+              View rules
+            </Link>
+          </Button>
+          <Button asChild size="sm">
+            <Link to="/$orgSlug/c/$connectionId/alerts/new" params={{ orgSlug, connectionId }}>
+              Create rule
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -261,23 +301,27 @@ function IncidentMetricCard({
 
 function IncidentsLoadingState() {
   return (
-    <Card>
-      <CardContent className="space-y-3 pt-6">
+    <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/70">
+      <Skeleton className="h-10 w-full rounded-none" />
+      <div className="space-y-2 p-3">
         {Array.from({ length: 6 }, (_, index) => (
-          <Skeleton key={index} className="h-14 rounded-xl" />
+          <Skeleton key={index} className="h-12 rounded-lg" />
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
-function IncidentsErrorCard({ message }: { message: string }) {
+function IncidentsErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <Card className="border-destructive/30 bg-destructive/5">
       <CardContent className="flex flex-col items-center justify-center py-10 text-center">
         <ShieldCheck className="h-8 w-8 text-destructive" />
         <h3 className="mt-4 text-lg font-semibold">Unable to load alert data</h3>
         <p className="mt-2 max-w-md text-sm text-muted-foreground">{message}</p>
+        <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>
+          Retry
+        </Button>
       </CardContent>
     </Card>
   )

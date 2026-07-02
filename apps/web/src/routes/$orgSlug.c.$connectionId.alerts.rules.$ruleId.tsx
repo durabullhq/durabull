@@ -1,7 +1,11 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { AlertRuleBuilder } from '@/components/alerts/alert-rule-builder-v2'
+import {
+  AlertRuleBuilder,
+  AlertRuleBuilderSkeleton,
+} from '@/components/alerts/alert-rule-builder-v2'
 import { useConnection } from '@/components/connection-provider'
+import { Button } from '@/components/ui/button'
 import {
   useConnectionAlertRules,
   useLinearIntegration,
@@ -26,7 +30,27 @@ export function EditAlertRuleRoute() {
   const rule = (rulesQuery.data?.rules ?? []).find((candidate) => candidate.id === ruleId) ?? null
 
   if (rulesQuery.isLoading) {
-    return <div className="py-8 text-sm text-muted-foreground">Loading alert rule...</div>
+    return <AlertRuleBuilderSkeleton />
+  }
+
+  if (rulesQuery.isError) {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-6 py-8 text-center">
+        <h2 className="text-lg font-semibold">Unable to load alert rule</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Failed to load alert rules for this connection. Retry, or refresh the page.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-4"
+          onClick={() => void rulesQuery.refetch()}
+        >
+          Retry
+        </Button>
+      </div>
+    )
   }
 
   if (!rule) {

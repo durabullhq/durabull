@@ -1,6 +1,7 @@
 import { Link2, Mail, Plus, Send, Webhook } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SecretInput } from '@/components/secret-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -238,35 +239,18 @@ export function AlertDestinationsPage() {
         />
       ) : null}
 
-      <Dialog
+      <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null)
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete destination</DialogTitle>
-            <DialogDescription>
-              Delete "{deleteTarget?.name}"? Rules can no longer route to it, and this cannot be
-              undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => deleteTarget && void handleDeleteConfirmed(deleteTarget)}
-              disabled={deleteDestination.isPending}
-            >
-              {deleteDestination.isPending ? 'Deleting...' : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Delete destination"
+        description={`Delete "${deleteTarget?.name ?? ''}"? Rules can no longer route to it, and this cannot be undone.`}
+        confirmLabel="Delete"
+        destructive
+        isConfirming={deleteDestination.isPending}
+        onConfirm={() => deleteTarget && void handleDeleteConfirmed(deleteTarget)}
+      />
     </div>
   )
 }

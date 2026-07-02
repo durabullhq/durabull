@@ -79,8 +79,8 @@ export function AlertEventsTable({
             <TableHead>Rule</TableHead>
             <TableHead>Queue</TableHead>
             <TableHead>Summary</TableHead>
-            <TableHead>Delivery</TableHead>
-            <TableHead>Fired</TableHead>
+            <TableHead className="hidden md:table-cell">Delivery</TableHead>
+            <TableHead className="hidden md:table-cell">Fired</TableHead>
             <TableHead className="w-[140px] text-right">Action</TableHead>
           </TableRow>
         </TableHeader>
@@ -159,10 +159,10 @@ export function AlertEventsTable({
                     ) : null}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <DeliverySummary event={event} />
                 </TableCell>
-                <TableCell className="text-xs text-muted-foreground">
+                <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
                   {formatAlertDate(event.firedAt)}
                 </TableCell>
                 <TableCell className="text-right">

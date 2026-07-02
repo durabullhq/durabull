@@ -75,6 +75,13 @@ vi.mock('@/hooks/use-alerts', () => ({
   useDeleteAlertRule: useDeleteAlertRuleMock,
   useSnoozeAlertRule: useSnoozeAlertRuleMock,
   useUnsnoozeAlertRule: useUnsnoozeAlertRuleMock,
+  useLinearIntegration: () => ({
+    data: {
+      integration: {
+        validationStatus: 'valid',
+      },
+    },
+  }),
 }))
 
 // SnoozeMenu renders through the Radix dropdown; stub it inline so the menu
@@ -135,6 +142,7 @@ describe('ConnectionRulesView', () => {
     })
     useDeleteAlertRuleMock.mockReturnValue({
       mutateAsync: deleteRuleMutateAsyncMock,
+      isPending: false,
     })
     useSnoozeAlertRuleMock.mockReturnValue({
       mutateAsync: snoozeRuleMutateAsyncMock,
@@ -144,14 +152,9 @@ describe('ConnectionRulesView', () => {
       mutateAsync: unsnoozeRuleMutateAsyncMock,
       isPending: false,
     })
-
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true)
-    )
   })
 
-  it('toggles and deletes rules', async () => {
+  it('toggles rules and deletes them through the confirm dialog', async () => {
     const user = userEvent.setup()
 
     render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
@@ -171,10 +174,30 @@ describe('ConnectionRulesView', () => {
 
     await user.click(screen.getByRole('button', { name: 'Delete' }))
 
+    // Deleting requires confirmation through the shared dialog, which warns
+    // that open incidents will be resolved.
+    expect(deleteRuleMutateAsyncMock).not.toHaveBeenCalled()
+    expect(
+      screen.getByText(/Any open incidents for this rule will be resolved/)
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Delete rule' }))
+
     await waitFor(() => expect(deleteRuleMutateAsyncMock).toHaveBeenCalledWith('rule-1'))
     expect(toastSuccessMock).toHaveBeenCalledWith('Alert rule deleted', {
       description: 'Delivery failures was removed from this connection.',
     })
+  })
+
+  it('keeps the rule when the delete confirmation is cancelled', async () => {
+    const user = userEvent.setup()
+
+    render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(deleteRuleMutateAsyncMock).not.toHaveBeenCalled()
   })
 
   it('opens the rule editor under the rules sub-route on row click', async () => {
@@ -290,7 +313,8 @@ describe('ConnectionRulesView', () => {
     expect(screen.getByText('ops@example.com, On-call pipeline, Legacy hook')).toBeInTheDocument()
   })
 
-  it('shows the empty state when no rules exist', () => {
+  it('shows template cards in the empty state and navigates into the builder', async () => {
+    const user = userEvent.setup()
     useConnectionAlertRulesMock.mockReturnValue({
       isLoading: false,
       data: { rules: [] },
@@ -298,6 +322,37 @@ describe('ConnectionRulesView', () => {
 
     render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
 
-    expect(screen.getByText('No alert rules yet')).toBeInTheDocument()
+    expect(screen.getByText('Start with a template')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('rule-template-failure-spike'))
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/$orgSlug/c/$connectionId/alerts/new',
+      params: { orgSlug: 'acme', connectionId: 'conn-1' },
+      search: { template: 'failure-spike' },
+    })
+
+    await user.click(screen.getByTestId('rule-template-scratch'))
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/$orgSlug/c/$connectionId/alerts/new',
+      params: { orgSlug: 'acme', connectionId: 'conn-1' },
+    })
+  })
+
+  it('shows an error card with a retry action when rules fail to load', async () => {
+    const user = userEvent.setup()
+    const refetchMock = vi.fn()
+    useConnectionAlertRulesMock.mockReturnValue({
+      isLoading: false,
+      isError: true,
+      refetch: refetchMock,
+      data: undefined,
+    })
+
+    render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
+
+    expect(screen.getByText('Unable to load alert data')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(refetchMock).toHaveBeenCalled()
   })
 })

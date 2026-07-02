@@ -219,6 +219,53 @@ describe('ConnectionIncidentsView', () => {
     })
   })
 
+  it('shows the calm success empty state when no incidents are open', () => {
+    useConnectionAlertEventsMock.mockReturnValue({
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      data: { events: [] },
+    })
+
+    render(
+      <ConnectionIncidentsView
+        orgSlug="acme"
+        connectionId="conn-1"
+        status="open"
+        onStatusChange={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('No open incidents')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'View rules' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Create rule' })).toBeInTheDocument()
+  })
+
+  it('shows an error card with a retry action when events fail to load', async () => {
+    const user = userEvent.setup()
+    const refetchMock = vi.fn()
+    useConnectionAlertEventsMock.mockReturnValue({
+      isLoading: false,
+      isError: true,
+      refetch: refetchMock,
+      data: undefined,
+    })
+
+    render(
+      <ConnectionIncidentsView
+        orgSlug="acme"
+        connectionId="conn-1"
+        status="open"
+        onStatusChange={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Unable to load alert data')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(refetchMock).toHaveBeenCalled()
+  })
+
   it('propagates status filter changes through the select', async () => {
     const user = userEvent.setup()
     const onStatusChange = vi.fn()

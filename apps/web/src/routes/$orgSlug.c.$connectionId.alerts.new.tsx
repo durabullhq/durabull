@@ -2,7 +2,10 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { AlertRuleBuilder } from '@/components/alerts/alert-rule-builder-v2'
+import {
+  AlertRuleBuilder,
+  AlertRuleBuilderSkeleton,
+} from '@/components/alerts/alert-rule-builder-v2'
 import { useConnection } from '@/components/connection-provider'
 import {
   useConnectionAlertRules,
@@ -33,7 +36,7 @@ export function CreateAlertRuleRoute() {
   const rulesQuery = useConnectionAlertRules(from ? connectionId : undefined)
 
   if (from && rulesQuery.isLoading) {
-    return <div className="py-8 text-sm text-muted-foreground">Loading alert rule...</div>
+    return <AlertRuleBuilderSkeleton />
   }
 
   const duplicateFrom = from

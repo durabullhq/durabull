@@ -43,6 +43,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import type {
   AlertDestinationRecord,
   AlertRuleMutationInput,
@@ -1322,5 +1323,24 @@ function LiveTestResultPanel({ result }: { result: AlertTestResult }) {
         ) : null}
       </div>
     </section>
+  )
+}
+
+/** Loading placeholder matching the builder layout: sentence bar + panel blocks. */
+export function AlertRuleBuilderSkeleton() {
+  return (
+    <div className="min-w-0">
+      <div className="-mt-2 border-b border-border/70 py-4">
+        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3">
+          <Skeleton className="h-7 w-full max-w-md" />
+          <Skeleton className="h-9 w-28" />
+        </div>
+      </div>
+      <div className="mx-auto mt-6 w-full max-w-3xl space-y-6 pb-16">
+        {Array.from({ length: 4 }, (_, index) => (
+          <Skeleton key={index} className="h-44 rounded-lg" />
+        ))}
+      </div>
+    </div>
   )
 }

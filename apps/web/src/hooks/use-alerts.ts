@@ -40,10 +40,6 @@ type AcknowledgeAlertEventResponse = InferResponseType<
   ConnectionAlertsEndpoint['events'][':eventId']['acknowledge']['$post'],
   200
 >
-type UnacknowledgeAlertEventResponse = InferResponseType<
-  ConnectionAlertsEndpoint['events'][':eventId']['acknowledge']['$delete'],
-  200
->
 type RetryAlertDeliveryResponse = InferResponseType<
   ConnectionAlertsEndpoint['events'][':eventId']['deliveries'][':deliveryId']['retry']['$post'],
   200
@@ -82,19 +78,6 @@ type TestAlertDestinationResponse = InferResponseType<
   (typeof api.alerts.destinations)[':destinationId']['test']['$post'],
   200
 >
-type WebhookDestinationsResponse = InferResponseType<
-  (typeof api.alerts)['webhook-destinations']['$get'],
-  200
->
-type WebhookDestinationResponse = InferResponseType<
-  (typeof api.alerts)['webhook-destinations']['$post'],
-  201
->
-type TestWebhookDestinationResponse = InferResponseType<
-  (typeof api.alerts)['webhook-destinations'][':destinationId']['test']['$post'],
-  200
->
-
 export type AlertSummaryConnection = AlertSummaryResponse['connections'][number]
 export type AlertRuleType = 'failure_threshold' | 'failure_rate' | 'queue_stalled' | 'job_failed'
 export type QueueFilterMode = 'include' | 'exclude'
@@ -261,25 +244,6 @@ export interface AlertDestinationTestResult {
   error?: string
 }
 
-export interface AlertWebhookDestinationRecord {
-  id: string
-  organizationId: string
-  name: string
-  url: string
-  enabled: boolean
-  secretConfigured: boolean
-  secretLast4?: string
-  createdAt?: string | Date
-  updatedAt?: string | Date
-}
-
-export interface AlertWebhookDestinationInput {
-  name: string
-  url: string
-  signingSecret?: string | null
-  enabled?: boolean
-}
-
 export interface AlertTestResult {
   evaluation: {
     triggered: boolean
@@ -339,8 +303,6 @@ export const alertKeys = {
     ['alerts', 'integrations', 'linear', organizationId ?? 'unknown'] as const,
   linearMetadata: (organizationId?: string | null) =>
     ['alerts', 'integrations', 'linear', organizationId ?? 'unknown', 'metadata'] as const,
-  webhookDestinations: (organizationId?: string | null) =>
-    ['alerts', 'webhook-destinations', organizationId ?? 'unknown'] as const,
   destinations: (organizationId?: string | null, type?: AlertDestinationType) =>
     type
       ? (['alerts', 'destinations', organizationId ?? 'unknown', type] as const)
@@ -453,27 +415,6 @@ function normalizeAlertRuleDestinationSummary(value: unknown): AlertRuleDestinat
     name: typeof source.name === 'string' ? source.name : 'Destination',
     type: isAlertDestinationType(source.type) ? source.type : 'webhook',
     enabled: source.enabled !== false,
-  }
-}
-
-function normalizeWebhookDestination(value: unknown): AlertWebhookDestinationRecord {
-  const source = isRecord(value) ? value : {}
-  return {
-    id: typeof source.id === 'string' ? source.id : '',
-    organizationId: typeof source.organizationId === 'string' ? source.organizationId : '',
-    name: typeof source.name === 'string' ? source.name : 'Webhook destination',
-    url: typeof source.url === 'string' ? source.url : '',
-    enabled: source.enabled !== false,
-    secretConfigured: source.secretConfigured === true,
-    secretLast4: typeof source.secretLast4 === 'string' ? source.secretLast4 : undefined,
-    createdAt:
-      typeof source.createdAt === 'string' || source.createdAt instanceof Date
-        ? source.createdAt
-        : undefined,
-    updatedAt:
-      typeof source.updatedAt === 'string' || source.updatedAt instanceof Date
-        ? source.updatedAt
-        : undefined,
   }
 }
 
@@ -874,21 +815,6 @@ export function useAcknowledgeAlertEvent(connectionId: string | undefined) {
   })
 }
 
-export function useUnacknowledgeAlertEvent(connectionId: string | undefined) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async (eventId: string) => {
-      const res = await api.c[':connectionId'].alerts.events[':eventId'].acknowledge.$delete({
-        param: { connectionId: connectionId!, eventId },
-      })
-      const data = await handleRes<UnacknowledgeAlertEventResponse>(res)
-      return { event: normalizeAlertEvent(data.event) }
-    },
-    onSuccess: () => invalidateAlertQueries(queryClient, connectionId),
-  })
-}
-
 export function useRetryAlertDelivery() {
   const queryClient = useQueryClient()
 
@@ -1031,96 +957,6 @@ export function useTestAlertDestination() {
       // The response shape differs per destination type; widen to the shared result.
       const data = await handleRes<TestAlertDestinationResponse>(res)
       return data as AlertDestinationTestResult
-    },
-  })
-}
-
-export function useWebhookDestinations() {
-  const { data: activeOrganization } = useActiveOrganization()
-  const organizationId = activeOrganization?.id
-
-  return useQuery({
-    queryKey: alertKeys.webhookDestinations(organizationId),
-    queryFn: async () => {
-      const res = await api.alerts['webhook-destinations'].$get()
-      const data = await handleRes<WebhookDestinationsResponse>(res)
-      return {
-        destinations: Array.isArray(data.destinations)
-          ? data.destinations.map(normalizeWebhookDestination)
-          : [],
-      }
-    },
-    enabled: !!organizationId,
-  })
-}
-
-export function useCreateWebhookDestination() {
-  const queryClient = useQueryClient()
-  const { data: activeOrganization } = useActiveOrganization()
-  const organizationId = activeOrganization?.id
-
-  return useMutation({
-    mutationFn: async (input: AlertWebhookDestinationInput) => {
-      const res = await api.alerts['webhook-destinations'].$post({ json: input })
-      const data = await handleRes<WebhookDestinationResponse>(res)
-      return { destination: normalizeWebhookDestination(data.destination) }
-    },
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: alertKeys.webhookDestinations(organizationId) }),
-  })
-}
-
-export function useUpdateWebhookDestination() {
-  const queryClient = useQueryClient()
-  const { data: activeOrganization } = useActiveOrganization()
-  const organizationId = activeOrganization?.id
-
-  return useMutation({
-    mutationFn: async ({
-      destinationId,
-      input,
-    }: {
-      destinationId: string
-      input: Partial<AlertWebhookDestinationInput>
-    }) => {
-      const res = await api.alerts['webhook-destinations'][':destinationId'].$patch({
-        param: { destinationId },
-        json: input,
-      })
-      const data = await handleRes<WebhookDestinationResponse>(res)
-      return { destination: normalizeWebhookDestination(data.destination) }
-    },
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: alertKeys.webhookDestinations(organizationId) }),
-  })
-}
-
-export function useDeleteWebhookDestination() {
-  const queryClient = useQueryClient()
-  const { data: activeOrganization } = useActiveOrganization()
-  const organizationId = activeOrganization?.id
-
-  return useMutation({
-    mutationFn: async (destinationId: string) => {
-      const res = await api.alerts['webhook-destinations'][':destinationId'].$delete({
-        param: { destinationId },
-      })
-      return handleRes<{ ok: boolean }>(res)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: alertKeys.webhookDestinations(organizationId) })
-      queryClient.invalidateQueries({ queryKey: ['alerts', 'connection'] })
-    },
-  })
-}
-
-export function useTestWebhookDestination() {
-  return useMutation({
-    mutationFn: async (destinationId: string) => {
-      const res = await api.alerts['webhook-destinations'][':destinationId'].test.$post({
-        param: { destinationId },
-      })
-      return handleRes<TestWebhookDestinationResponse>(res)
     },
   })
 }

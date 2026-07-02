@@ -6,7 +6,7 @@ import type {
   AlertRuleState,
   AlertRuleType,
 } from '@/hooks/use-alerts'
-import { cn, formatDateWithTimezone, formatNumber } from '@/lib/utils'
+import { cn, formatDateWithTimezone } from '@/lib/utils'
 
 const ALERT_TYPE_META: Record<
   AlertRuleType,
@@ -135,33 +135,6 @@ export function RuleStateBadge({
   return <Badge variant="success">Enabled</Badge>
 }
 
-export function AlertSeverityChip({
-  count,
-  label = 'Open Alerts',
-}: {
-  count: number
-  label?: string
-}) {
-  const variant = count > 0 ? 'destructive' : 'success'
-
-  return (
-    <div
-      className={cn(
-        'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium',
-        count > 0
-          ? 'border-destructive/25 bg-destructive/10 text-destructive'
-          : 'border-status-success/25 bg-status-success/10 text-status-success'
-      )}
-    >
-      <BellRing className="h-3.5 w-3.5" />
-      <Badge variant={variant} className="px-1.5 py-0 text-[10px]">
-        {formatNumber(count)}
-      </Badge>
-      <span>{label}</span>
-    </div>
-  )
-}
-
 export function formatAlertDate(value: Date | string | number | null | undefined) {
   const timestamp = toTimestamp(value)
   if (!timestamp) return '—'
@@ -198,20 +171,10 @@ export function formatAlertTimeRemaining(
   return formatCompactDuration(remaining)
 }
 
-export function toTimestamp(value: Date | string | number | null | undefined): number | undefined {
+function toTimestamp(value: Date | string | number | null | undefined): number | undefined {
   if (!value) return undefined
   if (value instanceof Date) return value.getTime()
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
   const parsed = Date.parse(value)
   return Number.isFinite(parsed) ? parsed : undefined
-}
-
-export function getAlertEventResolvedLabel(event: AlertEventRecord) {
-  if (event.status === 'resolved' && event.resolvedAt) {
-    return `Resolved ${formatAlertDate(event.resolvedAt)}`
-  }
-  if (event.status === 'suppressed') {
-    return 'Suppressed during cooldown'
-  }
-  return 'Still firing'
 }

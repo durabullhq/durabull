@@ -61,6 +61,7 @@ vi.mock('@tanstack/zod-adapter', () => ({
 }))
 
 vi.mock('@/components/alerts/alert-rule-builder-v2', () => ({
+  AlertRuleBuilderSkeleton: () => <div>builder-skeleton</div>,
   AlertRuleBuilder: (props: Record<string, unknown>) => {
     builderPropsSpy(props)
 

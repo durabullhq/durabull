@@ -93,6 +93,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/components/alerts/alert-rule-builder-v2', () => ({
+  AlertRuleBuilderSkeleton: () => <div>builder-skeleton</div>,
   AlertRuleBuilder: (props: Record<string, unknown>) => {
     builderPropsSpy(props)
 
@@ -208,7 +209,7 @@ describe('EditAlertRuleRoute', () => {
 
     const { rerender } = render(<EditAlertRuleRoute />)
 
-    expect(screen.getByText('Loading alert rule...')).toBeInTheDocument()
+    expect(screen.getByText('builder-skeleton')).toBeInTheDocument()
 
     rulesQueryState.current = {
       isLoading: false,

@@ -9,11 +9,13 @@ import {
   RuleStateBadge,
 } from '@/components/alerts/alert-primitives'
 import { AlertsViewSwitcher } from '@/components/alerts/alerts-view-switcher'
+import { RuleTemplateCards } from '@/components/alerts/rule-template-cards'
 import { SnoozeMenu } from '@/components/alerts/snooze-menu'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useConnection } from '@/components/connection-provider'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -28,6 +30,7 @@ import {
   type AlertRuleRecord,
   useConnectionAlertRules,
   useDeleteAlertRule,
+  useLinearIntegration,
   useUpdateAlertRule,
 } from '@/hooks/use-alerts'
 import { cn, formatNumber } from '@/lib/utils'
@@ -42,10 +45,12 @@ export function ConnectionRulesView({
   const navigate = useNavigate()
   const { currentConnection } = useConnection()
   const [mutatingRuleId, setMutatingRuleId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<AlertRuleRecord | null>(null)
 
   const rulesQuery = useConnectionAlertRules(connectionId)
   const updateRuleMutation = useUpdateAlertRule(connectionId)
   const deleteRuleMutation = useDeleteAlertRule(connectionId)
+  const linearIntegrationQuery = useLinearIntegration()
 
   const rules = rulesQuery.data?.rules ?? []
   const ruleDestinations = rulesQuery.data?.destinations
@@ -102,19 +107,14 @@ export function ConnectionRulesView({
     }
   }
 
-  async function handleDeleteRule(rule: AlertRuleRecord) {
-    if (
-      !window.confirm(`Delete "${rule.name}"? Any active incidents for this rule will be resolved.`)
-    ) {
-      return
-    }
-
+  async function handleDeleteRuleConfirmed(rule: AlertRuleRecord) {
     try {
       setMutatingRuleId(rule.id)
       await deleteRuleMutation.mutateAsync(rule.id)
       toast.success('Alert rule deleted', {
         description: `${rule.name} was removed from this connection.`,
       })
+      setDeleteTarget(null)
     } catch (error) {
       toast.error('Failed to delete rule', {
         description: error instanceof Error ? error.message : 'An unexpected error occurred.',
@@ -131,11 +131,31 @@ export function ConnectionRulesView({
       </div>
 
       {rulesQuery.isError ? (
-        <RulesErrorCard message="Failed to load alert rules. Please try refreshing the page." />
+        <RulesErrorCard
+          message="Failed to load alert rules. Retry, or refresh the page."
+          onRetry={() => void rulesQuery.refetch()}
+        />
       ) : rulesQuery.isLoading ? (
         <RulesLoadingState />
       ) : rules.length === 0 ? (
-        <EmptyRulesState orgSlug={orgSlug} connectionId={connectionId} />
+        <EmptyRulesState
+          linearIntegrationValid={
+            linearIntegrationQuery.data?.integration?.validationStatus === 'valid'
+          }
+          onSelectTemplate={(templateKey) =>
+            navigate({
+              to: '/$orgSlug/c/$connectionId/alerts/new',
+              params: { orgSlug, connectionId },
+              search: { template: templateKey },
+            })
+          }
+          onStartFromScratch={() =>
+            navigate({
+              to: '/$orgSlug/c/$connectionId/alerts/new',
+              params: { orgSlug, connectionId },
+            })
+          }
+        />
       ) : (
         <RulesTable
           rules={rules}
@@ -156,9 +176,22 @@ export function ConnectionRulesView({
               search: { from: rule.id },
             })
           }
-          onDeleteRule={(rule) => handleDeleteRule(rule)}
+          onDeleteRule={(rule) => setDeleteTarget(rule)}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null)
+        }}
+        title="Delete alert rule"
+        description={`Delete "${deleteTarget?.name ?? ''}"? Any open incidents for this rule will be resolved, and this cannot be undone.`}
+        confirmLabel="Delete rule"
+        destructive
+        isConfirming={deleteRuleMutation.isPending}
+        onConfirm={() => deleteTarget && void handleDeleteRuleConfirmed(deleteTarget)}
+      />
     </div>
   )
 }
@@ -329,24 +362,30 @@ function RulesTable({
   )
 }
 
-function EmptyRulesState({ orgSlug, connectionId }: { orgSlug: string; connectionId: string }) {
+function EmptyRulesState({
+  linearIntegrationValid,
+  onSelectTemplate,
+  onStartFromScratch,
+}: {
+  linearIntegrationValid: boolean
+  onSelectTemplate: (templateKey: string) => void
+  onStartFromScratch: () => void
+}) {
   return (
-    <Card className="border-dashed border-border/70 bg-muted/15">
-      <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="rounded-full border border-border/70 bg-background/70 p-4">
-          <BellRing className="h-8 w-8 text-muted-foreground" />
+    <Card className="border-border/70 bg-muted/15">
+      <CardContent className="space-y-5 py-8">
+        <div className="text-center">
+          <h3 className="text-xl font-semibold">Start with a template</h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+            No alert rules yet — templates preload a sensible condition, queue scope, and cooldown
+            for common queue incidents. Everything stays editable.
+          </p>
         </div>
-        <h3 className="mt-5 text-xl font-semibold">No alert rules yet</h3>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-          Create your first queue incident policy to catch failure spikes, degraded quality, or
-          stalled workers on this connection.
-        </p>
-        <Button asChild className="mt-5 gap-2">
-          <Link to="/$orgSlug/c/$connectionId/alerts/new" params={{ orgSlug, connectionId }}>
-            <BellRing className="h-4 w-4" />
-            Create alert rule
-          </Link>
-        </Button>
+        <RuleTemplateCards
+          linearIntegrationValid={linearIntegrationValid}
+          onSelectTemplate={(template) => onSelectTemplate(template.key)}
+          onStartFromScratch={onStartFromScratch}
+        />
       </CardContent>
     </Card>
   )
@@ -354,42 +393,27 @@ function EmptyRulesState({ orgSlug, connectionId }: { orgSlug: string; connectio
 
 function RulesLoadingState() {
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      {Array.from({ length: 4 }, (_, index) => (
-        <Card key={index}>
-          <CardHeader className="space-y-3">
-            <div className="flex gap-2">
-              <Skeleton className="h-6 w-24 rounded-full" />
-              <Skeleton className="h-6 w-16 rounded-full" />
-            </div>
-            <Skeleton className="h-7 w-60" />
-            <Skeleton className="h-4 w-full" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {Array.from({ length: 4 }, (_, tileIndex) => (
-                <Skeleton key={tileIndex} className="h-20 rounded-2xl" />
-              ))}
-            </div>
-            <Skeleton className="h-20 rounded-2xl" />
-            <div className="flex gap-2">
-              <Skeleton className="h-9 w-24" />
-              <Skeleton className="h-9 w-16" />
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+    <div className="overflow-hidden rounded-2xl border border-border/70 bg-card/80 shadow-sm">
+      <Skeleton className="h-10 w-full rounded-none" />
+      <div className="space-y-2 p-3">
+        {Array.from({ length: 6 }, (_, index) => (
+          <Skeleton key={index} className="h-12 rounded-lg" />
+        ))}
+      </div>
     </div>
   )
 }
 
-function RulesErrorCard({ message }: { message: string }) {
+function RulesErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <Card className="border-destructive/30 bg-destructive/5">
       <CardContent className="flex flex-col items-center justify-center py-10 text-center">
         <ShieldCheck className="h-8 w-8 text-destructive" />
         <h3 className="mt-4 text-lg font-semibold">Unable to load alert data</h3>
         <p className="mt-2 max-w-md text-sm text-muted-foreground">{message}</p>
+        <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>
+          Retry
+        </Button>
       </CardContent>
     </Card>
   )
