@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  alertDestinationRepository,
   alertWebhookDestination,
   alertWebhookDestinationRepository,
   closeDb,
@@ -222,5 +223,72 @@ describe('alert notifier webhook delivery inputs', () => {
       secretLast4: 'alue',
     })
     expect(refreshed).not.toHaveProperty('deliveryError')
+  })
+
+  it('stores only the destination reference for generalized destination channels', async () => {
+    const destination = await alertDestinationRepository.create({
+      organizationId: TEST_ORG_ID,
+      name: 'On-call email',
+      type: 'email',
+      config: { target: 'oncall@example.com' },
+    })
+
+    const input = await __alertNotifierTestUtils.buildDeliveryInput(
+      { type: 'destination', destinationId: destination.id },
+      'alert-event-id',
+      TEST_ORG_ID
+    )
+
+    expect(input.channelType).toBe('destination')
+    expect(input.target).toBe(`destination:${destination.id}`)
+    // No embedded config — the destination is resolved fresh at dispatch time
+    // so edits apply to queued deliveries.
+    expect(input.providerMetadata).toEqual({
+      type: 'destination',
+      destinationId: destination.id,
+    })
+  })
+
+  it('fails destination dispatch non-retryably when the destination is gone and retryably when disabled', async () => {
+    const destination = await alertDestinationRepository.create({
+      organizationId: TEST_ORG_ID,
+      name: 'Ephemeral email',
+      type: 'email',
+      config: { target: 'oncall@example.com' },
+    })
+
+    const event = {
+      id: 'event-1',
+      organizationId: TEST_ORG_ID,
+      queueName: 'email-send',
+      alertRuleId: 'rule-1',
+      type: 'failure_threshold',
+      summary: 'Failures crossed the threshold.',
+      firedAt: new Date(),
+      context: {},
+    } as never
+    const connection = { id: 'conn-1', name: 'Primary Redis' }
+    const makeDelivery = () =>
+      ({
+        id: 'delivery-1',
+        alertEventId: 'event-1',
+        organizationId: TEST_ORG_ID,
+        channelType: 'destination',
+        target: `destination:${destination.id}`,
+        providerMetadata: { type: 'destination', destinationId: destination.id },
+        attemptCount: 0,
+        claimedAt: new Date(),
+        createdAt: new Date(),
+      }) as never
+
+    await alertDestinationRepository.update(destination.id, TEST_ORG_ID, { enabled: false })
+    await expect(
+      __alertNotifierTestUtils.sendDestinationAlert(makeDelivery(), event, connection, 'Rule', null)
+    ).rejects.toMatchObject({ retryable: true })
+
+    await alertDestinationRepository.delete(destination.id, TEST_ORG_ID)
+    await expect(
+      __alertNotifierTestUtils.sendDestinationAlert(makeDelivery(), event, connection, 'Rule', null)
+    ).rejects.toMatchObject({ name: 'NonRetryableDeliveryError' })
   })
 })

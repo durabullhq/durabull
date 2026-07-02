@@ -1,8 +1,10 @@
 import {
   type AlertDelivery,
+  type AlertDestination,
   type AlertEvent,
   type AlertWebhookDestination,
   alertDeliveryRepository,
+  alertDestinationRepository,
   alertRuleRepository,
   alertWebhookDestinationRepository,
   decryptSecret,
@@ -74,6 +76,12 @@ export type NotificationChannel =
       type: 'webhook'
       destinationId: string
     }
+  | {
+      // Generalized saved-destination reference (webhook, email, or linear).
+      // Resolved at dispatch time so destination edits apply to queued work.
+      type: 'destination'
+      destinationId: string
+    }
 
 export async function dispatchAlertNotification(
   event: AlertEvent,
@@ -94,6 +102,18 @@ async function buildDeliveryInput(
   alertEventId: string,
   organizationId: string
 ) {
+  if (channel.type === 'destination') {
+    // Only the reference is stored; the destination is resolved fresh at
+    // dispatch so editing it updates all rules and pending deliveries.
+    return {
+      alertEventId,
+      organizationId,
+      channelType: channel.type,
+      target: getSavedWebhookDeliveryTarget(channel.destinationId),
+      providerMetadata: { type: 'destination', destinationId: channel.destinationId },
+    }
+  }
+
   if (channel.type === 'webhook' && 'destinationId' in channel) {
     const destination = await alertWebhookDestinationRepository.findById(
       channel.destinationId,
@@ -161,6 +181,9 @@ export async function processAlertDeliveries(
           break
         case 'webhook':
           await sendWebhookAlert(delivery, event, connection, ruleName, organizationSlug)
+          break
+        case 'destination':
+          await sendDestinationAlert(delivery, event, connection, ruleName, organizationSlug)
           break
         default:
           await alertDeliveryRepository.markFailed(delivery.id, {
@@ -471,6 +494,109 @@ function requireClaimedAt(delivery: AlertDelivery): Date {
   })
 }
 
+async function sendDestinationAlert(
+  delivery: AlertDelivery,
+  event: AlertEvent,
+  connection: AlertNotificationConnection,
+  ruleName: string,
+  organizationSlug: string | null
+): Promise<void> {
+  const metadata = (delivery.providerMetadata ?? {}) as Record<string, unknown>
+  const destinationId = typeof metadata.destinationId === 'string' ? metadata.destinationId : ''
+  if (!destinationId) {
+    throw new NonRetryableDeliveryError('Destination delivery is missing its destination id.')
+  }
+
+  const destination = await alertDestinationRepository.findById(
+    destinationId,
+    event.organizationId
+  )
+  if (!destination) {
+    throw new NonRetryableDeliveryError('Notification destination no longer exists.')
+  }
+  if (!destination.enabled) {
+    throw new WebhookDeliveryError(`Destination "${destination.name}" is disabled.`, {
+      retryable: true,
+    })
+  }
+
+  switch (destination.type) {
+    case 'email': {
+      const target = getEmailDestinationTarget(destination)
+      await sendAlertEmail(target, event, connection, ruleName, organizationSlug)
+      await alertDeliveryRepository.markDelivered(
+        delivery.id,
+        {
+          providerMetadata: {
+            ...metadata,
+            resolvedType: 'email',
+            destinationName: destination.name,
+            target,
+          },
+        },
+        requireClaimedAt(delivery)
+      )
+      break
+    }
+    case 'linear': {
+      const config =
+        typeof destination.config === 'object' && destination.config !== null
+          ? (destination.config as Record<string, unknown>)
+          : {}
+      await sendLinearAlert(
+        {
+          ...delivery,
+          providerMetadata: {
+            ...config,
+            type: 'linear',
+            destinationId,
+            destinationName: destination.name,
+          },
+        },
+        event,
+        connection,
+        ruleName,
+        organizationSlug
+      )
+      break
+    }
+    case 'webhook': {
+      // Webhook-type destination deliveries share the webhook expiry window.
+      if (isWebhookDeliveryExpired(delivery.createdAt)) {
+        throw new NonRetryableDeliveryError(WEBHOOK_DELIVERY_ABANDONED_MESSAGE)
+      }
+      await sendWebhookAlert(
+        {
+          ...delivery,
+          providerMetadata: resolveSavedWebhookDeliveryMetadata(destinationId, destination),
+        },
+        event,
+        connection,
+        ruleName,
+        organizationSlug
+      )
+      break
+    }
+    default:
+      throw new NonRetryableDeliveryError(
+        `Destination "${destination.name}" has an unknown type: ${destination.type}`
+      )
+  }
+}
+
+function getEmailDestinationTarget(destination: AlertDestination): string {
+  const target =
+    typeof destination.config === 'object' && destination.config !== null
+      ? (destination.config as { target?: unknown }).target
+      : undefined
+  if (typeof target !== 'string' || !target) {
+    throw new NonRetryableDeliveryError(
+      `Email destination "${destination.name}" has no target address configured.`
+    )
+  }
+  return target
+}
+
 async function sendWebhookAlert(
   delivery: AlertDelivery,
   event: AlertEvent,
@@ -732,4 +858,5 @@ export const __alertNotifierTestUtils = {
   buildDeliveryInput,
   getSavedWebhookDeliveryTarget,
   resolveWebhookMetadataForDispatch,
+  sendDestinationAlert,
 }

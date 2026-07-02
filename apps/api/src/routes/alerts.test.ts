@@ -229,7 +229,7 @@ describe('alerts routes', () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({
-      error: 'Webhook destination "Incident intake" is disabled.',
+      error: 'Destination "Incident intake" is disabled.',
     })
   })
 
@@ -371,7 +371,7 @@ describe('alerts routes', () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({
-      error: 'Duplicate saved webhook destinations are not allowed on the same alert rule.',
+      error: 'Each destination can only be routed once per alert rule.',
     })
   })
 

@@ -27,7 +27,11 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
-    const destinations = await alertWebhookDestinationRepository.listByOrganization(organizationId)
+    // Deprecated alias of /alerts/destinations, scoped to webhook destinations.
+    const destinations = await alertWebhookDestinationRepository.listByOrganization(
+      organizationId,
+      { type: 'webhook' }
+    )
     return c.json({ destinations: destinations.map(serializeWebhookDestination) })
   })
   .post('/', zValidator('json', webhookDestinationPayloadSchema), async (c) => {

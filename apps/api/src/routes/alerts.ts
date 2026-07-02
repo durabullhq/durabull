@@ -1,6 +1,7 @@
 import {
   alertCheckCursorRepository,
   alertDeliveryRepository,
+  alertDestinationRepository,
   alertEventRepository,
   alertRuleRepository,
   alertWebhookDestinationRepository,
@@ -57,11 +58,18 @@ const savedWebhookNotificationChannelSchema = z
     destinationId: z.string().uuid(),
   })
   .strict()
+const destinationNotificationChannelSchema = z
+  .object({
+    type: z.literal('destination'),
+    destinationId: z.string().uuid(),
+  })
+  .strict()
 const notificationChannelSchema = z.union([
   emailNotificationChannelSchema,
   linearNotificationChannelSchema,
   webhookNotificationChannelSchema,
   savedWebhookNotificationChannelSchema,
+  destinationNotificationChannelSchema,
 ])
 
 const testWebhookSchema = z.object({
@@ -126,8 +134,31 @@ const app = new Hono()
     }
 
     const rules = await alertRuleRepository.findByConnection(connectionId, organizationId)
+
+    // Sidecar with the referenced destinations so the UI can render names
+    // without another round-trip or mutating the channel payloads.
+    const referencedIds = new Set<string>()
+    for (const rule of rules) {
+      for (const channel of Array.isArray(rule.notificationChannels)
+        ? rule.notificationChannels
+        : []) {
+        const destinationId = (channel as { destinationId?: unknown }).destinationId
+        if (typeof destinationId === 'string') referencedIds.add(destinationId)
+      }
+    }
+    const destinations = await alertDestinationRepository.listByIds(
+      [...referencedIds],
+      organizationId
+    )
+
     return c.json({
       rules: rules.map(serializeAlertRule),
+      destinations: destinations.map((destination) => ({
+        id: destination.id,
+        name: destination.name,
+        type: destination.type,
+        enabled: destination.enabled,
+      })),
     })
   })
   .post('/rules', zValidator('json', createRuleSchema), async (c) => {
@@ -652,29 +683,48 @@ async function validateNotificationChannels(
   const webhookError = await validateWebhookUrls(inlineWebhookChannels)
   if (webhookError) return webhookError
 
-  const savedWebhookDestinationIds = new Set<string>()
+  // Duplicates are checked across both the legacy saved-webhook variant and
+  // the generalized destination variant — the same destination referenced via
+  // both would enqueue two deliveries for every incident.
+  const referencedDestinationIds = new Set<string>()
   for (const channel of channels) {
-    if (channel.type !== 'webhook' || !('destinationId' in channel)) continue
-    if (savedWebhookDestinationIds.has(channel.destinationId)) {
-      return 'Duplicate saved webhook destinations are not allowed on the same alert rule.'
-    }
-    savedWebhookDestinationIds.add(channel.destinationId)
+    const isSavedWebhook = channel.type === 'webhook' && 'destinationId' in channel
+    const isDestination = channel.type === 'destination'
+    if (!isSavedWebhook && !isDestination) continue
 
-    const destination = await alertWebhookDestinationRepository.findById(
+    if (referencedDestinationIds.has(channel.destinationId)) {
+      return 'Each destination can only be routed once per alert rule.'
+    }
+    referencedDestinationIds.add(channel.destinationId)
+
+    const destination = await alertDestinationRepository.findById(
       channel.destinationId,
       organizationId
     )
     if (!destination) {
-      return 'Webhook destination not found.'
+      return isDestination ? 'Notification destination not found.' : 'Webhook destination not found.'
+    }
+    if (isSavedWebhook && destination.type !== 'webhook') {
+      return `Destination "${destination.name}" is not a webhook destination.`
     }
     if (!destination.enabled) {
-      return `Webhook destination "${destination.name}" is disabled.`
+      return `Destination "${destination.name}" is disabled.`
     }
-    if (destination.encryptedSigningSecret) {
+    if (destination.type === 'webhook' && destination.encryptedSigningSecret) {
       try {
         decryptSecret(destination.encryptedSigningSecret)
       } catch {
         return `Webhook destination "${destination.name}" signing secret could not be decrypted.`
+      }
+    }
+    if (destination.type === 'linear') {
+      const integration = await linearIntegrationRepository.findByOrganization(organizationId)
+      if (!integration || integration.validationStatus !== 'valid') {
+        return 'Linear integration must be configured and valid before Linear alert routing can be enabled.'
+      }
+      const config = (destination.config ?? {}) as { teamId?: string }
+      if (!config.teamId && !integration.defaultTeamId) {
+        return 'Linear alert routing requires a teamId or organization default team.'
       }
     }
   }
