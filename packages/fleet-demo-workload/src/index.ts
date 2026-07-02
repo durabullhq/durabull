@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import '@durabull/env'
 import {
   getWorkloadConnections,
   HEARTBEAT_INTERVAL_MS,

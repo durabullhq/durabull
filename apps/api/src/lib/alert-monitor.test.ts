@@ -672,4 +672,112 @@ describe('alert monitor', () => {
     })
     expect(dispatchAlertNotificationMock).toHaveBeenCalledTimes(1)
   })
+
+  it('auto-resolves firing job events whose job has completed', async () => {
+    const getJobStateMock = mock(async (jobId: string) =>
+      jobId === 'job-1' ? 'completed' : 'failed'
+    )
+    mock.module('./redis', () => ({
+      ...realRedisModule,
+      getQueue: mock(async () => ({ getJobState: getJobStateMock })),
+    }))
+
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'Job failures',
+      type: 'job_failed',
+      config: {},
+      cooldownMinutes: 30,
+    })
+
+    const completedJobEvent = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Job job-1 failed in email-send',
+      context: { jobId: 'job-1' },
+      firedAt: new Date(Date.now() - 10 * 60_000),
+    })
+
+    const stillFailedJobEvent = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Job job-2 failed in email-send',
+      context: { jobId: 'job-2' },
+      firedAt: new Date(Date.now() - 10 * 60_000),
+    })
+
+    const resolved = await __alertMonitorTestUtils.autoResolveCompletedJobEvents(
+      testConnectionId,
+      [completedJobEvent, stillFailedJobEvent]
+    )
+
+    expect(resolved).toHaveLength(1)
+    expect(resolved[0]?.id).toBe(completedJobEvent.id)
+
+    const events = await listRuleEvents(rule.id)
+    const byId = new Map(events.map((event) => [event.id, event]))
+    expect(byId.get(completedJobEvent.id)?.status).toBe('resolved')
+    expect(byId.get(completedJobEvent.id)?.resolvedAt).toBeInstanceOf(Date)
+    expect(byId.get(stillFailedJobEvent.id)?.status).toBe('firing')
+  })
+
+  it('job auto-resolve cycle only touches firing events that carry a job id', async () => {
+    mock.module('./redis', () => ({
+      ...realRedisModule,
+      getQueue: mock(async () => ({ getJobState: mock(async () => 'completed') })),
+    }))
+
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'Job failures',
+      type: 'job_failed',
+      config: {},
+      cooldownMinutes: 30,
+    })
+
+    const jobEvent = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Job job-1 failed in email-send',
+      context: { jobId: 'job-1' },
+      firedAt: new Date(Date.now() - 10 * 60_000),
+    })
+
+    const aggregateEvent = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      type: 'failure_threshold',
+      status: 'firing',
+      summary: 'Failure spike',
+      context: {},
+      firedAt: new Date(Date.now() - 10 * 60_000),
+    })
+
+    await __alertMonitorTestUtils.runJobAutoResolveCycle()
+
+    const events = await listRuleEvents(rule.id)
+    const byId = new Map(events.map((event) => [event.id, event]))
+    expect(byId.get(jobEvent.id)?.status).toBe('resolved')
+    expect(byId.get(aggregateEvent.id)?.status).toBe('firing')
+  })
 })

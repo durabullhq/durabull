@@ -6,6 +6,7 @@
  */
 
 import {
+  alertRule,
   and,
   authSchema,
   encryptRedisUrl,
@@ -25,6 +26,7 @@ import {
   ORGANIZATIONS,
   CONNECTIONS,
   PENDING_INVITATIONS,
+  PRIMARY_TEST_CONNECTION,
   REDIS_URL,
 } from './config'
 import { logSection, logItem, logSuccess, logWarning } from './utils'
@@ -271,6 +273,72 @@ async function seedConnections(db: Awaited<ReturnType<typeof getDb>>): Promise<v
 }
 
 // ============================================================================
+// Alert Rule Seeding
+// ============================================================================
+
+/**
+ * Seed a couple of enabled alert rules on the primary test connection so the
+ * alerting UI (incident history, job auto-resolve, bulk resolve) has data to
+ * show as soon as jobs fail — either from the static seeded jobs or from
+ * `bun run workload:dev` / `dev:demo` generating live failures. No
+ * notification channels are configured since email/Linear aren't available
+ * in local dev by default.
+ */
+async function seedAlertRules(db: Awaited<ReturnType<typeof getDb>>): Promise<void> {
+  logSection('Seeding Alert Rules')
+  const now = new Date()
+  const connectionId = PRIMARY_TEST_CONNECTION.id
+  const organizationId = getActualOrgId(PRIMARY_TEST_CONNECTION.organizationId)
+
+  const rules = [
+    {
+      id: '01900000-0000-7000-8000-000000000030',
+      name: 'Any job failure',
+      type: 'job_failed' as const,
+      queueName: null,
+      config: {},
+    },
+    {
+      id: '01900000-0000-7000-8000-000000000031',
+      name: 'Failure spike',
+      type: 'failure_threshold' as const,
+      queueName: null,
+      config: { count: 5, windowMinutes: 5 },
+    },
+  ]
+
+  for (const rule of rules) {
+    const existing = await db
+      .select({ id: alertRule.id })
+      .from(alertRule)
+      .where(eq(alertRule.id, rule.id))
+      .limit(1)
+
+    if (existing.length > 0) {
+      logWarning(`Alert rule "${rule.name}" already exists`)
+      continue
+    }
+
+    logItem(`Creating alert rule: ${rule.name}...`)
+    await db.insert(alertRule).values({
+      id: rule.id,
+      organizationId,
+      connectionId,
+      queueName: rule.queueName,
+      name: rule.name,
+      type: rule.type,
+      config: rule.config,
+      enabled: true,
+      notificationChannels: [],
+      cooldownMinutes: 5,
+      createdAt: now,
+      updatedAt: now,
+    })
+    logSuccess(`Created alert rule: ${rule.name}`)
+  }
+}
+
+// ============================================================================
 // Invitation Seeding
 // ============================================================================
 
@@ -324,6 +392,7 @@ export async function seedDatabase(): Promise<void> {
   await seedUsers(db)
   await seedOrganizations(db)
   await seedConnections(db)
+  await seedAlertRules(db)
   await seedInvitations(db)
 
   logSuccess('Database seeding complete')
