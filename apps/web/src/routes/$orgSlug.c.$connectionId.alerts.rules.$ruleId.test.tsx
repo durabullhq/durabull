@@ -92,8 +92,8 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
 }))
 
-vi.mock('@/components/alerts/alert-rule-builder-page', () => ({
-  AlertRuleBuilderPage: (props: Record<string, unknown>) => {
+vi.mock('@/components/alerts/alert-rule-builder-v2', () => ({
+  AlertRuleBuilder: (props: Record<string, unknown>) => {
     builderPropsSpy(props)
 
     return (

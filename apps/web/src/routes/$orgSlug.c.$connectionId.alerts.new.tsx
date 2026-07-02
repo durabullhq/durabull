@@ -2,14 +2,16 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { AlertRuleBuilderPage } from '@/components/alerts/alert-rule-builder-page'
+import { AlertRuleBuilder } from '@/components/alerts/alert-rule-builder-v2'
 import { useConnection } from '@/components/connection-provider'
-import { useCreateAlertRule, useLinearIntegration } from '@/hooks/use-alerts'
+import {
+  useConnectionAlertRules,
+  useCreateAlertRule,
+  useLinearIntegration,
+} from '@/hooks/use-alerts'
 import { useQueues } from '@/hooks/use-queues'
 
 // `template` preselects a rule template; `from` duplicates an existing rule.
-// Both are consumed by the builder in a follow-up change — validated loosely
-// here so deep links round-trip today.
 const createAlertRuleSearchSchema = z.object({
   template: z.string().optional().catch(undefined),
   from: z.string().optional().catch(undefined),
@@ -22,20 +24,32 @@ export const Route = createFileRoute('/$orgSlug/c/$connectionId/alerts/new')({
 
 export function CreateAlertRuleRoute() {
   const { orgSlug, connectionId } = Route.useParams()
+  const { template, from } = Route.useSearch()
   const navigate = useNavigate()
   const { currentConnection } = useConnection()
   const queuesQuery = useQueues({ pageSize: 100 })
   const createRuleMutation = useCreateAlertRule(connectionId)
   const linearIntegrationQuery = useLinearIntegration()
+  const rulesQuery = useConnectionAlertRules(from ? connectionId : undefined)
+
+  if (from && rulesQuery.isLoading) {
+    return <div className="py-8 text-sm text-muted-foreground">Loading alert rule...</div>
+  }
+
+  const duplicateFrom = from
+    ? ((rulesQuery.data?.rules ?? []).find((candidate) => candidate.id === from) ?? null)
+    : null
 
   return (
-    <AlertRuleBuilderPage
+    <AlertRuleBuilder
       mode="create"
-      key={`create-${connectionId}`}
+      key={`create-${connectionId}-${template ?? ''}-${from ?? ''}`}
       orgSlug={orgSlug}
       connectionId={connectionId}
       connectionName={currentConnection?.name}
       availableQueues={(queuesQuery.data?.queues ?? []).map((queue) => queue.name)}
+      duplicateFrom={duplicateFrom}
+      initialTemplateKey={template}
       isSaving={createRuleMutation.isPending}
       linearIntegrationConfigured={
         linearIntegrationQuery.data?.integration?.validationStatus === 'valid'

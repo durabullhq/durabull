@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { AlertRuleBuilderPage } from '@/components/alerts/alert-rule-builder-page'
+import { AlertRuleBuilder } from '@/components/alerts/alert-rule-builder-v2'
 import { useConnection } from '@/components/connection-provider'
 import {
   useConnectionAlertRules,
@@ -41,7 +41,7 @@ export function EditAlertRuleRoute() {
   }
 
   return (
-    <AlertRuleBuilderPage
+    <AlertRuleBuilder
       mode="edit"
       key={rule.id}
       orgSlug={orgSlug}

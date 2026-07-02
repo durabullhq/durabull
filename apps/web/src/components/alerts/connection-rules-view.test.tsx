@@ -148,6 +148,20 @@ describe('ConnectionRulesView', () => {
     })
   })
 
+  it('duplicates a rule into the create builder via the from search param', async () => {
+    const user = userEvent.setup()
+
+    render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
+
+    await user.click(screen.getByRole('button', { name: 'Duplicate' }))
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/$orgSlug/c/$connectionId/alerts/new',
+      params: { orgSlug: 'acme', connectionId: 'conn-1' },
+      search: { from: 'rule-1' },
+    })
+  })
+
   it('shows the empty state when no rules exist', () => {
     useConnectionAlertRulesMock.mockReturnValue({
       isLoading: false,

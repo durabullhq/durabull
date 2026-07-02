@@ -135,6 +135,13 @@ export function ConnectionRulesView({
             })
           }
           onToggleRule={(rule, enabled) => handleToggleRule(rule, enabled)}
+          onDuplicateRule={(rule) =>
+            navigate({
+              to: '/$orgSlug/c/$connectionId/alerts/new',
+              params: { orgSlug, connectionId },
+              search: { from: rule.id },
+            })
+          }
           onDeleteRule={(rule) => handleDeleteRule(rule)}
         />
       )}
@@ -147,12 +154,14 @@ function RulesTable({
   mutatingRuleId,
   onRowOpen,
   onToggleRule,
+  onDuplicateRule,
   onDeleteRule,
 }: {
   rules: AlertRuleRecord[]
   mutatingRuleId: string | null
   onRowOpen: (ruleId: string) => void
   onToggleRule: (rule: AlertRuleRecord, enabled: boolean) => void
+  onDuplicateRule: (rule: AlertRuleRecord) => void
   onDeleteRule: (rule: AlertRuleRecord) => void
 }) {
   return (
@@ -167,7 +176,7 @@ function RulesTable({
             <TableHead>Cooldown</TableHead>
             <TableHead>Recipients</TableHead>
             <TableHead>Routing</TableHead>
-            <TableHead className="w-[150px] text-right">Actions</TableHead>
+            <TableHead className="w-[220px] text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -240,6 +249,17 @@ function RulesTable({
                       disabled={isBusy}
                     >
                       {rule.enabled ? 'Mute' : 'Enable'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onDuplicateRule(rule)
+                      }}
+                    >
+                      Duplicate
                     </Button>
                     <Button
                       type="button"

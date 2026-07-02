@@ -51,6 +51,7 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => ({
     ...config,
     useParams: () => routeState.params,
+    useSearch: () => ({}),
   }),
   useNavigate: () => navigateMock,
 }))
@@ -59,8 +60,8 @@ vi.mock('@tanstack/zod-adapter', () => ({
   zodValidator: (schema: unknown) => schema,
 }))
 
-vi.mock('@/components/alerts/alert-rule-builder-page', () => ({
-  AlertRuleBuilderPage: (props: Record<string, unknown>) => {
+vi.mock('@/components/alerts/alert-rule-builder-v2', () => ({
+  AlertRuleBuilder: (props: Record<string, unknown>) => {
     builderPropsSpy(props)
 
     return (
@@ -108,6 +109,10 @@ vi.mock('@/hooks/use-alerts', () => ({
         validationStatus: 'valid',
       },
     },
+  }),
+  useConnectionAlertRules: () => ({
+    isLoading: false,
+    data: { rules: [] },
   }),
 }))
 
