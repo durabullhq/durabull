@@ -233,7 +233,7 @@ jobs:
           path: .
 
       - name: Run authless stateless E2E smoke tests
-        run: bunx playwright test e2e/authless.spec.ts
+        run: bunx playwright test e2e/authless.spec.ts e2e/alerts.spec.ts
         working-directory: apps/web
         env:
           CI: true

@@ -3,6 +3,7 @@ import { alertRule } from '../alert-rule/schema'
 import { baseColumns } from '../common'
 import { organization } from '../organization/schema'
 import { redisConnection } from '../redis-connection/schema'
+import { user } from '../user/schema'
 
 export const alertEventStatuses = ['firing', 'resolved', 'suppressed'] as const
 export type AlertEventStatus = (typeof alertEventStatuses)[number]
@@ -28,6 +29,10 @@ export const alertEvent = pgTable(
     dedupeKey: text('dedupe_key'),
     firedAt: timestamp('fired_at', { withTimezone: true }).notNull(),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    // Acknowledgement is orthogonal to status: an acknowledged event stays
+    // firing (and still auto-resolves); ack provenance survives resolution.
+    acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
+    acknowledgedBy: text('acknowledged_by').references(() => user.id, { onDelete: 'set null' }),
     notificationSentAt: timestamp('notification_sent_at', { withTimezone: true }),
   },
   (table) => ({

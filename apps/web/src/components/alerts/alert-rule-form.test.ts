@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ALERT_RULE_TEMPLATES,
+  buildSentenceTokens,
   createAlertRuleDraft,
+  createDestinationNotificationRouteDraft,
   createLinearNotificationRouteDraft,
   createSavedWebhookNotificationRouteDraft,
+  getAlertRuleTemplate,
   normalizeNotificationEmails,
   normalizeQueueNames,
   serializeAlertRuleDraft,
   validateAlertRuleDraft,
+  validateAlertRuleDraftFields,
 } from '@/components/alerts/alert-rule-form'
 
 describe('alert rule form helpers', () => {
@@ -299,6 +304,73 @@ describe('alert rule form helpers', () => {
     ])
   })
 
+  it('serializes destination routes into destination channels', () => {
+    const payload = serializeAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Centralized routing',
+      queueFilterMode: 'exclude',
+      notificationRoutes: [
+        createDestinationNotificationRouteDraft(1, 'dest-1'),
+        { id: 'route-1', type: 'email', target: 'ops@example.com' },
+      ],
+    })
+
+    expect(payload.notificationChannels).toEqual([
+      { type: 'email', target: 'ops@example.com' },
+      { type: 'destination', destinationId: 'dest-1' },
+    ])
+  })
+
+  it('hydrates destination channels back into destination route drafts', () => {
+    const draft = createAlertRuleDraft({
+      id: 'rule-9',
+      organizationId: 'org-1',
+      connectionId: 'conn-1',
+      queueName: null,
+      queueFilterMode: 'exclude',
+      filterQueueNames: [],
+      name: 'Centralized routing',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      enabled: true,
+      notificationChannels: [{ type: 'destination', destinationId: 'dest-1' }],
+      cooldownMinutes: 30,
+      mutedUntil: null,
+      state: 'active',
+    })
+
+    expect(draft.notificationRoutes).toHaveLength(1)
+    expect(draft.notificationRoutes[0]).toMatchObject({
+      type: 'destination',
+      destinationId: 'dest-1',
+    })
+  })
+
+  it('requires a destination id on destination routes', () => {
+    const error = validateAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Missing destination id',
+      queueFilterMode: 'exclude',
+      notificationRoutes: [createDestinationNotificationRouteDraft(1, '')],
+    })
+
+    expect(error).toBe('Choose a saved destination.')
+  })
+
+  it('rejects routing the same destination twice across channel variants', () => {
+    const error = validateAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Duplicate destination',
+      queueFilterMode: 'exclude',
+      notificationRoutes: [
+        createSavedWebhookNotificationRouteDraft(1, 'dest-1'),
+        createDestinationNotificationRouteDraft(2, 'dest-1'),
+      ],
+    })
+
+    expect(error).toBe('This destination is already routed on this rule.')
+  })
+
   it('requires a destination for saved webhook routes', () => {
     const error = validateAlertRuleDraft({
       ...createAlertRuleDraft(),
@@ -417,6 +489,8 @@ describe('alert rule form helpers', () => {
       enabled: true,
       notificationChannels: [{ type: 'email', target: 'ops@example.com' }],
       cooldownMinutes: 60,
+      mutedUntil: null,
+      state: 'active',
     })
 
     expect(draft.queueFilterMode).toBe('exclude')
@@ -437,10 +511,57 @@ describe('alert rule form helpers', () => {
       enabled: true,
       notificationChannels: [],
       cooldownMinutes: 30,
+      mutedUntil: null,
+      state: 'active',
     })
 
     expect(draft.queueFilterMode).toBe('include')
     expect(draft.selectedQueueNames).toEqual(['email-send', 'sms-send'])
+  })
+
+  it('maps validation failures onto individual draft fields', () => {
+    const errors = validateAlertRuleDraftFields({
+      ...createAlertRuleDraft(),
+      name: '',
+      cooldownMinutes: '0',
+      queueFilterMode: 'include',
+      selectedQueueNames: [],
+      failureThresholdCount: '0',
+      notificationRoutes: [{ id: 'route-1', type: 'email', target: 'not-an-email' }],
+    })
+
+    expect(errors.name).toBe('Rule name is required.')
+    expect(errors.cooldownMinutes).toBe(
+      'Cooldown must be a whole number between 1 and 1440 minutes.'
+    )
+    expect(errors.queues).toContain('Choose at least one queue')
+    expect(errors['route:route-1']).toBe('Invalid notification email: not-an-email')
+    expect(errors.failureThresholdCount).toBe(
+      'Failure threshold count must be a whole number between 1 and 10000.'
+    )
+  })
+
+  it('returns an empty field-error map for a valid draft', () => {
+    const errors = validateAlertRuleDraftFields({
+      ...createAlertRuleDraft(),
+      name: 'Valid rule',
+      queueFilterMode: 'exclude',
+    })
+
+    expect(errors).toEqual({})
+  })
+
+  it('only validates the numeric fields of the active rule type', () => {
+    const errors = validateAlertRuleDraftFields({
+      ...createAlertRuleDraft(),
+      name: 'Stalled watcher',
+      queueFilterMode: 'exclude',
+      type: 'queue_stalled',
+      failureThresholdCount: '0',
+      stalledMinutes: '10',
+    })
+
+    expect(errors).toEqual({})
   })
 
   it('hydrates draft from a legacy rule with only queueName', () => {
@@ -457,9 +578,237 @@ describe('alert rule form helpers', () => {
       enabled: true,
       notificationChannels: [],
       cooldownMinutes: 30,
+      mutedUntil: null,
+      state: 'active',
     })
 
     expect(draft.queueFilterMode).toBe('include')
     expect(draft.selectedQueueNames).toEqual(['legacy-queue'])
+  })
+})
+
+describe('buildSentenceTokens', () => {
+  it('produces placeholder tokens for a fresh scratch draft', () => {
+    const tokens = buildSentenceTokens(createAlertRuleDraft())
+    const byKey = Object.fromEntries(tokens.map((token) => [token.key, token]))
+
+    expect(tokens.map((token) => token.key)).toEqual(['queues', 'condition', 'routes', 'cooldown'])
+    expect(byKey.queues).toMatchObject({
+      label: 'choose queues',
+      set: false,
+      targetId: 'rule-panel-queues',
+    })
+    expect(byKey.condition).toMatchObject({
+      label: '≥ 25 new failures within 5 min',
+      set: true,
+      invalid: false,
+      targetId: 'rule-panel-condition',
+    })
+    expect(byKey.routes).toMatchObject({
+      label: 'add destinations',
+      set: false,
+      targetId: 'rule-panel-notify',
+    })
+    expect(byKey.cooldown).toMatchObject({
+      label: 'at most once every 30 min',
+      set: true,
+      invalid: false,
+      targetId: 'rule-panel-advanced',
+    })
+  })
+
+  it('summarizes queue coverage for both filter modes', () => {
+    const base = createAlertRuleDraft()
+
+    const allQueues = buildSentenceTokens({ ...base, queueFilterMode: 'exclude' })
+    expect(allQueues[0]).toMatchObject({ label: 'all queues', set: true })
+
+    const excludeTwo = buildSentenceTokens({
+      ...base,
+      queueFilterMode: 'exclude',
+      selectedQueueNames: ['debug', 'test'],
+    })
+    expect(excludeTwo[0]).toMatchObject({ label: 'all queues except 2', set: true })
+
+    const includeTwo = buildSentenceTokens({
+      ...base,
+      selectedQueueNames: ['email-send', 'sms-send'],
+    })
+    expect(includeTwo[0]).toMatchObject({ label: 'email-send, sms-send', set: true })
+
+    const includeMany = buildSentenceTokens({
+      ...base,
+      selectedQueueNames: ['a', 'b', 'c'],
+    })
+    expect(includeMany[0]).toMatchObject({ label: '3 queues', set: true })
+  })
+
+  it('renders per-type condition fragments', () => {
+    const base = { ...createAlertRuleDraft(), queueFilterMode: 'exclude' as const }
+
+    expect(buildSentenceTokens({ ...base, type: 'failure_rate' })[1].label).toBe(
+      'failure rate ≥ 10% over 15 min (min 100 jobs)'
+    )
+    expect(buildSentenceTokens({ ...base, type: 'queue_stalled' })[1].label).toBe(
+      'no completions for 10 min while jobs wait'
+    )
+    expect(buildSentenceTokens({ ...base, type: 'job_failed' })[1].label).toBe(
+      'any job failure (one Linear issue per job)'
+    )
+  })
+
+  it('marks invalid condition values with the invalid flag', () => {
+    const tokens = buildSentenceTokens({
+      ...createAlertRuleDraft(),
+      queueFilterMode: 'exclude',
+      failureThresholdCount: '0',
+    })
+
+    expect(tokens[1]).toMatchObject({ invalid: true })
+  })
+
+  it('summarizes configured notification routes by channel', () => {
+    const tokens = buildSentenceTokens({
+      ...createAlertRuleDraft(),
+      queueFilterMode: 'exclude',
+      notificationRoutes: [
+        { id: 'route-1', type: 'email', target: 'ops@example.com' },
+        { id: 'route-2', type: 'email', target: 'platform@example.com' },
+        createLinearNotificationRouteDraft(1),
+        createSavedWebhookNotificationRouteDraft(1, 'destination-id'),
+      ],
+    })
+
+    expect(tokens[2]).toMatchObject({
+      label: '2 emails + Linear + 1 webhook',
+      set: true,
+      invalid: false,
+    })
+  })
+
+  it('names destination routes when the destinations lookup is provided', () => {
+    const draft = {
+      ...createAlertRuleDraft(),
+      queueFilterMode: 'exclude' as const,
+      notificationRoutes: [
+        createDestinationNotificationRouteDraft(1, 'dest-1'),
+        createDestinationNotificationRouteDraft(2, 'dest-2'),
+        { id: 'route-1', type: 'email' as const, target: 'ops@example.com' },
+      ],
+    }
+
+    const withLookup = buildSentenceTokens(draft, [
+      { id: 'dest-1', name: 'On-call pipeline' },
+      { id: 'dest-2', name: 'Ops inbox' },
+    ])
+    expect(withLookup[2]).toMatchObject({
+      label: 'On-call pipeline, Ops inbox + 1 email',
+      set: true,
+      invalid: false,
+    })
+
+    const withoutLookup = buildSentenceTokens(draft)
+    expect(withoutLookup[2]).toMatchObject({ label: '2 destinations + 1 email' })
+  })
+
+  it('falls back to a destination count when more than two are routed', () => {
+    const tokens = buildSentenceTokens(
+      {
+        ...createAlertRuleDraft(),
+        queueFilterMode: 'exclude',
+        notificationRoutes: [
+          createDestinationNotificationRouteDraft(1, 'dest-1'),
+          createDestinationNotificationRouteDraft(2, 'dest-2'),
+          createDestinationNotificationRouteDraft(3, 'dest-3'),
+        ],
+      },
+      [
+        { id: 'dest-1', name: 'A' },
+        { id: 'dest-2', name: 'B' },
+        { id: 'dest-3', name: 'C' },
+      ]
+    )
+
+    expect(tokens[2]).toMatchObject({ label: '3 destinations' })
+  })
+
+  it('flags invalid routes on the routes token', () => {
+    const tokens = buildSentenceTokens({
+      ...createAlertRuleDraft(),
+      queueFilterMode: 'exclude',
+      notificationRoutes: [{ id: 'route-1', type: 'email', target: 'not-an-email' }],
+    })
+
+    expect(tokens[2]).toMatchObject({ invalid: true })
+  })
+})
+
+describe('ALERT_RULE_TEMPLATES', () => {
+  it('exposes the four canonical templates', () => {
+    expect(ALERT_RULE_TEMPLATES.map((template) => template.key)).toEqual([
+      'failure-spike',
+      'error-rate',
+      'stalled',
+      'linear-triage',
+    ])
+    expect(getAlertRuleTemplate('error-rate')?.name).toBe('Elevated error rate')
+    expect(getAlertRuleTemplate('unknown')).toBeNull()
+    expect(getAlertRuleTemplate(undefined)).toBeNull()
+  })
+
+  it('applies the failure spike template defaults', () => {
+    const draft = getAlertRuleTemplate('failure-spike')!.apply(createAlertRuleDraft())
+
+    expect(draft).toMatchObject({
+      type: 'failure_threshold',
+      failureThresholdCount: '25',
+      failureThresholdWindowMinutes: '5',
+      cooldownMinutes: '30',
+      queueFilterMode: 'exclude',
+      selectedQueueNames: [],
+    })
+  })
+
+  it('applies the elevated error rate template defaults', () => {
+    const draft = getAlertRuleTemplate('error-rate')!.apply(createAlertRuleDraft())
+
+    expect(draft).toMatchObject({
+      type: 'failure_rate',
+      failureRatePercent: '10',
+      failureRateWindowMinutes: '15',
+      failureRateMinSample: '250',
+      cooldownMinutes: '60',
+      queueFilterMode: 'exclude',
+    })
+  })
+
+  it('applies the queue stalled template defaults', () => {
+    const draft = getAlertRuleTemplate('stalled')!.apply(createAlertRuleDraft())
+
+    expect(draft).toMatchObject({
+      type: 'queue_stalled',
+      stalledMinutes: '10',
+      cooldownMinutes: '30',
+      queueFilterMode: 'exclude',
+    })
+  })
+
+  it('pre-adds a Linear route in the triage template only when the integration is valid', () => {
+    const template = getAlertRuleTemplate('linear-triage')!
+
+    const withLinear = template.apply(createAlertRuleDraft(), { linearIntegrationValid: true })
+    expect(withLinear).toMatchObject({
+      type: 'job_failed',
+      jobFailedMaxIssuesPerPoll: '100',
+      cooldownMinutes: '30',
+      queueFilterMode: 'exclude',
+    })
+    expect(withLinear.notificationRoutes).toHaveLength(1)
+    expect(withLinear.notificationRoutes[0].type).toBe('linear')
+
+    const withoutLinear = template.apply(createAlertRuleDraft(), {
+      linearIntegrationValid: false,
+    })
+    expect(withoutLinear.notificationRoutes.some((route) => route.type === 'linear')).toBe(false)
   })
 })

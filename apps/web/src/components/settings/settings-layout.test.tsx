@@ -41,6 +41,11 @@ describe('SettingsLayout', () => {
     expect(screen.getByRole('link', { name: /authentication/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /appearance/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /integrations/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /alert destinations/i })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /alert destinations/i })).toHaveAttribute(
+      'href',
+      '/acme/settings/destinations'
+    )
     expect(screen.getByRole('link', { name: /connections/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /team/i })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /about/i })).toBeInTheDocument()

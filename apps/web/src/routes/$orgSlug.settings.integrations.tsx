@@ -1,14 +1,15 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Link2 } from 'lucide-react'
 import { useMemo } from 'react'
-import { IntegrationsSettingsPanel } from '@/components/settings/integrations-settings-panel'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { IntegrationsSettingsPanel } from '@/components/settings/integrations-settings-panel'
 
 export const Route = createFileRoute('/$orgSlug/settings/integrations')({
   component: IntegrationsSettingsPage,
 })
 
 function IntegrationsSettingsPage() {
+  const { orgSlug } = Route.useParams()
   const topBarConfig = useMemo(
     () => ({
       left: (
@@ -26,5 +27,5 @@ function IntegrationsSettingsPage() {
 
   useAppTopBar(topBarConfig)
 
-  return <IntegrationsSettingsPanel />
+  return <IntegrationsSettingsPanel orgSlug={orgSlug} />
 }

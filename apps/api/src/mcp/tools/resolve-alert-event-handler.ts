@@ -16,6 +16,12 @@ export async function resolveAlertEventHandler(
   if (!existing || existing.connectionId !== connection.id) {
     throw new McpToolError('not_found', `Alert event ${input.eventId} not found.`)
   }
+  if (existing.status === 'suppressed') {
+    throw new McpToolError(
+      'validation_error',
+      'Suppressed events are informational and cannot be resolved.'
+    )
+  }
 
   const event = await alertEventRepository.resolve(input.eventId, connection.organizationId)
   if (!event) {

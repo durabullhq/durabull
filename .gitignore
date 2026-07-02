@@ -21,3 +21,6 @@ release/
 
 # OS
 .DS_Store
+
+# Local PGlite data (created by the API when DATABASE_URL is unset)
+apps/api/data/

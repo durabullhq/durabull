@@ -1,6 +1,7 @@
 import {
   alertCheckCursorRepository,
   alertDeliveryRepository,
+  alertDestinationRepository,
   alertEventRepository,
   alertRuleRepository,
   alertWebhookDestinationRepository,
@@ -58,11 +59,18 @@ const savedWebhookNotificationChannelSchema = z
     destinationId: z.string().uuid(),
   })
   .strict()
+const destinationNotificationChannelSchema = z
+  .object({
+    type: z.literal('destination'),
+    destinationId: z.string().uuid(),
+  })
+  .strict()
 const notificationChannelSchema = z.union([
   emailNotificationChannelSchema,
   linearNotificationChannelSchema,
   webhookNotificationChannelSchema,
   savedWebhookNotificationChannelSchema,
+  destinationNotificationChannelSchema,
 ])
 
 const testWebhookSchema = z.object({
@@ -95,6 +103,29 @@ const updateRuleSchema = z.object({
   enabled: z.boolean().optional(),
 })
 
+const snoozeRuleSchema = z.object({
+  // Up to 7 days.
+  minutes: z.number().int().min(1).max(10080),
+})
+
+type AlertRuleRow = Awaited<ReturnType<typeof alertRuleRepository.findByConnection>>[number]
+
+function computeRuleState(rule: AlertRuleRow): 'active' | 'snoozed' | 'disabled' {
+  if (!rule.enabled) return 'disabled'
+  if (rule.mutedUntil && rule.mutedUntil.getTime() > Date.now()) return 'snoozed'
+  return 'active'
+}
+
+function serializeAlertRule(rule: AlertRuleRow) {
+  return {
+    ...rule,
+    state: computeRuleState(rule),
+    notificationChannels: sanitizeNotificationChannels(
+      Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
+    ),
+  }
+}
+
 const app = new Hono()
   .get('/rules', async (c) => {
     const connectionId = c.get('connectionId')
@@ -104,12 +135,30 @@ const app = new Hono()
     }
 
     const rules = await alertRuleRepository.findByConnection(connectionId, organizationId)
+
+    // Sidecar with the referenced destinations so the UI can render names
+    // without another round-trip or mutating the channel payloads.
+    const referencedIds = new Set<string>()
+    for (const rule of rules) {
+      for (const channel of Array.isArray(rule.notificationChannels)
+        ? rule.notificationChannels
+        : []) {
+        const destinationId = (channel as { destinationId?: unknown }).destinationId
+        if (typeof destinationId === 'string') referencedIds.add(destinationId)
+      }
+    }
+    const destinations = await alertDestinationRepository.listByIds(
+      [...referencedIds],
+      organizationId
+    )
+
     return c.json({
-      rules: rules.map((rule) => ({
-        ...rule,
-        notificationChannels: sanitizeNotificationChannels(
-          Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
-        ),
+      rules: rules.map(serializeAlertRule),
+      destinations: destinations.map((destination) => ({
+        id: destination.id,
+        name: destination.name,
+        type: destination.type,
+        enabled: destination.enabled,
       })),
     })
   })
@@ -144,17 +193,7 @@ const app = new Hono()
       organizationId,
     })
 
-    return c.json(
-      {
-        rule: {
-          ...rule,
-          notificationChannels: sanitizeNotificationChannels(
-            Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
-          ),
-        },
-      },
-      201
-    )
+    return c.json({ rule: serializeAlertRule(rule) }, 201)
   })
   .patch('/rules/:ruleId', zValidator('json', updateRuleSchema), async (c) => {
     const { ruleId } = c.req.param()
@@ -200,14 +239,7 @@ const app = new Hono()
       await alertEventRepository.resolveAllForRule(rule.id)
     }
 
-    return c.json({
-      rule: {
-        ...rule,
-        notificationChannels: sanitizeNotificationChannels(
-          Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
-        ),
-      },
-    })
+    return c.json({ rule: serializeAlertRule(rule) })
   })
   .delete('/rules/:ruleId', async (c) => {
     const { ruleId } = c.req.param()
@@ -225,6 +257,41 @@ const app = new Hono()
     await alertRuleRepository.delete(ruleId, organizationId)
 
     return c.json({ success: true })
+  })
+  .post('/rules/:ruleId/snooze', zValidator('json', snoozeRuleSchema), async (c) => {
+    const { ruleId } = c.req.param()
+    const { minutes } = c.req.valid('json')
+    const organizationId = c.get('organizationId')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    // Snooze silences the rule without resolving its open incidents — they
+    // stay frozen and resolve on the first poll after the snooze expires.
+    const rule = await alertRuleRepository.setMutedUntil(
+      ruleId,
+      organizationId,
+      new Date(Date.now() + minutes * 60_000)
+    )
+    if (!rule) {
+      return c.json({ error: 'Rule not found' }, 404)
+    }
+
+    return c.json({ rule: serializeAlertRule(rule) })
+  })
+  .delete('/rules/:ruleId/snooze', async (c) => {
+    const { ruleId } = c.req.param()
+    const organizationId = c.get('organizationId')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    const rule = await alertRuleRepository.setMutedUntil(ruleId, organizationId, null)
+    if (!rule) {
+      return c.json({ error: 'Rule not found' }, 404)
+    }
+
+    return c.json({ rule: serializeAlertRule(rule) })
   })
   .post(
     '/rules/:ruleId/test',
@@ -435,11 +502,13 @@ const app = new Hono()
         status: alertEventStatusSchema.optional(),
         queueName: z.string().min(1).optional(),
         jobId: z.string().min(1).optional(),
+        acknowledged: z.enum(['true', 'false']).optional(),
         alertRuleId: z.string().uuid().optional(),
       })
     ),
     async (c) => {
-      const { offset, limit, status, queueName, jobId, alertRuleId } = c.req.valid('query')
+      const { offset, limit, status, queueName, jobId, acknowledged, alertRuleId } =
+        c.req.valid('query')
       const connectionId = c.get('connectionId')
       const organizationId = c.get('organizationId')
       if (!organizationId) {
@@ -452,6 +521,7 @@ const app = new Hono()
         status,
         queueName,
         jobId,
+        acknowledged: acknowledged === undefined ? undefined : acknowledged === 'true',
         alertRuleId,
       })
       return c.json({ events: await attachDeliveries(events) })
@@ -491,14 +561,18 @@ const app = new Hono()
   )
   .post('/events/:eventId/resolve', async (c) => {
     const { eventId } = c.req.param()
+    const connectionId = c.get('connectionId')
     const organizationId = c.get('organizationId')
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
 
     const existing = await alertEventRepository.findById(eventId, organizationId)
-    if (!existing) {
+    if (!existing || existing.connectionId !== connectionId) {
       return c.json({ error: 'Event not found' }, 404)
+    }
+    if (existing.status === 'suppressed') {
+      return c.json({ error: 'Suppressed events are informational and cannot be resolved.' }, 409)
     }
     const wasFiring = existing.status === 'firing'
 
@@ -512,6 +586,50 @@ const app = new Hono()
     }
 
     return c.json({ event })
+  })
+  .post('/events/:eventId/acknowledge', async (c) => {
+    const { eventId } = c.req.param()
+    const connectionId = c.get('connectionId')
+    const organizationId = c.get('organizationId')
+    const user = c.get('user')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+    if (!user) {
+      return c.json({ error: 'Authentication is required to acknowledge alerts' }, 401)
+    }
+
+    const existing = await alertEventRepository.findById(eventId, organizationId)
+    if (!existing || existing.connectionId !== connectionId) {
+      return c.json({ error: 'Event not found' }, 404)
+    }
+
+    const event = await alertEventRepository.acknowledge(eventId, organizationId, user.id)
+    if (!event) {
+      return c.json({ error: 'Only unacknowledged firing events can be acknowledged.' }, 409)
+    }
+
+    return c.json({ event: { ...event, acknowledgedByName: user.name } })
+  })
+  .delete('/events/:eventId/acknowledge', async (c) => {
+    const { eventId } = c.req.param()
+    const connectionId = c.get('connectionId')
+    const organizationId = c.get('organizationId')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    const existing = await alertEventRepository.findById(eventId, organizationId)
+    if (!existing || existing.connectionId !== connectionId) {
+      return c.json({ error: 'Event not found' }, 404)
+    }
+
+    const event = await alertEventRepository.unacknowledge(eventId, organizationId)
+    if (!event) {
+      return c.json({ error: 'Only acknowledged firing events can be unacknowledged.' }, 409)
+    }
+
+    return c.json({ event: { ...event, acknowledgedByName: null } })
   })
   .post('/events/:eventId/deliveries/:deliveryId/retry', async (c) => {
     const { eventId, deliveryId } = c.req.param()
@@ -611,29 +729,48 @@ async function validateNotificationChannels(
   const webhookError = await validateWebhookUrls(inlineWebhookChannels)
   if (webhookError) return webhookError
 
-  const savedWebhookDestinationIds = new Set<string>()
+  // Duplicates are checked across both the legacy saved-webhook variant and
+  // the generalized destination variant — the same destination referenced via
+  // both would enqueue two deliveries for every incident.
+  const referencedDestinationIds = new Set<string>()
   for (const channel of channels) {
-    if (channel.type !== 'webhook' || !('destinationId' in channel)) continue
-    if (savedWebhookDestinationIds.has(channel.destinationId)) {
-      return 'Duplicate saved webhook destinations are not allowed on the same alert rule.'
-    }
-    savedWebhookDestinationIds.add(channel.destinationId)
+    const isSavedWebhook = channel.type === 'webhook' && 'destinationId' in channel
+    const isDestination = channel.type === 'destination'
+    if (!isSavedWebhook && !isDestination) continue
 
-    const destination = await alertWebhookDestinationRepository.findById(
+    if (referencedDestinationIds.has(channel.destinationId)) {
+      return 'Each destination can only be routed once per alert rule.'
+    }
+    referencedDestinationIds.add(channel.destinationId)
+
+    const destination = await alertDestinationRepository.findById(
       channel.destinationId,
       organizationId
     )
     if (!destination) {
-      return 'Webhook destination not found.'
+      return isDestination ? 'Notification destination not found.' : 'Webhook destination not found.'
+    }
+    if (isSavedWebhook && destination.type !== 'webhook') {
+      return `Destination "${destination.name}" is not a webhook destination.`
     }
     if (!destination.enabled) {
-      return `Webhook destination "${destination.name}" is disabled.`
+      return `Destination "${destination.name}" is disabled.`
     }
-    if (destination.encryptedSigningSecret) {
+    if (destination.type === 'webhook' && destination.encryptedSigningSecret) {
       try {
         decryptSecret(destination.encryptedSigningSecret)
       } catch {
         return `Webhook destination "${destination.name}" signing secret could not be decrypted.`
+      }
+    }
+    if (destination.type === 'linear') {
+      const integration = await linearIntegrationRepository.findByOrganization(organizationId)
+      if (!integration || integration.validationStatus !== 'valid') {
+        return 'Linear integration must be configured and valid before Linear alert routing can be enabled.'
+      }
+      const config = (destination.config ?? {}) as { teamId?: string }
+      if (!config.teamId && !integration.defaultTeamId) {
+        return 'Linear alert routing requires a teamId or organization default team.'
       }
     }
   }
@@ -699,16 +836,17 @@ async function resolveWebhookTestChannels(
       destinationId,
       organizationId
     )
-    if (!destination) {
+    if (!destination || !destination.url) {
       results.push({
         url: `destination:${destinationId}`,
         error: 'Webhook destination not found.',
       })
       continue
     }
+    const destinationUrl = destination.url
     if (!destination.enabled) {
       results.push({
-        url: destination.url,
+        url: destinationUrl,
         error: `Webhook destination "${destination.name}" is disabled.`,
       })
       continue
@@ -716,14 +854,14 @@ async function resolveWebhookTestChannels(
 
     try {
       results.push({
-        url: destination.url,
+        url: destinationUrl,
         secret: destination.encryptedSigningSecret
           ? decryptSecret(destination.encryptedSigningSecret)
           : undefined,
       })
     } catch {
       results.push({
-        url: destination.url,
+        url: destinationUrl,
         error: `Webhook destination "${destination.name}" signing secret could not be decrypted.`,
       })
     }

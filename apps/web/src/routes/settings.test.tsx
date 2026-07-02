@@ -42,6 +42,22 @@ vi.mock('@/hooks/use-alerts', () => ({
   }),
 }))
 
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({
+    children,
+    to,
+    params: _params,
+    ...props
+  }: {
+    children?: React.ReactNode
+    to?: string
+  } & Record<string, unknown>) => (
+    <a href={String(to ?? '#')} {...props}>
+      {children}
+    </a>
+  ),
+}))
+
 import { IntegrationsSettingsPanel } from '@/components/settings/integrations-settings-panel'
 
 describe('IntegrationsSettingsPanel', () => {
@@ -58,11 +74,9 @@ describe('IntegrationsSettingsPanel', () => {
 
   it('shows the Linear connect action before OAuth is configured', async () => {
     mocks.connectLinearIntegrationMutateAsync.mockImplementation(() => new Promise(() => {}))
-    render(<IntegrationsSettingsPanel />)
+    render(<IntegrationsSettingsPanel orgSlug="acme" />)
 
-    expect(
-      screen.queryByRole('textbox', { name: /default linear team/i })
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /default linear team/i })).not.toBeInTheDocument()
 
     const connectButton = screen.getByRole('button', { name: /connect linear/i })
     expect(connectButton).toBeEnabled()
@@ -90,7 +104,7 @@ describe('IntegrationsSettingsPanel', () => {
       integration: mocks.linearIntegration,
     })
 
-    render(<IntegrationsSettingsPanel />)
+    render(<IntegrationsSettingsPanel orgSlug="acme" />)
 
     const teamInput = screen.getByRole('textbox', { name: /default linear team/i })
     expect(teamInput).toHaveValue('')

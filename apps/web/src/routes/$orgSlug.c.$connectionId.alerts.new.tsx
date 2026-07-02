@@ -1,30 +1,100 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { zodValidator } from '@tanstack/zod-adapter'
 import { toast } from 'sonner'
-import { AlertRuleBuilderPage } from '@/components/alerts/alert-rule-builder-page'
+import { z } from 'zod'
+import {
+  AlertRuleBuilder,
+  AlertRuleBuilderSkeleton,
+} from '@/components/alerts/alert-rule-builder-v2'
 import { useConnection } from '@/components/connection-provider'
-import { useCreateAlertRule, useLinearIntegration } from '@/hooks/use-alerts'
+import { Button } from '@/components/ui/button'
+import {
+  useConnectionAlertRules,
+  useCreateAlertRule,
+  useLinearIntegration,
+} from '@/hooks/use-alerts'
 import { useQueues } from '@/hooks/use-queues'
 
+// `template` preselects a rule template; `from` duplicates an existing rule.
+const createAlertRuleSearchSchema = z.object({
+  template: z.string().optional().catch(undefined),
+  from: z.string().optional().catch(undefined),
+})
+
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/alerts/new')({
+  validateSearch: zodValidator(createAlertRuleSearchSchema),
   component: CreateAlertRuleRoute,
 })
 
 export function CreateAlertRuleRoute() {
   const { orgSlug, connectionId } = Route.useParams()
+  const { template, from } = Route.useSearch()
   const navigate = useNavigate()
   const { currentConnection } = useConnection()
   const queuesQuery = useQueues({ pageSize: 100 })
   const createRuleMutation = useCreateAlertRule(connectionId)
   const linearIntegrationQuery = useLinearIntegration()
+  const rulesQuery = useConnectionAlertRules(from ? connectionId : undefined)
+
+  if (from && rulesQuery.isLoading) {
+    return <AlertRuleBuilderSkeleton />
+  }
+
+  const duplicateFrom = from
+    ? ((rulesQuery.data?.rules ?? []).find((candidate) => candidate.id === from) ?? null)
+    : null
+
+  // Surface duplication failures instead of silently opening a blank draft.
+  if (from && (rulesQuery.isError || (!rulesQuery.isLoading && !duplicateFrom))) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-lg border border-destructive/30 bg-destructive/5 px-6 py-8 text-center">
+        <h2 className="text-lg font-semibold">Unable to load the rule to duplicate</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {rulesQuery.isError
+            ? 'Fetching alert rules failed. Retry, or start a new rule from scratch.'
+            : 'The rule may have been deleted. Start a new rule from scratch instead.'}
+        </p>
+        <div className="mt-4 flex justify-center gap-2">
+          {rulesQuery.isError ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void rulesQuery.refetch()}
+            >
+              Retry
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              void navigate({
+                to: '/$orgSlug/c/$connectionId/alerts/new',
+                params: { orgSlug, connectionId },
+                search: {},
+                replace: true,
+              })
+            }
+          >
+            Start from scratch
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <AlertRuleBuilderPage
+    <AlertRuleBuilder
       mode="create"
-      key={`create-${connectionId}`}
+      key={`create-${connectionId}-${template ?? ''}-${from ?? ''}`}
       orgSlug={orgSlug}
       connectionId={connectionId}
       connectionName={currentConnection?.name}
       availableQueues={(queuesQuery.data?.queues ?? []).map((queue) => queue.name)}
+      duplicateFrom={duplicateFrom}
+      initialTemplateKey={template}
       isSaving={createRuleMutation.isPending}
       linearIntegrationConfigured={
         linearIntegrationQuery.data?.integration?.validationStatus === 'valid'
@@ -45,9 +115,8 @@ export function CreateAlertRuleRoute() {
         })
 
         navigate({
-          to: '/$orgSlug/c/$connectionId/alerts',
+          to: '/$orgSlug/c/$connectionId/alerts/rules',
           params: { orgSlug, connectionId },
-          search: { tab: 'rules' },
         })
       }}
     />

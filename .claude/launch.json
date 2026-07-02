@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "authless-dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev:authless"],
+      "port": 5173
+    }
+  ]
+}

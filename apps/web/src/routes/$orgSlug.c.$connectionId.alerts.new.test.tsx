@@ -51,12 +51,18 @@ vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => ({
     ...config,
     useParams: () => routeState.params,
+    useSearch: () => ({}),
   }),
   useNavigate: () => navigateMock,
 }))
 
-vi.mock('@/components/alerts/alert-rule-builder-page', () => ({
-  AlertRuleBuilderPage: (props: Record<string, unknown>) => {
+vi.mock('@tanstack/zod-adapter', () => ({
+  zodValidator: (schema: unknown) => schema,
+}))
+
+vi.mock('@/components/alerts/alert-rule-builder-v2', () => ({
+  AlertRuleBuilderSkeleton: () => <div>builder-skeleton</div>,
+  AlertRuleBuilder: (props: Record<string, unknown>) => {
     builderPropsSpy(props)
 
     return (
@@ -105,6 +111,10 @@ vi.mock('@/hooks/use-alerts', () => ({
       },
     },
   }),
+  useConnectionAlertRules: () => ({
+    isLoading: false,
+    data: { rules: [] },
+  }),
 }))
 
 vi.mock('sonner', () => ({
@@ -138,9 +148,8 @@ describe('CreateAlertRuleRoute', () => {
       description: '2 queue-scoped alert rules were created from this builder.',
     })
     expect(navigateMock).toHaveBeenCalledWith({
-      to: '/$orgSlug/c/$connectionId/alerts',
+      to: '/$orgSlug/c/$connectionId/alerts/rules',
       params: { orgSlug: 'acme', connectionId: 'conn-1' },
-      search: { tab: 'rules' },
     })
   })
 })

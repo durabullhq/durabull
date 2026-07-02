@@ -40,6 +40,7 @@ import teamRoutes from './routes/team'
 import telemetryRoutes, { getTelemetryStatus } from './routes/telemetry'
 import userSettingsRoutes from './routes/user-settings'
 import workersRoutes from './routes/workers'
+import alertDestinationsRoutes from './routes/alert-destinations'
 import alertWebhookDestinationsRoutes from './routes/alert-webhook-destinations'
 
 bootstrapServerAnalytics()
@@ -222,6 +223,8 @@ const apiRoutes = new Hono()
   .route('/team', teamRoutes)
   // User settings
   .route('/user-settings', userSettingsRoutes)
+  .route('/alerts/destinations', alertDestinationsRoutes)
+  // Deprecated alias for the webhook-only destination API.
   .route('/alerts/webhook-destinations', alertWebhookDestinationsRoutes)
   .route('/alerts', alertsGlobalRoutes)
   // Connected routes under /c/:connectionId
@@ -422,6 +425,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     .route('/team', teamRoutes)
     .route('/user-settings', userSettingsRoutes)
     .route('/mcp', mcpOAuthRoutes)
+    .route('/alerts/destinations', alertDestinationsRoutes)
     .route('/alerts/webhook-destinations', alertWebhookDestinationsRoutes)
     .route('/alerts', alertsGlobalRoutes)
     .route('/c/:connectionId/alerts', alertsRoutes)

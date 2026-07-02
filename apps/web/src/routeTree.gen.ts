@@ -30,6 +30,7 @@ import { Route as OrgSlugAlertsRouteImport } from './routes/$orgSlug.alerts'
 import { Route as OrgSlugSettingsIndexRouteImport } from './routes/$orgSlug.settings.index'
 import { Route as OrgSlugSettingsTeamRouteImport } from './routes/$orgSlug.settings.team'
 import { Route as OrgSlugSettingsIntegrationsRouteImport } from './routes/$orgSlug.settings.integrations'
+import { Route as OrgSlugSettingsDestinationsRouteImport } from './routes/$orgSlug.settings.destinations'
 import { Route as OrgSlugSettingsConnectionsRouteImport } from './routes/$orgSlug.settings.connections'
 import { Route as OrgSlugSettingsAuthenticationRouteImport } from './routes/$orgSlug.settings.authentication'
 import { Route as OrgSlugSettingsAppearanceRouteImport } from './routes/$orgSlug.settings.appearance'
@@ -45,6 +46,8 @@ import { Route as OrgSlugCConnectionIdAlertsIndexRouteImport } from './routes/$o
 import { Route as OrgSlugCConnectionIdQueuesQueueNameRouteImport } from './routes/$orgSlug.c.$connectionId.queues.$queueName'
 import { Route as OrgSlugCConnectionIdAlertsNewRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.new'
 import { Route as OrgSlugCConnectionIdAlertsRuleIdRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.$ruleId'
+import { Route as OrgSlugCConnectionIdAlertsRulesIndexRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.rules.index'
+import { Route as OrgSlugCConnectionIdAlertsRulesRuleIdRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.rules.$ruleId'
 import { Route as OrgSlugCConnectionIdQueuesQueueNameScheduledJobsNewRouteImport } from './routes/$orgSlug.c.$connectionId.queues.$queueName_.scheduled-jobs.new'
 import { Route as OrgSlugCConnectionIdQueuesQueueNameScheduledJobsSchedulerIdRouteImport } from './routes/$orgSlug.c.$connectionId.queues.$queueName_.scheduled-jobs.$schedulerId'
 import { Route as OrgSlugCConnectionIdQueuesQueueNameJobsJobIdRouteImport } from './routes/$orgSlug.c.$connectionId.queues.$queueName_.jobs.$jobId'
@@ -155,6 +158,12 @@ const OrgSlugSettingsIntegrationsRoute =
     path: '/integrations',
     getParentRoute: () => OrgSlugSettingsRoute,
   } as any)
+const OrgSlugSettingsDestinationsRoute =
+  OrgSlugSettingsDestinationsRouteImport.update({
+    id: '/destinations',
+    path: '/destinations',
+    getParentRoute: () => OrgSlugSettingsRoute,
+  } as any)
 const OrgSlugSettingsConnectionsRoute =
   OrgSlugSettingsConnectionsRouteImport.update({
     id: '/connections',
@@ -243,6 +252,18 @@ const OrgSlugCConnectionIdAlertsRuleIdRoute =
     path: '/$ruleId',
     getParentRoute: () => OrgSlugCConnectionIdAlertsRoute,
   } as any)
+const OrgSlugCConnectionIdAlertsRulesIndexRoute =
+  OrgSlugCConnectionIdAlertsRulesIndexRouteImport.update({
+    id: '/rules/',
+    path: '/rules/',
+    getParentRoute: () => OrgSlugCConnectionIdAlertsRoute,
+  } as any)
+const OrgSlugCConnectionIdAlertsRulesRuleIdRoute =
+  OrgSlugCConnectionIdAlertsRulesRuleIdRouteImport.update({
+    id: '/rules/$ruleId',
+    path: '/rules/$ruleId',
+    getParentRoute: () => OrgSlugCConnectionIdAlertsRoute,
+  } as any)
 const OrgSlugCConnectionIdQueuesQueueNameScheduledJobsNewRoute =
   OrgSlugCConnectionIdQueuesQueueNameScheduledJobsNewRouteImport.update({
     id: '/queues/$queueName_/scheduled-jobs/new',
@@ -288,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
   '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
   '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/destinations': typeof OrgSlugSettingsDestinationsRoute
   '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
   '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
   '/$orgSlug/settings/': typeof OrgSlugSettingsIndexRoute
@@ -301,6 +323,8 @@ export interface FileRoutesByFullPath {
   '/$orgSlug/c/$connectionId/alerts/new': typeof OrgSlugCConnectionIdAlertsNewRoute
   '/$orgSlug/c/$connectionId/queues/$queueName': typeof OrgSlugCConnectionIdQueuesQueueNameRoute
   '/$orgSlug/c/$connectionId/alerts/': typeof OrgSlugCConnectionIdAlertsIndexRoute
+  '/$orgSlug/c/$connectionId/alerts/rules/$ruleId': typeof OrgSlugCConnectionIdAlertsRulesRuleIdRoute
+  '/$orgSlug/c/$connectionId/alerts/rules/': typeof OrgSlugCConnectionIdAlertsRulesIndexRoute
   '/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId': typeof OrgSlugCConnectionIdQueuesQueueNameJobsJobIdRoute
   '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId': typeof OrgSlugCConnectionIdQueuesQueueNameScheduledJobsSchedulerIdRoute
   '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/new': typeof OrgSlugCConnectionIdQueuesQueueNameScheduledJobsNewRoute
@@ -326,6 +350,7 @@ export interface FileRoutesByTo {
   '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
   '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
   '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/destinations': typeof OrgSlugSettingsDestinationsRoute
   '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
   '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
   '/$orgSlug/settings': typeof OrgSlugSettingsIndexRoute
@@ -338,6 +363,8 @@ export interface FileRoutesByTo {
   '/$orgSlug/c/$connectionId/alerts/new': typeof OrgSlugCConnectionIdAlertsNewRoute
   '/$orgSlug/c/$connectionId/queues/$queueName': typeof OrgSlugCConnectionIdQueuesQueueNameRoute
   '/$orgSlug/c/$connectionId/alerts': typeof OrgSlugCConnectionIdAlertsIndexRoute
+  '/$orgSlug/c/$connectionId/alerts/rules/$ruleId': typeof OrgSlugCConnectionIdAlertsRulesRuleIdRoute
+  '/$orgSlug/c/$connectionId/alerts/rules': typeof OrgSlugCConnectionIdAlertsRulesIndexRoute
   '/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId': typeof OrgSlugCConnectionIdQueuesQueueNameJobsJobIdRoute
   '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId': typeof OrgSlugCConnectionIdQueuesQueueNameScheduledJobsSchedulerIdRoute
   '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/new': typeof OrgSlugCConnectionIdQueuesQueueNameScheduledJobsNewRoute
@@ -367,6 +394,7 @@ export interface FileRoutesById {
   '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
   '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
   '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/destinations': typeof OrgSlugSettingsDestinationsRoute
   '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
   '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
   '/$orgSlug/settings/': typeof OrgSlugSettingsIndexRoute
@@ -380,6 +408,8 @@ export interface FileRoutesById {
   '/$orgSlug/c/$connectionId/alerts/new': typeof OrgSlugCConnectionIdAlertsNewRoute
   '/$orgSlug/c/$connectionId/queues/$queueName': typeof OrgSlugCConnectionIdQueuesQueueNameRoute
   '/$orgSlug/c/$connectionId/alerts/': typeof OrgSlugCConnectionIdAlertsIndexRoute
+  '/$orgSlug/c/$connectionId/alerts/rules/$ruleId': typeof OrgSlugCConnectionIdAlertsRulesRuleIdRoute
+  '/$orgSlug/c/$connectionId/alerts/rules/': typeof OrgSlugCConnectionIdAlertsRulesIndexRoute
   '/$orgSlug/c/$connectionId/queues/$queueName_/jobs/$jobId': typeof OrgSlugCConnectionIdQueuesQueueNameJobsJobIdRoute
   '/$orgSlug/c/$connectionId/queues/$queueName_/scheduled-jobs/$schedulerId': typeof OrgSlugCConnectionIdQueuesQueueNameScheduledJobsSchedulerIdRoute
   '/$orgSlug/c/$connectionId/queues/$queueName_/scheduled-jobs/new': typeof OrgSlugCConnectionIdQueuesQueueNameScheduledJobsNewRoute
@@ -410,6 +440,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/settings/appearance'
     | '/$orgSlug/settings/authentication'
     | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/destinations'
     | '/$orgSlug/settings/integrations'
     | '/$orgSlug/settings/team'
     | '/$orgSlug/settings/'
@@ -423,6 +454,8 @@ export interface FileRouteTypes {
     | '/$orgSlug/c/$connectionId/alerts/new'
     | '/$orgSlug/c/$connectionId/queues/$queueName'
     | '/$orgSlug/c/$connectionId/alerts/'
+    | '/$orgSlug/c/$connectionId/alerts/rules/$ruleId'
+    | '/$orgSlug/c/$connectionId/alerts/rules/'
     | '/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId'
     | '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId'
     | '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/new'
@@ -448,6 +481,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/settings/appearance'
     | '/$orgSlug/settings/authentication'
     | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/destinations'
     | '/$orgSlug/settings/integrations'
     | '/$orgSlug/settings/team'
     | '/$orgSlug/settings'
@@ -460,6 +494,8 @@ export interface FileRouteTypes {
     | '/$orgSlug/c/$connectionId/alerts/new'
     | '/$orgSlug/c/$connectionId/queues/$queueName'
     | '/$orgSlug/c/$connectionId/alerts'
+    | '/$orgSlug/c/$connectionId/alerts/rules/$ruleId'
+    | '/$orgSlug/c/$connectionId/alerts/rules'
     | '/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId'
     | '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId'
     | '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/new'
@@ -488,6 +524,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/settings/appearance'
     | '/$orgSlug/settings/authentication'
     | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/destinations'
     | '/$orgSlug/settings/integrations'
     | '/$orgSlug/settings/team'
     | '/$orgSlug/settings/'
@@ -501,6 +538,8 @@ export interface FileRouteTypes {
     | '/$orgSlug/c/$connectionId/alerts/new'
     | '/$orgSlug/c/$connectionId/queues/$queueName'
     | '/$orgSlug/c/$connectionId/alerts/'
+    | '/$orgSlug/c/$connectionId/alerts/rules/$ruleId'
+    | '/$orgSlug/c/$connectionId/alerts/rules/'
     | '/$orgSlug/c/$connectionId/queues/$queueName_/jobs/$jobId'
     | '/$orgSlug/c/$connectionId/queues/$queueName_/scheduled-jobs/$schedulerId'
     | '/$orgSlug/c/$connectionId/queues/$queueName_/scheduled-jobs/new'
@@ -667,6 +706,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgSlugSettingsIntegrationsRouteImport
       parentRoute: typeof OrgSlugSettingsRoute
     }
+    '/$orgSlug/settings/destinations': {
+      id: '/$orgSlug/settings/destinations'
+      path: '/destinations'
+      fullPath: '/$orgSlug/settings/destinations'
+      preLoaderRoute: typeof OrgSlugSettingsDestinationsRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
+    }
     '/$orgSlug/settings/connections': {
       id: '/$orgSlug/settings/connections'
       path: '/connections'
@@ -772,6 +818,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgSlugCConnectionIdAlertsRuleIdRouteImport
       parentRoute: typeof OrgSlugCConnectionIdAlertsRoute
     }
+    '/$orgSlug/c/$connectionId/alerts/rules/': {
+      id: '/$orgSlug/c/$connectionId/alerts/rules/'
+      path: '/rules'
+      fullPath: '/$orgSlug/c/$connectionId/alerts/rules/'
+      preLoaderRoute: typeof OrgSlugCConnectionIdAlertsRulesIndexRouteImport
+      parentRoute: typeof OrgSlugCConnectionIdAlertsRoute
+    }
+    '/$orgSlug/c/$connectionId/alerts/rules/$ruleId': {
+      id: '/$orgSlug/c/$connectionId/alerts/rules/$ruleId'
+      path: '/rules/$ruleId'
+      fullPath: '/$orgSlug/c/$connectionId/alerts/rules/$ruleId'
+      preLoaderRoute: typeof OrgSlugCConnectionIdAlertsRulesRuleIdRouteImport
+      parentRoute: typeof OrgSlugCConnectionIdAlertsRoute
+    }
     '/$orgSlug/c/$connectionId/queues/$queueName_/scheduled-jobs/new': {
       id: '/$orgSlug/c/$connectionId/queues/$queueName_/scheduled-jobs/new'
       path: '/queues/$queueName/scheduled-jobs/new'
@@ -801,6 +861,7 @@ interface OrgSlugSettingsRouteChildren {
   OrgSlugSettingsAppearanceRoute: typeof OrgSlugSettingsAppearanceRoute
   OrgSlugSettingsAuthenticationRoute: typeof OrgSlugSettingsAuthenticationRoute
   OrgSlugSettingsConnectionsRoute: typeof OrgSlugSettingsConnectionsRoute
+  OrgSlugSettingsDestinationsRoute: typeof OrgSlugSettingsDestinationsRoute
   OrgSlugSettingsIntegrationsRoute: typeof OrgSlugSettingsIntegrationsRoute
   OrgSlugSettingsTeamRoute: typeof OrgSlugSettingsTeamRoute
   OrgSlugSettingsIndexRoute: typeof OrgSlugSettingsIndexRoute
@@ -811,6 +872,7 @@ const OrgSlugSettingsRouteChildren: OrgSlugSettingsRouteChildren = {
   OrgSlugSettingsAppearanceRoute: OrgSlugSettingsAppearanceRoute,
   OrgSlugSettingsAuthenticationRoute: OrgSlugSettingsAuthenticationRoute,
   OrgSlugSettingsConnectionsRoute: OrgSlugSettingsConnectionsRoute,
+  OrgSlugSettingsDestinationsRoute: OrgSlugSettingsDestinationsRoute,
   OrgSlugSettingsIntegrationsRoute: OrgSlugSettingsIntegrationsRoute,
   OrgSlugSettingsTeamRoute: OrgSlugSettingsTeamRoute,
   OrgSlugSettingsIndexRoute: OrgSlugSettingsIndexRoute,
@@ -824,6 +886,8 @@ interface OrgSlugCConnectionIdAlertsRouteChildren {
   OrgSlugCConnectionIdAlertsRuleIdRoute: typeof OrgSlugCConnectionIdAlertsRuleIdRoute
   OrgSlugCConnectionIdAlertsNewRoute: typeof OrgSlugCConnectionIdAlertsNewRoute
   OrgSlugCConnectionIdAlertsIndexRoute: typeof OrgSlugCConnectionIdAlertsIndexRoute
+  OrgSlugCConnectionIdAlertsRulesRuleIdRoute: typeof OrgSlugCConnectionIdAlertsRulesRuleIdRoute
+  OrgSlugCConnectionIdAlertsRulesIndexRoute: typeof OrgSlugCConnectionIdAlertsRulesIndexRoute
 }
 
 const OrgSlugCConnectionIdAlertsRouteChildren: OrgSlugCConnectionIdAlertsRouteChildren =
@@ -832,6 +896,10 @@ const OrgSlugCConnectionIdAlertsRouteChildren: OrgSlugCConnectionIdAlertsRouteCh
       OrgSlugCConnectionIdAlertsRuleIdRoute,
     OrgSlugCConnectionIdAlertsNewRoute: OrgSlugCConnectionIdAlertsNewRoute,
     OrgSlugCConnectionIdAlertsIndexRoute: OrgSlugCConnectionIdAlertsIndexRoute,
+    OrgSlugCConnectionIdAlertsRulesRuleIdRoute:
+      OrgSlugCConnectionIdAlertsRulesRuleIdRoute,
+    OrgSlugCConnectionIdAlertsRulesIndexRoute:
+      OrgSlugCConnectionIdAlertsRulesIndexRoute,
   }
 
 const OrgSlugCConnectionIdAlertsRouteWithChildren =

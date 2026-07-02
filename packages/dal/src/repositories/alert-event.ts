@@ -1,12 +1,29 @@
 import { uuidv7 } from '@durabull/utils/uuid'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { type AlertEventStatus, alertEvent } from '../db/schemas/alert-event/schema'
 import type { AlertEvent, NewAlertEvent } from '../db/schemas/alert-event/types'
+import { user } from '../db/schemas/user/schema'
+
+export type AlertEventWithAckUser = AlertEvent & { acknowledgedByName: string | null }
+
+export interface OrganizationOpenAlertSummary {
+  connectionId: string
+  firing: number
+  acknowledged: number
+  open: number
+}
 
 function toNumber(value: number | string | bigint | null | undefined): number {
   if (value === null || value === undefined) return 0
   return Number(value)
+}
+
+function acknowledgedFilter(acknowledged: boolean | undefined) {
+  if (acknowledged === undefined) return []
+  return [
+    acknowledged ? isNotNull(alertEvent.acknowledgedAt) : isNull(alertEvent.acknowledgedAt),
+  ]
 }
 
 function buildAlertEventConnectionFilter(
@@ -16,6 +33,7 @@ function buildAlertEventConnectionFilter(
     status?: AlertEventStatus
     queueName?: string
     jobId?: string
+    acknowledged?: boolean
     alertRuleId?: string
   }
 ) {
@@ -25,7 +43,8 @@ function buildAlertEventConnectionFilter(
     ...(options.status ? [eq(alertEvent.status, options.status)] : []),
     ...(options.queueName ? [eq(alertEvent.queueName, options.queueName)] : []),
     ...(options.jobId ? [sql`${alertEvent.context}->>'jobId' = ${options.jobId}`] : []),
-    ...(options.alertRuleId ? [eq(alertEvent.alertRuleId, options.alertRuleId)] : [])
+    ...(options.alertRuleId ? [eq(alertEvent.alertRuleId, options.alertRuleId)] : []),
+    ...acknowledgedFilter(options.acknowledged)
   )
 }
 
@@ -122,6 +141,140 @@ export const alertEventRepository = {
     return rows[0] ?? null
   },
 
+  /**
+   * Most recent non-suppressed event for (rule, queue). The cooldown window
+   * must anchor to this event — anchoring to suppressed events would extend
+   * the window on every suppression and silence the rule permanently.
+   */
+  async findMostRecentFiredForRule(
+    alertRuleId: string,
+    queueName: string
+  ): Promise<AlertEvent | null> {
+    const db = await getDb()
+    const rows = await db
+      .select()
+      .from(alertEvent)
+      .where(
+        and(
+          eq(alertEvent.alertRuleId, alertRuleId),
+          eq(alertEvent.queueName, queueName),
+          ne(alertEvent.status, 'suppressed')
+        )
+      )
+      .orderBy(desc(alertEvent.firedAt))
+      .limit(1)
+
+    return rows[0] ?? null
+  },
+
+  /**
+   * Record a cooldown suppression. Coalesces to one suppressed event per
+   * cooldown window via dedupeKey ("suppressed:{anchorEventId}"), bumping
+   * context.suppressedCount on repeat suppressions within the same window.
+   */
+  async upsertSuppressed(data: {
+    alertRuleId: string
+    organizationId: string
+    connectionId: string
+    queueName: string
+    type: string
+    summary: string
+    context: Record<string, unknown>
+    dedupeKey: string
+  }): Promise<{ event: AlertEvent; created: boolean }> {
+    const db = await getDb()
+    const now = new Date()
+    const nowIso = now.toISOString()
+
+    const [event] = await db
+      .insert(alertEvent)
+      .values({
+        id: uuidv7(),
+        alertRuleId: data.alertRuleId,
+        organizationId: data.organizationId,
+        connectionId: data.connectionId,
+        queueName: data.queueName,
+        type: data.type,
+        status: 'suppressed',
+        summary: data.summary,
+        context: { ...data.context, suppressedCount: 1, lastSuppressedAt: nowIso },
+        dedupeKey: data.dedupeKey,
+        firedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [alertEvent.alertRuleId, alertEvent.dedupeKey],
+        set: {
+          summary: data.summary,
+          context: sql`jsonb_set(
+            jsonb_set(
+              coalesce(${alertEvent.context}, '{}'::jsonb),
+              '{suppressedCount}',
+              to_jsonb(coalesce((${alertEvent.context}->>'suppressedCount')::int, 0) + 1)
+            ),
+            '{lastSuppressedAt}',
+            to_jsonb(${nowIso}::text)
+          )`,
+          updatedAt: now,
+        },
+      })
+      .returning()
+
+    const suppressedCount =
+      event.context && typeof event.context === 'object'
+        ? Number((event.context as Record<string, unknown>).suppressedCount ?? 0)
+        : 0
+
+    return { event, created: suppressedCount <= 1 }
+  },
+
+  async acknowledge(
+    id: string,
+    organizationId: string,
+    userId: string
+  ): Promise<AlertEvent | null> {
+    const db = await getDb()
+    const [row] = await db
+      .update(alertEvent)
+      .set({
+        acknowledgedAt: new Date(),
+        acknowledgedBy: userId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(alertEvent.id, id),
+          eq(alertEvent.organizationId, organizationId),
+          eq(alertEvent.status, 'firing'),
+          isNull(alertEvent.acknowledgedAt)
+        )
+      )
+      .returning()
+
+    return row ?? null
+  },
+
+  async unacknowledge(id: string, organizationId: string): Promise<AlertEvent | null> {
+    const db = await getDb()
+    const [row] = await db
+      .update(alertEvent)
+      .set({
+        acknowledgedAt: null,
+        acknowledgedBy: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(alertEvent.id, id),
+          eq(alertEvent.organizationId, organizationId),
+          eq(alertEvent.status, 'firing'),
+          isNotNull(alertEvent.acknowledgedAt)
+        )
+      )
+      .returning()
+
+    return row ?? null
+  },
+
   async countByConnection(
     connectionId: string,
     organizationId: string,
@@ -129,6 +282,7 @@ export const alertEventRepository = {
       status?: AlertEventStatus
       queueName?: string
       jobId?: string
+      acknowledged?: boolean
       alertRuleId?: string
     }
   ): Promise<number> {
@@ -152,36 +306,51 @@ export const alertEventRepository = {
       status?: AlertEventStatus
       queueName?: string
       jobId?: string
+      acknowledged?: boolean
       alertRuleId?: string
     }
-  ): Promise<AlertEvent[]> {
+  ): Promise<AlertEventWithAckUser[]> {
     const db = await getDb()
-    return db
-      .select()
+    const rows = await db
+      .select({ event: alertEvent, acknowledgedByName: user.name })
       .from(alertEvent)
+      .leftJoin(user, eq(alertEvent.acknowledgedBy, user.id))
       .where(buildAlertEventConnectionFilter(connectionId, organizationId, options))
       .orderBy(desc(alertEvent.firedAt))
       .offset(options.offset)
       .limit(options.limit)
+
+    return rows.map((row) => ({ ...row.event, acknowledgedByName: row.acknowledgedByName ?? null }))
   },
 
   async findByOrganization(
     organizationId: string,
-    options: { offset: number; limit: number; status?: AlertEventStatus }
-  ): Promise<AlertEvent[]> {
+    options: {
+      offset: number
+      limit: number
+      status?: AlertEventStatus
+      acknowledged?: boolean
+      connectionId?: string
+    }
+  ): Promise<AlertEventWithAckUser[]> {
     const db = await getDb()
-    return db
-      .select()
+    const rows = await db
+      .select({ event: alertEvent, acknowledgedByName: user.name })
       .from(alertEvent)
+      .leftJoin(user, eq(alertEvent.acknowledgedBy, user.id))
       .where(
         and(
           eq(alertEvent.organizationId, organizationId),
-          ...(options.status ? [eq(alertEvent.status, options.status)] : [])
+          ...(options.status ? [eq(alertEvent.status, options.status)] : []),
+          ...(options.connectionId ? [eq(alertEvent.connectionId, options.connectionId)] : []),
+          ...acknowledgedFilter(options.acknowledged)
         )
       )
       .orderBy(desc(alertEvent.firedAt))
       .offset(options.offset)
       .limit(options.limit)
+
+    return rows.map((row) => ({ ...row.event, acknowledgedByName: row.acknowledgedByName ?? null }))
   },
 
   async findByRule(
@@ -215,6 +384,31 @@ export const alertEventRepository = {
       connectionId: row.connectionId,
       count: toNumber(row.count),
     }))
+  },
+
+  /**
+   * Open (firing) events per connection, split by acknowledgement.
+   * Acknowledged events are still open — ack is who/when, not a resolution.
+   */
+  async summarizeOpenByOrganization(
+    organizationId: string
+  ): Promise<OrganizationOpenAlertSummary[]> {
+    const db = await getDb()
+    const rows = await db
+      .select({
+        connectionId: alertEvent.connectionId,
+        firing: sql<number>`count(*) filter (where ${alertEvent.acknowledgedAt} is null)`,
+        acknowledged: sql<number>`count(*) filter (where ${alertEvent.acknowledgedAt} is not null)`,
+      })
+      .from(alertEvent)
+      .where(and(eq(alertEvent.organizationId, organizationId), eq(alertEvent.status, 'firing')))
+      .groupBy(alertEvent.connectionId)
+
+    return rows.map((row) => {
+      const firing = toNumber(row.firing)
+      const acknowledged = toNumber(row.acknowledged)
+      return { connectionId: row.connectionId, firing, acknowledged, open: firing + acknowledged }
+    })
   },
 
   /**

@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, lte, or, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
   alertRule,
@@ -53,6 +53,40 @@ export const alertRuleRepository = {
   async findAllEnabled(): Promise<AlertRule[]> {
     const db = await getDb()
     return db.select().from(alertRule).where(eq(alertRule.enabled, true)).orderBy(asc(alertRule.id))
+  },
+
+  /**
+   * Enabled rules that are not currently snoozed. A rule with a future
+   * mutedUntil is skipped entirely by the monitor; auto-unmute is implicit
+   * once the timestamp passes.
+   */
+  async findAllActive(): Promise<AlertRule[]> {
+    const db = await getDb()
+    return db
+      .select()
+      .from(alertRule)
+      .where(
+        and(
+          eq(alertRule.enabled, true),
+          or(isNull(alertRule.mutedUntil), lte(alertRule.mutedUntil, new Date()))
+        )
+      )
+      .orderBy(asc(alertRule.id))
+  },
+
+  async setMutedUntil(
+    id: string,
+    organizationId: string,
+    mutedUntil: Date | null
+  ): Promise<AlertRule | null> {
+    const db = await getDb()
+    const [result] = await db
+      .update(alertRule)
+      .set({ mutedUntil, updatedAt: new Date() })
+      .where(and(eq(alertRule.id, id), eq(alertRule.organizationId, organizationId)))
+      .returning()
+
+    return result ?? null
   },
 
   async update(
