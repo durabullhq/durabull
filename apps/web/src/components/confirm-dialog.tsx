@@ -39,7 +39,16 @@ export function ConfirmDialog({
   onConfirm,
 }: ConfirmDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Escape, overlay-click, and the corner X button all route through
+        // this callback — block them while a confirm is in flight so a
+        // destructive mutation can't be silently detached from its dialog.
+        if (isConfirming) return
+        onOpenChange(next)
+      }}
+    >
       <DialogContent className="max-w-sm" onClick={(event) => event.stopPropagation()}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>

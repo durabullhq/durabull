@@ -525,13 +525,14 @@ const app = new Hono()
   )
   .post('/events/:eventId/resolve', async (c) => {
     const { eventId } = c.req.param()
+    const connectionId = c.get('connectionId')
     const organizationId = c.get('organizationId')
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
 
     const existing = await alertEventRepository.findById(eventId, organizationId)
-    if (!existing) {
+    if (!existing || existing.connectionId !== connectionId) {
       return c.json({ error: 'Event not found' }, 404)
     }
     if (existing.status === 'suppressed') {
@@ -547,6 +548,7 @@ const app = new Hono()
   })
   .post('/events/:eventId/acknowledge', async (c) => {
     const { eventId } = c.req.param()
+    const connectionId = c.get('connectionId')
     const organizationId = c.get('organizationId')
     const user = c.get('user')
     if (!organizationId) {
@@ -556,12 +558,13 @@ const app = new Hono()
       return c.json({ error: 'Authentication is required to acknowledge alerts' }, 401)
     }
 
+    const existing = await alertEventRepository.findById(eventId, organizationId)
+    if (!existing || existing.connectionId !== connectionId) {
+      return c.json({ error: 'Event not found' }, 404)
+    }
+
     const event = await alertEventRepository.acknowledge(eventId, organizationId, user.id)
     if (!event) {
-      const existing = await alertEventRepository.findById(eventId, organizationId)
-      if (!existing) {
-        return c.json({ error: 'Event not found' }, 404)
-      }
       return c.json({ error: 'Only unacknowledged firing events can be acknowledged.' }, 409)
     }
 
@@ -569,17 +572,19 @@ const app = new Hono()
   })
   .delete('/events/:eventId/acknowledge', async (c) => {
     const { eventId } = c.req.param()
+    const connectionId = c.get('connectionId')
     const organizationId = c.get('organizationId')
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
 
+    const existing = await alertEventRepository.findById(eventId, organizationId)
+    if (!existing || existing.connectionId !== connectionId) {
+      return c.json({ error: 'Event not found' }, 404)
+    }
+
     const event = await alertEventRepository.unacknowledge(eventId, organizationId)
     if (!event) {
-      const existing = await alertEventRepository.findById(eventId, organizationId)
-      if (!existing) {
-        return c.json({ error: 'Event not found' }, 404)
-      }
       return c.json({ error: 'Only acknowledged firing events can be unacknowledged.' }, 409)
     }
 

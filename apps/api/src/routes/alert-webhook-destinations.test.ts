@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  alertDestinationRepository,
   alertWebhookDestination,
   alertRuleRepository,
   closeDb,
@@ -243,5 +244,35 @@ describe('alert webhook destination routes', () => {
     })
 
     expect(disableResponse.status).toBe(409)
+  })
+
+  it('refuses to patch, delete, or list a non-webhook destination through the legacy alias', async () => {
+    const email = await alertDestinationRepository.create({
+      organizationId: TEST_ORG_ID,
+      name: 'Ops email',
+      type: 'email',
+      config: { target: 'ops@example.com' },
+    })
+
+    const app = await createRouteApp()
+
+    const patchResponse = await app.request(`/${email.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ url: 'https://attacker.example.com/hook' }),
+    })
+    expect(patchResponse.status).toBe(404)
+
+    const deleteResponse = await app.request(`/${email.id}`, { method: 'DELETE' })
+    expect(deleteResponse.status).toBe(404)
+
+    // The destination itself must be untouched.
+    const stillEmail = await alertDestinationRepository.findById(email.id, TEST_ORG_ID)
+    expect(stillEmail?.url).toBeNull()
+    expect(stillEmail?.type).toBe('email')
+
+    const listResponse = await app.request('/')
+    const list = (await listResponse.json()) as { destinations: Array<{ id: string }> }
+    expect(list.destinations.some((d) => d.id === email.id)).toBe(false)
   })
 })

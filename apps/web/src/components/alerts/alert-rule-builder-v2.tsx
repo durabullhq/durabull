@@ -144,7 +144,9 @@ export function AlertRuleBuilder({
     if (mode === 'edit') return createAlertRuleDraft(rule)
     if (duplicateFrom) {
       const copied = createAlertRuleDraft(duplicateFrom)
-      return { ...copied, name: `${copied.name} (copy)` }
+      // A duplicate should start active even if the original was muted —
+      // otherwise the copy silently never fires until the user notices.
+      return { ...copied, name: `${copied.name} (copy)`, enabled: true }
     }
     if (initialTemplate) {
       return initialTemplate.apply(createAlertRuleDraft(), {

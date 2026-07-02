@@ -1074,4 +1074,59 @@ describe('alerts routes', () => {
     }
     expect(body.rules.find((entry) => entry.id === rule.id)?.state).toBe('snoozed')
   })
+
+  it('scopes resolve/acknowledge/unacknowledge to the URL connection, not just the org', async () => {
+    await seedUser('user-scope', 'Scope Tester')
+    const app = await createAlertsRouteApp({ userId: 'user-scope' })
+
+    const otherConnectionId = '66666666-6666-4666-8666-666666666666'
+    const db = await getDb()
+    await db.insert(redisConnection).values({
+      id: otherConnectionId,
+      name: 'Other Redis',
+      url: 'redis://localhost:6379/1',
+      environment: 'development',
+      isDefault: false,
+      organizationId: TEST_ORG_ID,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: otherConnectionId,
+      queueName: 'email-send',
+      name: 'Other connection rule',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: otherConnectionId,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Belongs to a different connection',
+      firedAt: new Date(),
+    })
+
+    // The route app is scoped to TEST_CONNECTION_ID; this event belongs to
+    // otherConnectionId and must not be actionable from here.
+    const ackResponse = await app.request(`/events/${event.id}/acknowledge`, { method: 'POST' })
+    expect(ackResponse.status).toBe(404)
+
+    const resolveResponse = await app.request(`/events/${event.id}/resolve`, { method: 'POST' })
+    expect(resolveResponse.status).toBe(404)
+
+    const unchanged = await alertEventRepository.findById(event.id, TEST_ORG_ID)
+    expect(unchanged?.status).toBe('firing')
+    expect(unchanged?.acknowledgedAt).toBeNull()
+
+    const unackResponse = await app.request(`/events/${event.id}/acknowledge`, {
+      method: 'DELETE',
+    })
+    expect(unackResponse.status).toBe(404)
+  })
 })

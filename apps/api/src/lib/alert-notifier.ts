@@ -547,9 +547,12 @@ async function sendDestinationAlert(
         {
           ...delivery,
           providerMetadata: {
+            // Preserve the original destination marker (mirrors the email
+            // branch) instead of overwriting it with 'linear' — parseLinearChannel
+            // only reads the config fields below and ignores `type`.
+            ...metadata,
             ...config,
-            type: 'linear',
-            destinationId,
+            resolvedType: 'linear',
             destinationName: destination.name,
           },
         },

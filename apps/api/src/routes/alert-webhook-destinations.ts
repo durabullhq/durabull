@@ -68,6 +68,14 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
+    // This alias only ever manages webhook destinations — reject requests
+    // targeting an email/linear destination rather than silently writing
+    // url/signingSecret onto a row of the wrong type.
+    const existing = await alertWebhookDestinationRepository.findById(destinationId, organizationId)
+    if (!existing || existing.type !== 'webhook') {
+      return c.json({ error: 'Webhook destination not found' }, 404)
+    }
+
     if (body.url !== undefined) {
       const urlError = await validateWebhookUrls([{ type: 'webhook', url: body.url }])
       if (urlError) {
@@ -117,6 +125,11 @@ const app = new Hono()
     const organizationId = c.get('organizationId')
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    const existing = await alertWebhookDestinationRepository.findById(destinationId, organizationId)
+    if (!existing || existing.type !== 'webhook') {
+      return c.json({ error: 'Webhook destination not found' }, 404)
     }
 
     const references = await alertWebhookDestinationRepository.countRuleReferences(
