@@ -417,6 +417,8 @@ describe('alert rule form helpers', () => {
       enabled: true,
       notificationChannels: [{ type: 'email', target: 'ops@example.com' }],
       cooldownMinutes: 60,
+      mutedUntil: null,
+      state: 'active',
     })
 
     expect(draft.queueFilterMode).toBe('exclude')
@@ -437,6 +439,8 @@ describe('alert rule form helpers', () => {
       enabled: true,
       notificationChannels: [],
       cooldownMinutes: 30,
+      mutedUntil: null,
+      state: 'active',
     })
 
     expect(draft.queueFilterMode).toBe('include')
@@ -457,6 +461,8 @@ describe('alert rule form helpers', () => {
       enabled: true,
       notificationChannels: [],
       cooldownMinutes: 30,
+      mutedUntil: null,
+      state: 'active',
     })
 
     expect(draft.queueFilterMode).toBe('include')

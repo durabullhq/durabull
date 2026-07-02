@@ -1,12 +1,15 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowUpRight, CheckCheck, Loader2 } from 'lucide-react'
+import { ArrowUpRight, CheckCheck, Loader2, UserCheck } from 'lucide-react'
 import { useState } from 'react'
 import { AlertEventDetailsDialog } from '@/components/alerts/alert-event-details-dialog'
 import {
   AlertStatusBadge,
   AlertTypeBadge,
   formatAlertDate,
+  formatRelativeAlertTime,
+  getAlertEventDisplayStatus,
 } from '@/components/alerts/alert-primitives'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -17,6 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type { AlertEventRecord } from '@/hooks/use-alerts'
+import { cn } from '@/lib/utils'
 
 interface AlertEventsTableProps {
   orgSlug: string
@@ -25,8 +29,11 @@ interface AlertEventsTableProps {
   emptyCopy: string
   showConnectionColumn?: boolean
   connectionNameForEvent?: (event: AlertEventRecord) => string
+  getRuleName?: (event: AlertEventRecord) => string | undefined
   onResolve?: (event: AlertEventRecord) => void
   resolvingEventId?: string | null
+  onAcknowledge?: (eventId: string) => void
+  acknowledgingEventId?: string | null
 }
 
 export function AlertEventsTable({
@@ -36,8 +43,11 @@ export function AlertEventsTable({
   emptyCopy,
   showConnectionColumn = false,
   connectionNameForEvent,
+  getRuleName,
   onResolve,
   resolvingEventId,
+  onAcknowledge,
+  acknowledgingEventId,
 }: AlertEventsTableProps) {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
 
@@ -77,11 +87,20 @@ export function AlertEventsTable({
         <TableBody>
           {events.map((event) => {
             const isResolving = resolvingEventId === event.id
+            const isAcknowledging = acknowledgingEventId === event.id
+            const displayStatus = getAlertEventDisplayStatus(event)
+            const ruleName = getRuleName?.(event)
+            const suppressedCount =
+              typeof event.context.suppressedCount === 'number' ? event.context.suppressedCount : 0
 
             return (
               <TableRow
                 key={event.id}
-                className="cursor-pointer"
+                className={cn(
+                  'cursor-pointer',
+                  displayStatus === 'firing' && 'border-l-2 border-l-destructive/60',
+                  displayStatus === 'suppressed' && 'opacity-60'
+                )}
                 onClick={() => setSelectedEventId(event.id)}
               >
                 {showConnectionColumn ? (
@@ -90,10 +109,24 @@ export function AlertEventsTable({
                   </TableCell>
                 ) : null}
                 <TableCell>
-                  <AlertStatusBadge status={event.status} emphasize={event.status === 'firing'} />
+                  <div className="flex items-center gap-1.5">
+                    <AlertStatusBadge
+                      status={event.status}
+                      acknowledged={displayStatus === 'acknowledged'}
+                      emphasize={displayStatus === 'firing'}
+                    />
+                    {displayStatus === 'suppressed' && suppressedCount > 1 ? (
+                      <Badge variant="secondary">×{suppressedCount}</Badge>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell>
-                  <AlertTypeBadge type={event.type} compact />
+                  <div className="space-y-1">
+                    {ruleName ? (
+                      <div className="max-w-[200px] truncate text-sm font-medium">{ruleName}</div>
+                    ) : null}
+                    <AlertTypeBadge type={event.type} compact />
+                  </div>
                 </TableCell>
                 <TableCell className="max-w-[220px]">
                   <Link
@@ -113,6 +146,12 @@ export function AlertEventsTable({
                 <TableCell className="max-w-[520px]">
                   <div className="space-y-1">
                     <p className="line-clamp-2 text-sm font-medium">{event.summary}</p>
+                    {displayStatus === 'acknowledged' ? (
+                      <p className="text-xs text-muted-foreground">
+                        Ack'd by {event.acknowledgedByName ?? 'a teammate'} ·{' '}
+                        {formatRelativeAlertTime(event.acknowledgedAt)}
+                      </p>
+                    ) : null}
                     {event.resolvedAt && event.status === 'resolved' ? (
                       <p className="text-xs text-muted-foreground">
                         Resolved {formatAlertDate(event.resolvedAt)}
@@ -139,6 +178,30 @@ export function AlertEventsTable({
                     >
                       Details
                     </Button>
+                    {displayStatus === 'firing' && onAcknowledge ? (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        onClick={(clickEvent) => {
+                          clickEvent.stopPropagation()
+                          onAcknowledge(event.id)
+                        }}
+                        disabled={isAcknowledging}
+                      >
+                        {isAcknowledging ? (
+                          <>
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            Acknowledging
+                          </>
+                        ) : (
+                          <>
+                            <UserCheck className="mr-1.5 h-3.5 w-3.5" />
+                            Acknowledge
+                          </>
+                        )}
+                      </Button>
+                    ) : null}
                     {event.status === 'firing' && onResolve ? (
                       <Button
                         type="button"

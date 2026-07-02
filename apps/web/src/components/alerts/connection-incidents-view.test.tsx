@@ -8,14 +8,20 @@ const {
   toastSuccessMock,
   useAlertSummaryMock,
   useConnectionAlertEventsMock,
+  useConnectionAlertRulesMock,
   useResolveAlertEventMock,
+  useAcknowledgeAlertEventMock,
   resolveEventMutateAsyncMock,
+  acknowledgeEventMutateAsyncMock,
 } = vi.hoisted(() => ({
   toastSuccessMock: vi.fn(),
   useAlertSummaryMock: vi.fn(),
   useConnectionAlertEventsMock: vi.fn(),
+  useConnectionAlertRulesMock: vi.fn(),
   useResolveAlertEventMock: vi.fn(),
+  useAcknowledgeAlertEventMock: vi.fn(),
   resolveEventMutateAsyncMock: vi.fn(),
+  acknowledgeEventMutateAsyncMock: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -49,7 +55,9 @@ vi.mock('sonner', () => ({
 vi.mock('@/hooks/use-alerts', () => ({
   useAlertSummary: useAlertSummaryMock,
   useConnectionAlertEvents: useConnectionAlertEventsMock,
+  useConnectionAlertRules: useConnectionAlertRulesMock,
   useResolveAlertEvent: useResolveAlertEventMock,
+  useAcknowledgeAlertEvent: useAcknowledgeAlertEventMock,
 }))
 
 const baseEventsQuery = {
@@ -69,6 +77,9 @@ const baseEventsQuery = {
         firedAt: '2026-03-24T10:00:00.000Z',
         resolvedAt: null,
         notificationSentAt: null,
+        acknowledgedAt: null,
+        acknowledgedBy: null,
+        acknowledgedByName: null,
         deliveries: [],
       },
     ],
@@ -79,6 +90,7 @@ describe('ConnectionIncidentsView', () => {
   beforeEach(() => {
     toastSuccessMock.mockReset()
     resolveEventMutateAsyncMock.mockReset().mockResolvedValue(undefined)
+    acknowledgeEventMutateAsyncMock.mockReset().mockResolvedValue(undefined)
 
     useAlertSummaryMock.mockReturnValue({
       data: {
@@ -86,8 +98,16 @@ describe('ConnectionIncidentsView', () => {
       },
     })
     useConnectionAlertEventsMock.mockImplementation(() => baseEventsQuery)
+    useConnectionAlertRulesMock.mockReturnValue({
+      data: {
+        rules: [{ id: 'rule-1', name: 'Delivery failures' }],
+      },
+    })
     useResolveAlertEventMock.mockReturnValue({
       mutateAsync: resolveEventMutateAsyncMock,
+    })
+    useAcknowledgeAlertEventMock.mockReturnValue({
+      mutateAsync: acknowledgeEventMutateAsyncMock,
     })
   })
 
@@ -173,6 +193,29 @@ describe('ConnectionIncidentsView', () => {
       acknowledged: false,
       queueName: undefined,
       limit: 100,
+    })
+  })
+
+  it('acknowledges firing incidents with toast feedback and rule names', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <ConnectionIncidentsView
+        orgSlug="acme"
+        connectionId="conn-1"
+        status="open"
+        onStatusChange={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Delivery failures')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /acknowledge/i }))
+
+    await waitFor(() => expect(acknowledgeEventMutateAsyncMock).toHaveBeenCalledWith('event-1'))
+
+    expect(toastSuccessMock).toHaveBeenCalledWith('Incident acknowledged', {
+      description: 'The alert event is now marked as being handled.',
     })
   })
 

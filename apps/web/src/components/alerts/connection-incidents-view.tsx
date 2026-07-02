@@ -11,8 +11,10 @@ import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   type AlertEventFilterOptions,
+  useAcknowledgeAlertEvent,
   useAlertSummary,
   useConnectionAlertEvents,
+  useConnectionAlertRules,
   useResolveAlertEvent,
 } from '@/hooks/use-alerts'
 import { cn, formatNumber } from '@/lib/utils'
@@ -66,8 +68,10 @@ export function ConnectionIncidentsView({
   onStatusChange: (status: IncidentStatusFilter) => void
 }) {
   const [resolvingEventId, setResolvingEventId] = useState<string | null>(null)
+  const [acknowledgingEventId, setAcknowledgingEventId] = useState<string | null>(null)
 
   const summaryQuery = useAlertSummary({ refetchInterval: 15_000 })
+  const rulesQuery = useConnectionAlertRules(connectionId)
   const eventsQuery = useConnectionAlertEvents(connectionId, {
     ...eventFiltersForStatus(status),
     queueName: queue,
@@ -78,6 +82,15 @@ export function ConnectionIncidentsView({
     limit: 100,
   })
   const resolveEventMutation = useResolveAlertEvent()
+  const acknowledgeEventMutation = useAcknowledgeAlertEvent(connectionId)
+
+  const ruleNameById = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const rule of rulesQuery.data?.rules ?? []) {
+      map.set(rule.id, rule.name)
+    }
+    return map
+  }, [rulesQuery.data?.rules])
 
   const summaryEntry = summaryQuery.data?.connections.find(
     (entry) => entry.connectionId === connectionId
@@ -137,6 +150,22 @@ export function ConnectionIncidentsView({
     }
   }
 
+  async function handleAcknowledgeEvent(eventId: string) {
+    try {
+      setAcknowledgingEventId(eventId)
+      await acknowledgeEventMutation.mutateAsync(eventId)
+      toast.success('Incident acknowledged', {
+        description: 'The alert event is now marked as being handled.',
+      })
+    } catch (error) {
+      toast.error('Failed to acknowledge incident', {
+        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
+      })
+    } finally {
+      setAcknowledgingEventId(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -186,8 +215,11 @@ export function ConnectionIncidentsView({
           events={events}
           emptyTitle={status === 'open' ? 'No open incidents' : 'No incidents recorded yet'}
           emptyCopy="As alert rules evaluate in the background, firing and resolved incidents will appear here with queue-level context."
+          getRuleName={(event) => ruleNameById.get(event.alertRuleId)}
           onResolve={(event) => handleResolveEvent(event.id)}
           resolvingEventId={resolvingEventId}
+          onAcknowledge={(eventId) => handleAcknowledgeEvent(eventId)}
+          acknowledgingEventId={acknowledgingEventId}
         />
       )}
     </div>

@@ -34,6 +34,9 @@ function createEvent(overrides: Partial<AlertEventRecord> = {}): AlertEventRecor
     firedAt: '2026-03-24T10:00:00.000Z',
     resolvedAt: null,
     notificationSentAt: null,
+    acknowledgedAt: null,
+    acknowledgedBy: null,
+    acknowledgedByName: null,
     deliveries: [],
     ...overrides,
   }
@@ -86,6 +89,78 @@ describe('AlertEventsTable', () => {
     await user.click(screen.getByRole('button', { name: /resolve/i }))
 
     expect(onResolve).toHaveBeenCalledWith(expect.objectContaining({ id: 'event-1' }))
+  })
+
+  it('acknowledges firing events and shows rule names when provided', async () => {
+    const user = userEvent.setup()
+    const onAcknowledge = vi.fn()
+
+    render(
+      <AlertEventsTable
+        orgSlug="acme"
+        events={[createEvent()]}
+        emptyTitle="No incidents"
+        emptyCopy="Everything is quiet."
+        getRuleName={() => 'Delivery failures'}
+        onAcknowledge={onAcknowledge}
+        acknowledgingEventId={null}
+      />
+    )
+
+    expect(screen.getByText('Delivery failures')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /acknowledge/i }))
+
+    expect(onAcknowledge).toHaveBeenCalledWith('event-1')
+  })
+
+  it('renders acknowledged rows with a warning badge, ack provenance, and no acknowledge action', () => {
+    render(
+      <AlertEventsTable
+        orgSlug="acme"
+        events={[
+          createEvent({
+            acknowledgedAt: '2026-03-24T10:02:00.000Z',
+            acknowledgedBy: 'user-1',
+            acknowledgedByName: 'Sam Operator',
+          }),
+        ]}
+        emptyTitle="No incidents"
+        emptyCopy="Everything is quiet."
+        onAcknowledge={vi.fn()}
+        onResolve={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('Acknowledged')).toBeInTheDocument()
+    expect(screen.getByText(/Ack'd by Sam Operator/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /acknowledge/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /resolve/i })).toBeInTheDocument()
+  })
+
+  it('renders suppressed rows subdued with a coalesced count and no actions', () => {
+    render(
+      <AlertEventsTable
+        orgSlug="acme"
+        events={[
+          createEvent({
+            id: 'event-3',
+            status: 'suppressed',
+            context: { suppressedCount: 4 },
+          }),
+        ]}
+        emptyTitle="No incidents"
+        emptyCopy="Everything is quiet."
+        onAcknowledge={vi.fn()}
+        onResolve={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText('suppressed')).toBeInTheDocument()
+    expect(screen.getByText('×4')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /acknowledge/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /resolve/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Details' })).toBeInTheDocument()
   })
 
   it('exposes a details action for non-firing events', () => {

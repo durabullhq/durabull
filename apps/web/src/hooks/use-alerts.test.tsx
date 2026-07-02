@@ -4,6 +4,7 @@ import type { PropsWithChildren } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getOpenAlertCount,
+  useAcknowledgeAlertEvent,
   useConnectionAlertRules,
   useCreateAlertRule,
   useGlobalAlertEvents,
@@ -19,6 +20,8 @@ const {
   updateRulePatchMock,
   deleteRuleDeleteMock,
   resolveEventPostMock,
+  acknowledgeEventPostMock,
+  acknowledgeEventDeleteMock,
   testRulePostMock,
   handleResMock,
 } = vi.hoisted(() => ({
@@ -30,6 +33,8 @@ const {
   updateRulePatchMock: vi.fn(),
   deleteRuleDeleteMock: vi.fn(),
   resolveEventPostMock: vi.fn(),
+  acknowledgeEventPostMock: vi.fn(),
+  acknowledgeEventDeleteMock: vi.fn(),
   testRulePostMock: vi.fn(),
   handleResMock: vi.fn(),
 }))
@@ -64,6 +69,10 @@ vi.mock('@/lib/api', () => ({
               resolve: {
                 $post: resolveEventPostMock,
               },
+              acknowledge: {
+                $post: acknowledgeEventPostMock,
+                $delete: acknowledgeEventDeleteMock,
+              },
             },
           },
         },
@@ -80,10 +89,10 @@ function createWrapper(queryClient: QueryClient) {
 }
 
 describe('getOpenAlertCount', () => {
-  it('returns org-wide total when connectionId is omitted', () => {
+  it('returns org-wide total when connectionId is omitted, preferring open over legacy count', () => {
     expect(
       getOpenAlertCount([
-        { connectionId: 'conn-a', firing: 1, acknowledged: 1, open: 2, count: 2 },
+        { connectionId: 'conn-a', firing: 1, acknowledged: 1, open: 2, count: 99 },
         { connectionId: 'conn-b', firing: 1, acknowledged: 0, open: 1, count: 1 },
       ])
     ).toBe(3)
@@ -134,6 +143,8 @@ describe('use-alerts', () => {
     updateRulePatchMock.mockReset()
     deleteRuleDeleteMock.mockReset()
     resolveEventPostMock.mockReset()
+    acknowledgeEventPostMock.mockReset()
+    acknowledgeEventDeleteMock.mockReset()
     testRulePostMock.mockReset()
     handleResMock.mockReset()
   })
@@ -185,6 +196,8 @@ describe('use-alerts', () => {
       enabled: true,
       notificationChannels: [{ type: 'email', target: 'ops@example.com' }],
       cooldownMinutes: 30,
+      mutedUntil: null,
+      state: 'active',
       createdAt: undefined,
       updatedAt: undefined,
     })
@@ -288,6 +301,51 @@ describe('use-alerts', () => {
         cooldownMinutes: 30,
         enabled: true,
       },
+    })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'summary'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'global-events'] })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ['alerts', 'connection', 'conn-1'],
+    })
+  })
+
+  it('acknowledges an event, normalizes ack provenance, and invalidates alert queries', async () => {
+    const queryClient = createQueryClient()
+    const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    acknowledgeEventPostMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      event: {
+        id: 'event-1',
+        alertRuleId: 'rule-1',
+        organizationId: 'org-1',
+        connectionId: 'conn-1',
+        queueName: 'email-send',
+        type: 'failure_threshold',
+        status: 'firing',
+        summary: '12 jobs failed',
+        context: {},
+        firedAt: '2026-03-24T09:00:00.000Z',
+        acknowledgedAt: '2026-03-24T09:02:00.000Z',
+        acknowledgedBy: 'user-1',
+        acknowledgedByName: 'Sam Operator',
+      },
+    })
+
+    const { result } = renderHook(() => useAcknowledgeAlertEvent('conn-1'), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    const data = await result.current.mutateAsync('event-1')
+
+    expect(acknowledgeEventPostMock).toHaveBeenCalledWith({
+      param: { connectionId: 'conn-1', eventId: 'event-1' },
+    })
+    expect(data.event).toMatchObject({
+      status: 'firing',
+      acknowledgedAt: '2026-03-24T09:02:00.000Z',
+      acknowledgedBy: 'user-1',
+      acknowledgedByName: 'Sam Operator',
     })
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'summary'] })
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'global-events'] })

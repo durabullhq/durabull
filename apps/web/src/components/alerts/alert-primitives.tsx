@@ -1,6 +1,11 @@
-import { BellRing, GaugeCircle, Siren, TriangleAlert } from 'lucide-react'
+import { BellRing, GaugeCircle, Moon, Siren, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import type { AlertEventRecord, AlertEventStatus, AlertRuleType } from '@/hooks/use-alerts'
+import type {
+  AlertEventRecord,
+  AlertEventStatus,
+  AlertRuleState,
+  AlertRuleType,
+} from '@/hooks/use-alerts'
 import { cn, formatDateWithTimezone, formatNumber } from '@/lib/utils'
 
 const ALERT_TYPE_META: Record<
@@ -60,27 +65,74 @@ export function AlertTypeBadge({
   )
 }
 
+export type AlertEventDisplayStatus = 'firing' | 'acknowledged' | 'resolved' | 'suppressed'
+
+/** Acknowledged is derived, not a stored status: a firing event with ack provenance. */
+export function getAlertEventDisplayStatus(
+  event: Pick<AlertEventRecord, 'status' | 'acknowledgedAt'>
+): AlertEventDisplayStatus {
+  if (event.status === 'firing' && event.acknowledgedAt) return 'acknowledged'
+  return event.status
+}
+
 export function AlertStatusBadge({
   status,
+  acknowledged = false,
   emphasize = false,
 }: {
   status: AlertEventStatus
+  acknowledged?: boolean
   emphasize?: boolean
 }) {
-  const variant =
-    status === 'firing' ? 'destructive' : status === 'resolved' ? 'success' : 'warning'
+  const isAcknowledged = status === 'firing' && acknowledged
+  const variant = isAcknowledged
+    ? 'warning'
+    : status === 'firing'
+      ? 'destructive'
+      : status === 'resolved'
+        ? 'success'
+        : 'outline'
 
   return (
     <Badge
       variant={variant}
       className={cn(
         'capitalize',
-        emphasize && status === 'firing' && 'shadow-[0_0_0_4px_rgba(239,68,68,0.12)]'
+        status === 'suppressed' && 'text-muted-foreground',
+        emphasize &&
+          status === 'firing' &&
+          !isAcknowledged &&
+          'shadow-[0_0_0_4px_rgba(239,68,68,0.12)]'
       )}
     >
-      {status}
+      {isAcknowledged ? 'Acknowledged' : status}
     </Badge>
   )
+}
+
+export function RuleStateBadge({
+  state,
+  mutedUntil,
+}: {
+  state: AlertRuleState
+  mutedUntil?: Date | string | null
+}) {
+  if (state === 'snoozed') {
+    const remaining = formatAlertTimeRemaining(mutedUntil)
+
+    return (
+      <Badge variant="warning" className="gap-1">
+        <Moon className="h-3 w-3" />
+        Snoozed{remaining ? ` · ${remaining} left` : ''}
+      </Badge>
+    )
+  }
+
+  if (state === 'disabled') {
+    return <Badge variant="secondary">Muted</Badge>
+  }
+
+  return <Badge variant="success">Enabled</Badge>
 }
 
 export function AlertSeverityChip({
@@ -114,6 +166,36 @@ export function formatAlertDate(value: Date | string | number | null | undefined
   const timestamp = toTimestamp(value)
   if (!timestamp) return '—'
   return formatDateWithTimezone(timestamp)
+}
+
+const MINUTE_MS = 60_000
+const HOUR_MS = 60 * MINUTE_MS
+const DAY_MS = 24 * HOUR_MS
+
+function formatCompactDuration(ms: number): string {
+  if (ms < HOUR_MS) return `${Math.max(1, Math.round(ms / MINUTE_MS))}m`
+  if (ms < DAY_MS) return `${Math.round(ms / HOUR_MS)}h`
+  return `${Math.round(ms / DAY_MS)}d`
+}
+
+/** Compact "5m ago" style relative timestamp for table rows. */
+export function formatRelativeAlertTime(value: Date | string | number | null | undefined): string {
+  const timestamp = toTimestamp(value)
+  if (!timestamp) return '—'
+  const elapsed = Date.now() - timestamp
+  if (elapsed < MINUTE_MS) return 'just now'
+  return `${formatCompactDuration(elapsed)} ago`
+}
+
+/** Compact "3h" style duration until a future timestamp, or null when passed/absent. */
+export function formatAlertTimeRemaining(
+  value: Date | string | number | null | undefined
+): string | null {
+  const timestamp = toTimestamp(value)
+  if (!timestamp) return null
+  const remaining = timestamp - Date.now()
+  if (remaining <= 0) return null
+  return formatCompactDuration(remaining)
 }
 
 export function toTimestamp(value: Date | string | number | null | undefined): number | undefined {

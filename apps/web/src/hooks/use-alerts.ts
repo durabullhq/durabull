@@ -28,6 +28,14 @@ type ResolveAlertEventResponse = InferResponseType<
   ConnectionAlertsEndpoint['events'][':eventId']['resolve']['$post'],
   200
 >
+type AcknowledgeAlertEventResponse = InferResponseType<
+  ConnectionAlertsEndpoint['events'][':eventId']['acknowledge']['$post'],
+  200
+>
+type UnacknowledgeAlertEventResponse = InferResponseType<
+  ConnectionAlertsEndpoint['events'][':eventId']['acknowledge']['$delete'],
+  200
+>
 type RetryAlertDeliveryResponse = InferResponseType<
   ConnectionAlertsEndpoint['events'][':eventId']['deliveries'][':deliveryId']['retry']['$post'],
   200
@@ -65,6 +73,7 @@ export type AlertSummaryConnection = AlertSummaryResponse['connections'][number]
 export type AlertRuleType = 'failure_threshold' | 'failure_rate' | 'queue_stalled' | 'job_failed'
 export type QueueFilterMode = 'include' | 'exclude'
 export type AlertEventStatus = 'firing' | 'resolved' | 'suppressed'
+export type AlertRuleState = 'active' | 'snoozed' | 'disabled'
 
 export type AlertNotificationChannel =
   | { type: 'email'; target: string }
@@ -115,6 +124,8 @@ export interface AlertRuleRecord {
   enabled: boolean
   notificationChannels: AlertNotificationChannel[]
   cooldownMinutes: number
+  mutedUntil: string | Date | null
+  state: AlertRuleState
   createdAt?: string | Date
   updatedAt?: string | Date
 }
@@ -132,6 +143,9 @@ export interface AlertEventRecord {
   firedAt: string | Date
   resolvedAt?: string | Date | null
   notificationSentAt?: string | Date | null
+  acknowledgedAt: string | Date | null
+  acknowledgedBy: string | null
+  acknowledgedByName: string | null
   deliveries: AlertDeliveryRecord[]
 }
 
@@ -338,8 +352,24 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string')
 }
 
+function isAlertRuleState(value: unknown): value is AlertRuleState {
+  return value === 'active' || value === 'snoozed' || value === 'disabled'
+}
+
+function normalizeNullableDate(value: unknown): string | Date | null {
+  return typeof value === 'string' || value instanceof Date ? value : null
+}
+
+function computeRuleState(enabled: boolean, mutedUntil: string | Date | null): AlertRuleState {
+  if (!enabled) return 'disabled'
+  if (mutedUntil && new Date(mutedUntil).getTime() > Date.now()) return 'snoozed'
+  return 'active'
+}
+
 function normalizeAlertRule(value: unknown): AlertRuleRecord {
   const source = isRecord(value) ? value : {}
+  const enabled = source.enabled !== false
+  const mutedUntil = normalizeNullableDate(source.mutedUntil)
 
   return {
     id: typeof source.id === 'string' ? source.id : '',
@@ -351,9 +381,11 @@ function normalizeAlertRule(value: unknown): AlertRuleRecord {
     name: typeof source.name === 'string' ? source.name : 'Alert rule',
     type: isAlertRuleType(source.type) ? source.type : 'failure_threshold',
     config: isRecord(source.config) ? source.config : {},
-    enabled: source.enabled !== false,
+    enabled,
     notificationChannels: normalizeNotificationChannels(source.notificationChannels),
     cooldownMinutes: toNumber(source.cooldownMinutes, 30),
+    mutedUntil,
+    state: isAlertRuleState(source.state) ? source.state : computeRuleState(enabled, mutedUntil),
     createdAt:
       typeof source.createdAt === 'string' || source.createdAt instanceof Date
         ? source.createdAt
@@ -390,6 +422,10 @@ function normalizeAlertEvent(value: unknown): AlertEventRecord {
       typeof source.notificationSentAt === 'string' || source.notificationSentAt instanceof Date
         ? source.notificationSentAt
         : null,
+    acknowledgedAt: normalizeNullableDate(source.acknowledgedAt),
+    acknowledgedBy: typeof source.acknowledgedBy === 'string' ? source.acknowledgedBy : null,
+    acknowledgedByName:
+      typeof source.acknowledgedByName === 'string' ? source.acknowledgedByName : null,
     deliveries: normalizeAlertDeliveries(source.deliveries),
   }
 }
@@ -437,6 +473,11 @@ function invalidateAlertQueries(queryClient: QueryClient, connectionId?: string)
   }
 }
 
+/** Open = firing incl. acknowledged; `count` is the legacy key kept for one release. */
+function connectionOpenCount(entry: AlertSummaryConnection): number {
+  return typeof entry.open === 'number' ? entry.open : entry.count
+}
+
 /** Open incident count for one connection, or org-wide when connectionId is omitted. */
 export function getOpenAlertCount(
   connections: AlertSummaryConnection[] | undefined,
@@ -444,9 +485,10 @@ export function getOpenAlertCount(
 ): number {
   const entries = connections ?? []
   if (connectionId) {
-    return entries.find((entry) => entry.connectionId === connectionId)?.count ?? 0
+    const entry = entries.find((candidate) => candidate.connectionId === connectionId)
+    return entry ? connectionOpenCount(entry) : 0
   }
-  return entries.reduce((sum, entry) => sum + entry.count, 0)
+  return entries.reduce((sum, entry) => sum + connectionOpenCount(entry), 0)
 }
 
 export function useAlertSummary(options?: { refetchInterval?: number }) {
@@ -605,6 +647,36 @@ export function useResolveAlertEvent() {
       return { event: normalizeAlertEvent(data.event) }
     },
     onSuccess: (_, variables) => invalidateAlertQueries(queryClient, variables.connectionId),
+  })
+}
+
+export function useAcknowledgeAlertEvent(connectionId: string | undefined) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (eventId: string) => {
+      const res = await api.c[':connectionId'].alerts.events[':eventId'].acknowledge.$post({
+        param: { connectionId: connectionId!, eventId },
+      })
+      const data = await handleRes<AcknowledgeAlertEventResponse>(res)
+      return { event: normalizeAlertEvent(data.event) }
+    },
+    onSuccess: () => invalidateAlertQueries(queryClient, connectionId),
+  })
+}
+
+export function useUnacknowledgeAlertEvent(connectionId: string | undefined) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (eventId: string) => {
+      const res = await api.c[':connectionId'].alerts.events[':eventId'].acknowledge.$delete({
+        param: { connectionId: connectionId!, eventId },
+      })
+      const data = await handleRes<UnacknowledgeAlertEventResponse>(res)
+      return { event: normalizeAlertEvent(data.event) }
+    },
+    onSuccess: () => invalidateAlertQueries(queryClient, connectionId),
   })
 }
 

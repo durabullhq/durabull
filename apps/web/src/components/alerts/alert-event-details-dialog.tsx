@@ -4,6 +4,7 @@ import {
   AlertStatusBadge,
   AlertTypeBadge,
   formatAlertDate,
+  getAlertEventDisplayStatus,
 } from '@/components/alerts/alert-primitives'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -63,6 +64,9 @@ export function AlertEventDetailsDialog({
 function AlertEventDetails({ event }: { event: AlertEventRecord }) {
   const retryMutation = useRetryAlertDelivery()
   const contextEntries = formatContextEntries(event.context)
+  const displayStatus = getAlertEventDisplayStatus(event)
+  const suppressedCount =
+    typeof event.context.suppressedCount === 'number' ? event.context.suppressedCount : 0
 
   async function handleRetry(delivery: AlertDeliveryRecord) {
     try {
@@ -85,11 +89,18 @@ function AlertEventDetails({ event }: { event: AlertEventRecord }) {
     <>
       <DialogHeader>
         <div className="flex flex-wrap items-center gap-2">
-          <AlertStatusBadge status={event.status} emphasize={event.status === 'firing'} />
+          <AlertStatusBadge
+            status={event.status}
+            acknowledged={displayStatus === 'acknowledged'}
+            emphasize={displayStatus === 'firing'}
+          />
           <AlertTypeBadge type={event.type} compact />
           <Badge variant="outline" className="border-border/70 bg-background/70">
             {event.queueName}
           </Badge>
+          {event.status === 'suppressed' && suppressedCount > 1 ? (
+            <Badge variant="secondary">×{suppressedCount} suppressed</Badge>
+          ) : null}
         </div>
         <DialogTitle className="pt-2 text-base leading-6">{event.summary}</DialogTitle>
         <DialogDescription>
@@ -98,6 +109,12 @@ function AlertEventDetails({ event }: { event: AlertEventRecord }) {
             ? ` · Resolved ${formatAlertDate(event.resolvedAt)}`
             : ''}
         </DialogDescription>
+        {event.acknowledgedAt ? (
+          <DialogDescription>
+            Acknowledged by {event.acknowledgedByName ?? 'a teammate'} ·{' '}
+            {formatAlertDate(event.acknowledgedAt)}
+          </DialogDescription>
+        ) : null}
       </DialogHeader>
 
       {contextEntries.length > 0 ? (

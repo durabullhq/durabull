@@ -53,6 +53,8 @@ function createRule(overrides: Partial<AlertRuleRecord> = {}): AlertRuleRecord {
     enabled: true,
     notificationChannels: [{ type: 'email', target: 'ops@example.com' }],
     cooldownMinutes: 30,
+    mutedUntil: null,
+    state: 'active',
     ...overrides,
   }
 }

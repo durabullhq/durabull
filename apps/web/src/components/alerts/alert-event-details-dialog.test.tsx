@@ -52,6 +52,9 @@ function createEvent(overrides: Partial<AlertEventRecord> = {}): AlertEventRecor
     firedAt: '2026-03-24T10:00:00.000Z',
     resolvedAt: null,
     notificationSentAt: null,
+    acknowledgedAt: null,
+    acknowledgedBy: null,
+    acknowledgedByName: null,
     deliveries: [createDelivery()],
     ...overrides,
   }
@@ -123,5 +126,31 @@ describe('AlertEventDetailsDialog', () => {
     renderDialog(createEvent({ deliveries: [] }))
 
     expect(screen.getByText(/No notification channels were configured/i)).toBeInTheDocument()
+  })
+
+  it('shows acknowledgement provenance in the header when present', () => {
+    renderDialog(
+      createEvent({
+        acknowledgedAt: '2026-03-24T10:02:00.000Z',
+        acknowledgedBy: 'user-1',
+        acknowledgedByName: 'Sam Operator',
+      })
+    )
+
+    expect(screen.getByText('Acknowledged')).toBeInTheDocument()
+    expect(screen.getByText(/Acknowledged by Sam Operator ·/)).toBeInTheDocument()
+  })
+
+  it('surfaces the coalesced suppression count for suppressed events', () => {
+    renderDialog(
+      createEvent({
+        status: 'suppressed',
+        context: { suppressedCount: 3 },
+        deliveries: [],
+      })
+    )
+
+    expect(screen.getByText('×3 suppressed')).toBeInTheDocument()
+    expect(screen.getByText('Suppressed Count')).toBeInTheDocument()
   })
 })
