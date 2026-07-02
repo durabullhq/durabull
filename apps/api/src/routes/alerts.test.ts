@@ -864,4 +864,101 @@ describe('alerts routes', () => {
     })
     expect(delivery?.providerMetadata?.secret).toBeUndefined()
   })
+
+  it('snoozes and unsnoozes a rule without touching its open incidents', async () => {
+    const app = await createAlertsRouteApp()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Failure threshold',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Open incident',
+      firedAt: new Date(),
+    })
+
+    const snoozeResponse = await app.request(
+      `/rules/${rule.id}/snooze`,
+      jsonRequest({ minutes: 60 })
+    )
+    expect(snoozeResponse.status).toBe(200)
+    const snoozed = (await snoozeResponse.json()) as {
+      rule: { state: string; mutedUntil: string | null }
+    }
+    expect(snoozed.rule.state).toBe('snoozed')
+    expect(new Date(snoozed.rule.mutedUntil ?? 0).getTime()).toBeGreaterThan(Date.now())
+
+    // Snooze must not resolve open incidents (unlike disabling the rule).
+    const stillFiring = await alertEventRepository.findById(event.id, TEST_ORG_ID)
+    expect(stillFiring?.status).toBe('firing')
+
+    const unsnoozeResponse = await app.request(`/rules/${rule.id}/snooze`, { method: 'DELETE' })
+    expect(unsnoozeResponse.status).toBe(200)
+    const unsnoozed = (await unsnoozeResponse.json()) as {
+      rule: { state: string; mutedUntil: string | null }
+    }
+    expect(unsnoozed.rule.state).toBe('active')
+    expect(unsnoozed.rule.mutedUntil).toBeNull()
+  })
+
+  it('validates snooze payloads and rule existence', async () => {
+    const app = await createAlertsRouteApp()
+
+    const missing = await app.request(
+      '/rules/66666666-6666-4666-8666-666666666666/snooze',
+      jsonRequest({ minutes: 60 })
+    )
+    expect(missing.status).toBe(404)
+
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Failure threshold',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+
+    const tooLong = await app.request(
+      `/rules/${rule.id}/snooze`,
+      jsonRequest({ minutes: 10081 })
+    )
+    expect(tooLong.status).toBe(400)
+  })
+
+  it('reports rule state in list responses', async () => {
+    const app = await createAlertsRouteApp()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Failure threshold',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    await alertRuleRepository.setMutedUntil(
+      rule.id,
+      TEST_ORG_ID,
+      new Date(Date.now() + 60 * 60_000)
+    )
+
+    const response = await app.request('/rules')
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      rules: Array<{ id: string; state: string; mutedUntil: string | null }>
+    }
+    expect(body.rules.find((entry) => entry.id === rule.id)?.state).toBe('snoozed')
+  })
 })

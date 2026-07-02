@@ -189,7 +189,9 @@ async function runPollCycle(): Promise<void> {
   pollInProgress = true
 
   try {
-    const rules = await alertRuleRepository.findAllEnabled()
+    // Skips disabled rules and rules snoozed via mutedUntil; snoozed rules
+    // resume automatically on the first poll after the timestamp passes.
+    const rules = await alertRuleRepository.findAllActive()
     if (rules.length > 0) {
       const rulesByConnection = new Map<string, AlertRule[]>()
       for (const rule of rules) {

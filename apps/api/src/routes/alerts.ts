@@ -94,6 +94,29 @@ const updateRuleSchema = z.object({
   enabled: z.boolean().optional(),
 })
 
+const snoozeRuleSchema = z.object({
+  // Up to 7 days.
+  minutes: z.number().int().min(1).max(10080),
+})
+
+type AlertRuleRow = Awaited<ReturnType<typeof alertRuleRepository.findByConnection>>[number]
+
+function computeRuleState(rule: AlertRuleRow): 'active' | 'snoozed' | 'disabled' {
+  if (!rule.enabled) return 'disabled'
+  if (rule.mutedUntil && rule.mutedUntil.getTime() > Date.now()) return 'snoozed'
+  return 'active'
+}
+
+function serializeAlertRule(rule: AlertRuleRow) {
+  return {
+    ...rule,
+    state: computeRuleState(rule),
+    notificationChannels: sanitizeNotificationChannels(
+      Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
+    ),
+  }
+}
+
 const app = new Hono()
   .get('/rules', async (c) => {
     const connectionId = c.get('connectionId')
@@ -104,12 +127,7 @@ const app = new Hono()
 
     const rules = await alertRuleRepository.findByConnection(connectionId, organizationId)
     return c.json({
-      rules: rules.map((rule) => ({
-        ...rule,
-        notificationChannels: sanitizeNotificationChannels(
-          Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
-        ),
-      })),
+      rules: rules.map(serializeAlertRule),
     })
   })
   .post('/rules', zValidator('json', createRuleSchema), async (c) => {
@@ -143,17 +161,7 @@ const app = new Hono()
       organizationId,
     })
 
-    return c.json(
-      {
-        rule: {
-          ...rule,
-          notificationChannels: sanitizeNotificationChannels(
-            Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
-          ),
-        },
-      },
-      201
-    )
+    return c.json({ rule: serializeAlertRule(rule) }, 201)
   })
   .patch('/rules/:ruleId', zValidator('json', updateRuleSchema), async (c) => {
     const { ruleId } = c.req.param()
@@ -199,14 +207,7 @@ const app = new Hono()
       await alertEventRepository.resolveAllForRule(rule.id)
     }
 
-    return c.json({
-      rule: {
-        ...rule,
-        notificationChannels: sanitizeNotificationChannels(
-          Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
-        ),
-      },
-    })
+    return c.json({ rule: serializeAlertRule(rule) })
   })
   .delete('/rules/:ruleId', async (c) => {
     const { ruleId } = c.req.param()
@@ -224,6 +225,41 @@ const app = new Hono()
     await alertRuleRepository.delete(ruleId, organizationId)
 
     return c.json({ success: true })
+  })
+  .post('/rules/:ruleId/snooze', zValidator('json', snoozeRuleSchema), async (c) => {
+    const { ruleId } = c.req.param()
+    const { minutes } = c.req.valid('json')
+    const organizationId = c.get('organizationId')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    // Snooze silences the rule without resolving its open incidents — they
+    // stay frozen and resolve on the first poll after the snooze expires.
+    const rule = await alertRuleRepository.setMutedUntil(
+      ruleId,
+      organizationId,
+      new Date(Date.now() + minutes * 60_000)
+    )
+    if (!rule) {
+      return c.json({ error: 'Rule not found' }, 404)
+    }
+
+    return c.json({ rule: serializeAlertRule(rule) })
+  })
+  .delete('/rules/:ruleId/snooze', async (c) => {
+    const { ruleId } = c.req.param()
+    const organizationId = c.get('organizationId')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    const rule = await alertRuleRepository.setMutedUntil(ruleId, organizationId, null)
+    if (!rule) {
+      return c.json({ error: 'Rule not found' }, 404)
+    }
+
+    return c.json({ rule: serializeAlertRule(rule) })
   })
   .post(
     '/rules/:ruleId/test',
