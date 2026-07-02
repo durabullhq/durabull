@@ -13,6 +13,7 @@ import {
   linearOauthStateRepository,
   organization,
   redisConnection,
+  user,
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { Hono } from 'hono'
@@ -115,6 +116,18 @@ async function seedOrganization() {
       updatedAt: now,
     },
   ])
+}
+
+async function seedUser(id: string, name: string) {
+  const db = await getDb()
+  const now = new Date()
+  await db.insert(user).values({
+    id,
+    name,
+    email: `${id}@example.com`,
+    createdAt: now,
+    updatedAt: now,
+  })
 }
 
 async function createGlobalAlertsRouteApp(options: { includeContext?: boolean } = {}) {
@@ -349,8 +362,86 @@ describe('global alerts routes', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
-      connections: [{ connectionId: FIRST_CONNECTION_ID, count: 2 }],
+      connections: [
+        {
+          connectionId: FIRST_CONNECTION_ID,
+          firing: 2,
+          acknowledged: 0,
+          open: 2,
+          count: 2,
+        },
+      ],
     })
+  })
+
+  it('splits summary counts between firing and acknowledged and supports org-level ack', async () => {
+    await seedUser('user-1', 'Test User')
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Email failures',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+
+    const first = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Incident A',
+      context: {},
+      firedAt: new Date(),
+    })
+    await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Incident B',
+      context: {},
+      firedAt: new Date(Date.now() - 1_000),
+    })
+
+    const app = await createGlobalAlertsRouteApp()
+
+    const ackResponse = await app.request(`/events/${first.id}/acknowledge`, { method: 'POST' })
+    expect(ackResponse.status).toBe(200)
+    const acked = (await ackResponse.json()) as {
+      event: { acknowledgedBy: string | null; acknowledgedByName: string | null }
+    }
+    expect(acked.event.acknowledgedBy).toBe('user-1')
+    expect(acked.event.acknowledgedByName).toBe('Test User')
+
+    const summaryResponse = await app.request('/summary')
+    expect(await summaryResponse.json()).toEqual({
+      connections: [
+        {
+          connectionId: FIRST_CONNECTION_ID,
+          firing: 1,
+          acknowledged: 1,
+          open: 2,
+          count: 2,
+        },
+      ],
+    })
+
+    const eventsResponse = await app.request('/events?acknowledged=true')
+    const events = (await eventsResponse.json()) as {
+      events: Array<{ id: string; acknowledgedByName: string | null }>
+    }
+    expect(events.events).toHaveLength(1)
+    expect(events.events[0]?.id).toBe(first.id)
+    expect(events.events[0]?.acknowledgedByName).toBe('Test User')
+
+    const resolveResponse = await app.request(`/events/${first.id}/resolve`, { method: 'POST' })
+    expect(resolveResponse.status).toBe(200)
   })
 
   it('stores Linear OAuth tokens encrypted and returns only connection metadata', async () => {

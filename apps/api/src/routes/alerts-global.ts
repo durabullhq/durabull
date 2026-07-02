@@ -69,10 +69,11 @@ const app = new Hono()
         offset: z.coerce.number().int().min(0).default(0),
         limit: z.coerce.number().int().min(1).max(100).default(20),
         status: z.enum(['firing', 'resolved', 'suppressed']).optional(),
+        acknowledged: z.enum(['true', 'false']).optional(),
       })
     ),
     async (c) => {
-      const { offset, limit, status } = c.req.valid('query')
+      const { offset, limit, status, acknowledged } = c.req.valid('query')
       const organizationId = c.get('organizationId')
       if (!organizationId) {
         return c.json({ error: 'Organization is required' }, 403)
@@ -82,6 +83,7 @@ const app = new Hono()
         offset,
         limit,
         status,
+        acknowledged: acknowledged === undefined ? undefined : acknowledged === 'true',
       })
       return c.json({ events: await attachDeliveries(events) })
     }
@@ -92,8 +94,76 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
-    const counts = await alertEventRepository.countFiringByOrganization(organizationId)
-    return c.json({ connections: counts })
+    const summaries = await alertEventRepository.summarizeOpenByOrganization(organizationId)
+    return c.json({
+      connections: summaries.map((summary) => ({
+        ...summary,
+        // Legacy key consumed by older clients; open = firing + acknowledged.
+        count: summary.open,
+      })),
+    })
+  })
+  .post('/events/:eventId/resolve', async (c) => {
+    const { eventId } = c.req.param()
+    const organizationId = c.get('organizationId')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    const existing = await alertEventRepository.findById(eventId, organizationId)
+    if (!existing) {
+      return c.json({ error: 'Event not found' }, 404)
+    }
+    if (existing.status === 'suppressed') {
+      return c.json({ error: 'Suppressed events are informational and cannot be resolved.' }, 409)
+    }
+
+    const event = await alertEventRepository.resolve(eventId, organizationId)
+    if (!event) {
+      return c.json({ error: 'Event not found' }, 404)
+    }
+
+    return c.json({ event })
+  })
+  .post('/events/:eventId/acknowledge', async (c) => {
+    const { eventId } = c.req.param()
+    const organizationId = c.get('organizationId')
+    const user = c.get('user')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+    if (!user) {
+      return c.json({ error: 'Authentication is required to acknowledge alerts' }, 401)
+    }
+
+    const event = await alertEventRepository.acknowledge(eventId, organizationId, user.id)
+    if (!event) {
+      const existing = await alertEventRepository.findById(eventId, organizationId)
+      if (!existing) {
+        return c.json({ error: 'Event not found' }, 404)
+      }
+      return c.json({ error: 'Only unacknowledged firing events can be acknowledged.' }, 409)
+    }
+
+    return c.json({ event: { ...event, acknowledgedByName: user.name } })
+  })
+  .delete('/events/:eventId/acknowledge', async (c) => {
+    const { eventId } = c.req.param()
+    const organizationId = c.get('organizationId')
+    if (!organizationId) {
+      return c.json({ error: 'Organization is required' }, 403)
+    }
+
+    const event = await alertEventRepository.unacknowledge(eventId, organizationId)
+    if (!event) {
+      const existing = await alertEventRepository.findById(eventId, organizationId)
+      if (!existing) {
+        return c.json({ error: 'Event not found' }, 404)
+      }
+      return c.json({ error: 'Only acknowledged firing events can be unacknowledged.' }, 409)
+    }
+
+    return c.json({ event: { ...event, acknowledgedByName: null } })
   })
   .get('/integrations/linear', async (c) => {
     const organizationId = c.get('organizationId')

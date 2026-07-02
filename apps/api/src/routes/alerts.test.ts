@@ -15,6 +15,7 @@ import {
   organization,
   redisConnection,
   redisDiscoveredQueue,
+  user,
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { Hono } from 'hono'
@@ -69,7 +70,19 @@ async function seedDiscoveredQueue(name: string) {
   })
 }
 
-async function createAlertsRouteApp() {
+async function seedUser(id: string, name: string) {
+  const db = await getDb()
+  const now = new Date()
+  await db.insert(user).values({
+    id,
+    name,
+    email: `${id}@example.com`,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
+
+async function createAlertsRouteApp(options: { userId?: string; userName?: string } = {}) {
   const { default: alertsRoutes } = await import('./alerts')
 
   return new Hono()
@@ -78,6 +91,12 @@ async function createAlertsRouteApp() {
       c.set('connectionUrl', 'redis://localhost:6379/0')
       c.set('connectionName', 'Primary Redis')
       c.set('organizationId', TEST_ORG_ID)
+      c.set(
+        'user',
+        options.userId
+          ? ({ id: options.userId, name: options.userName ?? 'Test User' } as never)
+          : null
+      )
       await next()
     })
     .route('/', alertsRoutes)
@@ -935,6 +954,100 @@ describe('alerts routes', () => {
       jsonRequest({ minutes: 10081 })
     )
     expect(tooLong.status).toBe(400)
+  })
+
+  it('acknowledges firing events with the current user and rejects repeats', async () => {
+    await seedUser('user-ack', 'Ada Operator')
+    const app = await createAlertsRouteApp({ userId: 'user-ack', userName: 'Ada Operator' })
+
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Failure threshold',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Open incident',
+      firedAt: new Date(),
+    })
+
+    const response = await app.request(`/events/${event.id}/acknowledge`, { method: 'POST' })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      event: { acknowledgedBy: string | null; acknowledgedByName: string | null }
+    }
+    expect(body.event.acknowledgedBy).toBe('user-ack')
+    expect(body.event.acknowledgedByName).toBe('Ada Operator')
+
+    const repeat = await app.request(`/events/${event.id}/acknowledge`, { method: 'POST' })
+    expect(repeat.status).toBe(409)
+
+    const unack = await app.request(`/events/${event.id}/acknowledge`, { method: 'DELETE' })
+    expect(unack.status).toBe(200)
+
+    const listResponse = await app.request('/events?acknowledged=false')
+    const list = (await listResponse.json()) as { events: Array<{ id: string }> }
+    expect(list.events.some((entry) => entry.id === event.id)).toBe(true)
+  })
+
+  it('requires an authenticated user to acknowledge', async () => {
+    const app = await createAlertsRouteApp()
+    const response = await app.request(
+      '/events/66666666-6666-4666-8666-666666666666/acknowledge',
+      { method: 'POST' }
+    )
+    expect(response.status).toBe(401)
+  })
+
+  it('refuses to resolve suppressed events', async () => {
+    await seedUser('user-res', 'Res Olver')
+    const app = await createAlertsRouteApp({ userId: 'user-res' })
+
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Failure threshold',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    const anchor = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'resolved',
+      summary: 'Anchor incident',
+      firedAt: new Date(),
+    })
+    const { event: suppressed } = await alertEventRepository.upsertSuppressed({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      summary: 'Suppressed during cooldown',
+      context: {},
+      dedupeKey: `suppressed:${anchor.id}`,
+    })
+
+    const response = await app.request(`/events/${suppressed.id}/resolve`, { method: 'POST' })
+    expect(response.status).toBe(409)
+
+    // Acknowledging suppressed events is rejected too (not firing).
+    const ack = await app.request(`/events/${suppressed.id}/acknowledge`, { method: 'POST' })
+    expect(ack.status).toBe(409)
   })
 
   it('reports rule state in list responses', async () => {
