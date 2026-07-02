@@ -241,6 +241,10 @@ function RulesTable({
               if (channel.type === 'webhook' && 'destinationId' in channel) {
                 return [destinationNamesById.get(channel.destinationId) ?? 'Saved webhook']
               }
+              if (channel.type === 'webhook' && 'url' in channel && channel.url) {
+                return [channel.url]
+              }
+              if (channel.type === 'linear') return ['Linear']
               return []
             })
             const isBusy = mutatingRuleId === rule.id
@@ -253,6 +257,8 @@ function RulesTable({
                 className={cn('cursor-pointer', isSnoozed && 'text-muted-foreground')}
                 onClick={() => onRowOpen(rule.id)}
                 onKeyDown={(event) => {
+                  // Ignore keys bubbling from nested action buttons/menus.
+                  if (event.target !== event.currentTarget) return
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
                     onRowOpen(rule.id)

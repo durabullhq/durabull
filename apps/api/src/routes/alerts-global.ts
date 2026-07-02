@@ -71,10 +71,11 @@ const app = new Hono()
         limit: z.coerce.number().int().min(1).max(100).default(20),
         status: z.enum(['firing', 'resolved', 'suppressed']).optional(),
         acknowledged: z.enum(['true', 'false']).optional(),
+        connectionId: z.string().uuid().optional(),
       })
     ),
     async (c) => {
-      const { offset, limit, status, acknowledged } = c.req.valid('query')
+      const { offset, limit, status, acknowledged, connectionId } = c.req.valid('query')
       const organizationId = c.get('organizationId')
       if (!organizationId) {
         return c.json({ error: 'Organization is required' }, 403)
@@ -85,6 +86,7 @@ const app = new Hono()
         limit,
         status,
         acknowledged: acknowledged === undefined ? undefined : acknowledged === 'true',
+        connectionId,
       })
       return c.json({ events: await attachDeliveries(events) })
     }

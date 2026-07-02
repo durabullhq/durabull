@@ -7,6 +7,7 @@ import {
   AlertRuleBuilderSkeleton,
 } from '@/components/alerts/alert-rule-builder-v2'
 import { useConnection } from '@/components/connection-provider'
+import { Button } from '@/components/ui/button'
 import {
   useConnectionAlertRules,
   useCreateAlertRule,
@@ -42,6 +43,47 @@ export function CreateAlertRuleRoute() {
   const duplicateFrom = from
     ? ((rulesQuery.data?.rules ?? []).find((candidate) => candidate.id === from) ?? null)
     : null
+
+  // Surface duplication failures instead of silently opening a blank draft.
+  if (from && (rulesQuery.isError || (!rulesQuery.isLoading && !duplicateFrom))) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-lg border border-destructive/30 bg-destructive/5 px-6 py-8 text-center">
+        <h2 className="text-lg font-semibold">Unable to load the rule to duplicate</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {rulesQuery.isError
+            ? 'Fetching alert rules failed. Retry, or start a new rule from scratch.'
+            : 'The rule may have been deleted. Start a new rule from scratch instead.'}
+        </p>
+        <div className="mt-4 flex justify-center gap-2">
+          {rulesQuery.isError ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void rulesQuery.refetch()}
+            >
+              Retry
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              void navigate({
+                to: '/$orgSlug/c/$connectionId/alerts/new',
+                params: { orgSlug, connectionId },
+                search: {},
+                replace: true,
+              })
+            }
+          >
+            Start from scratch
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <AlertRuleBuilder

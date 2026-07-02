@@ -330,6 +330,7 @@ export const alertEventRepository = {
       limit: number
       status?: AlertEventStatus
       acknowledged?: boolean
+      connectionId?: string
     }
   ): Promise<AlertEventWithAckUser[]> {
     const db = await getDb()
@@ -341,6 +342,7 @@ export const alertEventRepository = {
         and(
           eq(alertEvent.organizationId, organizationId),
           ...(options.status ? [eq(alertEvent.status, options.status)] : []),
+          ...(options.connectionId ? [eq(alertEvent.connectionId, options.connectionId)] : []),
           ...acknowledgedFilter(options.acknowledged)
         )
       )

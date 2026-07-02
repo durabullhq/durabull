@@ -89,13 +89,21 @@ export function DestinationMultiSelect({
   }
 
   return (
-    <div className="space-y-3" ref={containerRef}>
+    <div
+      className="space-y-3"
+      ref={containerRef}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') setOpen(false)
+      }}
+    >
       <div className="relative">
         <button
           type="button"
           className="flex w-full items-center justify-between rounded-md border border-border/70 bg-background px-3 py-2.5 text-left text-sm"
           onClick={() => setOpen((current) => !current)}
           data-testid="destination-multi-select-trigger"
+          aria-haspopup="listbox"
+          aria-expanded={open}
         >
           <span className="truncate">{summaryLabel}</span>
           <ChevronDown className="ml-3 h-4 w-4 shrink-0 text-muted-foreground" />

@@ -38,6 +38,8 @@ function encryptedSigningSecretFromInput(signingSecret: string | null | undefine
   return trimmed ? encryptSecret(trimmed) : null
 }
 
+const EMAIL_TARGET_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 function assertDestinationShape(
   type: AlertDestinationType,
   url: string | null | undefined,
@@ -48,7 +50,7 @@ function assertDestinationShape(
   }
   if (type === 'email') {
     const target = (config as { target?: unknown } | undefined)?.target
-    if (typeof target !== 'string' || !target.includes('@')) {
+    if (typeof target !== 'string' || !EMAIL_TARGET_PATTERN.test(target.trim())) {
       throw new Error('Email destinations require a valid target email address.')
     }
   }

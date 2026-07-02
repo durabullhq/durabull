@@ -6,6 +6,7 @@ const linkClassName =
 
 const activeLinkProps = {
   className: 'bg-card text-foreground shadow-sm',
+  'aria-current': 'page',
 } as const
 
 export function AlertsViewSwitcher({

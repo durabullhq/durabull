@@ -817,7 +817,10 @@ function NotifyPanelBody({
 
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
+      <div
+        className="space-y-2"
+        {...(fieldError('routes') ? { 'data-field-error': '' } : {})}
+      >
         <Label>Saved destinations</Label>
         <DestinationMultiSelect
           destinations={destinations}
@@ -825,6 +828,9 @@ function NotifyPanelBody({
           onSelectedDestinationIdsChange={setSelectedDestinationIds}
           isLoading={destinationsLoading}
         />
+        {fieldError('routes') ? (
+          <p className="text-sm text-destructive">{fieldError('routes')}</p>
+        ) : null}
         <p className="text-sm text-muted-foreground">
           Managed under Settings → Alert destinations; edits there apply to every rule that routes
           to them.

@@ -230,6 +230,7 @@ export type AlertRuleDraftField =
   | 'failureRateMinSample'
   | 'stalledMinutes'
   | 'jobFailedMaxIssuesPerPoll'
+  | 'routes'
   | `route:${string}`
 
 /**
@@ -340,11 +341,10 @@ export function validateAlertRuleDraftFields(
     routedDestinationIds.add(destinationId)
   }
 
-  if (draft.notificationRoutes.length > 10 && draft.notificationRoutes[0]) {
-    setError(
-      `route:${draft.notificationRoutes[0].id}`,
-      'You can configure up to 10 notification destinations.'
-    )
+  // Keyed to a route-type-agnostic field: the first route may be a saved
+  // destination handled by the multi-select, which has no inline error row.
+  if (draft.notificationRoutes.length > 10) {
+    setError('routes', 'You can configure up to 10 notification destinations.')
   }
 
   switch (draft.type) {

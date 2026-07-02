@@ -169,6 +169,7 @@ describe('OrgAlertsFeed', () => {
     expect(useGlobalAlertEventsMock).toHaveBeenCalledWith({
       status: 'firing',
       acknowledged: true,
+      connectionId: undefined,
       limit: 100,
     })
 
@@ -177,17 +178,21 @@ describe('OrgAlertsFeed', () => {
     expect(useGlobalAlertEventsMock).toHaveBeenCalledWith({
       status: 'firing',
       acknowledged: false,
+      connectionId: undefined,
       limit: 100,
     })
   })
 
-  it('filters events client-side when a connection is selected', () => {
+  it('passes the selected connection to the events query for server-side filtering', () => {
     render(
       <OrgAlertsFeed orgSlug="acme" status="open" connection="conn-2" onFiltersChange={vi.fn()} />
     )
 
-    expect(screen.getByText('reports')).toBeInTheDocument()
-    expect(screen.queryByText('email-send')).not.toBeInTheDocument()
+    expect(useGlobalAlertEventsMock).toHaveBeenCalledWith({
+      status: 'firing',
+      connectionId: 'conn-2',
+      limit: 100,
+    })
   })
 
   it('acknowledges incidents through the org-scoped mutation', async () => {

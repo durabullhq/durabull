@@ -247,6 +247,15 @@ describe('global alerts routes', () => {
     expect(await response.json()).toMatchObject({
       events: [expect.objectContaining({ status: 'resolved', connectionId: FIRST_CONNECTION_ID })],
     })
+
+    // Server-side connection scoping for the org feed's connection filter.
+    const scopedResponse = await app.request(`/events?connectionId=${SECOND_CONNECTION_ID}`)
+    expect(scopedResponse.status).toBe(200)
+    const scoped = (await scopedResponse.json()) as {
+      events: Array<{ connectionId: string }>
+    }
+    expect(scoped.events).toHaveLength(1)
+    expect(scoped.events[0]?.connectionId).toBe(SECOND_CONNECTION_ID)
   })
 
   it('sanitizes webhook delivery metadata in organization-wide event history', async () => {

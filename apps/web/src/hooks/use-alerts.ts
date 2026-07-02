@@ -290,6 +290,7 @@ export interface AlertRuleMutationInput {
 }
 
 export interface AlertEventFilterOptions {
+  connectionId?: string
   status?: AlertEventStatus
   acknowledged?: boolean
   limit?: number
@@ -592,6 +593,7 @@ export function useGlobalAlertEvents(filters: AlertEventFilterOptions = {}) {
     offset: filters.offset ?? 0,
     status: filters.status,
     acknowledged: filters.acknowledged,
+    connectionId: filters.connectionId,
   } satisfies AlertEventFilterOptions
 
   return useQuery({
@@ -605,6 +607,9 @@ export function useGlobalAlertEvents(filters: AlertEventFilterOptions = {}) {
           ...(normalizedFilters.acknowledged === undefined
             ? {}
             : { acknowledged: normalizedFilters.acknowledged ? 'true' : 'false' }),
+          ...(normalizedFilters.connectionId
+            ? { connectionId: normalizedFilters.connectionId }
+            : {}),
         },
       })
       const data = await handleRes<GlobalAlertEventsResponse>(res)

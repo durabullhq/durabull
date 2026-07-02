@@ -57,6 +57,7 @@ export function OrgAlertsFeed({
   const summaryQuery = useAlertSummary({ refetchInterval: 15_000 })
   const eventsQuery = useGlobalAlertEvents({
     ...eventFiltersForStatus(status),
+    connectionId: connection || undefined,
     limit: 100,
   })
   const resolveEventMutation = useResolveGlobalAlertEvent()
@@ -83,12 +84,7 @@ export function OrgAlertsFeed({
       .sort((left, right) => right.open - left.open || left.name.localeCompare(right.name))
   }, [summaryQuery.data?.connections, connectionNameById])
 
-  // The org events endpoint has no connection param, so filter the fetched page client-side.
-  const events = useMemo(() => {
-    const fetched = eventsQuery.data?.events ?? []
-    if (!connection) return fetched
-    return fetched.filter((event) => event.connectionId === connection)
-  }, [eventsQuery.data?.events, connection])
+  const events = eventsQuery.data?.events ?? []
 
   const topBarConfig = useMemo(
     () => ({

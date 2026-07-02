@@ -23,6 +23,15 @@ export const Route = createFileRoute('/$orgSlug/c/$connectionId/alerts/')({
         replace: true,
       })
     }
+    // Legacy history tab maps to the resolved-incidents filter.
+    if (search.tab === 'history') {
+      throw redirect({
+        to: '/$orgSlug/c/$connectionId/alerts',
+        params,
+        search: { status: 'resolved' },
+        replace: true,
+      })
+    }
   },
   component: ConnectionAlertsIndexRoute,
 })
