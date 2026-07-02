@@ -1,7 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
 import { BellRing, Cable, CheckCheck, Radar, ShieldCheck, Siren } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertEventsTable } from '@/components/alerts/alert-events-table'
 import { BulkResolveDialog } from '@/components/alerts/bulk-resolve-dialog'
@@ -58,8 +58,10 @@ export function ConnectionAlertsWorkspace({
   const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
   // Bumped only when opening (not closing) so BulkResolveDialog remounts with
   // fresh filter/selection state each time, without disrupting Radix's own
-  // close animation (see BulkResolveDialogProps.initialRuleId).
-  const [bulkResolveOpenCount, setBulkResolveOpenCount] = useState(0)
+  // close animation (see BulkResolveDialogProps.initialRuleId). A ref (not
+  // state) because it's only read during render as a `key`, never displayed —
+  // the sibling setBulkResolveOpen(true) call already triggers the re-render.
+  const bulkResolveOpenCount = useRef(0)
   const [resolvingEventId, setResolvingEventId] = useState<string | null>(null)
   const [mutatingRuleId, setMutatingRuleId] = useState<string | null>(null)
 
@@ -272,7 +274,7 @@ export function ConnectionAlertsWorkspace({
                   variant="outline"
                   className="gap-2"
                   onClick={() => {
-                    setBulkResolveOpenCount((count) => count + 1)
+                    bulkResolveOpenCount.current += 1
                     setBulkResolveOpen(true)
                   }}
                 >
@@ -338,7 +340,7 @@ export function ConnectionAlertsWorkspace({
       </Tabs>
 
       <BulkResolveDialog
-        key={bulkResolveOpenCount}
+        key={bulkResolveOpenCount.current}
         connectionId={connectionId}
         open={bulkResolveOpen}
         onOpenChange={setBulkResolveOpen}
