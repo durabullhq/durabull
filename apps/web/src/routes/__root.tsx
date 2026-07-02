@@ -44,10 +44,11 @@ import { useAuth } from '@/hooks/use-auth'
 import { useIsElectronShell } from '@/hooks/use-electron-shell'
 import { type Organization, useOrganizations } from '@/hooks/use-organization'
 import { usePageViewTracking } from '@/hooks/use-page-view-tracking'
+import { type UseQueuesOptions, useQueues } from '@/hooks/use-queues'
 import { APP_BUILD_INFO } from '@/lib/app-version'
 import { type NavMatchMode, isNavLinkActive } from '@/lib/nav-link-active'
 import { SESSION_KEYS, type SessionWithActiveOrganization } from '@/lib/session-keys'
-import { cn } from '@/lib/utils'
+import { cn, formatCompactNumber } from '@/lib/utils'
 
 /**
  * Hook to get the current organization slug.
@@ -76,6 +77,7 @@ function useCurrentOrgSlug(): string | undefined {
 }
 
 const USE_DEVTOOLS = false
+const NAV_QUEUE_COUNT_OPTIONS: UseQueuesOptions = { pageSize: 1 }
 
 // Public routes that don't require authentication (auth-related only)
 // Marketing/landing pages are now in the separate docs app
@@ -377,6 +379,7 @@ function RootLayout() {
 function SidebarNav() {
   const { currentConnection } = useConnection()
   const { data: alertSummary } = useAlertSummary()
+  const { data: queuesData } = useQueues(NAV_QUEUE_COUNT_OPTIONS)
   const params = useParams({ strict: false }) as { connectionId?: string }
   const connectionId = currentConnection?.id
   // Get orgSlug from route params or fall back to active organization
@@ -385,6 +388,7 @@ function SidebarNav() {
     () => getOpenAlertCount(alertSummary?.connections, params.connectionId),
     [alertSummary?.connections, params.connectionId]
   )
+  const failedJobsBadgeLabel = formatFailedJobsBadgeLabel(queuesData?.totalJobCounts.failed)
 
   // If no connection or org is selected, we can still show nav but links won't work
   // The index page will handle redirecting to a connection
@@ -394,7 +398,7 @@ function SidebarNav() {
   return (
     <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
       <div className="eyebrow mb-2 px-2">Platform</div>
-      <NavLink to={basePath} icon={Layers}>
+      <NavLink to={basePath} icon={Layers} badgeLabel={failedJobsBadgeLabel}>
         Queues
       </NavLink>
       <NavLink to={`${basePath}/alerts`} icon={BellRing} badge={openAlertsBadgeCount}>
@@ -426,6 +430,7 @@ function SidebarNav() {
 function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
   const { currentConnection } = useConnection()
   const { data: alertSummary } = useAlertSummary()
+  const { data: queuesData } = useQueues(NAV_QUEUE_COUNT_OPTIONS)
   const params = useParams({ strict: false }) as { connectionId?: string }
   const connectionId = currentConnection?.id
   // Get orgSlug from route params or fall back to active organization
@@ -434,6 +439,7 @@ function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
     () => getOpenAlertCount(alertSummary?.connections, params.connectionId),
     [alertSummary?.connections, params.connectionId]
   )
+  const failedJobsBadgeLabel = formatFailedJobsBadgeLabel(queuesData?.totalJobCounts.failed)
 
   const basePath =
     orgSlug && connectionId ? `/${orgSlug}/c/${connectionId}` : orgSlug ? `/${orgSlug}` : '/'
@@ -441,7 +447,12 @@ function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
   return (
     <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
       <div className="eyebrow mb-2 px-2">Platform</div>
-      <MobileNavLink to={basePath} icon={Layers} onNavigate={onNavigate}>
+      <MobileNavLink
+        to={basePath}
+        icon={Layers}
+        onNavigate={onNavigate}
+        badgeLabel={failedJobsBadgeLabel}
+      >
         Queues
       </MobileNavLink>
       <MobileNavLink
@@ -482,6 +493,7 @@ function MobileNavLink({
   children,
   onNavigate,
   badge,
+  badgeLabel,
   matchMode = 'default',
 }: {
   to: string
@@ -489,6 +501,7 @@ function MobileNavLink({
   children: React.ReactNode
   onNavigate: () => void
   badge?: number
+  badgeLabel?: string
   matchMode?: NavMatchMode
 }) {
   const location = useLocation()
@@ -512,6 +525,9 @@ function MobileNavLink({
           {badge}
         </Badge>
       ) : null}
+      {badgeLabel ? (
+        <span className="font-mono text-xs tabular-nums text-status-danger">{badgeLabel}</span>
+      ) : null}
     </Link>
   )
 }
@@ -521,12 +537,14 @@ function NavLink({
   icon: Icon,
   children,
   badge,
+  badgeLabel,
   matchMode = 'default',
 }: {
   to: string
   icon: React.ComponentType<{ className?: string }>
   children: React.ReactNode
   badge?: number
+  badgeLabel?: string
   matchMode?: NavMatchMode
 }) {
   const location = useLocation()
@@ -549,6 +567,14 @@ function NavLink({
           {badge}
         </Badge>
       ) : null}
+      {badgeLabel ? (
+        <span className="font-mono text-xs tabular-nums text-status-danger">{badgeLabel}</span>
+      ) : null}
     </Link>
   )
+}
+
+function formatFailedJobsBadgeLabel(failedJobs: number | undefined): string | undefined {
+  if (!failedJobs || failedJobs <= 0) return undefined
+  return `(${formatCompactNumber(failedJobs)})`
 }
