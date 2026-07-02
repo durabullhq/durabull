@@ -48,6 +48,12 @@ export function ConnectionRulesView({
   const deleteRuleMutation = useDeleteAlertRule(connectionId)
 
   const rules = rulesQuery.data?.rules ?? []
+  const ruleDestinations = rulesQuery.data?.destinations
+  const destinationNamesById = useMemo(
+    () =>
+      new Map((ruleDestinations ?? []).map((destination) => [destination.id, destination.name])),
+    [ruleDestinations]
+  )
 
   const topBarConfig = useMemo(
     () => ({
@@ -134,6 +140,7 @@ export function ConnectionRulesView({
         <RulesTable
           rules={rules}
           connectionId={connectionId}
+          destinationNamesById={destinationNamesById}
           mutatingRuleId={mutatingRuleId}
           onRowOpen={(ruleId) =>
             navigate({
@@ -159,6 +166,7 @@ export function ConnectionRulesView({
 function RulesTable({
   rules,
   connectionId,
+  destinationNamesById,
   mutatingRuleId,
   onRowOpen,
   onToggleRule,
@@ -167,6 +175,7 @@ function RulesTable({
 }: {
   rules: AlertRuleRecord[]
   connectionId: string
+  destinationNamesById: Map<string, string>
   mutatingRuleId: string | null
   onRowOpen: (ruleId: string) => void
   onToggleRule: (rule: AlertRuleRecord, enabled: boolean) => void
@@ -191,7 +200,16 @@ function RulesTable({
         <TableBody>
           {rules.map((rule) => {
             const meta = getAlertTypeMeta(rule.type)
-            const channels = rule.notificationChannels.filter((channel) => channel.type === 'email')
+            const routingLabels = rule.notificationChannels.flatMap((channel) => {
+              if (channel.type === 'email') return [channel.target]
+              if (channel.type === 'destination') {
+                return [destinationNamesById.get(channel.destinationId) ?? 'Saved destination']
+              }
+              if (channel.type === 'webhook' && 'destinationId' in channel) {
+                return [destinationNamesById.get(channel.destinationId) ?? 'Saved webhook']
+              }
+              return []
+            })
             const isBusy = mutatingRuleId === rule.id
             const isSnoozed = rule.state === 'snoozed'
 
@@ -252,15 +270,15 @@ function RulesTable({
                   {formatNumber(rule.cooldownMinutes)} min
                 </TableCell>
                 <TableCell className="font-mono text-xs tabular-nums">
-                  {formatNumber(channels.length)}
+                  {formatNumber(routingLabels.length)}
                 </TableCell>
                 <TableCell className="max-w-[240px]">
-                  {channels.length > 0 ? (
+                  {routingLabels.length > 0 ? (
                     <div className="truncate text-sm text-muted-foreground">
-                      {channels.map((channel) => channel.target).join(', ')}
+                      {routingLabels.join(', ')}
                     </div>
                   ) : (
-                    <span className="text-sm text-muted-foreground">No email routing</span>
+                    <span className="text-sm text-muted-foreground">No routing</span>
                   )}
                 </TableCell>
                 <TableCell className="text-right">

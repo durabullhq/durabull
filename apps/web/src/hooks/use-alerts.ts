@@ -64,6 +64,16 @@ type LinearMetadataResponse = InferResponseType<
   (typeof api.alerts.integrations.linear.metadata)['$get'],
   200
 >
+type AlertDestinationsResponse = InferResponseType<(typeof api.alerts.destinations)['$get'], 200>
+type AlertDestinationResponse = InferResponseType<(typeof api.alerts.destinations)['$post'], 201>
+type UpdateAlertDestinationResponse = InferResponseType<
+  (typeof api.alerts.destinations)[':destinationId']['$patch'],
+  200
+>
+type TestAlertDestinationResponse = InferResponseType<
+  (typeof api.alerts.destinations)[':destinationId']['test']['$post'],
+  200
+>
 type WebhookDestinationsResponse = InferResponseType<
   (typeof api.alerts)['webhook-destinations']['$get'],
   200
@@ -84,6 +94,7 @@ export type AlertEventStatus = 'firing' | 'resolved' | 'suppressed'
 export type AlertRuleState = 'active' | 'snoozed' | 'disabled'
 
 export type AlertNotificationChannel =
+  | { type: 'destination'; destinationId: string }
   | { type: 'email'; target: string }
   | {
       type: 'linear'
@@ -181,6 +192,67 @@ export interface LinearMetadataRecord {
   states: Array<{ id: string; name: string; teamId: string }>
 }
 
+export type AlertDestinationType = 'webhook' | 'email' | 'linear'
+
+export interface LinearDestinationConfig {
+  teamId?: string
+  projectId?: string
+  labelIds?: string[]
+  assigneeId?: string
+  stateId?: string
+  priority?: number
+}
+
+export interface AlertDestinationRecord {
+  id: string
+  organizationId: string
+  name: string
+  type: AlertDestinationType
+  url: string | null
+  config: Record<string, unknown>
+  enabled: boolean
+  secretConfigured: boolean
+  secretLast4?: string
+  inUseByRuleCount: number
+  createdAt?: string | Date
+  updatedAt?: string | Date
+}
+
+/** Minimal destination shape returned as a sidecar on the rules list. */
+export interface AlertRuleDestinationSummary {
+  id: string
+  name: string
+  type: AlertDestinationType
+  enabled: boolean
+}
+
+export type AlertDestinationCreateInput =
+  | {
+      type: 'webhook'
+      name: string
+      url: string
+      signingSecret?: string | null
+      enabled?: boolean
+    }
+  | { type: 'email'; name: string; config: { target: string }; enabled?: boolean }
+  | { type: 'linear'; name: string; config?: LinearDestinationConfig; enabled?: boolean }
+
+export interface AlertDestinationUpdateInput {
+  name?: string
+  url?: string
+  signingSecret?: string | null
+  config?: Record<string, unknown>
+  enabled?: boolean
+}
+
+export interface AlertDestinationTestResult {
+  success: boolean
+  httpStatus?: number | null
+  durationMs?: number
+  organizationName?: string
+  error?: string
+}
+
 export interface AlertWebhookDestinationRecord {
   id: string
   organizationId: string
@@ -261,6 +333,10 @@ export const alertKeys = {
     ['alerts', 'integrations', 'linear', organizationId ?? 'unknown', 'metadata'] as const,
   webhookDestinations: (organizationId?: string | null) =>
     ['alerts', 'webhook-destinations', organizationId ?? 'unknown'] as const,
+  destinations: (organizationId?: string | null, type?: AlertDestinationType) =>
+    type
+      ? (['alerts', 'destinations', organizationId ?? 'unknown', type] as const)
+      : (['alerts', 'destinations', organizationId ?? 'unknown'] as const),
   connectionRules: (connectionId: string) =>
     ['alerts', 'connection', connectionId, 'rules'] as const,
   connectionEvents: (connectionId: string, filters: AlertEventFilterOptions = {}) =>
@@ -321,9 +397,55 @@ function normalizeNotificationChannels(value: unknown): AlertNotificationChannel
         },
       ]
     }
+    if (entry.type === 'destination' && typeof entry.destinationId === 'string') {
+      return [
+        {
+          type: 'destination',
+          destinationId: entry.destinationId,
+        },
+      ]
+    }
     if (entry.type !== 'email' || typeof entry.target !== 'string') return []
     return [{ type: 'email', target: entry.target }]
   })
+}
+
+function isAlertDestinationType(value: unknown): value is AlertDestinationType {
+  return value === 'webhook' || value === 'email' || value === 'linear'
+}
+
+function normalizeAlertDestination(value: unknown): AlertDestinationRecord {
+  const source = isRecord(value) ? value : {}
+  return {
+    id: typeof source.id === 'string' ? source.id : '',
+    organizationId: typeof source.organizationId === 'string' ? source.organizationId : '',
+    name: typeof source.name === 'string' ? source.name : 'Destination',
+    type: isAlertDestinationType(source.type) ? source.type : 'webhook',
+    url: typeof source.url === 'string' ? source.url : null,
+    config: isRecord(source.config) ? source.config : {},
+    enabled: source.enabled !== false,
+    secretConfigured: source.secretConfigured === true,
+    secretLast4: typeof source.secretLast4 === 'string' ? source.secretLast4 : undefined,
+    inUseByRuleCount: toNumber(source.inUseByRuleCount, 0),
+    createdAt:
+      typeof source.createdAt === 'string' || source.createdAt instanceof Date
+        ? source.createdAt
+        : undefined,
+    updatedAt:
+      typeof source.updatedAt === 'string' || source.updatedAt instanceof Date
+        ? source.updatedAt
+        : undefined,
+  }
+}
+
+function normalizeAlertRuleDestinationSummary(value: unknown): AlertRuleDestinationSummary {
+  const source = isRecord(value) ? value : {}
+  return {
+    id: typeof source.id === 'string' ? source.id : '',
+    name: typeof source.name === 'string' ? source.name : 'Destination',
+    type: isAlertDestinationType(source.type) ? source.type : 'webhook',
+    enabled: source.enabled !== false,
+  }
 }
 
 function normalizeWebhookDestination(value: unknown): AlertWebhookDestinationRecord {
@@ -544,8 +666,12 @@ export function useConnectionAlertRules(connectionId: string | undefined) {
         param: { connectionId: connectionId! },
       })
       const data = await handleRes<ConnectionAlertRulesResponse>(res)
+      const destinations = (data as { destinations?: unknown }).destinations
       return {
         rules: Array.isArray(data.rules) ? data.rules.map(normalizeAlertRule) : [],
+        destinations: Array.isArray(destinations)
+          ? destinations.map(normalizeAlertRuleDestinationSummary)
+          : [],
       }
     },
     enabled: !!connectionId,
@@ -765,6 +891,102 @@ export function useTestWebhook(connectionId: string | undefined) {
         json: input,
       })
       return handleRes<WebhookTestResult>(res)
+    },
+  })
+}
+
+export function useAlertDestinations(options?: { type?: AlertDestinationType }) {
+  const { data: activeOrganization } = useActiveOrganization()
+  const organizationId = activeOrganization?.id
+
+  return useQuery({
+    queryKey: alertKeys.destinations(organizationId, options?.type),
+    queryFn: async () => {
+      const res = await api.alerts.destinations.$get({
+        query: options?.type ? { type: options.type } : {},
+      })
+      const data = await handleRes<AlertDestinationsResponse>(res)
+      return {
+        destinations: Array.isArray(data.destinations)
+          ? data.destinations.map(normalizeAlertDestination)
+          : [],
+      }
+    },
+    enabled: !!organizationId,
+  })
+}
+
+export function useCreateAlertDestination() {
+  const queryClient = useQueryClient()
+  const { data: activeOrganization } = useActiveOrganization()
+  const organizationId = activeOrganization?.id
+
+  return useMutation({
+    mutationFn: async (input: AlertDestinationCreateInput) => {
+      const res = await api.alerts.destinations.$post({ json: input })
+      const data = await handleRes<AlertDestinationResponse>(res)
+      return { destination: normalizeAlertDestination(data.destination) }
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) }),
+  })
+}
+
+export function useUpdateAlertDestination() {
+  const queryClient = useQueryClient()
+  const { data: activeOrganization } = useActiveOrganization()
+  const organizationId = activeOrganization?.id
+
+  return useMutation({
+    mutationFn: async ({
+      destinationId,
+      input,
+    }: {
+      destinationId: string
+      input: AlertDestinationUpdateInput
+    }) => {
+      const res = await api.alerts.destinations[':destinationId'].$patch({
+        param: { destinationId },
+        json: input,
+      })
+      const data = await handleRes<UpdateAlertDestinationResponse>(res)
+      return { destination: normalizeAlertDestination(data.destination) }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) })
+      queryClient.invalidateQueries({ queryKey: ['alerts', 'connection'] })
+    },
+  })
+}
+
+export function useDeleteAlertDestination() {
+  const queryClient = useQueryClient()
+  const { data: activeOrganization } = useActiveOrganization()
+  const organizationId = activeOrganization?.id
+
+  return useMutation({
+    mutationFn: async (destinationId: string) => {
+      const res = await api.alerts.destinations[':destinationId'].$delete({
+        param: { destinationId },
+      })
+      return handleRes<{ ok: boolean }>(res)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) })
+      queryClient.invalidateQueries({ queryKey: ['alerts', 'connection'] })
+    },
+  })
+}
+
+export function useTestAlertDestination() {
+  return useMutation({
+    mutationFn: async (destinationId: string) => {
+      const res = await api.alerts.destinations[':destinationId'].test.$post({
+        param: { destinationId },
+      })
+      // The response shape differs per destination type; widen to the shared result.
+      const data = await handleRes<TestAlertDestinationResponse>(res)
+      return data as AlertDestinationTestResult
     },
   })
 }

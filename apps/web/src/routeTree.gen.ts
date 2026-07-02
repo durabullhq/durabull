@@ -30,6 +30,7 @@ import { Route as OrgSlugAlertsRouteImport } from './routes/$orgSlug.alerts'
 import { Route as OrgSlugSettingsIndexRouteImport } from './routes/$orgSlug.settings.index'
 import { Route as OrgSlugSettingsTeamRouteImport } from './routes/$orgSlug.settings.team'
 import { Route as OrgSlugSettingsIntegrationsRouteImport } from './routes/$orgSlug.settings.integrations'
+import { Route as OrgSlugSettingsDestinationsRouteImport } from './routes/$orgSlug.settings.destinations'
 import { Route as OrgSlugSettingsConnectionsRouteImport } from './routes/$orgSlug.settings.connections'
 import { Route as OrgSlugSettingsAuthenticationRouteImport } from './routes/$orgSlug.settings.authentication'
 import { Route as OrgSlugSettingsAppearanceRouteImport } from './routes/$orgSlug.settings.appearance'
@@ -155,6 +156,12 @@ const OrgSlugSettingsIntegrationsRoute =
   OrgSlugSettingsIntegrationsRouteImport.update({
     id: '/integrations',
     path: '/integrations',
+    getParentRoute: () => OrgSlugSettingsRoute,
+  } as any)
+const OrgSlugSettingsDestinationsRoute =
+  OrgSlugSettingsDestinationsRouteImport.update({
+    id: '/destinations',
+    path: '/destinations',
     getParentRoute: () => OrgSlugSettingsRoute,
   } as any)
 const OrgSlugSettingsConnectionsRoute =
@@ -302,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
   '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
   '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/destinations': typeof OrgSlugSettingsDestinationsRoute
   '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
   '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
   '/$orgSlug/settings/': typeof OrgSlugSettingsIndexRoute
@@ -342,6 +350,7 @@ export interface FileRoutesByTo {
   '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
   '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
   '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/destinations': typeof OrgSlugSettingsDestinationsRoute
   '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
   '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
   '/$orgSlug/settings': typeof OrgSlugSettingsIndexRoute
@@ -385,6 +394,7 @@ export interface FileRoutesById {
   '/$orgSlug/settings/appearance': typeof OrgSlugSettingsAppearanceRoute
   '/$orgSlug/settings/authentication': typeof OrgSlugSettingsAuthenticationRoute
   '/$orgSlug/settings/connections': typeof OrgSlugSettingsConnectionsRoute
+  '/$orgSlug/settings/destinations': typeof OrgSlugSettingsDestinationsRoute
   '/$orgSlug/settings/integrations': typeof OrgSlugSettingsIntegrationsRoute
   '/$orgSlug/settings/team': typeof OrgSlugSettingsTeamRoute
   '/$orgSlug/settings/': typeof OrgSlugSettingsIndexRoute
@@ -430,6 +440,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/settings/appearance'
     | '/$orgSlug/settings/authentication'
     | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/destinations'
     | '/$orgSlug/settings/integrations'
     | '/$orgSlug/settings/team'
     | '/$orgSlug/settings/'
@@ -470,6 +481,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/settings/appearance'
     | '/$orgSlug/settings/authentication'
     | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/destinations'
     | '/$orgSlug/settings/integrations'
     | '/$orgSlug/settings/team'
     | '/$orgSlug/settings'
@@ -512,6 +524,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/settings/appearance'
     | '/$orgSlug/settings/authentication'
     | '/$orgSlug/settings/connections'
+    | '/$orgSlug/settings/destinations'
     | '/$orgSlug/settings/integrations'
     | '/$orgSlug/settings/team'
     | '/$orgSlug/settings/'
@@ -693,6 +706,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgSlugSettingsIntegrationsRouteImport
       parentRoute: typeof OrgSlugSettingsRoute
     }
+    '/$orgSlug/settings/destinations': {
+      id: '/$orgSlug/settings/destinations'
+      path: '/destinations'
+      fullPath: '/$orgSlug/settings/destinations'
+      preLoaderRoute: typeof OrgSlugSettingsDestinationsRouteImport
+      parentRoute: typeof OrgSlugSettingsRoute
+    }
     '/$orgSlug/settings/connections': {
       id: '/$orgSlug/settings/connections'
       path: '/connections'
@@ -841,6 +861,7 @@ interface OrgSlugSettingsRouteChildren {
   OrgSlugSettingsAppearanceRoute: typeof OrgSlugSettingsAppearanceRoute
   OrgSlugSettingsAuthenticationRoute: typeof OrgSlugSettingsAuthenticationRoute
   OrgSlugSettingsConnectionsRoute: typeof OrgSlugSettingsConnectionsRoute
+  OrgSlugSettingsDestinationsRoute: typeof OrgSlugSettingsDestinationsRoute
   OrgSlugSettingsIntegrationsRoute: typeof OrgSlugSettingsIntegrationsRoute
   OrgSlugSettingsTeamRoute: typeof OrgSlugSettingsTeamRoute
   OrgSlugSettingsIndexRoute: typeof OrgSlugSettingsIndexRoute
@@ -851,6 +872,7 @@ const OrgSlugSettingsRouteChildren: OrgSlugSettingsRouteChildren = {
   OrgSlugSettingsAppearanceRoute: OrgSlugSettingsAppearanceRoute,
   OrgSlugSettingsAuthenticationRoute: OrgSlugSettingsAuthenticationRoute,
   OrgSlugSettingsConnectionsRoute: OrgSlugSettingsConnectionsRoute,
+  OrgSlugSettingsDestinationsRoute: OrgSlugSettingsDestinationsRoute,
   OrgSlugSettingsIntegrationsRoute: OrgSlugSettingsIntegrationsRoute,
   OrgSlugSettingsTeamRoute: OrgSlugSettingsTeamRoute,
   OrgSlugSettingsIndexRoute: OrgSlugSettingsIndexRoute,

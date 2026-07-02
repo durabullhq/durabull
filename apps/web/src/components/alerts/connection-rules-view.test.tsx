@@ -265,6 +265,31 @@ describe('ConnectionRulesView', () => {
     await waitFor(() => expect(unsnoozeRuleMutateAsyncMock).toHaveBeenCalledWith('rule-1'))
   })
 
+  it('renders destination names from the rules-list sidecar in the routing column', () => {
+    useConnectionAlertRulesMock.mockReturnValue({
+      isLoading: false,
+      data: {
+        rules: [
+          buildRule({
+            notificationChannels: [
+              { type: 'email', target: 'ops@example.com' },
+              { type: 'destination', destinationId: 'dest-1' },
+              { type: 'webhook', destinationId: 'dest-2' },
+            ],
+          }),
+        ],
+        destinations: [
+          { id: 'dest-1', name: 'On-call pipeline', type: 'webhook', enabled: true },
+          { id: 'dest-2', name: 'Legacy hook', type: 'webhook', enabled: true },
+        ],
+      },
+    })
+
+    render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
+
+    expect(screen.getByText('ops@example.com, On-call pipeline, Legacy hook')).toBeInTheDocument()
+  })
+
   it('shows the empty state when no rules exist', () => {
     useConnectionAlertRulesMock.mockReturnValue({
       isLoading: false,

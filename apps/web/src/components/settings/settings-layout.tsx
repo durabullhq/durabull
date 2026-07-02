@@ -1,5 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { Database, Info, Link2, Palette, Settings, Shield, Users } from 'lucide-react'
+import { Database, Info, Link2, Palette, Send, Settings, Shield, Users } from 'lucide-react'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +40,11 @@ export function SettingsLayout({ orgSlug, children }: SettingsLayoutProps) {
       label: 'Integrations',
       to: `${basePath}/integrations`,
       icon: Link2,
+    },
+    {
+      label: 'Alert destinations',
+      to: `${basePath}/destinations`,
+      icon: Send,
     },
     {
       label: 'Team',

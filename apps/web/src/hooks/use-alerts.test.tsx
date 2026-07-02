@@ -5,11 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getOpenAlertCount,
   useAcknowledgeAlertEvent,
+  useAlertDestinations,
   useConnectionAlertRules,
+  useCreateAlertDestination,
   useCreateAlertRule,
+  useDeleteAlertDestination,
   useGlobalAlertEvents,
   useResolveAlertEvent,
   useSnoozeAlertRule,
+  useTestAlertDestination,
   useUnsnoozeAlertRule,
 } from '@/hooks/use-alerts'
 
@@ -26,6 +30,11 @@ const {
   acknowledgeEventDeleteMock,
   snoozeRulePostMock,
   snoozeRuleDeleteMock,
+  destinationsGetMock,
+  destinationsPostMock,
+  destinationPatchMock,
+  destinationDeleteMock,
+  destinationTestPostMock,
   testRulePostMock,
   handleResMock,
 } = vi.hoisted(() => ({
@@ -41,8 +50,17 @@ const {
   acknowledgeEventDeleteMock: vi.fn(),
   snoozeRulePostMock: vi.fn(),
   snoozeRuleDeleteMock: vi.fn(),
+  destinationsGetMock: vi.fn(),
+  destinationsPostMock: vi.fn(),
+  destinationPatchMock: vi.fn(),
+  destinationDeleteMock: vi.fn(),
+  destinationTestPostMock: vi.fn(),
   testRulePostMock: vi.fn(),
   handleResMock: vi.fn(),
+}))
+
+vi.mock('@/hooks/use-organization', () => ({
+  useActiveOrganization: () => ({ data: { id: 'org-1' } }),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -53,6 +71,17 @@ vi.mock('@/lib/api', () => ({
       },
       events: {
         $get: globalEventsGetMock,
+      },
+      destinations: {
+        $get: destinationsGetMock,
+        $post: destinationsPostMock,
+        ':destinationId': {
+          $patch: destinationPatchMock,
+          $delete: destinationDeleteMock,
+          test: {
+            $post: destinationTestPostMock,
+          },
+        },
       },
     },
     c: {
@@ -157,6 +186,11 @@ describe('use-alerts', () => {
     acknowledgeEventDeleteMock.mockReset()
     snoozeRulePostMock.mockReset()
     snoozeRuleDeleteMock.mockReset()
+    destinationsGetMock.mockReset()
+    destinationsPostMock.mockReset()
+    destinationPatchMock.mockReset()
+    destinationDeleteMock.mockReset()
+    destinationTestPostMock.mockReset()
     testRulePostMock.mockReset()
     handleResMock.mockReset()
   })
@@ -319,6 +353,154 @@ describe('use-alerts', () => {
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ['alerts', 'connection', 'conn-1'],
     })
+  })
+
+  it('exposes the rules-list destinations sidecar with normalized summaries', async () => {
+    const queryClient = createQueryClient()
+    connectionRulesGetMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      rules: [],
+      destinations: [
+        { id: 'dest-1', name: 'On-call pipeline', type: 'webhook', enabled: true },
+        { id: 'dest-2', name: 'Ops inbox', type: 'email', enabled: false },
+      ],
+    })
+
+    const { result } = renderHook(() => useConnectionAlertRules('conn-1'), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => expect(result.current.data?.destinations).toHaveLength(2))
+
+    expect(result.current.data?.destinations).toEqual([
+      { id: 'dest-1', name: 'On-call pipeline', type: 'webhook', enabled: true },
+      { id: 'dest-2', name: 'Ops inbox', type: 'email', enabled: false },
+    ])
+  })
+
+  it('lists destinations with normalization and forwards the type filter', async () => {
+    const queryClient = createQueryClient()
+    destinationsGetMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      destinations: [
+        {
+          id: 'dest-1',
+          organizationId: 'org-1',
+          name: 'On-call pipeline',
+          type: 'webhook',
+          url: 'https://example.com/hook',
+          enabled: true,
+          secretConfigured: true,
+          secretLast4: '4242',
+          inUseByRuleCount: 2,
+        },
+        {
+          id: 'dest-2',
+          organizationId: 'org-1',
+          name: 'Ops inbox',
+          type: 'email',
+          url: null,
+          config: { target: 'ops@example.com' },
+          enabled: true,
+          secretConfigured: false,
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useAlertDestinations({ type: 'webhook' }), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => expect(result.current.data?.destinations).toHaveLength(2))
+
+    expect(destinationsGetMock).toHaveBeenCalledWith({ query: { type: 'webhook' } })
+    expect(result.current.data?.destinations[0]).toMatchObject({
+      id: 'dest-1',
+      type: 'webhook',
+      url: 'https://example.com/hook',
+      secretConfigured: true,
+      secretLast4: '4242',
+      inUseByRuleCount: 2,
+    })
+    expect(result.current.data?.destinations[1]).toMatchObject({
+      id: 'dest-2',
+      type: 'email',
+      url: null,
+      config: { target: 'ops@example.com' },
+      inUseByRuleCount: 0,
+    })
+  })
+
+  it('creates a destination and invalidates the destinations queries', async () => {
+    const queryClient = createQueryClient()
+    const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    destinationsPostMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({
+      destination: {
+        id: 'dest-1',
+        organizationId: 'org-1',
+        name: 'On-call pipeline',
+        type: 'webhook',
+        url: 'https://example.com/hook',
+        enabled: true,
+        secretConfigured: false,
+      },
+    })
+
+    const { result } = renderHook(() => useCreateAlertDestination(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    const data = await result.current.mutateAsync({
+      type: 'webhook',
+      name: 'On-call pipeline',
+      url: 'https://example.com/hook',
+    })
+
+    expect(destinationsPostMock).toHaveBeenCalledWith({
+      json: { type: 'webhook', name: 'On-call pipeline', url: 'https://example.com/hook' },
+    })
+    expect(data.destination).toMatchObject({ id: 'dest-1', type: 'webhook' })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ['alerts', 'destinations', 'org-1'],
+    })
+  })
+
+  it('deletes a destination and invalidates connection rule queries too', async () => {
+    const queryClient = createQueryClient()
+    const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')
+
+    destinationDeleteMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({ ok: true })
+
+    const { result } = renderHook(() => useDeleteAlertDestination(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await result.current.mutateAsync('dest-1')
+
+    expect(destinationDeleteMock).toHaveBeenCalledWith({ param: { destinationId: 'dest-1' } })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ['alerts', 'destinations', 'org-1'],
+    })
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({ queryKey: ['alerts', 'connection'] })
+  })
+
+  it('tests a destination and returns the widened result shape', async () => {
+    const queryClient = createQueryClient()
+
+    destinationTestPostMock.mockResolvedValue({ ok: true })
+    handleResMock.mockResolvedValue({ success: true, httpStatus: 200, durationMs: 45 })
+
+    const { result } = renderHook(() => useTestAlertDestination(), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    const data = await result.current.mutateAsync('dest-1')
+
+    expect(destinationTestPostMock).toHaveBeenCalledWith({ param: { destinationId: 'dest-1' } })
+    expect(data).toEqual({ success: true, httpStatus: 200, durationMs: 45 })
   })
 
   it('snoozes a rule, normalizes the snoozed state, and invalidates alert queries', async () => {

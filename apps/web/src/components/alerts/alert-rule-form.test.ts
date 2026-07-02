@@ -3,6 +3,7 @@ import {
   ALERT_RULE_TEMPLATES,
   buildSentenceTokens,
   createAlertRuleDraft,
+  createDestinationNotificationRouteDraft,
   createLinearNotificationRouteDraft,
   createSavedWebhookNotificationRouteDraft,
   getAlertRuleTemplate,
@@ -301,6 +302,73 @@ describe('alert rule form helpers', () => {
         destinationId: 'destination-id',
       },
     ])
+  })
+
+  it('serializes destination routes into destination channels', () => {
+    const payload = serializeAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Centralized routing',
+      queueFilterMode: 'exclude',
+      notificationRoutes: [
+        createDestinationNotificationRouteDraft(1, 'dest-1'),
+        { id: 'route-1', type: 'email', target: 'ops@example.com' },
+      ],
+    })
+
+    expect(payload.notificationChannels).toEqual([
+      { type: 'email', target: 'ops@example.com' },
+      { type: 'destination', destinationId: 'dest-1' },
+    ])
+  })
+
+  it('hydrates destination channels back into destination route drafts', () => {
+    const draft = createAlertRuleDraft({
+      id: 'rule-9',
+      organizationId: 'org-1',
+      connectionId: 'conn-1',
+      queueName: null,
+      queueFilterMode: 'exclude',
+      filterQueueNames: [],
+      name: 'Centralized routing',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      enabled: true,
+      notificationChannels: [{ type: 'destination', destinationId: 'dest-1' }],
+      cooldownMinutes: 30,
+      mutedUntil: null,
+      state: 'active',
+    })
+
+    expect(draft.notificationRoutes).toHaveLength(1)
+    expect(draft.notificationRoutes[0]).toMatchObject({
+      type: 'destination',
+      destinationId: 'dest-1',
+    })
+  })
+
+  it('requires a destination id on destination routes', () => {
+    const error = validateAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Missing destination id',
+      queueFilterMode: 'exclude',
+      notificationRoutes: [createDestinationNotificationRouteDraft(1, '')],
+    })
+
+    expect(error).toBe('Choose a saved destination.')
+  })
+
+  it('rejects routing the same destination twice across channel variants', () => {
+    const error = validateAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Duplicate destination',
+      queueFilterMode: 'exclude',
+      notificationRoutes: [
+        createSavedWebhookNotificationRouteDraft(1, 'dest-1'),
+        createDestinationNotificationRouteDraft(2, 'dest-1'),
+      ],
+    })
+
+    expect(error).toBe('This destination is already routed on this rule.')
   })
 
   it('requires a destination for saved webhook routes', () => {
@@ -616,6 +684,52 @@ describe('buildSentenceTokens', () => {
       set: true,
       invalid: false,
     })
+  })
+
+  it('names destination routes when the destinations lookup is provided', () => {
+    const draft = {
+      ...createAlertRuleDraft(),
+      queueFilterMode: 'exclude' as const,
+      notificationRoutes: [
+        createDestinationNotificationRouteDraft(1, 'dest-1'),
+        createDestinationNotificationRouteDraft(2, 'dest-2'),
+        { id: 'route-1', type: 'email' as const, target: 'ops@example.com' },
+      ],
+    }
+
+    const withLookup = buildSentenceTokens(draft, [
+      { id: 'dest-1', name: 'On-call pipeline' },
+      { id: 'dest-2', name: 'Ops inbox' },
+    ])
+    expect(withLookup[2]).toMatchObject({
+      label: 'On-call pipeline, Ops inbox + 1 email',
+      set: true,
+      invalid: false,
+    })
+
+    const withoutLookup = buildSentenceTokens(draft)
+    expect(withoutLookup[2]).toMatchObject({ label: '2 destinations + 1 email' })
+  })
+
+  it('falls back to a destination count when more than two are routed', () => {
+    const tokens = buildSentenceTokens(
+      {
+        ...createAlertRuleDraft(),
+        queueFilterMode: 'exclude',
+        notificationRoutes: [
+          createDestinationNotificationRouteDraft(1, 'dest-1'),
+          createDestinationNotificationRouteDraft(2, 'dest-2'),
+          createDestinationNotificationRouteDraft(3, 'dest-3'),
+        ],
+      },
+      [
+        { id: 'dest-1', name: 'A' },
+        { id: 'dest-2', name: 'B' },
+        { id: 'dest-3', name: 'C' },
+      ]
+    )
+
+    expect(tokens[2]).toMatchObject({ label: '3 destinations' })
   })
 
   it('flags invalid routes on the routes token', () => {

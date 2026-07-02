@@ -10,8 +10,9 @@ const emailSchema = z.string().email()
 
 export interface NotificationRouteDraft {
   id: string
-  type: 'email' | 'linear' | 'webhook'
+  type: 'email' | 'linear' | 'webhook' | 'destination'
   target: string
+  destinationId?: string
   teamId?: string
   projectId?: string
   labelIds?: string[]
@@ -118,6 +119,9 @@ function extractNotificationRoutes(rule?: AlertRuleRecord | null): NotificationR
     ) {
       return [createSavedWebhookNotificationRouteDraft(index + 1, channel.destinationId)]
     }
+    if (channel.type === 'destination' && typeof channel.destinationId === 'string') {
+      return [createDestinationNotificationRouteDraft(index + 1, channel.destinationId)]
+    }
     return []
   })
 
@@ -167,6 +171,21 @@ export function createSavedWebhookNotificationRouteDraft(
     target: destinationId,
     webhookMode: 'saved',
     webhookDestinationId: destinationId,
+  }
+}
+
+export function createDestinationNotificationRouteDraft(
+  sequence = 0,
+  destinationId = ''
+): NotificationRouteDraft {
+  return {
+    id:
+      sequence > 0
+        ? `destination-route-${sequence}`
+        : `destination-route-${Math.random().toString(36).slice(2, 10)}`,
+    type: 'destination',
+    target: destinationId,
+    destinationId,
   }
 }
 
@@ -298,6 +317,27 @@ export function validateAlertRuleDraftFields(
         'Webhook signing secret must be at least 16 characters when provided.'
       )
     }
+  }
+
+  const routedDestinationIds = new Set<string>()
+  for (const route of draft.notificationRoutes) {
+    const destinationId =
+      route.type === 'destination'
+        ? route.destinationId?.trim()
+        : route.type === 'webhook' && route.webhookMode === 'saved'
+          ? route.webhookDestinationId?.trim()
+          : undefined
+
+    if (route.type === 'destination' && !destinationId) {
+      setError(`route:${route.id}`, 'Choose a saved destination.')
+      continue
+    }
+    if (!destinationId) continue
+    if (routedDestinationIds.has(destinationId)) {
+      setError(`route:${route.id}`, 'This destination is already routed on this rule.')
+      continue
+    }
+    routedDestinationIds.add(destinationId)
   }
 
   if (draft.notificationRoutes.length > 10 && draft.notificationRoutes[0]) {
@@ -439,6 +479,12 @@ export function serializeAlertRuleDraft(draft: AlertRuleDraft): AlertRuleMutatio
           ...(secret ? { secret } : {}),
         }
       }),
+    ...draft.notificationRoutes
+      .filter((route) => route.type === 'destination')
+      .map((route) => ({
+        type: 'destination' as const,
+        destinationId: route.destinationId?.trim() ?? route.target.trim(),
+      })),
   ]
   const config = buildAlertRuleConfig(type, draft)
   const cooldownMinutes = parseWholeNumber(draft.cooldownMinutes) ?? 30
@@ -567,9 +613,13 @@ const CONDITION_FIELDS: Record<AlertRuleType, AlertRuleDraftField[]> = {
 
 /**
  * Pure sentence-model for the builder: "When [queues] records [condition],
- * notify [routes] — [cooldown]."
+ * notify [routes] — [cooldown]." Pass the org destinations so saved-destination
+ * routes read by name instead of by count.
  */
-export function buildSentenceTokens(draft: AlertRuleDraft): SentenceToken[] {
+export function buildSentenceTokens(
+  draft: AlertRuleDraft,
+  destinations?: Array<{ id: string; name: string }>
+): SentenceToken[] {
   const errors = validateAlertRuleDraftFields(draft)
   const selectedQueueNames = normalizeQueueNames(draft.selectedQueueNames)
 
@@ -603,7 +653,24 @@ export function buildSentenceTokens(draft: AlertRuleDraft): SentenceToken[] {
     return Boolean((route.webhookUrl ?? route.target).trim())
   }).length
 
+  const destinationRouteIds = draft.notificationRoutes
+    .filter((route) => route.type === 'destination')
+    .map((route) => (route.destinationId ?? route.target).trim())
+    .filter(Boolean)
+  const destinationNames = destinationRouteIds.map(
+    (destinationId) =>
+      destinations?.find((destination) => destination.id === destinationId)?.name ?? null
+  )
+  const destinationPart =
+    destinationRouteIds.length === 0
+      ? null
+      : destinationRouteIds.length <= 2 &&
+          destinationNames.every((name): name is string => name !== null)
+        ? destinationNames.join(', ')
+        : `${destinationRouteIds.length} destination${destinationRouteIds.length === 1 ? '' : 's'}`
+
   const routeParts = [
+    destinationPart,
     emailCount > 0 ? `${emailCount} email${emailCount === 1 ? '' : 's'}` : null,
     linearCount > 0 ? 'Linear' : null,
     webhookCount > 0 ? `${webhookCount} webhook${webhookCount === 1 ? '' : 's'}` : null,

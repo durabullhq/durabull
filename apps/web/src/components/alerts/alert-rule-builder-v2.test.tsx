@@ -1,13 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps, ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AlertRuleBuilder } from '@/components/alerts/alert-rule-builder-v2'
 import type { AlertRuleRecord } from '@/hooks/use-alerts'
 
-const { toastSuccessMock, toastErrorMock } = vi.hoisted(() => ({
+const { toastSuccessMock, toastErrorMock, useAlertDestinationsMock } = vi.hoisted(() => ({
   toastSuccessMock: vi.fn(),
   toastErrorMock: vi.fn(),
+  useAlertDestinationsMock: vi.fn(),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -40,8 +41,7 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/hooks/use-alerts', () => ({
   useTestWebhook: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useTestWebhookDestination: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useWebhookDestinations: () => ({ data: { destinations: [] } }),
+  useAlertDestinations: useAlertDestinationsMock,
   useLinearMetadata: () => ({ data: undefined, isLoading: false }),
 }))
 
@@ -80,6 +80,13 @@ function renderBuilder(props: Partial<ComponentProps<typeof AlertRuleBuilder>> =
 }
 
 describe('AlertRuleBuilder', () => {
+  beforeEach(() => {
+    useAlertDestinationsMock.mockReturnValue({
+      data: { destinations: [] },
+      isLoading: false,
+    })
+  })
+
   it('shows the template picker in create mode and collapses it after a choice', async () => {
     const user = userEvent.setup()
 
@@ -189,6 +196,85 @@ describe('AlertRuleBuilder', () => {
           windowMinutes: 5,
         },
       },
+    ])
+  })
+
+  it('routes to saved destinations via the multi-select and serializes destination channels', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    useAlertDestinationsMock.mockReturnValue({
+      data: {
+        destinations: [
+          {
+            id: 'dest-1',
+            organizationId: 'org-1',
+            name: 'On-call pipeline',
+            type: 'webhook',
+            url: 'https://example.com/hook',
+            config: {},
+            enabled: true,
+            secretConfigured: false,
+            inUseByRuleCount: 0,
+          },
+        ],
+      },
+      isLoading: false,
+    })
+
+    renderBuilder({ mode: 'edit', rule: createRule(), onSave })
+
+    await user.click(screen.getByTestId('destination-multi-select-trigger'))
+    await user.click(screen.getByRole('button', { name: 'On-call pipeline' }))
+
+    expect(screen.getByTestId('sentence-token-routes')).toHaveTextContent('On-call pipeline')
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave.mock.calls[0][0][0].notificationChannels).toEqual([
+      { type: 'email', target: 'ops@example.com' },
+      { type: 'destination', destinationId: 'dest-1' },
+    ])
+  })
+
+  it('renders legacy saved-webhook channels as read-only chips and serializes them unchanged', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    useAlertDestinationsMock.mockReturnValue({
+      data: {
+        destinations: [
+          {
+            id: 'dest-legacy',
+            organizationId: 'org-1',
+            name: 'Legacy hook',
+            type: 'webhook',
+            url: 'https://example.com/legacy',
+            config: {},
+            enabled: true,
+            secretConfigured: false,
+            inUseByRuleCount: 1,
+          },
+        ],
+      },
+      isLoading: false,
+    })
+
+    renderBuilder({
+      mode: 'edit',
+      rule: createRule({
+        notificationChannels: [{ type: 'webhook', destinationId: 'dest-legacy' }],
+      }),
+      onSave,
+    })
+
+    expect(screen.getByText('Legacy hook')).toBeInTheDocument()
+    expect(screen.getByText(/Legacy saved webhook/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave.mock.calls[0][0][0].notificationChannels).toEqual([
+      { type: 'webhook', destinationId: 'dest-legacy' },
     ])
   })
 
