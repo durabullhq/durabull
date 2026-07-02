@@ -632,13 +632,14 @@ function buildLinearIssueTitle(
   ruleName: string,
   jobName: string | null
 ): string {
+  // Linear issue titles are plain text, not markdown — never escape them.
   if (event.type === 'job_failed') {
     return `[Durabull] ${connection.name}/${event.queueName} job failed${
-      jobName ? `: ${safeLinearMarkdown(jobName, 200)}` : ''
+      jobName ? `: ${plainLinearText(jobName, 200)}` : ''
     }`
   }
 
-  return `[Durabull] ${safeLinearMarkdown(ruleName, 200)} fired for ${connection.name}/${event.queueName}`
+  return `[Durabull] ${plainLinearText(ruleName, 200)} fired for ${connection.name}/${event.queueName}`
 }
 
 function buildLinearIssueDescription({
@@ -655,36 +656,50 @@ function buildLinearIssueDescription({
   jobContext: ReturnType<typeof getJobContext>
 }): string {
   const lines = [
-    `Durabull alert rule **${safeLinearMarkdown(ruleName, 200)}** fired.`,
+    `Durabull alert rule **${plainLinearText(ruleName, 200)}** fired.`,
     '',
-    `- Connection: ${connection.name}`,
-    `- Queue: ${event.queueName}`,
-    `- Summary: ${safeLinearMarkdown(event.summary)}`,
-    `- Fired at: ${event.firedAt.toISOString()}`,
+    `- **Connection:** ${linearInlineCode(connection.name)}`,
+    `- **Queue:** ${linearInlineCode(event.queueName)}`,
+    `- **Summary:** ${plainLinearText(event.summary)}`,
+    `- **Fired at:** ${event.firedAt.toISOString()}`,
   ]
 
-  if (jobContext.jobId) lines.push(`- Job ID: ${jobContext.jobId}`)
-  if (jobContext.jobName) lines.push(`- Job name: ${safeLinearMarkdown(jobContext.jobName, 200)}`)
-  if (jobContext.failedReason) {
-    lines.push(`- Failure reason: ${safeLinearMarkdown(jobContext.failedReason)}`)
+  if (jobContext.jobId) lines.push(`- **Job ID:** ${linearInlineCode(jobContext.jobId)}`)
+  if (jobContext.jobName) {
+    lines.push(`- **Job name:** ${linearInlineCode(plainLinearText(jobContext.jobName, 200))}`)
   }
   if (jobContext.attemptsMade !== null) {
-    lines.push(`- Attempts made: ${jobContext.attemptsMade}`)
+    lines.push(`- **Attempts made:** ${jobContext.attemptsMade}`)
   }
-  if (jobContext.attempts !== null) lines.push(`- Max attempts: ${jobContext.attempts}`)
-  if (jobContext.failedAt) lines.push(`- Failed at: ${jobContext.failedAt}`)
+  if (jobContext.attempts !== null) lines.push(`- **Max attempts:** ${jobContext.attempts}`)
+  if (jobContext.failedAt) lines.push(`- **Failed at:** ${jobContext.failedAt}`)
+
+  if (jobContext.failedReason) {
+    lines.push('', '**Failure reason:**', '', linearCodeBlock(jobContext.failedReason))
+  }
+
   lines.push('', `[Open in Durabull](${jobUrl})`)
 
   return lines.join('\n')
 }
 
-function safeLinearMarkdown(value: string, maxLength = 1000): string {
+function plainLinearText(value: string, maxLength = 1000): string {
   const normalized = value.replace(/\s+/g, ' ').trim()
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, Math.max(0, maxLength - 1))}...`
+    : normalized
+}
+
+function linearInlineCode(value: string): string {
+  return `\`${value.replaceAll('`', "'")}\``
+}
+
+function linearCodeBlock(value: string, maxLength = 4000): string {
+  // Preserve newlines (stack traces), but strip fence-breaking sequences.
+  const sanitized = value.replaceAll('```', "'''").trim()
   const truncated =
-    normalized.length > maxLength
-      ? `${normalized.slice(0, Math.max(0, maxLength - 1))}...`
-      : normalized
-  return truncated.replace(/([\\`*_{}[\]()#+\-.!>])/g, '\\$1')
+    sanitized.length > maxLength ? `${sanitized.slice(0, maxLength)}\n...` : sanitized
+  return `\`\`\`\n${truncated}\n\`\`\``
 }
 
 function classifyDeliveryFailure(
@@ -732,4 +747,6 @@ export const __alertNotifierTestUtils = {
   buildDeliveryInput,
   getSavedWebhookDeliveryTarget,
   resolveWebhookMetadataForDispatch,
+  buildLinearIssueTitle,
+  buildLinearIssueDescription,
 }

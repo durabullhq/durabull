@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  type AlertEvent,
   alertWebhookDestination,
   alertWebhookDestinationRepository,
   closeDb,
@@ -106,6 +107,108 @@ describe('buildAlertAppUrls', () => {
     expect(urls.muteUrl).toBe(
       'https://app.durabull.io/acme%20ops/c/conn%2F123/alerts?ruleId=rule%3A456'
     )
+  })
+})
+
+function makeAlertEvent(overrides: Partial<AlertEvent> = {}): AlertEvent {
+  const now = new Date('2026-07-01T12:00:00.000Z')
+  return {
+    id: 'f2f9a2f4-0000-4000-8000-000000000001',
+    createdAt: now,
+    updatedAt: now,
+    alertRuleId: 'f2f9a2f4-0000-4000-8000-000000000002',
+    organizationId: TEST_ORG_ID,
+    connectionId: 'f2f9a2f4-0000-4000-8000-000000000003',
+    queueName: 'conversation-background',
+    type: 'job_failed',
+    status: 'firing',
+    summary: 'Job refresh-summary failed after 3 attempts',
+    context: null,
+    dedupeKey: null,
+    firedAt: now,
+    resolvedAt: null,
+    notificationSentAt: null,
+    ...overrides,
+  } as AlertEvent
+}
+
+describe('linear issue formatting', () => {
+  const connection = { id: 'conn_1', name: 'Marketplace (Production)' }
+
+  it('does not escape markdown characters in issue titles', () => {
+    const title = __alertNotifierTestUtils.buildLinearIssueTitle(
+      makeAlertEvent(),
+      connection,
+      'Job failures',
+      'refresh-summary'
+    )
+
+    expect(title).toBe(
+      '[Durabull] Marketplace (Production)/conversation-background job failed: refresh-summary'
+    )
+    expect(title).not.toContain('\\')
+  })
+
+  it('does not escape markdown characters in non-job-failed titles', () => {
+    const title = __alertNotifierTestUtils.buildLinearIssueTitle(
+      makeAlertEvent({ type: 'queue_depth' }),
+      connection,
+      'Queue depth > 1.000 (critical)',
+      null
+    )
+
+    expect(title).toBe(
+      '[Durabull] Queue depth > 1.000 (critical) fired for Marketplace (Production)/conversation-background'
+    )
+    expect(title).not.toContain('\\')
+  })
+
+  it('formats descriptions with inline code and a failure-reason code block', () => {
+    const description = __alertNotifierTestUtils.buildLinearIssueDescription({
+      event: makeAlertEvent(),
+      connection,
+      ruleName: 'Job failures',
+      jobUrl: 'https://app.durabull.io/acme/c/conn_1/queues/conversation-background/jobs/job_9',
+      jobContext: {
+        jobId: 'job_9',
+        jobName: 'refresh-summary',
+        failedReason: 'Error: boom\n    at handler (worker.ts:10:3)',
+        attemptsMade: 3,
+        attempts: 5,
+        failedAt: '2026-07-01T11:59:58.000Z',
+      },
+    })
+
+    expect(description).toContain('- **Job name:** `refresh-summary`')
+    expect(description).toContain('- **Queue:** `conversation-background`')
+    expect(description).toContain(
+      '**Failure reason:**\n\n```\nError: boom\n    at handler (worker.ts:10:3)\n```'
+    )
+    expect(description).toContain(
+      '[Open in Durabull](https://app.durabull.io/acme/c/conn_1/queues/conversation-background/jobs/job_9)'
+    )
+    expect(description).not.toContain('\\-')
+    expect(description).not.toContain('\\.')
+  })
+
+  it('neutralizes backticks and code fences inside dynamic values', () => {
+    const description = __alertNotifierTestUtils.buildLinearIssueDescription({
+      event: makeAlertEvent(),
+      connection,
+      ruleName: 'Job failures',
+      jobUrl: 'https://app.durabull.io',
+      jobContext: {
+        jobId: null,
+        jobName: 'weird`name',
+        failedReason: 'before ``` after',
+        attemptsMade: null,
+        attempts: null,
+        failedAt: null,
+      },
+    })
+
+    expect(description).toContain("- **Job name:** `weird'name`")
+    expect(description).toContain("```\nbefore ''' after\n```")
   })
 })
 
