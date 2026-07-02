@@ -33,3 +33,15 @@ status palette.
 - Pre-existing (not introduced): 4 unit test failures in `settings.test.tsx` and
   `connection-alerts-workspace.test.tsx` from incomplete `use-alerts` mocks — confirmed
   failing on baseline with changes stashed.
+
+## Queue Failed Count Navigation Badge
+
+- [x] Add compact count formatting for failed queue totals.
+- [x] Wire the Platform > Queues nav item to connection-wide failed job totals.
+- [x] Verify formatting examples and type safety.
+
+### Review
+
+- Desktop and mobile Platform navigation now show `Queues (n)` when the selected connection has failed jobs, using connection-wide `totalJobCounts.failed`.
+- Compact formatting matches the requested examples: `5`, `30`, `350`, `1.5k`, `10k`.
+- Verification: focused `utils` unit test passed, web typecheck passed, web lint exited 0 with unrelated existing warnings.
