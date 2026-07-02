@@ -219,6 +219,7 @@ export function AlertDestinationsPage() {
 
       {editTarget ? (
         <EditDestinationDialog
+          key={editTarget.id}
           destination={editTarget}
           linearConnected={linearConnected}
           isSaving={updateDestination.isPending}

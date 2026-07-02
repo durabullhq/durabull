@@ -296,6 +296,15 @@ function NoOpenIncidentsState({
   )
 }
 
+type MetricTone = 'neutral' | 'good' | 'warn' | 'critical'
+
+const METRIC_TONE_CLASSES: Record<MetricTone, string> = {
+  neutral: 'bg-background/75 border-border/70',
+  good: 'bg-status-success/[0.08] border-status-success/30',
+  warn: 'bg-status-warning/[0.1] border-status-warning/35',
+  critical: 'bg-destructive/10 border-destructive/30',
+}
+
 function IncidentMetricCard({
   icon: Icon,
   label,
@@ -305,17 +314,10 @@ function IncidentMetricCard({
   icon: React.ComponentType<{ className?: string }>
   label: string
   value: number
-  tone?: 'neutral' | 'good' | 'warn' | 'critical'
+  tone?: MetricTone
 }) {
-  const toneClasses: Record<typeof tone, string> = {
-    neutral: 'bg-background/75 border-border/70',
-    good: 'bg-status-success/[0.08] border-status-success/30',
-    warn: 'bg-status-warning/[0.1] border-status-warning/35',
-    critical: 'bg-destructive/10 border-destructive/30',
-  }
-
   return (
-    <Card className={cn('border shadow-sm', toneClasses[tone])}>
+    <Card className={cn('border shadow-sm', METRIC_TONE_CLASSES[tone])}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between gap-2">
           <CardDescription className="text-[11px] uppercase tracking-wide">{label}</CardDescription>

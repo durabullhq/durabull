@@ -53,6 +53,8 @@ import type {
 import { useAlertDestinations, useLinearMetadata, useTestWebhook } from '@/hooks/use-alerts'
 import { cn } from '@/lib/utils'
 
+const EMPTY_DESTINATIONS: AlertDestinationRecord[] = []
+
 interface AlertRuleBuilderProps {
   mode: 'create' | 'edit'
   orgSlug: string
@@ -171,7 +173,7 @@ export function AlertRuleBuilder({
   const [advancedOpen, setAdvancedOpen] = useState(() => hasNonDefaultAdvancedValues(draft))
 
   const destinationsQuery = useAlertDestinations()
-  const destinations = destinationsQuery.data?.destinations ?? []
+  const destinations = destinationsQuery.data?.destinations ?? EMPTY_DESTINATIONS
   const linearRoute = draft.notificationRoutes.find((route) => route.type === 'linear') ?? null
   const linearMetadataQuery = useLinearMetadata(Boolean(linearRoute))
 
@@ -792,7 +794,10 @@ function NotifyPanelBody({
 
   const destinationRoutes = draft.notificationRoutes.filter((route) => route.type === 'destination')
   const oneOffRoutes = draft.notificationRoutes.filter((route) => route.type !== 'destination')
-  const selectedDestinationIds = destinationRoutes.map(routeDestinationId).filter(Boolean)
+  const selectedDestinationIds = destinationRoutes.flatMap((route) => {
+    const destinationId = routeDestinationId(route)
+    return destinationId ? [destinationId] : []
+  })
 
   const setSelectedDestinationIds = (destinationIds: string[]) => {
     const nextDestinationRoutes = destinationIds.map(
