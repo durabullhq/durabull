@@ -27,7 +27,7 @@ export type IncidentStatusFilter =
   | 'suppressed'
   | 'all'
 
-const STATUS_FILTER_OPTIONS: Array<{ value: IncidentStatusFilter; label: string }> = [
+export const STATUS_FILTER_OPTIONS: Array<{ value: IncidentStatusFilter; label: string }> = [
   { value: 'open', label: 'Open' },
   { value: 'firing', label: 'Firing (unacknowledged)' },
   { value: 'acknowledged', label: 'Acknowledged' },
@@ -37,7 +37,7 @@ const STATUS_FILTER_OPTIONS: Array<{ value: IncidentStatusFilter; label: string 
 ]
 
 /** Map the UI status filter to alert event query filters. "Open" means firing incl. acknowledged. */
-function eventFiltersForStatus(status: IncidentStatusFilter): AlertEventFilterOptions {
+export function eventFiltersForStatus(status: IncidentStatusFilter): AlertEventFilterOptions {
   switch (status) {
     case 'open':
       return { status: 'firing' }

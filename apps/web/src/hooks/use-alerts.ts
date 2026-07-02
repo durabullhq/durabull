@@ -48,6 +48,14 @@ type RetryAlertDeliveryResponse = InferResponseType<
   ConnectionAlertsEndpoint['events'][':eventId']['deliveries'][':deliveryId']['retry']['$post'],
   200
 >
+type ResolveGlobalAlertEventResponse = InferResponseType<
+  (typeof api.alerts.events)[':eventId']['resolve']['$post'],
+  200
+>
+type AcknowledgeGlobalAlertEventResponse = InferResponseType<
+  (typeof api.alerts.events)[':eventId']['acknowledge']['$post'],
+  200
+>
 type TestAlertRuleResponse = InferResponseType<
   ConnectionAlertsEndpoint['rules'][':ruleId']['test']['$post'],
   200
@@ -637,6 +645,7 @@ export function useGlobalAlertEvents(filters: AlertEventFilterOptions = {}) {
     limit: filters.limit ?? 100,
     offset: filters.offset ?? 0,
     status: filters.status,
+    acknowledged: filters.acknowledged,
   } satisfies AlertEventFilterOptions
 
   return useQuery({
@@ -647,6 +656,9 @@ export function useGlobalAlertEvents(filters: AlertEventFilterOptions = {}) {
           limit: String(normalizedFilters.limit),
           offset: String(normalizedFilters.offset),
           ...(normalizedFilters.status ? { status: normalizedFilters.status } : {}),
+          ...(normalizedFilters.acknowledged === undefined
+            ? {}
+            : { acknowledged: normalizedFilters.acknowledged ? 'true' : 'false' }),
         },
       })
       const data = await handleRes<GlobalAlertEventsResponse>(res)
@@ -809,6 +821,38 @@ export function useResolveAlertEvent() {
         param: { connectionId, eventId },
       })
       const data = await handleRes<ResolveAlertEventResponse>(res)
+      return { event: normalizeAlertEvent(data.event) }
+    },
+    onSuccess: (_, variables) => invalidateAlertQueries(queryClient, variables.connectionId),
+  })
+}
+
+/** Resolve an event via the org-scoped endpoint (cross-connection feeds). */
+export function useResolveGlobalAlertEvent() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ eventId }: { eventId: string; connectionId?: string }) => {
+      const res = await api.alerts.events[':eventId'].resolve.$post({
+        param: { eventId },
+      })
+      const data = await handleRes<ResolveGlobalAlertEventResponse>(res)
+      return { event: normalizeAlertEvent(data.event) }
+    },
+    onSuccess: (_, variables) => invalidateAlertQueries(queryClient, variables.connectionId),
+  })
+}
+
+/** Acknowledge an event via the org-scoped endpoint (cross-connection feeds). */
+export function useAcknowledgeGlobalAlertEvent() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ eventId }: { eventId: string; connectionId?: string }) => {
+      const res = await api.alerts.events[':eventId'].acknowledge.$post({
+        param: { eventId },
+      })
+      const data = await handleRes<AcknowledgeGlobalAlertEventResponse>(res)
       return { event: normalizeAlertEvent(data.event) }
     },
     onSuccess: (_, variables) => invalidateAlertQueries(queryClient, variables.connectionId),
