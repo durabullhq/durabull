@@ -595,17 +595,14 @@ function JobDetailPage() {
         />
       )}
 
-      {/* Retry Job Dialog */}
-      {job && job.status === 'failed' && (
+      {/* Retry Job Dialog - rendered whenever the job exists so it survives
+          the status flipping away from 'failed' once the retry starts */}
+      {job && (
         <RetryJobDialog
-          open={retryDialog.open}
-          onOpenChange={retryDialog.setOpen}
           queueName={queueName}
           jobId={job.id}
           jobName={job.name}
-          phase={retryDialog.phase}
-          errorMessage={retryDialog.errorMessage}
-          onRetry={() => void retryDialog.runRetry()}
+          retry={retryDialog}
         />
       )}
 
