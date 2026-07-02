@@ -57,7 +57,7 @@ function makeRetryController(overrides: Partial<RetryController> = {}): RetryCon
     open: true,
     requestState: RetryJobRequestState.RETRYING,
     errorMessage: null,
-    logLines: [],
+    logEntries: [],
     stillRunning: false,
     job: null,
     jobStatus: undefined,
@@ -98,7 +98,10 @@ describe('RetryJobDialog', () => {
           requestState: RetryJobRequestState.WATCHING,
           isWatching: true,
           jobStatus: 'active',
-          logLines: ['processing item 1', 'processing item 2'],
+          logEntries: [
+            { id: 10, line: 'processing item 1' },
+            { id: 11, line: 'processing item 2' },
+          ],
         })}
       />
     )
@@ -186,7 +189,7 @@ describe('RetryJobDialog', () => {
           isTerminal: true,
           job: completedJob,
           jobStatus: 'completed',
-          logLines: [],
+          logEntries: [],
         })}
       />
     )
@@ -204,7 +207,7 @@ describe('RetryJobDialog', () => {
           isTerminal: true,
           job: completedJob,
           jobStatus: 'completed',
-          logLines: ['done processing'],
+          logEntries: [{ id: 20, line: 'done processing' }],
         })}
       />
     )
@@ -226,7 +229,10 @@ describe('RetryJobDialog', () => {
           isTerminal: true,
           job: failedJob,
           jobStatus: 'failed',
-          logLines: ['starting...', 'error: timeout'],
+          logEntries: [
+            { id: 30, line: 'starting...' },
+            { id: 31, line: 'error: timeout' },
+          ],
           runRetry: onRetry,
         })}
       />
@@ -282,6 +288,24 @@ describe('RetryJobDialog', () => {
     const [footerClose] = screen.getAllByRole('button', { name: 'Close' })
     await user.click(footerClose)
     expect(setOpen).toHaveBeenCalledWith(false)
+  })
+
+  it('does not show still-running copy while a delayed job is waiting for backoff', () => {
+    render(
+      <RetryJobDialog
+        {...defaultProps}
+        retry={makeRetryController({
+          requestState: RetryJobRequestState.WATCHING,
+          isWatching: true,
+          job: delayedJob,
+          jobStatus: 'delayed',
+          stillRunning: true,
+        })}
+      />
+    )
+
+    expect(screen.getByText('Waiting for Retry')).toBeInTheDocument()
+    expect(screen.queryByText(/still running/i)).not.toBeInTheDocument()
   })
 
   it('closes when Done is clicked after success', async () => {

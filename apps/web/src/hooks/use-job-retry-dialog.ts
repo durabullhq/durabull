@@ -1,7 +1,7 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   fetchJobLogTail,
   type JobLogTailResponse,
@@ -15,6 +15,11 @@ import { JOB_STATUS, type JobStatus } from '@/lib/constants'
 
 const POLL_INTERVAL_MS = 1_000
 const STILL_RUNNING_AFTER_MS = 60_000
+
+export interface RetryJobLogEntry {
+  id: number
+  line: string
+}
 
 export const RetryJobRequestState = {
   IDLE: 'idle',
@@ -31,7 +36,7 @@ interface JobRetryDialogState {
   requestState: RetryJobRequestState
   errorMessage: string | null
   logStart: number | null
-  logLines: string[]
+  logEntries: RetryJobLogEntry[]
   stillRunning: boolean
 }
 
@@ -40,7 +45,7 @@ const initialState: JobRetryDialogState = {
   requestState: RetryJobRequestState.IDLE,
   errorMessage: null,
   logStart: null,
-  logLines: [],
+  logEntries: [],
   stillRunning: false,
 }
 
@@ -60,9 +65,18 @@ function getRetryErrorMessage(
   )
 }
 
-function appendUniqueLogLines(current: string[], tail: JobLogTailResponse | undefined): string[] {
+function appendLogEntries(
+  current: RetryJobLogEntry[],
+  tail: JobLogTailResponse | undefined
+): RetryJobLogEntry[] {
   if (!tail?.logs.length) return current
-  return [...current, ...tail.logs]
+  return [
+    ...current,
+    ...tail.logs.map((line, index) => ({
+      id: tail.start + index,
+      line,
+    })),
+  ]
 }
 
 export function useJobRetryDialog(queueName: string, jobId: string) {
@@ -70,8 +84,9 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
   const { mutateAsync: retryJobs } = useRetryJobs()
   const queryClient = useQueryClient()
   const connectionId = useConnectionIdFromContextOrRoute()
+  const retryRunIdRef = useRef(0)
   const isWatching = state.requestState === RetryJobRequestState.WATCHING
-  const logOffset = state.logStart == null ? null : state.logStart + state.logLines.length
+  const logOffset = state.logStart == null ? null : state.logStart + state.logEntries.length
 
   const jobQuery = useJob(queueName, jobId, {
     enabled: isWatching,
@@ -93,6 +108,9 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
   }, [connectionId, jobId, queryClient, queueName])
 
   const runRetry = useCallback(async () => {
+    const retryRunId = retryRunIdRef.current + 1
+    retryRunIdRef.current = retryRunId
+
     setState((current) => ({
       ...initialState,
       open: current.open,
@@ -104,21 +122,32 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
         throw new Error('Connection is still loading. Try again in a moment.')
       }
 
-      const snapshot = await queryClient.fetchQuery({
-        queryKey: queryKeys.jobLogTail(connectionId ?? '', queueName, jobId, 0),
-        queryFn: () => fetchJobLogTail({ connectionId, queueName, jobId, start: 0 }),
-      })
+      let logStart = 0
+      try {
+        const snapshot = await queryClient.fetchQuery({
+          queryKey: queryKeys.jobLogTail(connectionId, queueName, jobId, 0),
+          queryFn: () => fetchJobLogTail({ connectionId, queueName, jobId, start: 0 }),
+        })
+        logStart = snapshot.count
+      } catch {
+        // Log history is auxiliary; a transient log read failure must not
+        // prevent the actual retry request from being submitted.
+      }
+
+      if (retryRunIdRef.current !== retryRunId) return
 
       const result = await retryJobs({
         queueName,
         jobIds: [jobId],
       })
 
+      if (retryRunIdRef.current !== retryRunId) return
+
       if (result.success > 0 && result.failed === 0) {
         setState((current) => ({
           ...current,
           requestState: RetryJobRequestState.WATCHING,
-          logStart: snapshot.count,
+          logStart,
         }))
         return
       }
@@ -129,6 +158,8 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
         errorMessage: getRetryErrorMessage(result, jobId),
       }))
     } catch (error) {
+      if (retryRunIdRef.current !== retryRunId) return
+
       setState((current) => ({
         ...current,
         requestState: RetryJobRequestState.ERROR,
@@ -153,6 +184,7 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
         return
       }
       // Closing never cancels the job; it keeps running server-side.
+      retryRunIdRef.current += 1
       invalidateJobQueries()
       setState({ ...initialState })
     },
@@ -174,11 +206,11 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
     setState((current) => {
       if (current.requestState !== RetryJobRequestState.WATCHING) return current
       const currentOffset =
-        current.logStart == null ? null : current.logStart + current.logLines.length
+        current.logStart == null ? null : current.logStart + current.logEntries.length
       if (currentOffset !== logTailQuery.data.start) return current
       return {
         ...current,
-        logLines: appendUniqueLogLines(current.logLines, logTailQuery.data),
+        logEntries: appendLogEntries(current.logEntries, logTailQuery.data),
       }
     })
   }, [logOffset, logTailQuery.data])
@@ -201,7 +233,7 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
     open: state.open,
     requestState: state.requestState,
     errorMessage: state.errorMessage,
-    logLines: state.logLines,
+    logEntries: state.logEntries,
     stillRunning: state.stillRunning,
     job,
     jobStatus,

@@ -15,6 +15,7 @@ import {
 import {
   RetryJobRequestState,
   isTerminalJobStatus,
+  type RetryJobLogEntry,
   type useJobRetryDialog,
 } from '@/hooks/use-job-retry-dialog'
 import type { GetJobResponse } from '@/hooks/use-queues'
@@ -93,16 +94,18 @@ function getDialogCopy({
   }
 }
 
-function LogStream({ lines, inFlight }: { lines: string[]; inFlight: boolean }) {
+function LogStream({ entries, inFlight }: { entries: RetryJobLogEntry[]; inFlight: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const entryCount = entries.length
 
-  // Pin the scroll position to the newest line whenever the stream renders.
+  // Pin the scroll position to the newest line only when new content arrives.
   useEffect(() => {
+    if (entryCount === 0) return
     const node = containerRef.current
     if (node) {
       node.scrollTop = node.scrollHeight
     }
-  })
+  }, [entryCount])
 
   return (
     <div
@@ -110,13 +113,12 @@ function LogStream({ lines, inFlight }: { lines: string[]; inFlight: boolean }) 
       data-testid="retry-log-stream"
       className="max-h-48 overflow-y-auto rounded-lg border bg-muted/30 p-3 font-mono text-xs"
     >
-      {lines.length === 0 && inFlight ? (
+      {entries.length === 0 && inFlight ? (
         <p className="text-muted-foreground">Waiting for logs...</p>
       ) : (
-        lines.map((line, index) => (
-          // Index keys are safe here: the stream is append-only.
-          <p key={index} className="whitespace-pre-wrap break-all leading-5">
-            {line}
+        entries.map((entry) => (
+          <p key={entry.id} className="whitespace-pre-wrap break-all leading-5">
+            {entry.line}
           </p>
         ))
       )}
@@ -137,7 +139,7 @@ export function RetryJobDialog({
     retry.setOpen(nextOpen)
   }
 
-  const { requestState, jobStatus, logLines, stillRunning, job, watchError } = retry
+  const { requestState, jobStatus, logEntries, stillRunning, job, watchError } = retry
   const { title, description } = getDialogCopy({ requestState, jobStatus })
   const terminal = isTerminalJobStatus(jobStatus)
   const inFlight = requestState === RetryJobRequestState.RETRYING || (retry.isWatching && !terminal)
@@ -145,7 +147,7 @@ export function RetryJobDialog({
   const showLogs =
     retry.isWatching &&
     requestState !== RetryJobRequestState.ERROR &&
-    (inFlight || logLines.length > 0)
+    (inFlight || logEntries.length > 0)
 
   return (
     <Dialog open={retry.open} onOpenChange={handleOpenChange}>
@@ -190,11 +192,11 @@ export function RetryJobDialog({
             />
           )}
 
-          {showLogs && (inFlight || logLines.length > 0) && (
-            <LogStream lines={logLines} inFlight={inFlight} />
+          {showLogs && (inFlight || logEntries.length > 0) && (
+            <LogStream entries={logEntries} inFlight={inFlight} />
           )}
 
-          {inFlight && stillRunning && (
+          {inFlight && stillRunning && jobStatus !== JOB_STATUS.DELAYED && (
             <div className="flex items-start gap-3 rounded-lg border border-status-delayed/30 bg-status-delayed/10 px-4 py-3">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-status-delayed" />
               <p className="text-sm text-status-delayed">
