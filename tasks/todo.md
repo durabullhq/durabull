@@ -21,9 +21,33 @@
 - [x] Verify: typecheck, unit tests (E2E blocked locally, see review)
 
 ## Review
-- Hook is now a thin retry controller: snapshot log count -> POST retry -> enable `useJob` + `useJobLogTail` with React Query `refetchInterval`. The dialog derives terminal/running/delayed state from the actual BullMQ job status.
-- Page sync uses the canonical job/log query keys and invalidates job, logs, list, and queue summaries on terminal/close. No `setInterval`, manual polling fetches, or duplicated status phase enum remain.
-- Added an offset guard so a replayed log-tail response cannot append duplicate lines; final terminal state triggers one last log-tail refetch to catch logs emitted between ticks.
-- Safety review: retry UI/hook diffs add no `remove`, `delete`, `clean`, `drain`, `discard`, `$delete`, `removeJob`, or `clearLogs` calls. The only mutation remains the existing `useRetryJobs` POST, and the backend retry route still only calls `job.retry()` / `job.retry('completed')`.
-- Verified: web `tsc` clean; focused retry lint clean; 21 focused retry unit tests pass. API touched file lint clean; api `tsc` is still blocked by pre-existing `src/mcp/tools/shared.test.ts` error.
-- E2E: rewrote the retry test but the local env cannot run it — `GET /api/connections` 500s with "Failed to decrypt Redis connection URL" (stale seeded connection encrypted with a different `DURABULL_REDIS_URL_ENCRYPTION_KEY`); fails identically on a clean tree. Baseline "settings page loads" E2E passes. Needs CI (fresh seed) to validate.
+
+- 46 files touched, all presentation-layer only (classNames, CSS tokens, fonts, manifest).
+  No business logic, routing, or data-flow changes.
+- New token system in `styles.css`: `--color-status-*` palette (success, active, warning,
+  danger, delayed, priority, neutral), chart palette, `--color-signal` accent, `eyebrow`
+  utility. Light + dark both rebuilt around graphite/paper neutrals.
+- Geist Sans (UI) + Geist Mono (data) self-hosted in `public/fonts`, preloaded in
+  `index.html`; mono + `tabular-nums` applied to all counts, IDs, keys, timestamps.
+- Unified StatCard treatment everywhere: neutral card, colored hairline top accent,
+  eyebrow title, mono semibold value.
+- Page headers consolidated to one technical treatment (icon tile + title), rainbow
+  gradients removed; nav gained an emerald "signal rail" active indicator.
+- Verification: `bun run build` clean; biome format applied to touched files; browser
+  screenshots verified in light and dark across dashboard, queue detail, job detail,
+  workers, analytics, alerts, scheduled jobs, KV explorer, and settings.
+- Pre-existing (not introduced): 4 unit test failures in `settings.test.tsx` and
+  `connection-alerts-workspace.test.tsx` from incomplete `use-alerts` mocks — confirmed
+  failing on baseline with changes stashed.
+
+## Queue Failed Count Navigation Badge
+
+- [x] Add compact count formatting for failed queue totals.
+- [x] Wire the Platform > Queues nav item to connection-wide failed job totals.
+- [x] Verify formatting examples and type safety.
+
+### Review
+
+- Desktop and mobile Platform navigation now show `Queues (n)` when the selected connection has failed jobs, using connection-wide `totalJobCounts.failed`.
+- Compact formatting matches the requested examples: `5`, `30`, `350`, `1.5k`, `10k`.
+- Verification: focused `utils` unit test passed, web typecheck passed, web lint exited 0 with unrelated existing warnings.
