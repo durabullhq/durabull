@@ -55,6 +55,10 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
 }))
 
+vi.mock('@tanstack/zod-adapter', () => ({
+  zodValidator: (schema: unknown) => schema,
+}))
+
 vi.mock('@/components/alerts/alert-rule-builder-page', () => ({
   AlertRuleBuilderPage: (props: Record<string, unknown>) => {
     builderPropsSpy(props)
@@ -138,9 +142,8 @@ describe('CreateAlertRuleRoute', () => {
       description: '2 queue-scoped alert rules were created from this builder.',
     })
     expect(navigateMock).toHaveBeenCalledWith({
-      to: '/$orgSlug/c/$connectionId/alerts',
+      to: '/$orgSlug/c/$connectionId/alerts/rules',
       params: { orgSlug: 'acme', connectionId: 'conn-1' },
-      search: { tab: 'rules' },
     })
   })
 })

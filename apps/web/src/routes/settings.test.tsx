@@ -40,6 +40,15 @@ vi.mock('@/hooks/use-alerts', () => ({
     mutateAsync: mocks.testLinearIntegrationMutateAsync,
     isPending: false,
   }),
+  useWebhookDestinations: () => ({
+    data: { destinations: [] },
+    isLoading: false,
+    isError: false,
+  }),
+  useCreateWebhookDestination: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateWebhookDestination: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteWebhookDestination: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useTestWebhookDestination: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 import { IntegrationsSettingsPanel } from '@/components/settings/integrations-settings-panel'
@@ -60,9 +69,7 @@ describe('IntegrationsSettingsPanel', () => {
     mocks.connectLinearIntegrationMutateAsync.mockImplementation(() => new Promise(() => {}))
     render(<IntegrationsSettingsPanel />)
 
-    expect(
-      screen.queryByRole('textbox', { name: /default linear team/i })
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /default linear team/i })).not.toBeInTheDocument()
 
     const connectButton = screen.getByRole('button', { name: /connect linear/i })
     expect(connectButton).toBeEnabled()

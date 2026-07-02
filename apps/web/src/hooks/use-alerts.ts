@@ -221,6 +221,7 @@ export interface AlertRuleMutationInput {
 
 export interface AlertEventFilterOptions {
   status?: AlertEventStatus
+  acknowledged?: boolean
   limit?: number
   offset?: number
   queueName?: string
@@ -509,6 +510,7 @@ export function useConnectionAlertEvents(
     limit: filters.limit ?? 100,
     offset: filters.offset ?? 0,
     status: filters.status,
+    acknowledged: filters.acknowledged,
     queueName: filters.queueName,
     jobId: filters.jobId,
   } satisfies AlertEventFilterOptions
@@ -522,6 +524,9 @@ export function useConnectionAlertEvents(
           limit: String(normalizedFilters.limit),
           offset: String(normalizedFilters.offset),
           ...(normalizedFilters.status ? { status: normalizedFilters.status } : {}),
+          ...(normalizedFilters.acknowledged === undefined
+            ? {}
+            : { acknowledged: normalizedFilters.acknowledged ? 'true' : 'false' }),
           ...(normalizedFilters.queueName ? { queueName: normalizedFilters.queueName } : {}),
           ...(normalizedFilters.jobId ? { jobId: normalizedFilters.jobId } : {}),
         },

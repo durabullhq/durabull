@@ -1,11 +1,22 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { zodValidator } from '@tanstack/zod-adapter'
 import { toast } from 'sonner'
+import { z } from 'zod'
 import { AlertRuleBuilderPage } from '@/components/alerts/alert-rule-builder-page'
 import { useConnection } from '@/components/connection-provider'
 import { useCreateAlertRule, useLinearIntegration } from '@/hooks/use-alerts'
 import { useQueues } from '@/hooks/use-queues'
 
+// `template` preselects a rule template; `from` duplicates an existing rule.
+// Both are consumed by the builder in a follow-up change — validated loosely
+// here so deep links round-trip today.
+const createAlertRuleSearchSchema = z.object({
+  template: z.string().optional().catch(undefined),
+  from: z.string().optional().catch(undefined),
+})
+
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/alerts/new')({
+  validateSearch: zodValidator(createAlertRuleSearchSchema),
   component: CreateAlertRuleRoute,
 })
 
@@ -45,9 +56,8 @@ export function CreateAlertRuleRoute() {
         })
 
         navigate({
-          to: '/$orgSlug/c/$connectionId/alerts',
+          to: '/$orgSlug/c/$connectionId/alerts/rules',
           params: { orgSlug, connectionId },
-          search: { tab: 'rules' },
         })
       }}
     />

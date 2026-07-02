@@ -83,8 +83,8 @@ describe('getOpenAlertCount', () => {
   it('returns org-wide total when connectionId is omitted', () => {
     expect(
       getOpenAlertCount([
-        { connectionId: 'conn-a', count: 2 },
-        { connectionId: 'conn-b', count: 1 },
+        { connectionId: 'conn-a', firing: 1, acknowledged: 1, open: 2, count: 2 },
+        { connectionId: 'conn-b', firing: 1, acknowledged: 0, open: 1, count: 1 },
       ])
     ).toBe(3)
   })
@@ -93,8 +93,8 @@ describe('getOpenAlertCount', () => {
     expect(
       getOpenAlertCount(
         [
-          { connectionId: 'conn-a', count: 2 },
-          { connectionId: 'conn-b', count: 1 },
+          { connectionId: 'conn-a', firing: 2, acknowledged: 0, open: 2, count: 2 },
+          { connectionId: 'conn-b', firing: 0, acknowledged: 1, open: 1, count: 1 },
         ],
         'conn-b'
       )
@@ -103,7 +103,10 @@ describe('getOpenAlertCount', () => {
 
   it('returns zero when the connection has no open incidents', () => {
     expect(
-      getOpenAlertCount([{ connectionId: 'conn-a', count: 2 }], 'conn-missing')
+      getOpenAlertCount(
+        [{ connectionId: 'conn-a', firing: 2, acknowledged: 0, open: 2, count: 2 }],
+        'conn-missing'
+      )
     ).toBe(0)
   })
 })

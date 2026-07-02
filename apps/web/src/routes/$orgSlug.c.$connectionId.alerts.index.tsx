@@ -1,14 +1,29 @@
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { z } from 'zod'
-import { ConnectionAlertsWorkspace } from '@/components/alerts/connection-alerts-workspace'
+import {
+  ConnectionIncidentsView,
+  type IncidentStatusFilter,
+} from '@/components/alerts/connection-incidents-view'
 
-const alertPageSearchSchema = z.object({
-  tab: z.enum(['rules', 'history']).catch('rules'),
+const incidentsSearchSchema = z.object({
+  status: z.enum(['open', 'firing', 'acknowledged', 'resolved', 'suppressed', 'all']).catch('open'),
+  queue: z.string().optional().catch(undefined),
+  /** Legacy deep-link param: `?tab=rules` redirects to the rules route. */
+  tab: z.enum(['rules', 'history']).optional().catch(undefined),
 })
 
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/alerts/')({
-  validateSearch: zodValidator(alertPageSearchSchema),
+  validateSearch: zodValidator(incidentsSearchSchema),
+  beforeLoad: ({ search, params }) => {
+    if (search.tab === 'rules') {
+      throw redirect({
+        to: '/$orgSlug/c/$connectionId/alerts/rules',
+        params,
+        replace: true,
+      })
+    }
+  },
   component: ConnectionAlertsIndexRoute,
 })
 
@@ -18,14 +33,15 @@ function ConnectionAlertsIndexRoute() {
   const navigate = useNavigate()
 
   return (
-    <ConnectionAlertsWorkspace
+    <ConnectionIncidentsView
       orgSlug={orgSlug}
       connectionId={connectionId}
-      tab={search.tab}
-      onTabChange={(tab) =>
+      status={search.status}
+      queue={search.queue}
+      onStatusChange={(status: IncidentStatusFilter) =>
         navigate({
           to: '.',
-          search: { tab },
+          search: { status, queue: search.queue },
           replace: true,
         })
       }

@@ -1,20 +1,14 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { motion } from 'framer-motion'
-import { BellRing, Cable, Radar, ShieldCheck, Siren } from 'lucide-react'
+import { BellRing, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertEventsTable } from '@/components/alerts/alert-events-table'
-import {
-  AlertSeverityChip,
-  AlertTypeBadge,
-  getAlertTypeMeta,
-} from '@/components/alerts/alert-primitives'
+import { AlertTypeBadge, getAlertTypeMeta } from '@/components/alerts/alert-primitives'
+import { AlertsViewSwitcher } from '@/components/alerts/alerts-view-switcher'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { useConnection } from '@/components/connection-provider'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
-import { Select } from '@/components/ui/select'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -24,77 +18,30 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  getOpenAlertCount,
-  useAlertSummary,
-  useConnectionAlertEvents,
+  type AlertRuleRecord,
   useConnectionAlertRules,
   useDeleteAlertRule,
-  useResolveAlertEvent,
   useUpdateAlertRule,
-  type AlertEventStatus,
-  type AlertRuleRecord,
 } from '@/hooks/use-alerts'
-import { cn, formatNumber } from '@/lib/utils'
+import { formatNumber } from '@/lib/utils'
 
-const shellTransition = { duration: 0.55, ease: [0.16, 1, 0.3, 1] as const }
-
-export function ConnectionAlertsWorkspace({
+export function ConnectionRulesView({
   orgSlug,
   connectionId,
-  tab,
-  onTabChange,
 }: {
   orgSlug: string
   connectionId: string
-  tab: 'rules' | 'history'
-  onTabChange: (tab: 'rules' | 'history') => void
 }) {
   const navigate = useNavigate()
   const { currentConnection } = useConnection()
-  const [statusFilter, setStatusFilter] = useState<'all' | AlertEventStatus>('all')
-  const [resolvingEventId, setResolvingEventId] = useState<string | null>(null)
   const [mutatingRuleId, setMutatingRuleId] = useState<string | null>(null)
 
-  const summaryQuery = useAlertSummary({ refetchInterval: 15_000 })
   const rulesQuery = useConnectionAlertRules(connectionId)
-  const eventsQuery = useConnectionAlertEvents(connectionId, {
-    status: statusFilter === 'all' ? undefined : statusFilter,
-    limit: 100,
-  })
   const updateRuleMutation = useUpdateAlertRule(connectionId)
   const deleteRuleMutation = useDeleteAlertRule(connectionId)
-  const resolveEventMutation = useResolveAlertEvent()
 
-  const firingCount = getOpenAlertCount(summaryQuery.data?.connections, connectionId)
   const rules = rulesQuery.data?.rules ?? []
-  const events = eventsQuery.data?.events ?? []
-
-  const coverageStats = useMemo(() => {
-    const enabledRules = rules.filter((rule) => rule.enabled)
-    const mutedRules = rules.length - enabledRules.length
-    const activeRecipients = new Set<string>()
-
-    for (const rule of rules) {
-      for (const channel of rule.notificationChannels) {
-        if (channel.type === 'email' && channel.target) {
-          activeRecipients.add(channel.target)
-        }
-      }
-    }
-
-    return {
-      enabledRules: enabledRules.length,
-      mutedRules,
-      recipients: activeRecipients.size,
-      connectionWideRules: rules.filter((rule) => {
-        if (rule.queueFilterMode === 'include' && rule.filterQueueNames.length > 0) return false
-        if (rule.queueName) return false
-        return true
-      }).length,
-    }
-  }, [rules])
 
   const topBarConfig = useMemo(
     () => ({
@@ -165,186 +112,33 @@ export function ConnectionAlertsWorkspace({
     }
   }
 
-  async function handleResolveEvent(eventId: string) {
-    try {
-      setResolvingEventId(eventId)
-      await resolveEventMutation.mutateAsync({ connectionId, eventId })
-      toast.success('Incident resolved', {
-        description: 'The alert event was marked resolved for this connection.',
-      })
-    } catch (error) {
-      toast.error('Failed to resolve incident', {
-        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
-      })
-    } finally {
-      setResolvingEventId(null)
-    }
-  }
-
   return (
     <div className="space-y-6">
-      <motion.section
-        className="relative overflow-hidden rounded-[30px] border border-border/70 bg-card/85 shadow-[0_25px_90px_-55px_rgba(15,23,42,0.55)]"
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={shellTransition}
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(248,113,113,0.18),transparent_28%),radial-gradient(circle_at_78%_12%,rgba(56,189,248,0.14),transparent_26%),linear-gradient(135deg,rgba(15,23,42,0.05),transparent_55%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(248,113,113,0.18),transparent_30%),radial-gradient(circle_at_78%_12%,rgba(56,189,248,0.16),transparent_28%),linear-gradient(135deg,rgba(15,23,42,0.35),transparent_55%)]" />
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)] bg-size-[36px_36px] opacity-40" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <AlertsViewSwitcher orgSlug={orgSlug} connectionId={connectionId} />
+      </div>
 
-        <div className="relative grid gap-6 px-6 py-6 lg:grid-cols-[1.1fr_0.9fr] lg:px-8">
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <AlertSeverityChip count={firingCount} label="Active incidents on this connection" />
-              <Badge variant="outline" className="border-border/70 bg-background/70">
-                {currentConnection?.name ?? 'Connection'}
-              </Badge>
-            </div>
-            <div className="space-y-3">
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Queue incident policy for {currentConnection?.name ?? 'this connection'}
-              </h2>
-              <p className="max-w-3xl text-sm leading-7 text-muted-foreground sm:text-base">
-                Define alert thresholds, route incidents to responders, and manage queue incidents
-                from one place. Use the full-page builder for complex rule authoring.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <MetricCard
-              icon={Radar}
-              label="Enabled Rules"
-              value={coverageStats.enabledRules}
-              tone={coverageStats.enabledRules > 0 ? 'good' : 'neutral'}
-            />
-            <MetricCard
-              icon={Siren}
-              label="Muted Rules"
-              value={coverageStats.mutedRules}
-              tone={coverageStats.mutedRules > 0 ? 'warn' : 'neutral'}
-            />
-            <MetricCard
-              icon={Cable}
-              label="Recipients"
-              value={coverageStats.recipients}
-              tone={coverageStats.recipients > 0 ? 'good' : 'neutral'}
-            />
-            <MetricCard
-              icon={ShieldCheck}
-              label="Connection-Wide Guards"
-              value={coverageStats.connectionWideRules}
-              tone={coverageStats.connectionWideRules > 0 ? 'good' : 'neutral'}
-            />
-          </div>
-        </div>
-      </motion.section>
-
-      <Tabs
-        value={tab}
-        onValueChange={(value) => onTabChange(value as 'rules' | 'history')}
-        className="space-y-4"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <TabsList className="h-11 bg-muted/40 p-1">
-            <TabsTrigger value="rules" className="gap-2 px-4">
-              <Radar className="h-4 w-4" />
-              Rules
-            </TabsTrigger>
-            <TabsTrigger value="history" className="gap-2 px-4">
-              <Siren className="h-4 w-4" />
-              Incident History
-            </TabsTrigger>
-          </TabsList>
-
-          {tab === 'history' ? (
-            <Select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as 'all' | AlertEventStatus)}
-              className="h-9 w-[180px]"
-            >
-              <option value="all">All statuses</option>
-              <option value="firing">Firing</option>
-              <option value="resolved">Resolved</option>
-              <option value="suppressed">Suppressed</option>
-            </Select>
-          ) : null}
-        </div>
-
-        <TabsContent value="rules" className="space-y-4">
-          {rulesQuery.isError ? (
-            <AlertErrorCard message="Failed to load alert rules. Please try refreshing the page." />
-          ) : rulesQuery.isLoading ? (
-            <RulesLoadingState />
-          ) : rules.length === 0 ? (
-            <EmptyRulesState orgSlug={orgSlug} connectionId={connectionId} />
-          ) : (
-            <RulesTable
-              rules={rules}
-              mutatingRuleId={mutatingRuleId}
-              onRowOpen={(ruleId) =>
-                navigate({
-                  to: '/$orgSlug/c/$connectionId/alerts/$ruleId',
-                  params: { orgSlug, connectionId, ruleId },
-                })
-              }
-              onToggleRule={(rule, enabled) => handleToggleRule(rule, enabled)}
-              onDeleteRule={(rule) => handleDeleteRule(rule)}
-            />
-          )}
-        </TabsContent>
-
-        <TabsContent value="history" className="space-y-4">
-          {eventsQuery.isError ? (
-            <AlertErrorCard message="Failed to load alert events. Please try refreshing the page." />
-          ) : eventsQuery.isLoading ? (
-            <EventsLoadingState />
-          ) : (
-            <AlertEventsTable
-              orgSlug={orgSlug}
-              events={events}
-              emptyTitle="No incidents recorded yet"
-              emptyCopy="As alert rules evaluate in the background, firing and resolved incidents will appear here with queue-level context."
-              onResolve={(event) => handleResolveEvent(event.id)}
-              resolvingEventId={resolvingEventId}
-            />
-          )}
-        </TabsContent>
-      </Tabs>
+      {rulesQuery.isError ? (
+        <RulesErrorCard message="Failed to load alert rules. Please try refreshing the page." />
+      ) : rulesQuery.isLoading ? (
+        <RulesLoadingState />
+      ) : rules.length === 0 ? (
+        <EmptyRulesState orgSlug={orgSlug} connectionId={connectionId} />
+      ) : (
+        <RulesTable
+          rules={rules}
+          mutatingRuleId={mutatingRuleId}
+          onRowOpen={(ruleId) =>
+            navigate({
+              to: '/$orgSlug/c/$connectionId/alerts/rules/$ruleId',
+              params: { orgSlug, connectionId, ruleId },
+            })
+          }
+          onToggleRule={(rule, enabled) => handleToggleRule(rule, enabled)}
+          onDeleteRule={(rule) => handleDeleteRule(rule)}
+        />
+      )}
     </div>
-  )
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  value: number
-  tone?: 'neutral' | 'good' | 'warn' | 'critical'
-}) {
-  const toneClasses: Record<typeof tone, string> = {
-    neutral: 'bg-background/75 border-border/70',
-    good: 'bg-status-success/[0.08] border-status-success/30',
-    warn: 'bg-status-warning/[0.1] border-status-warning/35',
-    critical: 'bg-destructive/10 border-destructive/30',
-  }
-
-  return (
-    <Card className={cn('border shadow-sm backdrop-blur', toneClasses[tone])}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardDescription className="text-[11px] uppercase tracking-wide">{label}</CardDescription>
-          <Icon className="h-4 w-4 text-muted-foreground" />
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="font-mono text-2xl font-semibold tabular-nums">{formatNumber(value)}</div>
-      </CardContent>
-    </Card>
   )
 }
 
@@ -523,19 +317,7 @@ function RulesLoadingState() {
   )
 }
 
-function EventsLoadingState() {
-  return (
-    <Card>
-      <CardContent className="space-y-3 pt-6">
-        {Array.from({ length: 6 }, (_, index) => (
-          <Skeleton key={index} className="h-14 rounded-xl" />
-        ))}
-      </CardContent>
-    </Card>
-  )
-}
-
-function AlertErrorCard({ message }: { message: string }) {
+function RulesErrorCard({ message }: { message: string }) {
   return (
     <Card className="border-destructive/30 bg-destructive/5">
       <CardContent className="flex flex-col items-center justify-center py-10 text-center">
