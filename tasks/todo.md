@@ -1,18 +1,24 @@
-# UI Redesign — "Signal" ops-console aesthetic
+# Retry Job Modal: live status + streaming logs
 
-Direction: confident, polished, developer-first. Dark-first graphite chrome, hairline
-borders, emerald reserved as the single "signal" accent, Geist Sans + Geist Mono with
-mono discipline for all data (numbers, IDs, keys, eyebrows), sharper radii, tokenized
-status palette.
+## Agreed design (grill-me session)
+- Modal polls job status + logs every 1s until terminal (`completed`/`failed`); `delayed` shows backoff countdown and keeps polling.
+- After 60s non-terminal, show a "still running, safe to close" notice but keep polling.
+- Logs shown are only lines appended after the retry started (snapshot the BullMQ log count before POSTing the retry).
+- Modal closable at any time; job continues server-side.
+- Distinct failure states: retry POST failure (error + Try Again) vs job re-failed (logs + failedReason + Retry Again).
+- Job detail page kept in sync via shared React Query job/log hooks + invalidation on close/terminal.
+- API: add `start` offset mode to `GET .../jobs/:jobId/logs` (BullMQ `getJobLogs(start, end)` native).
+- Scope: single-job modal only; bulk retry dialog untouched.
 
-- [x] Design tokens: rebuild styles.css palette (light + dark), status tokens, radius, fonts, selection/focus/scrollbars
-- [x] Fonts: ship Geist Sans + Geist Mono variable woff2 to public/fonts, @font-face + @theme wiring, preload in index.html
-- [x] Primitives: button, badge, card, input, table, tabs, select, dialog, skeleton polish
-- [x] Shell: sidebar nav (active rail indicator), top bar, eyebrow labels, logo treatment
-- [x] Page headers: replace rainbow gradients with one consistent technical treatment
-- [x] Status colors: tokenize status-badge, queue-table, stat cards, badge success/warning
-- [x] Stragglers: nav-user gradient, theme-color meta, webmanifest
-- [x] Verify: typecheck/lint/build + browser screenshots light & dark
+## Tasks
+- [x] API: `start` query param on logs endpoint (offset tail mode)
+- [x] Web: rework `use-job-retry-dialog.ts` around canonical React Query polling (`useJob` + `useJobLogTail`) instead of custom timers
+- [x] Web: remove redundant retry phase enum; derive running/delayed/success/failed from the actual BullMQ job status
+- [x] Web: rework `retry-job-dialog.tsx` (log stream pane w/ auto-scroll, delayed countdown via RetryCountdown, closable, status-derived footer)
+- [x] Route: render dialog independent of `job.status === 'failed'` so it survives status flips; keep page in sync
+- [x] Rewrite unit tests around request state + polled job status, including log-tail replay guard and no destructive retry side effects
+- [x] Extend E2E: modal shows live phase + log stream pane, closable mid-run
+- [x] Verify: typecheck, unit tests (E2E blocked locally, see review)
 
 ## Review
 

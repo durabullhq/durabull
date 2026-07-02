@@ -10,6 +10,7 @@ import { env } from '@durabull/env'
 import { zValidator } from '@hono/zod-validator'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
+import { syncLinearIssuesForResolvedEvents } from '../lib/alert-resolution'
 import { sanitizeAlertDeliveryForClient } from '../lib/alert-webhook-channels'
 import {
   exchangeLinearOauthCode,
@@ -117,10 +118,17 @@ const app = new Hono()
     if (existing.status === 'suppressed') {
       return c.json({ error: 'Suppressed events are informational and cannot be resolved.' }, 409)
     }
+    const wasFiring = existing.status === 'firing'
 
     const event = await alertEventRepository.resolve(eventId, organizationId)
     if (!event) {
       return c.json({ error: 'Event not found' }, 404)
+    }
+
+    // Mirror the connection-scoped resolve: close linked Linear issues in the
+    // background so resolving from the org feed behaves identically.
+    if (wasFiring) {
+      void syncLinearIssuesForResolvedEvents([event], { kind: 'manual' })
     }
 
     return c.json({ event })

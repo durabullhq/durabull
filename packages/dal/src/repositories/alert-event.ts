@@ -1,5 +1,5 @@
 import { uuidv7 } from '@durabull/utils/uuid'
-import { and, desc, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { type AlertEventStatus, alertEvent } from '../db/schemas/alert-event/schema'
 import type { AlertEvent, NewAlertEvent } from '../db/schemas/alert-event/types'
@@ -34,6 +34,7 @@ function buildAlertEventConnectionFilter(
     queueName?: string
     jobId?: string
     acknowledged?: boolean
+    alertRuleId?: string
   }
 ) {
   return and(
@@ -42,6 +43,7 @@ function buildAlertEventConnectionFilter(
     ...(options.status ? [eq(alertEvent.status, options.status)] : []),
     ...(options.queueName ? [eq(alertEvent.queueName, options.queueName)] : []),
     ...(options.jobId ? [sql`${alertEvent.context}->>'jobId' = ${options.jobId}`] : []),
+    ...(options.alertRuleId ? [eq(alertEvent.alertRuleId, options.alertRuleId)] : []),
     ...acknowledgedFilter(options.acknowledged)
   )
 }
@@ -281,6 +283,7 @@ export const alertEventRepository = {
       queueName?: string
       jobId?: string
       acknowledged?: boolean
+      alertRuleId?: string
     }
   ): Promise<number> {
     const db = await getDb()
@@ -304,6 +307,7 @@ export const alertEventRepository = {
       queueName?: string
       jobId?: string
       acknowledged?: boolean
+      alertRuleId?: string
     }
   ): Promise<AlertEventWithAckUser[]> {
     const db = await getDb()
@@ -405,6 +409,22 @@ export const alertEventRepository = {
     })
   },
 
+  /**
+   * Firing events that reference an individual job (context.jobId), across all
+   * organizations. Used by the background monitor to auto-resolve alerts whose
+   * job has since completed. Ordered oldest-first so long-firing events are
+   * checked before fresh ones when the limit truncates the sweep.
+   */
+  async findFiringJobEvents(options: { limit: number }): Promise<AlertEvent[]> {
+    const db = await getDb()
+    return db
+      .select()
+      .from(alertEvent)
+      .where(and(eq(alertEvent.status, 'firing'), sql`${alertEvent.context}->>'jobId' IS NOT NULL`))
+      .orderBy(alertEvent.firedAt)
+      .limit(options.limit)
+  },
+
   async resolve(id: string, organizationId: string): Promise<AlertEvent | null> {
     const db = await getDb()
     const [row] = await db
@@ -418,6 +438,39 @@ export const alertEventRepository = {
       .returning()
 
     return row ?? null
+  },
+
+  /**
+   * Resolve many events at once, scoped to an organization (and optionally a
+   * connection). Only rows still `firing` are touched, so the returned rows are
+   * exactly the events this call transitioned — callers use them to fan out
+   * post-resolution side effects (e.g. closing linked Linear issues).
+   */
+  async resolveMany(
+    ids: string[],
+    organizationId: string,
+    options: { connectionId?: string } = {}
+  ): Promise<AlertEvent[]> {
+    if (ids.length === 0) return []
+    const db = await getDb()
+    const now = new Date()
+
+    return db
+      .update(alertEvent)
+      .set({
+        status: 'resolved',
+        resolvedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          inArray(alertEvent.id, ids),
+          eq(alertEvent.organizationId, organizationId),
+          eq(alertEvent.status, 'firing'),
+          ...(options.connectionId ? [eq(alertEvent.connectionId, options.connectionId)] : [])
+        )
+      )
+      .returning()
   },
 
   async markNotificationSent(id: string): Promise<void> {

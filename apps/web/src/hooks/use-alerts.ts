@@ -52,6 +52,10 @@ type AcknowledgeGlobalAlertEventResponse = InferResponseType<
   (typeof api.alerts.events)[':eventId']['acknowledge']['$post'],
   200
 >
+type BulkResolveAlertEventsResponse = InferResponseType<
+  ConnectionAlertsEndpoint['events']['resolve-bulk']['$post'],
+  200
+>
 type TestAlertRuleResponse = InferResponseType<
   ConnectionAlertsEndpoint['rules'][':ruleId']['test']['$post'],
   200
@@ -292,6 +296,7 @@ export interface AlertEventFilterOptions {
   offset?: number
   queueName?: string
   jobId?: string
+  alertRuleId?: string
 }
 
 export const alertKeys = {
@@ -642,6 +647,7 @@ export function useConnectionAlertEvents(
     acknowledged: filters.acknowledged,
     queueName: filters.queueName,
     jobId: filters.jobId,
+    alertRuleId: filters.alertRuleId,
   } satisfies AlertEventFilterOptions
 
   return useQuery({
@@ -658,6 +664,7 @@ export function useConnectionAlertEvents(
             : { acknowledged: normalizedFilters.acknowledged ? 'true' : 'false' }),
           ...(normalizedFilters.queueName ? { queueName: normalizedFilters.queueName } : {}),
           ...(normalizedFilters.jobId ? { jobId: normalizedFilters.jobId } : {}),
+          ...(normalizedFilters.alertRuleId ? { alertRuleId: normalizedFilters.alertRuleId } : {}),
         },
       })
       const data = await handleRes<ConnectionAlertEventsResponse>(res)
@@ -779,6 +786,31 @@ export function useResolveGlobalAlertEvent() {
       })
       const data = await handleRes<ResolveGlobalAlertEventResponse>(res)
       return { event: normalizeAlertEvent(data.event) }
+    },
+    onSuccess: (_, variables) => invalidateAlertQueries(queryClient, variables.connectionId),
+  })
+}
+
+export function useBulkResolveAlertEvents() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      connectionId,
+      eventIds,
+    }: {
+      connectionId: string
+      eventIds: string[]
+    }) => {
+      const res = await api.c[':connectionId'].alerts.events['resolve-bulk'].$post({
+        param: { connectionId },
+        json: { eventIds },
+      })
+      const data = await handleRes<BulkResolveAlertEventsResponse>(res)
+      return {
+        resolvedCount: typeof data.resolvedCount === 'number' ? data.resolvedCount : 0,
+        events: Array.isArray(data.events) ? data.events.map(normalizeAlertEvent) : [],
+      }
     },
     onSuccess: (_, variables) => invalidateAlertQueries(queryClient, variables.connectionId),
   })

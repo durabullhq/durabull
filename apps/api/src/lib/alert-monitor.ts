@@ -6,12 +6,14 @@ import {
   redisConnectionRepository,
   redisDiscoveredQueueRepository,
   type AlertDelivery,
+  type AlertEvent,
   type AlertRule,
   type RedisConnection,
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import type { JobType } from 'bullmq'
 import { evaluateRule, type CursorState, type QueueSnapshot } from './alert-evaluator'
+import { syncLinearIssuesForResolvedEvents } from './alert-resolution'
 import {
   dispatchAlertNotification,
   processAlertDeliveries,
@@ -34,14 +36,18 @@ const HARD_CAP_JOB_FAILED_MAX_ISSUES_PER_POLL = 500
 const DELIVERY_SWEEP_LIMIT = 10
 const MAX_CONCURRENT_DELIVERY_SWEEPS = 10
 const DELIVERY_SWEEP_BUDGET_MS = 20_000
+const DEFAULT_JOB_AUTO_RESOLVE_INTERVAL_MS = 5 * 60_000
+const JOB_AUTO_RESOLVE_BATCH_LIMIT = 500
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let deliverySweepTimer: ReturnType<typeof setInterval> | null = null
 let cleanupTimer: ReturnType<typeof setInterval> | null = null
+let jobAutoResolveTimer: ReturnType<typeof setInterval> | null = null
 let startupTimer: ReturnType<typeof setTimeout> | null = null
 let isRunning = false
 let pollInProgress = false
 let deliverySweepInProgress = false
+let jobAutoResolveInProgress = false
 
 function getPollIntervalMs(): number {
   return Math.max(5_000, env.DURABULL_ALERT_POLL_INTERVAL_MS ?? DEFAULT_POLL_INTERVAL_MS)
@@ -49,6 +55,13 @@ function getPollIntervalMs(): number {
 
 function getDeliverySweepIntervalMs(): number {
   return Math.max(5_000, Math.min(getPollIntervalMs(), DEFAULT_DELIVERY_SWEEP_INTERVAL_MS))
+}
+
+function getJobAutoResolveIntervalMs(): number {
+  return Math.max(
+    30_000,
+    env.DURABULL_ALERT_JOB_RESOLVE_INTERVAL_MS ?? DEFAULT_JOB_AUTO_RESOLVE_INTERVAL_MS
+  )
 }
 
 function isAlertMonitorEnabled(): boolean {
@@ -157,9 +170,14 @@ export function startAlertMonitor(): void {
     void runPollCycle()
     void runDeliverySweepCycle()
     void runCleanup()
+    void runJobAutoResolveCycle()
     pollTimer = setInterval(() => void runPollCycle(), pollIntervalMs)
     deliverySweepTimer = setInterval(() => void runDeliverySweepCycle(), deliverySweepIntervalMs)
     cleanupTimer = setInterval(() => void runCleanup(), CLEANUP_INTERVAL_MS)
+    jobAutoResolveTimer = setInterval(
+      () => void runJobAutoResolveCycle(),
+      getJobAutoResolveIntervalMs()
+    )
   }, jitter)
 }
 
@@ -179,6 +197,10 @@ export function stopAlertMonitor(): void {
   if (cleanupTimer) {
     clearInterval(cleanupTimer)
     cleanupTimer = null
+  }
+  if (jobAutoResolveTimer) {
+    clearInterval(jobAutoResolveTimer)
+    jobAutoResolveTimer = null
   }
   isRunning = false
   console.log('[alert-monitor] Stopped.')
@@ -418,7 +440,12 @@ async function evaluateAndMaybeAlert(
   if (!evaluation.triggered) {
     const activeEvent = await alertEventRepository.findActiveFiring(rule.id, snapshot.queueName)
     if (activeEvent) {
-      await alertEventRepository.resolve(activeEvent.id, rule.organizationId)
+      const resolvedEvent = await alertEventRepository.resolve(activeEvent.id, rule.organizationId)
+      if (resolvedEvent) {
+        await syncLinearIssuesForResolvedEvents([resolvedEvent], {
+          kind: 'auto_condition_cleared',
+        })
+      }
     }
     return
   }
@@ -597,6 +624,90 @@ async function markLegacyNotificationSentIfComplete(eventId: string): Promise<vo
   }
 }
 
+async function runJobAutoResolveCycle(): Promise<void> {
+  if (jobAutoResolveInProgress) return
+  jobAutoResolveInProgress = true
+
+  try {
+    const events = await alertEventRepository.findFiringJobEvents({
+      limit: JOB_AUTO_RESOLVE_BATCH_LIMIT,
+    })
+    if (events.length === 0) return
+
+    const eventsByConnection = new Map<string, AlertEvent[]>()
+    for (const event of events) {
+      const existing = eventsByConnection.get(event.connectionId) ?? []
+      existing.push(event)
+      eventsByConnection.set(event.connectionId, existing)
+    }
+
+    const resolvedEvents: AlertEvent[] = []
+    await processWithConcurrency(
+      Array.from(eventsByConnection.entries()),
+      MAX_CONCURRENT_CONNECTIONS,
+      async ([connectionId, connectionEvents]) => {
+        try {
+          const resolved = await withTimeout(
+            autoResolveCompletedJobEvents(connectionId, connectionEvents),
+            CONNECTION_TIMEOUT_MS,
+            `Job auto-resolve for connection ${connectionId}`
+          )
+          resolvedEvents.push(...resolved)
+        } catch (error) {
+          console.error(`[alert-monitor] Job auto-resolve failed for ${connectionId}:`, error)
+        }
+      }
+    )
+
+    if (resolvedEvents.length > 0) {
+      console.log(
+        `[alert-monitor] Auto-resolved ${resolvedEvents.length} alert(s) whose jobs completed`
+      )
+      await syncLinearIssuesForResolvedEvents(resolvedEvents, { kind: 'auto_job_completed' })
+    }
+  } catch (error) {
+    console.error('[alert-monitor] Job auto-resolve cycle failed:', error)
+  } finally {
+    jobAutoResolveInProgress = false
+  }
+}
+
+async function autoResolveCompletedJobEvents(
+  connectionId: string,
+  events: AlertEvent[]
+): Promise<AlertEvent[]> {
+  const connection = await redisConnectionRepository.findByIdUnsafe(connectionId)
+  if (!connection) return []
+
+  const resolved: AlertEvent[] = []
+  for (const event of events) {
+    const jobId = getEventJobId(event.context)
+    if (!jobId) continue
+
+    const queue = await getQueue(
+      connectionId,
+      connection.url,
+      event.queueName,
+      connection.prefix,
+      toRedisConnectionOptions(connection.allowSelfSignedCerts)
+    )
+
+    const state = await queue.getJobState(jobId)
+    if (state !== 'completed') continue
+
+    const resolvedEvent = await alertEventRepository.resolve(event.id, event.organizationId)
+    if (resolvedEvent) resolved.push(resolvedEvent)
+  }
+
+  return resolved
+}
+
+function getEventJobId(context: unknown): string | null {
+  const source =
+    typeof context === 'object' && context !== null ? (context as Record<string, unknown>) : {}
+  return typeof source.jobId === 'string' && source.jobId.length > 0 ? source.jobId : null
+}
+
 async function runCleanup(): Promise<void> {
   try {
     const deleted = await alertEventRepository.deleteOlderThan(EVENT_RETENTION_DAYS)
@@ -636,4 +747,7 @@ export const __alertMonitorTestUtils = {
   processConnection,
   processDueAlertDeliveries,
   processWithConcurrency,
+  runJobAutoResolveCycle,
+  autoResolveCompletedJobEvents,
+  getEventJobId,
 }

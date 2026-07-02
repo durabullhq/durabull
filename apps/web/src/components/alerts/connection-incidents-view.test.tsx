@@ -58,6 +58,8 @@ vi.mock('@/hooks/use-alerts', () => ({
   useConnectionAlertRules: useConnectionAlertRulesMock,
   useResolveAlertEvent: useResolveAlertEventMock,
   useAcknowledgeAlertEvent: useAcknowledgeAlertEventMock,
+  // Imported by BulkResolveDialog, rendered (closed) by the incidents view.
+  useBulkResolveAlertEvents: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 const baseEventsQuery = {
@@ -148,7 +150,7 @@ describe('ConnectionIncidentsView', () => {
       limit: 100,
     })
 
-    await user.click(screen.getByRole('button', { name: /resolve/i }))
+    await user.click(screen.getByRole('button', { name: /^resolve$/i }))
 
     await waitFor(() =>
       expect(resolveEventMutateAsyncMock).toHaveBeenCalledWith({

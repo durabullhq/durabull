@@ -1,5 +1,6 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, notInArray } from 'drizzle-orm'
 import { getDb } from '../db/client'
+import { alertEvent } from '../db/schemas/alert-event/schema'
 import { linearJobIssue } from '../db/schemas/linear-job-issue/schema'
 import type { LinearJobIssue } from '../db/schemas/linear-job-issue/types'
 import { linearJobIssueEvent } from '../db/schemas/linear-job-issue-event/schema'
@@ -94,6 +95,34 @@ export const linearJobIssueRepository = {
 
     await linkIssueToEvent(existing.id, input.alertEventId)
     return existing
+  },
+
+  /**
+   * Whether any alert event linked to this issue — other than the given ones —
+   * is still firing. Used to avoid closing a Linear issue while a related
+   * incident remains open.
+   */
+  async hasOtherFiringEvents(
+    linearJobIssueId: string,
+    excludeAlertEventIds: string[]
+  ): Promise<boolean> {
+    const db = await getDb()
+    const rows = await db
+      .select({ alertEventId: linearJobIssueEvent.alertEventId })
+      .from(linearJobIssueEvent)
+      .innerJoin(alertEvent, eq(alertEvent.id, linearJobIssueEvent.alertEventId))
+      .where(
+        and(
+          eq(linearJobIssueEvent.linearJobIssueId, linearJobIssueId),
+          eq(alertEvent.status, 'firing'),
+          ...(excludeAlertEventIds.length > 0
+            ? [notInArray(linearJobIssueEvent.alertEventId, excludeAlertEventIds)]
+            : [])
+        )
+      )
+      .limit(1)
+
+    return rows.length > 0
   },
 
   async findByEvent(alertEventId: string): Promise<LinearJobIssue[]> {

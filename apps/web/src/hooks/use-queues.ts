@@ -244,6 +244,8 @@ export const queryKeys = {
     ['job', connectionId, queueName, jobId] as const,
   jobLogs: (connectionId: string, queueName: string, jobId: string) =>
     ['job', connectionId, queueName, jobId, 'logs'] as const,
+  jobLogTail: (connectionId: string, queueName: string, jobId: string, start: number) =>
+    ['job', connectionId, queueName, jobId, 'logs', 'tail', start] as const,
   jobStacktraces: (connectionId: string, queueName: string, jobId: string) =>
     ['job', connectionId, queueName, jobId, 'stacktraces'] as const,
   scheduledJobs: (connectionId: string) => ['scheduledJobs', connectionId] as const,
@@ -255,7 +257,7 @@ export const queryKeys = {
   allWorkers: (connectionId: string) => ['workers', connectionId] as const,
 }
 
-function useConnectionIdFromContextOrRoute(): string | undefined {
+export function useConnectionIdFromContextOrRoute(): string | undefined {
   const { currentConnection } = useConnection()
   const { connectionId } = useParams({ strict: false }) as { connectionId?: string }
   return currentConnection?.id ?? connectionId
@@ -438,7 +440,37 @@ export function useJobs(
   })
 }
 
-export function useJob(queueName: string, jobId: string) {
+interface UsePollingQueryOptions {
+  enabled?: boolean
+  refetchInterval?: number | false
+}
+
+export interface JobLogTailResponse {
+  logs: string[]
+  count: number
+  start: number
+  hasMore: boolean
+}
+
+export async function fetchJobLogTail({
+  connectionId,
+  queueName,
+  jobId,
+  start,
+}: {
+  connectionId: string
+  queueName: string
+  jobId: string
+  start: number
+}) {
+  const params = new URLSearchParams()
+  params.set('start', String(start))
+
+  const url = `/api/c/${connectionId}/queues/${encodeURIComponent(queueName)}/jobs/${encodeURIComponent(jobId)}/logs?${params}`
+  return fetchApi<JobLogTailResponse>(url)
+}
+
+export function useJob(queueName: string, jobId: string, options?: UsePollingQueryOptions) {
   const connectionId = useConnectionIdFromContextOrRoute()
 
   return useQuery({
@@ -449,7 +481,8 @@ export function useJob(queueName: string, jobId: string) {
       })
       return handleRes<GetJobResponse>(res)
     },
-    enabled: !!queueName && !!jobId && !!connectionId,
+    enabled: !!queueName && !!jobId && !!connectionId && (options?.enabled ?? true),
+    refetchInterval: options?.refetchInterval ?? false,
   })
 }
 
@@ -476,6 +509,31 @@ export function useJobLogs(queueName: string, jobId: string) {
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     initialPageParam: 1,
     enabled: !!queueName && !!jobId && !!connectionId,
+  })
+}
+
+export function useJobLogTail(
+  queueName: string,
+  jobId: string,
+  start: number | null,
+  options?: UsePollingQueryOptions
+) {
+  const connectionId = useConnectionIdFromContextOrRoute()
+  const enabled =
+    start != null && !!queueName && !!jobId && !!connectionId && (options?.enabled ?? true)
+
+  return useQuery({
+    queryKey: queryKeys.jobLogTail(connectionId ?? '', queueName, jobId, start ?? 0),
+    queryFn: async () => {
+      return fetchJobLogTail({
+        connectionId: connectionId!,
+        queueName,
+        jobId,
+        start: start ?? 0,
+      })
+    },
+    enabled,
+    refetchInterval: options?.refetchInterval ?? false,
   })
 }
 

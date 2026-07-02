@@ -17,6 +17,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { type CursorState, evaluateRule, type QueueSnapshot } from '../lib/alert-evaluator'
 import { processAlertDeliveries } from '../lib/alert-notifier'
+import { syncLinearIssuesForResolvedEvents } from '../lib/alert-resolution'
 import {
   mergeWebhookSecretsOnUpdate,
   resolveWebhookTestSecret,
@@ -502,10 +503,12 @@ const app = new Hono()
         queueName: z.string().min(1).optional(),
         jobId: z.string().min(1).optional(),
         acknowledged: z.enum(['true', 'false']).optional(),
+        alertRuleId: z.string().uuid().optional(),
       })
     ),
     async (c) => {
-      const { offset, limit, status, queueName, jobId, acknowledged } = c.req.valid('query')
+      const { offset, limit, status, queueName, jobId, acknowledged, alertRuleId } =
+        c.req.valid('query')
       const connectionId = c.get('connectionId')
       const organizationId = c.get('organizationId')
       if (!organizationId) {
@@ -519,8 +522,41 @@ const app = new Hono()
         queueName,
         jobId,
         acknowledged: acknowledged === undefined ? undefined : acknowledged === 'true',
+        alertRuleId,
       })
       return c.json({ events: await attachDeliveries(events) })
+    }
+  )
+  .post(
+    '/events/resolve-bulk',
+    zValidator(
+      'json',
+      z.object({
+        eventIds: z.array(z.string().uuid()).min(1).max(500),
+      })
+    ),
+    async (c) => {
+      const { eventIds } = c.req.valid('json')
+      const connectionId = c.get('connectionId')
+      const organizationId = c.get('organizationId')
+      if (!organizationId) {
+        return c.json({ error: 'Organization is required' }, 403)
+      }
+
+      const resolvedEvents = await alertEventRepository.resolveMany(eventIds, organizationId, {
+        connectionId,
+      })
+
+      // Close linked Linear issues in the background — a bulk resolve can cover
+      // hundreds of incidents and must not block on external API calls.
+      if (resolvedEvents.length > 0) {
+        void syncLinearIssuesForResolvedEvents(resolvedEvents, { kind: 'manual' })
+      }
+
+      return c.json({
+        resolvedCount: resolvedEvents.length,
+        events: resolvedEvents,
+      })
     }
   )
   .post('/events/:eventId/resolve', async (c) => {
@@ -538,10 +574,15 @@ const app = new Hono()
     if (existing.status === 'suppressed') {
       return c.json({ error: 'Suppressed events are informational and cannot be resolved.' }, 409)
     }
+    const wasFiring = existing.status === 'firing'
 
     const event = await alertEventRepository.resolve(eventId, organizationId)
     if (!event) {
       return c.json({ error: 'Event not found' }, 404)
+    }
+
+    if (wasFiring) {
+      void syncLinearIssuesForResolvedEvents([event], { kind: 'manual' })
     }
 
     return c.json({ event })

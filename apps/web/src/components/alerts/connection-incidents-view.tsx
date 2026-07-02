@@ -1,9 +1,10 @@
 import { Link } from '@tanstack/react-router'
-import { BellRing, CircleCheck, ShieldCheck, Siren, UserCheck } from 'lucide-react'
+import { BellRing, CheckCheck, CircleCheck, ShieldCheck, Siren, UserCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertEventsTable } from '@/components/alerts/alert-events-table'
 import { AlertsViewSwitcher } from '@/components/alerts/alerts-view-switcher'
+import { BulkResolveDialog } from '@/components/alerts/bulk-resolve-dialog'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
@@ -69,6 +70,11 @@ export function ConnectionIncidentsView({
 }) {
   const [resolvingEventId, setResolvingEventId] = useState<string | null>(null)
   const [acknowledgingEventId, setAcknowledgingEventId] = useState<string | null>(null)
+  const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
+  // Bumped only when opening (not closing) so BulkResolveDialog remounts with
+  // fresh filter/selection state each time, without disrupting Radix's own
+  // close animation.
+  const [bulkResolveOpenCount, setBulkResolveOpenCount] = useState(0)
 
   const summaryQuery = useAlertSummary({ refetchInterval: 15_000 })
   const rulesQuery = useConnectionAlertRules(connectionId)
@@ -170,18 +176,35 @@ export function ConnectionIncidentsView({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <AlertsViewSwitcher orgSlug={orgSlug} connectionId={connectionId} />
-        <Select
-          value={status}
-          onChange={(event) => onStatusChange(event.target.value as IncidentStatusFilter)}
-          className="h-9 w-[220px]"
-          aria-label="Filter incidents by status"
-        >
-          {STATUS_FILTER_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
+        <div className="flex items-center gap-2">
+          {openCount > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => {
+                setBulkResolveOpenCount((count) => count + 1)
+                setBulkResolveOpen(true)
+              }}
+            >
+              <CheckCheck className="h-4 w-4" />
+              Bulk resolve
+            </Button>
+          ) : null}
+          <Select
+            value={status}
+            onChange={(event) => onStatusChange(event.target.value as IncidentStatusFilter)}
+            className="h-9 w-[220px]"
+            aria-label="Filter incidents by status"
+          >
+            {STATUS_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -227,6 +250,13 @@ export function ConnectionIncidentsView({
           acknowledgingEventId={acknowledgingEventId}
         />
       )}
+
+      <BulkResolveDialog
+        key={bulkResolveOpenCount}
+        connectionId={connectionId}
+        open={bulkResolveOpen}
+        onOpenChange={setBulkResolveOpen}
+      />
     </div>
   )
 }

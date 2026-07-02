@@ -397,3 +397,99 @@ export async function createLinearIssue(
 
   return data.issueCreate.issue
 }
+
+export interface LinearWorkflowState {
+  id: string
+  name: string
+  type: string
+  position: number
+}
+
+export interface LinearIssueStatus {
+  id: string
+  identifier: string
+  state: { id: string; name: string; type: string }
+  teamStates: LinearWorkflowState[]
+}
+
+/**
+ * Load an issue's current workflow state along with all states on its team, so
+ * callers can pick the team's "completed" state without knowing team config.
+ */
+export async function fetchLinearIssueStatus(
+  accessToken: string,
+  issueId: string
+): Promise<LinearIssueStatus> {
+  const data = await linearGraphql<{
+    issue: {
+      id: string
+      identifier: string
+      state: { id: string; name: string; type: string }
+      team: { states: { nodes: LinearWorkflowState[] } }
+    }
+  }>(
+    accessToken,
+    `query DurabullIssueStatus($issueId: String!) {
+      issue(id: $issueId) {
+        id
+        identifier
+        state { id name type }
+        team { states(first: 50) { nodes { id name type position } } }
+      }
+    }`,
+    { issueId }
+  )
+
+  return {
+    id: data.issue.id,
+    identifier: data.issue.identifier,
+    state: data.issue.state,
+    teamStates: data.issue.team.states.nodes,
+  }
+}
+
+export async function updateLinearIssueState(
+  accessToken: string,
+  issueId: string,
+  stateId: string
+): Promise<void> {
+  const data = await linearGraphql<{ issueUpdate: { success: boolean } }>(
+    accessToken,
+    `mutation DurabullCompleteIssue($issueId: String!, $stateId: String!) {
+      issueUpdate(id: $issueId, input: { stateId: $stateId }) {
+        success
+      }
+    }`,
+    { issueId, stateId }
+  )
+
+  if (!data.issueUpdate.success) {
+    throw new LinearApiError('Linear did not update the issue state.', {
+      status: 400,
+      retryable: false,
+    })
+  }
+}
+
+export async function createLinearComment(
+  accessToken: string,
+  issueId: string,
+  body: string
+): Promise<void> {
+  const data = await linearGraphql<{ commentCreate: { success: boolean } }>(
+    accessToken,
+    `mutation DurabullCommentOnIssue($issueId: String!, $body: String!) {
+      commentCreate(input: { issueId: $issueId, body: $body }) {
+        success
+      }
+    }`,
+    { issueId, body }
+  )
+
+  if (!data.commentCreate.success) {
+    throw new LinearApiError('Linear did not create the comment.', {
+      status: 400,
+      retryable: false,
+    })
+  }
+}

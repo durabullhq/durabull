@@ -291,7 +291,7 @@ test.describe("Pages", () => {
     ).toBeVisible();
   });
 
-  test("failed job retry shows success modal and requeues job", async ({ page }) => {
+  test("failed job retry streams status in modal and requeues job", async ({ page }) => {
     const { connectionId } = await getConnectionAndQueue(page);
     const failedJob = await findJobByStatus(page, connectionId, "failed");
 
@@ -302,12 +302,24 @@ test.describe("Pages", () => {
     await expect(retryButton).toBeVisible();
     await retryButton.click();
 
-    await expect(page.getByRole("heading", { name: "Job Retried" })).toBeVisible({
-      timeout: 10000,
-    });
-    await expect(page.getByText(/Retry succeeded/i)).toBeVisible();
+    // The modal requeues the job and starts polling status + logs. Depending
+    // on whether a worker picks the job up, it shows the live running phase
+    // or jumps straight to a terminal phase - all of them render the log
+    // stream pane.
+    await expect(
+      page.getByRole("heading", {
+        name: /Job Running|Waiting for Retry|Job Completed|Job Failed/,
+      })
+    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId("retry-log-stream")).toBeVisible();
 
-    await page.getByRole("button", { name: "Done" }).click();
+    // The modal is closable at any point; the job keeps running server-side.
+    const dialog = page.getByRole("dialog");
+    await dialog
+      .getByRole("button", { name: /^(Close|Done)$/ })
+      .first()
+      .click();
+    await expect(dialog).not.toBeVisible();
     await expect(page).toHaveURL(
       new RegExp(
         `/${TEST_ORG_SLUG}/c/${connectionId}/queues/${failedJob.queueName}/jobs/${failedJob.jobId}`
