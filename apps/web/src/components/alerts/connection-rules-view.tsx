@@ -249,6 +249,7 @@ function RulesTable({
             return (
               <TableRow
                 key={rule.id}
+                data-testid="alert-rule-row"
                 className={cn('cursor-pointer', isSnoozed && 'text-muted-foreground')}
                 onClick={() => onRowOpen(rule.id)}
                 onKeyDown={(event) => {

@@ -25,7 +25,7 @@ export default defineConfig({
   testIgnore: [
     "**/global-setup.ts",
     "**/fixtures/**",
-    ...(isAuthlessE2EMode() ? [] : ["**/authless.spec.ts"]),
+    ...(isAuthlessE2EMode() ? [] : ["**/authless.spec.ts", "**/alerts.spec.ts"]),
   ],
   
   // Run tests serially for stability

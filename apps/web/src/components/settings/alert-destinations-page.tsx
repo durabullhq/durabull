@@ -273,7 +273,10 @@ function DestinationRow({
   const inUse = destination.inUseByRuleCount > 0
 
   return (
-    <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+    <div
+      className="rounded-lg border border-border/70 bg-background/70 p-4"
+      data-testid="alert-destination-row"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

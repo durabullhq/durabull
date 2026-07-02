@@ -121,7 +121,7 @@ export function RuleStateBadge({
     const remaining = formatAlertTimeRemaining(mutedUntil)
 
     return (
-      <Badge variant="warning" className="gap-1">
+      <Badge variant="warning" className="gap-1" data-testid="rule-state-badge">
         <Moon className="h-3 w-3" />
         Snoozed{remaining ? ` · ${remaining} left` : ''}
       </Badge>
@@ -129,10 +129,18 @@ export function RuleStateBadge({
   }
 
   if (state === 'disabled') {
-    return <Badge variant="secondary">Muted</Badge>
+    return (
+      <Badge variant="secondary" data-testid="rule-state-badge">
+        Muted
+      </Badge>
+    )
   }
 
-  return <Badge variant="success">Enabled</Badge>
+  return (
+    <Badge variant="success" data-testid="rule-state-badge">
+      Enabled
+    </Badge>
+  )
 }
 
 export function formatAlertDate(value: Date | string | number | null | undefined) {
