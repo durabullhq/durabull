@@ -1,4 +1,5 @@
 import { PencilRuler } from 'lucide-react'
+import type { ComponentPropsWithRef } from 'react'
 import { getAlertTypeMeta } from '@/components/alerts/alert-primitives'
 import { ALERT_RULE_TEMPLATES, type AlertRuleTemplate } from '@/components/alerts/alert-rule-form'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -14,25 +15,31 @@ function TemplateCard({
   template,
   disabled,
   onSelect,
+  ...triggerProps
 }: {
   template: AlertRuleTemplate
   disabled: boolean
   onSelect: () => void
-}) {
+} & ComponentPropsWithRef<'button'>) {
   const meta = getAlertTypeMeta(template.type)
   const Icon = meta.icon
 
   return (
     <button
+      // Forwards TooltipTrigger's cloned props (ref, hover/focus handlers)
+      // when this card is used as the disabled-state tooltip trigger.
+      {...triggerProps}
       type="button"
-      disabled={disabled}
+      // aria-disabled keeps the button focusable so the disabled-state tooltip
+      // stays reachable by keyboard (an HTML-disabled button never focuses).
+      aria-disabled={disabled}
       className={cn(
         'w-full rounded-lg border border-border/70 bg-background px-4 py-4 text-left transition-colors',
         disabled
           ? 'cursor-not-allowed opacity-55'
           : 'hover:border-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30'
       )}
-      onClick={onSelect}
+      onClick={disabled ? undefined : onSelect}
       data-testid={`rule-template-${template.key}`}
     >
       <div className="flex items-center gap-2">
@@ -61,9 +68,7 @@ export function RuleTemplateCards({
             <TooltipProvider key={template.key} delayDuration={200}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="block" tabIndex={0} role="button" aria-disabled="true">
-                    <TemplateCard template={template} disabled onSelect={() => {}} />
-                  </span>
+                  <TemplateCard template={template} disabled onSelect={() => {}} />
                 </TooltipTrigger>
                 <TooltipContent>Connect Linear first</TooltipContent>
               </Tooltip>
