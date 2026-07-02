@@ -42,9 +42,16 @@ export function DestinationMultiSelect({
         setOpen(false)
       }
     }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
 
     document.addEventListener('mousedown', handlePointerDown)
-    return () => document.removeEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [open])
 
   const showSearch = destinations.length > 8
@@ -89,13 +96,7 @@ export function DestinationMultiSelect({
   }
 
   return (
-    <div
-      className="space-y-3"
-      ref={containerRef}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') setOpen(false)
-      }}
-    >
+    <div className="space-y-3" ref={containerRef}>
       <div className="relative">
         <button
           type="button"

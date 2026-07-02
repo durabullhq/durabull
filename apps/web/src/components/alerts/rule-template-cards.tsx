@@ -61,7 +61,7 @@ export function RuleTemplateCards({
             <TooltipProvider key={template.key} delayDuration={200}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="block" tabIndex={0}>
+                  <span className="block" tabIndex={0} role="button" aria-disabled="true">
                     <TemplateCard template={template} disabled onSelect={() => {}} />
                   </span>
                 </TooltipTrigger>
