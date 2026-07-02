@@ -172,9 +172,15 @@ export {
 } from './db/secret-encryption'
 export { alertCheckCursorRepository } from './repositories/alert-check-cursor'
 export { alertDeliveryRepository } from './repositories/alert-delivery'
-export { alertEventRepository } from './repositories/alert-event'
+export {
+  type AlertEventWithAckUser,
+  type OrganizationOpenAlertSummary,
+  alertEventRepository,
+} from './repositories/alert-event'
 export { alertRuleRepository } from './repositories/alert-rule'
 export {
+  type CreateAlertDestinationInput,
+  type UpdateAlertDestinationInput,
   alertDestinationRepository,
   alertWebhookDestinationRepository,
 } from './repositories/alert-destination'
