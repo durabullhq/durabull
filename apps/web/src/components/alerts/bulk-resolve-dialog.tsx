@@ -1,5 +1,5 @@
 import { CheckCheck, Loader2, ShieldCheck } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { AlertTypeBadge, formatAlertDate } from '@/components/alerts/alert-primitives'
 import { Button } from '@/components/ui/button'
@@ -34,7 +34,13 @@ interface BulkResolveDialogProps {
   connectionId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Pre-select a rule so the dialog opens scoped to one alert. */
+  /**
+   * Pre-select a rule so the dialog opens scoped to one alert. Since this
+   * component's filter/selection state must reset on every open (not just
+   * when this prop changes), callers should remount the dialog on open —
+   * e.g. `<BulkResolveDialog key={openCount} .../>` bumped each time it's
+   * opened — rather than relying on this prop alone to force a reset.
+   */
   initialRuleId?: string
 }
 
@@ -58,17 +64,9 @@ export function BulkResolveDialog({
   const rules = rulesQuery.data?.rules ?? []
   const events = eventsQuery.data?.events ?? []
 
-  // Reset stale state whenever the dialog opens or the filter changes.
-  useEffect(() => {
-    if (open) {
-      setRuleFilter(initialRuleId ?? 'all')
-      setSelectedEventIds(new Set())
-    }
-  }, [open, initialRuleId])
-
-  const visibleSelectedCount = useMemo(
-    () => events.filter((event) => selectedEventIds.has(event.id)).length,
-    [events, selectedEventIds]
+  const visibleSelectedCount = events.reduce(
+    (count, event) => (selectedEventIds.has(event.id) ? count + 1 : count),
+    0
   )
   const allVisibleSelected = events.length > 0 && visibleSelectedCount === events.length
 
@@ -98,9 +96,10 @@ export function BulkResolveDialog({
   }
 
   async function handleResolveSelected() {
-    const eventIds = events
-      .filter((event) => selectedEventIds.has(event.id))
-      .map((event) => event.id)
+    const eventIds: string[] = []
+    for (const event of events) {
+      if (selectedEventIds.has(event.id)) eventIds.push(event.id)
+    }
     if (eventIds.length === 0) return
 
     try {

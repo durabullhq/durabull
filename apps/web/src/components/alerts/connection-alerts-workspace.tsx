@@ -56,6 +56,10 @@ export function ConnectionAlertsWorkspace({
   const { currentConnection } = useConnection()
   const [statusFilter, setStatusFilter] = useState<'all' | AlertEventStatus>('all')
   const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
+  // Bumped only when opening (not closing) so BulkResolveDialog remounts with
+  // fresh filter/selection state each time, without disrupting Radix's own
+  // close animation (see BulkResolveDialogProps.initialRuleId).
+  const [bulkResolveOpenCount, setBulkResolveOpenCount] = useState(0)
   const [resolvingEventId, setResolvingEventId] = useState<string | null>(null)
   const [mutatingRuleId, setMutatingRuleId] = useState<string | null>(null)
 
@@ -267,7 +271,10 @@ export function ConnectionAlertsWorkspace({
                   size="sm"
                   variant="outline"
                   className="gap-2"
-                  onClick={() => setBulkResolveOpen(true)}
+                  onClick={() => {
+                    setBulkResolveOpenCount((count) => count + 1)
+                    setBulkResolveOpen(true)
+                  }}
                 >
                   <CheckCheck className="h-4 w-4" />
                   Bulk resolve
@@ -331,6 +338,7 @@ export function ConnectionAlertsWorkspace({
       </Tabs>
 
       <BulkResolveDialog
+        key={bulkResolveOpenCount}
         connectionId={connectionId}
         open={bulkResolveOpen}
         onOpenChange={setBulkResolveOpen}
