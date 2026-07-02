@@ -1,9 +1,10 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
-import { BellRing, Cable, Radar, ShieldCheck, Siren } from 'lucide-react'
+import { BellRing, Cable, CheckCheck, Radar, ShieldCheck, Siren } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertEventsTable } from '@/components/alerts/alert-events-table'
+import { BulkResolveDialog } from '@/components/alerts/bulk-resolve-dialog'
 import {
   AlertSeverityChip,
   AlertTypeBadge,
@@ -54,6 +55,11 @@ export function ConnectionAlertsWorkspace({
   const navigate = useNavigate()
   const { currentConnection } = useConnection()
   const [statusFilter, setStatusFilter] = useState<'all' | AlertEventStatus>('all')
+  const [bulkResolveOpen, setBulkResolveOpen] = useState(false)
+  // Bumped only when opening (not closing) so BulkResolveDialog remounts with
+  // fresh filter/selection state each time, without disrupting Radix's own
+  // close animation (see BulkResolveDialogProps.initialRuleId).
+  const [bulkResolveOpenCount, setBulkResolveOpenCount] = useState(0)
   const [resolvingEventId, setResolvingEventId] = useState<string | null>(null)
   const [mutatingRuleId, setMutatingRuleId] = useState<string | null>(null)
 
@@ -258,16 +264,35 @@ export function ConnectionAlertsWorkspace({
           </TabsList>
 
           {tab === 'history' ? (
-            <Select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as 'all' | AlertEventStatus)}
-              className="h-9 w-[180px]"
-            >
-              <option value="all">All statuses</option>
-              <option value="firing">Firing</option>
-              <option value="resolved">Resolved</option>
-              <option value="suppressed">Suppressed</option>
-            </Select>
+            <div className="flex items-center gap-2">
+              {firingCount > 0 ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => {
+                    setBulkResolveOpenCount((count) => count + 1)
+                    setBulkResolveOpen(true)
+                  }}
+                >
+                  <CheckCheck className="h-4 w-4" />
+                  Bulk resolve
+                </Button>
+              ) : null}
+              <Select
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as 'all' | AlertEventStatus)
+                }
+                className="h-9 w-[180px]"
+              >
+                <option value="all">All statuses</option>
+                <option value="firing">Firing</option>
+                <option value="resolved">Resolved</option>
+                <option value="suppressed">Suppressed</option>
+              </Select>
+            </div>
           ) : null}
         </div>
 
@@ -311,6 +336,13 @@ export function ConnectionAlertsWorkspace({
           )}
         </TabsContent>
       </Tabs>
+
+      <BulkResolveDialog
+        key={bulkResolveOpenCount}
+        connectionId={connectionId}
+        open={bulkResolveOpen}
+        onOpenChange={setBulkResolveOpen}
+      />
     </div>
   )
 }

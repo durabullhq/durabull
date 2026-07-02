@@ -864,4 +864,154 @@ describe('alerts routes', () => {
     })
     expect(delivery?.providerMetadata?.secret).toBeUndefined()
   })
+
+  it('bulk resolves firing events scoped to the connection', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Job failures',
+      type: 'job_failed',
+      config: {},
+      cooldownMinutes: 30,
+    })
+
+    const firingEvent = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Job job-1 failed in email-send',
+      context: { jobId: 'job-1' },
+      firedAt: new Date(),
+    })
+
+    const alreadyResolvedEvent = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'resolved',
+      summary: 'Job job-2 failed in email-send',
+      context: { jobId: 'job-2' },
+      firedAt: new Date(),
+      resolvedAt: new Date(),
+    })
+
+    // Same org, different connection — the connection-scoped route must not touch it.
+    const db = await getDb()
+    const otherConnectionId = '66666666-6666-4666-8666-666666666666'
+    const now = new Date()
+    await db.insert(redisConnection).values({
+      id: otherConnectionId,
+      name: 'Secondary Redis',
+      url: 'redis://localhost:6380/0',
+      environment: 'development',
+      isDefault: false,
+      organizationId: TEST_ORG_ID,
+      createdAt: now,
+      updatedAt: now,
+    })
+    const otherRule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: otherConnectionId,
+      queueName: 'email-send',
+      name: 'Other job failures',
+      type: 'job_failed',
+      config: {},
+      cooldownMinutes: 30,
+    })
+    const otherConnectionEvent = await alertEventRepository.create({
+      alertRuleId: otherRule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: otherConnectionId,
+      queueName: 'email-send',
+      type: otherRule.type,
+      status: 'firing',
+      summary: 'Job job-3 failed in email-send',
+      context: { jobId: 'job-3' },
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(
+      '/events/resolve-bulk',
+      jsonRequest({
+        eventIds: [firingEvent.id, alreadyResolvedEvent.id, otherConnectionEvent.id],
+      })
+    )
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      resolvedCount: number
+      events: Array<{ id: string; status: string }>
+    }
+    expect(body.resolvedCount).toBe(1)
+    expect(body.events[0]?.id).toBe(firingEvent.id)
+    expect(body.events[0]?.status).toBe('resolved')
+
+    const untouched = await alertEventRepository.findById(otherConnectionEvent.id, TEST_ORG_ID)
+    expect(untouched?.status).toBe('firing')
+  })
+
+  it('rejects bulk resolve payloads without event ids', async () => {
+    const app = await createAlertsRouteApp()
+    const response = await app.request('/events/resolve-bulk', jsonRequest({ eventIds: [] }))
+    expect(response.status).toBe(400)
+  })
+
+  it('filters events by alertRuleId', async () => {
+    const ruleA = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Rule A',
+      type: 'job_failed',
+      config: {},
+      cooldownMinutes: 30,
+    })
+    const ruleB = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Rule B',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+
+    const eventA = await alertEventRepository.create({
+      alertRuleId: ruleA.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: ruleA.type,
+      status: 'firing',
+      summary: 'Job job-1 failed in email-send',
+      context: { jobId: 'job-1' },
+      firedAt: new Date(),
+    })
+    await alertEventRepository.create({
+      alertRuleId: ruleB.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: ruleB.type,
+      status: 'firing',
+      summary: 'Failure spike',
+      context: {},
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/events?alertRuleId=${ruleA.id}`)
+    expect(response.status).toBe(200)
+
+    const body = (await response.json()) as { events: Array<{ id: string }> }
+    expect(body.events).toHaveLength(1)
+    expect(body.events[0]?.id).toBe(eventA.id)
+  })
 })
