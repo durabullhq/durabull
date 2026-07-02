@@ -468,7 +468,67 @@ describe('alert monitor', () => {
     )
   })
 
-  it('suppresses new events while the cooldown window is still active', async () => {
+  it('records a coalesced suppressed event while the cooldown window is active', async () => {
+    const dispatchAlertNotificationMock = mock(async () => {})
+    mock.module('./alert-notifier', () => ({
+      dispatchAlertNotification: dispatchAlertNotificationMock,
+      processAlertDeliveries: mock(async () => {}),
+    }))
+
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'Failure threshold',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+      notificationChannels: [{ type: 'email', target: 'ops@example.com' }],
+    })
+
+    const anchor = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'resolved',
+      summary: 'Recent incident',
+      context: {},
+      firedAt: new Date(Date.now() - 5 * 60_000),
+    })
+
+    const cursor = {
+      lastCheckedAt: new Date(Date.now() - 5 * 60_000),
+      lastFailedCount: 0,
+      lastCompletedCount: 100,
+    }
+
+    await __alertMonitorTestUtils.evaluateAndMaybeAlert(
+      rule,
+      createSnapshot(),
+      cursor,
+      createConnection()
+    )
+    await __alertMonitorTestUtils.evaluateAndMaybeAlert(
+      rule,
+      createSnapshot(),
+      cursor,
+      createConnection()
+    )
+
+    const events = await listRuleEvents(rule.id)
+    expect(events).toHaveLength(2)
+
+    const suppressed = events.find((event) => event.status === 'suppressed')
+    expect(suppressed?.dedupeKey).toBe(`suppressed:${anchor.id}`)
+    expect((suppressed?.context as Record<string, unknown>).suppressedCount).toBe(2)
+    expect(suppressed?.notificationSentAt).toBeNull()
+    expect(dispatchAlertNotificationMock).not.toHaveBeenCalled()
+  })
+
+  it('does not let suppressed events extend the cooldown window', async () => {
     const { __alertMonitorTestUtils } = await loadMonitorModule()
     const rule = await alertRuleRepository.create({
       organizationId: TEST_ORG_ID,
@@ -480,16 +540,30 @@ describe('alert monitor', () => {
       cooldownMinutes: 30,
     })
 
-    await alertEventRepository.create({
+    // The last real incident fired 31 minutes ago (outside the 30m cooldown)...
+    const anchor = await alertEventRepository.create({
       alertRuleId: rule.id,
       organizationId: TEST_ORG_ID,
       connectionId: testConnectionId,
       queueName: 'email-send',
       type: rule.type,
       status: 'resolved',
-      summary: 'Recent incident',
+      summary: 'Older incident',
       context: {},
-      firedAt: new Date(Date.now() - 5 * 60_000),
+      firedAt: new Date(Date.now() - 31 * 60_000),
+    })
+
+    // ...and a suppression was recorded moments ago. It must not re-anchor
+    // the cooldown, or the rule would stay silent forever.
+    await alertEventRepository.upsertSuppressed({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      type: rule.type,
+      summary: 'Suppressed during cooldown',
+      context: {},
+      dedupeKey: `suppressed:${anchor.id}`,
     })
 
     await __alertMonitorTestUtils.evaluateAndMaybeAlert(
@@ -503,7 +577,9 @@ describe('alert monitor', () => {
       createConnection()
     )
 
-    expect(await listRuleEvents(rule.id)).toHaveLength(1)
+    const events = await listRuleEvents(rule.id)
+    const firing = events.filter((event) => event.status === 'firing')
+    expect(firing).toHaveLength(1)
   })
 
   it('marks notifications as sent when dispatch succeeds', async () => {

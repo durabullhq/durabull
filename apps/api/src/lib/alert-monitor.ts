@@ -432,11 +432,28 @@ async function evaluateAndMaybeAlert(
     return
   }
 
-  const recentEvent = await alertEventRepository.findMostRecentForRule(rule.id, snapshot.queueName)
+  // Cooldown anchors to the most recent non-suppressed event; anchoring to
+  // suppressed events would extend the window on every suppression.
+  const recentEvent = await alertEventRepository.findMostRecentFiredForRule(
+    rule.id,
+    snapshot.queueName
+  )
   if (recentEvent) {
     const cooldownMs = rule.cooldownMinutes * 60_000
     const elapsedMs = Date.now() - recentEvent.firedAt.getTime()
     if (elapsedMs < cooldownMs) {
+      // Record the suppression so it is visible in the incident history.
+      // Coalesced to one event per cooldown window; never dispatches.
+      await alertEventRepository.upsertSuppressed({
+        alertRuleId: rule.id,
+        organizationId: rule.organizationId,
+        connectionId: rule.connectionId,
+        queueName: snapshot.queueName,
+        type: rule.type,
+        summary: evaluation.summary,
+        context: (evaluation.context ?? {}) as Record<string, unknown>,
+        dedupeKey: `suppressed:${recentEvent.id}`,
+      })
       console.log(
         `[alert-monitor] Suppressed alert for rule "${rule.name}" on ${snapshot.queueName}`
       )
