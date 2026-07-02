@@ -22,6 +22,18 @@ const CLEAR_RETENTION_SCHEMA = z.object({
   keepMostRecent: z.number().int().min(0).default(0),
 })
 
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function parseNonNegativeInt(value: string | undefined): number | null {
+  if (value === undefined) return null
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -388,16 +400,34 @@ const app = new Hono()
     const jobId = c.req.param('jobId')
     const pageStr = c.req.query('page')
     const pageSizeStr = c.req.query('pageSize')
+    const startStr = c.req.query('start')
 
-    const page = pageStr ? parseInt(pageStr, 10) : 1
-    const pageSize = Math.min(
-      pageSizeStr ? parseInt(pageSizeStr, 10) : DEFAULT_PAGE_SIZE,
-      MAX_PAGE_SIZE
-    )
+    const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+
+    // Offset-tail mode: return up to MAX_PAGE_SIZE lines from an absolute
+    // index, used by the retry dialog to stream lines appended after a retry.
+    if (startStr !== undefined) {
+      const startOffset = parseNonNegativeInt(startStr)
+      if (startOffset === null) {
+        return c.json({ error: 'start must be a non-negative integer' }, 400)
+      }
+
+      const logs = await queue.getJobLogs(jobId, startOffset, startOffset + MAX_PAGE_SIZE - 1)
+      const count = logs.count ?? 0
+
+      return c.json({
+        logs: logs.logs ?? [],
+        count,
+        start: startOffset,
+        hasMore: startOffset + (logs.logs?.length ?? 0) < count,
+      })
+    }
+
+    const page = parsePositiveInt(pageStr, 1)
+    const pageSize = Math.min(parsePositiveInt(pageSizeStr, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE)
     const start = (page - 1) * pageSize
     const end = start + pageSize - 1
 
-    const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
     // BullMQ getJobLogs accepts start and end parameters for pagination
     const logs = await queue.getJobLogs(jobId, start, end)
 
