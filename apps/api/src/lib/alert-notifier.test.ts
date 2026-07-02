@@ -135,30 +135,26 @@ function makeAlertEvent(overrides: Partial<AlertEvent> = {}): AlertEvent {
 describe('linear issue formatting', () => {
   const connection = { id: 'conn_1', name: 'Marketplace (Production)' }
 
-  it('does not escape markdown characters in issue titles', () => {
+  it('builds a plain-text title without the connection name or markdown escapes', () => {
     const title = __alertNotifierTestUtils.buildLinearIssueTitle(
       makeAlertEvent(),
-      connection,
       'Job failures',
       'refresh-summary'
     )
 
-    expect(title).toBe(
-      '[Durabull] Marketplace (Production)/conversation-background job failed: refresh-summary'
-    )
+    expect(title).toBe('[Durabull] conversation-background job failed: refresh-summary')
     expect(title).not.toContain('\\')
   })
 
   it('does not escape markdown characters in non-job-failed titles', () => {
     const title = __alertNotifierTestUtils.buildLinearIssueTitle(
       makeAlertEvent({ type: 'queue_depth' }),
-      connection,
       'Queue depth > 1.000 (critical)',
       null
     )
 
     expect(title).toBe(
-      '[Durabull] Queue depth > 1.000 (critical) fired for Marketplace (Production)/conversation-background'
+      '[Durabull] Queue depth > 1.000 (critical) fired for conversation-background'
     )
     expect(title).not.toContain('\\')
   })

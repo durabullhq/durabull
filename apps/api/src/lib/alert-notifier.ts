@@ -369,7 +369,7 @@ async function sendLinearAlert(
   })
   const issue = await createLinearIssueOnce(accessToken, {
     teamId: resolvedFields.teamId,
-    title: buildLinearIssueTitle(event, connection, ruleName, jobContext.jobName),
+    title: buildLinearIssueTitle(event, ruleName, jobContext.jobName),
     description: buildLinearIssueDescription({
       event,
       connection,
@@ -626,20 +626,16 @@ function getJobContext(context: unknown): {
   }
 }
 
-function buildLinearIssueTitle(
-  event: AlertEvent,
-  connection: AlertNotificationConnection,
-  ruleName: string,
-  jobName: string | null
-): string {
+function buildLinearIssueTitle(event: AlertEvent, ruleName: string, jobName: string | null): string {
   // Linear issue titles are plain text, not markdown — never escape them.
+  // The connection name is omitted: it's in the description and only crowds the title.
   if (event.type === 'job_failed') {
-    return `[Durabull] ${connection.name}/${event.queueName} job failed${
+    return `[Durabull] ${event.queueName} job failed${
       jobName ? `: ${plainLinearText(jobName, 200)}` : ''
     }`
   }
 
-  return `[Durabull] ${plainLinearText(ruleName, 200)} fired for ${connection.name}/${event.queueName}`
+  return `[Durabull] ${plainLinearText(ruleName, 200)} fired for ${event.queueName}`
 }
 
 function buildLinearIssueDescription({
