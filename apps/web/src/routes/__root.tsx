@@ -46,7 +46,7 @@ import { type Organization, useOrganizations } from '@/hooks/use-organization'
 import { usePageViewTracking } from '@/hooks/use-page-view-tracking'
 import { type UseQueuesOptions, useQueues } from '@/hooks/use-queues'
 import { APP_BUILD_INFO } from '@/lib/app-version'
-import { type NavMatchMode, isNavLinkActive } from '@/lib/nav-link-active'
+import { isNavLinkActive } from '@/lib/nav-link-active'
 import { SESSION_KEYS, type SessionWithActiveOrganization } from '@/lib/session-keys'
 import { cn, formatCompactNumber } from '@/lib/utils'
 
@@ -398,7 +398,12 @@ function SidebarNav() {
   return (
     <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
       <div className="eyebrow mb-2 px-2">Platform</div>
-      <NavLink to={basePath} icon={Layers} badgeLabel={failedJobsBadgeLabel}>
+      <NavLink
+        to={basePath}
+        matchPath={`${basePath}/queues`}
+        icon={Layers}
+        badgeLabel={failedJobsBadgeLabel}
+      >
         Queues
       </NavLink>
       <NavLink to={`${basePath}/alerts`} icon={BellRing} badge={openAlertsBadgeCount}>
@@ -416,11 +421,7 @@ function SidebarNav() {
       <NavLink to={`${basePath}/redis-keys`} icon={Database}>
         KV Explorer
       </NavLink>
-      <NavLink
-        to={orgSlug ? `/${orgSlug}/settings` : '/settings'}
-        icon={Settings}
-        matchMode="section"
-      >
+      <NavLink to={orgSlug ? `/${orgSlug}/settings` : '/settings'} icon={Settings}>
         Settings
       </NavLink>
     </nav>
@@ -449,6 +450,7 @@ function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
       <div className="eyebrow mb-2 px-2">Platform</div>
       <MobileNavLink
         to={basePath}
+        matchPath={`${basePath}/queues`}
         icon={Layers}
         onNavigate={onNavigate}
         badgeLabel={failedJobsBadgeLabel}
@@ -479,7 +481,6 @@ function MobileSidebarNav({ onNavigate }: { onNavigate: () => void }) {
         to={orgSlug ? `/${orgSlug}/settings` : '/settings'}
         icon={Settings}
         onNavigate={onNavigate}
-        matchMode="section"
       >
         Settings
       </MobileNavLink>
@@ -494,7 +495,7 @@ function MobileNavLink({
   onNavigate,
   badge,
   badgeLabel,
-  matchMode = 'default',
+  matchPath,
 }: {
   to: string
   icon: React.ComponentType<{ className?: string }>
@@ -502,11 +503,11 @@ function MobileNavLink({
   onNavigate: () => void
   badge?: number
   badgeLabel?: string
-  matchMode?: NavMatchMode
+  matchPath?: string
 }) {
   const location = useLocation()
 
-  const isActive = isNavLinkActive(location.pathname, to, matchMode)
+  const isActive = isNavLinkActive(location.pathname, to, matchPath)
 
   return (
     <Link
@@ -538,18 +539,18 @@ function NavLink({
   children,
   badge,
   badgeLabel,
-  matchMode = 'default',
+  matchPath,
 }: {
   to: string
   icon: React.ComponentType<{ className?: string }>
   children: React.ReactNode
   badge?: number
   badgeLabel?: string
-  matchMode?: NavMatchMode
+  matchPath?: string
 }) {
   const location = useLocation()
 
-  const isActive = isNavLinkActive(location.pathname, to, matchMode)
+  const isActive = isNavLinkActive(location.pathname, to, matchPath)
 
   return (
     <Link
