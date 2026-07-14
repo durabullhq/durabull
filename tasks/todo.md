@@ -61,7 +61,7 @@
 - [x] Restored the `Resolved {time}` subline on resolved rows (was silently dropped in the redesign).
 - [x] Rule column now shows from `md` (was `lg`), so the org feed keeps rule/type info alongside Delivery/Fired.
 - [x] Data clump: `AlertEventRow`'s five action props bundled into one `IncidentRowActions` object.
-- [x] Primitive obsession/duplication: `getSuppressedCount()` helper in `alert-primitives.tsx`, used by table + details dialog.
+- [x] Primitive obsession/duplication: `getSuppressedCount()` helper in `alert-event-helpers.ts`, used by table + details dialog (kept out of `alert-primitives.tsx` for Fast Refresh).
 - [x] Removed all three duplicated `dropdown-menu` test mocks; tests now drive the real Radix menu (jsdom `ResizeObserver`/`scrollIntoView` stubs added to `src/test/setup.ts`), including menu open, item visibility per status, the click-propagation guard, and dialog open from the menu.
 - [x] Verify: full web suite 238/238 passing, `tsc --noEmit` clean, biome clean on changed files (14 pre-existing errors elsewhere confirmed on baseline via stash).
 

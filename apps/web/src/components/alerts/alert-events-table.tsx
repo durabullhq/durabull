@@ -2,13 +2,13 @@ import { Link } from '@tanstack/react-router'
 import { ArrowUpRight, CheckCheck, Eye, Loader2, MoreHorizontal, UserCheck } from 'lucide-react'
 import { useState } from 'react'
 import { AlertEventDetailsDialog } from '@/components/alerts/alert-event-details-dialog'
+import { getSuppressedCount } from '@/components/alerts/alert-event-helpers'
 import {
   AlertStatusBadge,
   formatAlertDate,
   formatRelativeAlertTime,
   getAlertEventDisplayStatus,
   getAlertTypeMeta,
-  getSuppressedCount,
 } from '@/components/alerts/alert-primitives'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'

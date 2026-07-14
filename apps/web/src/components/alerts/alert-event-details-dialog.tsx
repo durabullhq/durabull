@@ -1,11 +1,11 @@
 import { ArrowUpRight, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { getSuppressedCount } from '@/components/alerts/alert-event-helpers'
 import {
   AlertStatusBadge,
   AlertTypeBadge,
   formatAlertDate,
   getAlertEventDisplayStatus,
-  getSuppressedCount,
 } from '@/components/alerts/alert-primitives'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
