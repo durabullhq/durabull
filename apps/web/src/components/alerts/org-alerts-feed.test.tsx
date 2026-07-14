@@ -200,8 +200,9 @@ describe('OrgAlertsFeed', () => {
 
     render(<OrgAlertsFeed orgSlug="acme" status="open" onFiltersChange={vi.fn()} />)
 
-    const acknowledgeButtons = screen.getAllByRole('button', { name: /acknowledge/i })
-    await user.click(acknowledgeButtons[0]!)
+    const actionTriggers = screen.getAllByRole('button', { name: 'Incident actions' })
+    await user.click(actionTriggers[0]!)
+    await user.click(await screen.findByRole('menuitem', { name: /acknowledge/i }))
 
     await waitFor(() =>
       expect(acknowledgeEventMutateAsyncMock).toHaveBeenCalledWith({
@@ -219,8 +220,9 @@ describe('OrgAlertsFeed', () => {
 
     render(<OrgAlertsFeed orgSlug="acme" status="open" onFiltersChange={vi.fn()} />)
 
-    const resolveButtons = screen.getAllByRole('button', { name: /resolve/i })
-    await user.click(resolveButtons[0]!)
+    const actionTriggers = screen.getAllByRole('button', { name: 'Incident actions' })
+    await user.click(actionTriggers[0]!)
+    await user.click(await screen.findByRole('menuitem', { name: /resolve/i }))
 
     await waitFor(() =>
       expect(resolveEventMutateAsyncMock).toHaveBeenCalledWith({

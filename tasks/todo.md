@@ -40,6 +40,31 @@
   `connection-alerts-workspace.test.tsx` from incomplete `use-alerts` mocks — confirmed
   failing on baseline with changes stashed.
 
+## Incidents Table shadcn Redesign
+
+- [x] Rework `AlertEventsTable` rows into compact single-line layout: status badge, rule name, queue link, truncated summary, delivery, relative fired time.
+- [x] Replace stacked Details/Acknowledge/Resolve buttons with a `⋯` dropdown row-actions menu (matches `queue-table.tsx` pattern); row click keeps opening details.
+- [x] Show absolute fired timestamp via tooltip; relative time in the cell.
+- [x] Update `alert-events-table.test.tsx` for the new action menu.
+- [x] Verify: focused tests + typecheck.
+
+### Review
+
+- Rows went from ~110px (three stacked buttons) to a single ~40px line; summary truncates with a title tooltip, fired time is relative ("19m ago") with an absolute-timestamp tooltip.
+- Row actions consolidated into a hover-revealed `⋯` dropdown (View details / Acknowledge / Resolve), same pattern as `queue-table.tsx`; the trigger swaps to a spinner while a mutation is in flight.
+- Verification: 22 tests across the three alert test files pass, `tsc --noEmit` clean, biome clean on changed files; verified live in browser (menu opens, Acknowledge mutation works, ack'd row shows provenance subline).
+
+### Code-review remediation
+
+- [x] Touch reachability: `⋯` trigger stays visible on coarse pointers (`pointer-coarse:opacity-100`); hover-reveal kept for mouse users.
+- [x] Keyboard a11y: fired-time tooltip trigger is now a real button, so Tab focus reveals the absolute timestamp.
+- [x] Restored the `Resolved {time}` subline on resolved rows (was silently dropped in the redesign).
+- [x] Rule column now shows from `md` (was `lg`), so the org feed keeps rule/type info alongside Delivery/Fired.
+- [x] Data clump: `AlertEventRow`'s five action props bundled into one `IncidentRowActions` object.
+- [x] Primitive obsession/duplication: `getSuppressedCount()` helper in `alert-event-helpers.ts`, used by table + details dialog (kept out of `alert-primitives.tsx` for Fast Refresh).
+- [x] Removed all three duplicated `dropdown-menu` test mocks; tests now drive the real Radix menu (jsdom `ResizeObserver`/`scrollIntoView` stubs added to `src/test/setup.ts`), including menu open, item visibility per status, the click-propagation guard, and dialog open from the menu.
+- [x] Verify: full web suite 238/238 passing, `tsc --noEmit` clean, biome clean on changed files (14 pre-existing errors elsewhere confirmed on baseline via stash).
+
 ## Queue Failed Count Navigation Badge
 
 - [x] Add compact count formatting for failed queue totals.

@@ -1,5 +1,6 @@
 import { ArrowUpRight, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+import { getSuppressedCount } from '@/components/alerts/alert-event-helpers'
 import {
   AlertStatusBadge,
   AlertTypeBadge,
@@ -65,8 +66,7 @@ function AlertEventDetails({ event }: { event: AlertEventRecord }) {
   const retryMutation = useRetryAlertDelivery()
   const contextEntries = formatContextEntries(event.context)
   const displayStatus = getAlertEventDisplayStatus(event)
-  const suppressedCount =
-    typeof event.context.suppressedCount === 'number' ? event.context.suppressedCount : 0
+  const suppressedCount = getSuppressedCount(event)
 
   async function handleRetry(delivery: AlertDeliveryRecord) {
     try {
