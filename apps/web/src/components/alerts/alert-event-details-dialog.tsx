@@ -5,6 +5,7 @@ import {
   AlertTypeBadge,
   formatAlertDate,
   getAlertEventDisplayStatus,
+  getSuppressedCount,
 } from '@/components/alerts/alert-primitives'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -65,8 +66,7 @@ function AlertEventDetails({ event }: { event: AlertEventRecord }) {
   const retryMutation = useRetryAlertDelivery()
   const contextEntries = formatContextEntries(event.context)
   const displayStatus = getAlertEventDisplayStatus(event)
-  const suppressedCount =
-    typeof event.context.suppressedCount === 'number' ? event.context.suppressedCount : 0
+  const suppressedCount = getSuppressedCount(event)
 
   async function handleRetry(delivery: AlertDeliveryRecord) {
     try {

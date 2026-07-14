@@ -1,16 +1,24 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowUpRight, CheckCheck, Loader2, UserCheck } from 'lucide-react'
+import { ArrowUpRight, CheckCheck, Eye, Loader2, MoreHorizontal, UserCheck } from 'lucide-react'
 import { useState } from 'react'
 import { AlertEventDetailsDialog } from '@/components/alerts/alert-event-details-dialog'
 import {
   AlertStatusBadge,
-  AlertTypeBadge,
   formatAlertDate,
   formatRelativeAlertTime,
   getAlertEventDisplayStatus,
+  getAlertTypeMeta,
+  getSuppressedCount,
 } from '@/components/alerts/alert-primitives'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Table,
   TableBody,
@@ -19,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { AlertEventRecord } from '@/hooks/use-alerts'
 import { cn } from '@/lib/utils'
 
@@ -34,6 +43,14 @@ interface AlertEventsTableProps {
   resolvingEventId?: string | null
   onAcknowledge?: (eventId: string) => void
   acknowledgingEventId?: string | null
+}
+
+interface IncidentRowActions {
+  openDetails: () => void
+  resolve?: (event: AlertEventRecord) => void
+  acknowledge?: (eventId: string) => void
+  isResolving: boolean
+  isAcknowledging: boolean
 }
 
 export function AlertEventsTable({
@@ -63,177 +80,217 @@ export function AlertEventsTable({
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/70">
-      <AlertEventDetailsDialog
-        event={selectedEvent}
-        open={selectedEvent !== null}
-        onOpenChange={(open) => {
-          if (!open) setSelectedEventId(null)
-        }}
-      />
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            {showConnectionColumn ? <TableHead>Connection</TableHead> : null}
-            <TableHead>Status</TableHead>
-            <TableHead>Rule</TableHead>
-            <TableHead>Queue</TableHead>
-            <TableHead>Summary</TableHead>
-            <TableHead className="hidden md:table-cell">Delivery</TableHead>
-            <TableHead className="hidden md:table-cell">Fired</TableHead>
-            <TableHead className="w-[140px] text-right">Action</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {events.map((event) => {
-            const isResolving = resolvingEventId === event.id
-            const isAcknowledging = acknowledgingEventId === event.id
-            const displayStatus = getAlertEventDisplayStatus(event)
-            const ruleName = getRuleName?.(event)
-            const suppressedCount =
-              typeof event.context.suppressedCount === 'number' ? event.context.suppressedCount : 0
-
-            return (
-              <TableRow
+    <TooltipProvider delayDuration={200}>
+      <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/70">
+        <AlertEventDetailsDialog
+          event={selectedEvent}
+          open={selectedEvent !== null}
+          onOpenChange={(open) => {
+            if (!open) setSelectedEventId(null)
+          }}
+        />
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              {showConnectionColumn ? <TableHead>Connection</TableHead> : null}
+              <TableHead className="w-[120px]">Status</TableHead>
+              <TableHead className="hidden md:table-cell">Rule</TableHead>
+              <TableHead>Queue</TableHead>
+              <TableHead className="w-full">Summary</TableHead>
+              <TableHead className="hidden md:table-cell">Delivery</TableHead>
+              <TableHead className="hidden text-right md:table-cell">Fired</TableHead>
+              <TableHead className="w-12">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {events.map((event) => (
+              <AlertEventRow
                 key={event.id}
-                className={cn(
-                  'cursor-pointer',
-                  displayStatus === 'firing' && 'border-l-2 border-l-destructive/60',
-                  displayStatus === 'suppressed' && 'opacity-60'
-                )}
-                onClick={() => setSelectedEventId(event.id)}
-              >
-                {showConnectionColumn ? (
-                  <TableCell className="text-sm font-medium">
-                    {connectionNameForEvent?.(event) ?? 'Unknown connection'}
-                  </TableCell>
-                ) : null}
-                <TableCell>
-                  <div className="flex items-center gap-1.5">
-                    <AlertStatusBadge
-                      status={event.status}
-                      acknowledged={displayStatus === 'acknowledged'}
-                      emphasize={displayStatus === 'firing'}
-                    />
-                    {displayStatus === 'suppressed' && suppressedCount > 1 ? (
-                      <Badge variant="secondary">×{suppressedCount}</Badge>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="space-y-1">
-                    {ruleName ? (
-                      <div className="max-w-[200px] truncate text-sm font-medium">{ruleName}</div>
-                    ) : null}
-                    <AlertTypeBadge type={event.type} compact />
-                  </div>
-                </TableCell>
-                <TableCell className="max-w-[220px]">
-                  <Link
-                    to="/$orgSlug/c/$connectionId/queues/$queueName"
-                    params={{
-                      orgSlug,
-                      connectionId: event.connectionId,
-                      queueName: event.queueName,
-                    }}
-                    className="inline-flex items-center gap-1.5 truncate font-medium hover:text-primary"
-                    onClick={(clickEvent) => clickEvent.stopPropagation()}
-                  >
-                    <span className="truncate">{event.queueName}</span>
-                    <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
-                  </Link>
-                </TableCell>
-                <TableCell className="max-w-[520px]">
-                  <div className="space-y-1">
-                    <p className="line-clamp-2 text-sm font-medium">{event.summary}</p>
-                    {displayStatus === 'acknowledged' ? (
-                      <p className="text-xs text-muted-foreground">
-                        Ack'd by {event.acknowledgedByName ?? 'a teammate'} ·{' '}
-                        {formatRelativeAlertTime(event.acknowledgedAt)}
-                      </p>
-                    ) : null}
-                    {event.resolvedAt && event.status === 'resolved' ? (
-                      <p className="text-xs text-muted-foreground">
-                        Resolved {formatAlertDate(event.resolvedAt)}
-                      </p>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  <DeliverySummary event={event} />
-                </TableCell>
-                <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
-                  {formatAlertDate(event.firedAt)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="ghost"
-                      onClick={(clickEvent) => {
-                        clickEvent.stopPropagation()
-                        setSelectedEventId(event.id)
-                      }}
-                    >
-                      Details
-                    </Button>
-                    {displayStatus === 'firing' && onAcknowledge ? (
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="outline"
-                        onClick={(clickEvent) => {
-                          clickEvent.stopPropagation()
-                          onAcknowledge(event.id)
-                        }}
-                        disabled={isAcknowledging}
-                      >
-                        {isAcknowledging ? (
-                          <>
-                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                            Acknowledging
-                          </>
-                        ) : (
-                          <>
-                            <UserCheck className="mr-1.5 h-3.5 w-3.5" />
-                            Acknowledge
-                          </>
-                        )}
-                      </Button>
-                    ) : null}
-                    {event.status === 'firing' && onResolve ? (
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="outline"
-                        onClick={(clickEvent) => {
-                          clickEvent.stopPropagation()
-                          onResolve(event)
-                        }}
-                        disabled={isResolving}
-                      >
-                        {isResolving ? (
-                          <>
-                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                            Resolving
-                          </>
-                        ) : (
-                          <>
-                            <CheckCheck className="mr-1.5 h-3.5 w-3.5" />
-                            Resolve
-                          </>
-                        )}
-                      </Button>
-                    ) : null}
-                  </div>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </div>
+                orgSlug={orgSlug}
+                event={event}
+                showConnectionColumn={showConnectionColumn}
+                connectionName={connectionNameForEvent?.(event)}
+                ruleName={getRuleName?.(event)}
+                actions={{
+                  openDetails: () => setSelectedEventId(event.id),
+                  resolve: onResolve,
+                  acknowledge: onAcknowledge,
+                  isResolving: resolvingEventId === event.id,
+                  isAcknowledging: acknowledgingEventId === event.id,
+                }}
+              />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </TooltipProvider>
+  )
+}
+
+function AlertEventRow({
+  orgSlug,
+  event,
+  showConnectionColumn,
+  connectionName,
+  ruleName,
+  actions,
+}: {
+  orgSlug: string
+  event: AlertEventRecord
+  showConnectionColumn: boolean
+  connectionName?: string
+  ruleName?: string
+  actions: IncidentRowActions
+}) {
+  const displayStatus = getAlertEventDisplayStatus(event)
+  const suppressedCount = getSuppressedCount(event)
+  const canAcknowledge = displayStatus === 'firing' && Boolean(actions.acknowledge)
+  const canResolve = event.status === 'firing' && Boolean(actions.resolve)
+  const isActing = actions.isResolving || actions.isAcknowledging
+
+  return (
+    <TableRow
+      className={cn(
+        'group cursor-pointer',
+        displayStatus === 'firing' && 'border-l-2 border-l-destructive/60',
+        displayStatus === 'suppressed' && 'opacity-60'
+      )}
+      onClick={actions.openDetails}
+    >
+      {showConnectionColumn ? (
+        <TableCell className="whitespace-nowrap text-sm font-medium">
+          {connectionName ?? 'Unknown connection'}
+        </TableCell>
+      ) : null}
+      <TableCell className="whitespace-nowrap">
+        <div className="flex items-center gap-1.5">
+          <AlertStatusBadge
+            status={event.status}
+            acknowledged={displayStatus === 'acknowledged'}
+            emphasize={displayStatus === 'firing'}
+          />
+          {displayStatus === 'suppressed' && suppressedCount > 1 ? (
+            <Badge variant="secondary">×{suppressedCount}</Badge>
+          ) : null}
+        </div>
+      </TableCell>
+      <TableCell className="hidden md:table-cell">
+        {ruleName ? (
+          <span className="block max-w-[180px] truncate text-sm font-medium" title={ruleName}>
+            {ruleName}
+          </span>
+        ) : (
+          <span className="block max-w-[180px] truncate text-sm text-muted-foreground">
+            {getAlertTypeMeta(event.type).label}
+          </span>
+        )}
+      </TableCell>
+      <TableCell className="whitespace-nowrap">
+        <Link
+          to="/$orgSlug/c/$connectionId/queues/$queueName"
+          params={{
+            orgSlug,
+            connectionId: event.connectionId,
+            queueName: event.queueName,
+          }}
+          className="inline-flex max-w-[200px] items-center gap-1 font-medium hover:text-primary"
+          onClick={(clickEvent) => clickEvent.stopPropagation()}
+        >
+          <span className="truncate">{event.queueName}</span>
+          <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </Link>
+      </TableCell>
+      <TableCell className="max-w-0">
+        <p className="truncate text-sm" title={event.summary}>
+          {event.summary}
+        </p>
+        {displayStatus === 'acknowledged' ? (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            Ack'd by {event.acknowledgedByName ?? 'a teammate'} ·{' '}
+            {formatRelativeAlertTime(event.acknowledgedAt)}
+          </p>
+        ) : null}
+        {displayStatus === 'resolved' && event.resolvedAt ? (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            Resolved {formatRelativeAlertTime(event.resolvedAt)}
+          </p>
+        ) : null}
+      </TableCell>
+      <TableCell className="hidden max-w-[180px] md:table-cell">
+        <DeliverySummary event={event} />
+      </TableCell>
+      <TableCell className="hidden whitespace-nowrap text-right md:table-cell">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {/* A real button so keyboard focus reveals the absolute timestamp. */}
+            <button
+              type="button"
+              className="cursor-default rounded-sm text-xs tabular-nums text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {formatRelativeAlertTime(event.firedAt)}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">{formatAlertDate(event.firedAt)}</TooltipContent>
+        </Tooltip>
+      </TableCell>
+      <TableCell className="pr-3">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                'h-8 w-8 transition-opacity data-[state=open]:opacity-100',
+                // Hover-reveal only where hovering exists; stay visible on touch devices.
+                isActing
+                  ? 'opacity-100'
+                  : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100'
+              )}
+              disabled={isActing}
+              onClick={(clickEvent) => clickEvent.stopPropagation()}
+            >
+              {isActing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MoreHorizontal className="h-4 w-4" />
+              )}
+              <span className="sr-only">
+                {actions.isResolving
+                  ? 'Resolving incident'
+                  : actions.isAcknowledging
+                    ? 'Acknowledging incident'
+                    : 'Incident actions'}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="w-44"
+            onClick={(clickEvent) => clickEvent.stopPropagation()}
+          >
+            <DropdownMenuItem onClick={actions.openDetails}>
+              <Eye className="mr-2 h-4 w-4" />
+              View details
+            </DropdownMenuItem>
+            {canAcknowledge || canResolve ? <DropdownMenuSeparator /> : null}
+            {canAcknowledge ? (
+              <DropdownMenuItem onClick={() => actions.acknowledge?.(event.id)}>
+                <UserCheck className="mr-2 h-4 w-4" />
+                Acknowledge
+              </DropdownMenuItem>
+            ) : null}
+            {canResolve ? (
+              <DropdownMenuItem onClick={() => actions.resolve?.(event)}>
+                <CheckCheck className="mr-2 h-4 w-4" />
+                Resolve
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
+    </TableRow>
   )
 }
 
@@ -245,7 +302,7 @@ function DeliverySummary({ event }: { event: AlertEventRecord }) {
         href={linearDelivery.externalUrl}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+        className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-primary hover:underline"
         onClick={(clickEvent) => clickEvent.stopPropagation()}
       >
         {linearDelivery.externalIdentifier ?? 'Linear issue'}
@@ -255,7 +312,10 @@ function DeliverySummary({ event }: { event: AlertEventRecord }) {
   }
   if (linearDelivery?.status === 'failed') {
     return (
-      <span className="text-xs text-destructive">
+      <span
+        className="block truncate text-xs text-destructive"
+        title={linearDelivery.lastError ?? undefined}
+      >
         Linear failed{linearDelivery.lastError ? `: ${linearDelivery.lastError}` : ''}
       </span>
     )
@@ -266,36 +326,39 @@ function DeliverySummary({ event }: { event: AlertEventRecord }) {
     const httpStatus = webhookDelivery.providerMetadata?.httpStatus
     if (webhookDelivery.status === 'delivered') {
       return (
-        <span className="text-xs text-muted-foreground">
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
           Webhook {typeof httpStatus === 'number' ? `HTTP ${httpStatus}` : 'delivered'}
         </span>
       )
     }
     if (webhookDelivery.status === 'failed') {
       return (
-        <span className="text-xs text-destructive">
+        <span
+          className="block truncate text-xs text-destructive"
+          title={webhookDelivery.lastError ?? undefined}
+        >
           Webhook failed{webhookDelivery.lastError ? `: ${webhookDelivery.lastError}` : ''}
         </span>
       )
     }
-    return <span className="text-xs text-muted-foreground">Webhook pending</span>
+    return <span className="whitespace-nowrap text-xs text-muted-foreground">Webhook pending</span>
   }
 
   if (linearDelivery) {
-    return <span className="text-xs text-muted-foreground">Linear pending</span>
+    return <span className="whitespace-nowrap text-xs text-muted-foreground">Linear pending</span>
   }
 
   if (event.deliveries.length > 0) {
     const delivered = event.deliveries.filter((delivery) => delivery.status === 'delivered').length
     return (
-      <span className="text-xs text-muted-foreground">
+      <span className="whitespace-nowrap text-xs text-muted-foreground">
         {delivered}/{event.deliveries.length} delivered
       </span>
     )
   }
 
   return (
-    <span className="text-xs text-muted-foreground">
+    <span className="whitespace-nowrap text-xs text-muted-foreground">
       {event.notificationSentAt ? 'Delivered' : 'Not sent'}
     </span>
   )

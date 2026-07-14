@@ -67,6 +67,12 @@ export function AlertTypeBadge({
 
 export type AlertEventDisplayStatus = 'firing' | 'acknowledged' | 'resolved' | 'suppressed'
 
+/** Coalesced-incident count recorded in event context by the suppression pipeline. */
+export function getSuppressedCount(event: Pick<AlertEventRecord, 'context'>): number {
+  const count = event.context.suppressedCount
+  return typeof count === 'number' ? count : 0
+}
+
 /** Acknowledged is derived, not a stored status: a firing event with ack provenance. */
 export function getAlertEventDisplayStatus(
   event: Pick<AlertEventRecord, 'status' | 'acknowledgedAt'>

@@ -150,7 +150,8 @@ describe('ConnectionIncidentsView', () => {
       limit: 100,
     })
 
-    await user.click(screen.getByRole('button', { name: /^resolve$/i }))
+    await user.click(screen.getByRole('button', { name: 'Incident actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: /^resolve$/i }))
 
     await waitFor(() =>
       expect(resolveEventMutateAsyncMock).toHaveBeenCalledWith({
@@ -212,7 +213,8 @@ describe('ConnectionIncidentsView', () => {
 
     expect(screen.getByText('Delivery failures')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /acknowledge/i }))
+    await user.click(screen.getByRole('button', { name: 'Incident actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: /acknowledge/i }))
 
     await waitFor(() => expect(acknowledgeEventMutateAsyncMock).toHaveBeenCalledWith('event-1'))
 
