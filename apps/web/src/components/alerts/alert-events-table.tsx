@@ -228,6 +228,7 @@ function AlertEventRow({
             <button
               type="button"
               className="cursor-default rounded-sm text-xs tabular-nums text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              onClick={(clickEvent) => clickEvent.stopPropagation()}
             >
               {formatRelativeAlertTime(event.firedAt)}
             </button>

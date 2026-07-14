@@ -44,13 +44,16 @@ function createEvent(overrides: Partial<AlertEventRecord> = {}): AlertEventRecor
 }
 
 async function openRowActionsMenu(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Incident actions' }))
+  const trigger = await screen.findByRole('button', { name: 'Incident actions' })
+  await user.click(trigger)
   return screen.findByRole('menu')
 }
 
 // The details dialog mounts a react-query mutation hook when opened.
 function renderTable(ui: ReactElement) {
-  const queryClient = new QueryClient()
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
   return render(ui, {
     wrapper: ({ children }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -73,25 +76,27 @@ describe('AlertEventsTable', () => {
     expect(screen.getByText('Everything is quiet.')).toBeInTheDocument()
   })
 
-  it('calls onResolve from the row menu and shows the resolving state', async () => {
-    const user = userEvent.setup()
-    const onResolve = vi.fn()
-
-    const { rerender } = renderTable(
+  it('shows the resolving state on the actions trigger', () => {
+    renderTable(
       <AlertEventsTable
         orgSlug="acme"
         events={[createEvent()]}
         emptyTitle="No incidents"
         emptyCopy="Everything is quiet."
-        onResolve={onResolve}
+        onResolve={vi.fn()}
         resolvingEventId="event-1"
       />
     )
 
     expect(screen.getByRole('button', { name: /resolving/i })).toBeDisabled()
     expect(screen.getByText('Not sent')).toBeInTheDocument()
+  })
 
-    rerender(
+  it('calls onResolve from the row menu without opening details', async () => {
+    const user = userEvent.setup()
+    const onResolve = vi.fn()
+
+    renderTable(
       <AlertEventsTable
         orgSlug="acme"
         events={[createEvent()]}
@@ -103,7 +108,7 @@ describe('AlertEventsTable', () => {
     )
 
     await openRowActionsMenu(user)
-    await user.click(screen.getByRole('menuitem', { name: /resolve/i }))
+    await user.click(await screen.findByRole('menuitem', { name: /resolve/i }))
 
     expect(onResolve).toHaveBeenCalledWith(expect.objectContaining({ id: 'event-1' }))
     // Selecting a menu action must not also trigger the row's details dialog.
@@ -217,5 +222,22 @@ describe('AlertEventsTable', () => {
     await user.click(screen.getByRole('menuitem', { name: 'View details' }))
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('does not open details when activating the fired-time tooltip trigger', async () => {
+    const user = userEvent.setup()
+
+    renderTable(
+      <AlertEventsTable
+        orgSlug="acme"
+        events={[createEvent()]}
+        emptyTitle="No incidents"
+        emptyCopy="Everything is quiet."
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /ago$/i }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })
