@@ -4,7 +4,7 @@
  */
 
 import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents } from '@durabull/analytics/events'
+import { AnalyticsEvents, AnalyticsProperties } from '@durabull/analytics/events'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
 import { useConnection } from '@/components/connection-provider'
@@ -870,6 +870,47 @@ export function useRetryJobs() {
   })
 }
 
+export function useRetryJob() {
+  const queryClient = useQueryClient()
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useMutation({
+    mutationFn: async ({
+      queueName,
+      jobId,
+      data,
+    }: {
+      queueName: string
+      jobId: string
+      data?: unknown
+    }) => {
+      const res = await api.c[':connectionId'].queues[':queueName'].jobs[':jobId'].retry.$post({
+        param: { connectionId: connectionId!, queueName, jobId },
+        json: data === undefined ? {} : { data },
+      })
+      return handleRes<{ success: boolean }>(res)
+    },
+    onSuccess: (_, { queueName, jobId }) => {
+      trackEvent(AnalyticsEvents.JOBS_RETRIED, {
+        [AnalyticsProperties.QUEUE_NAME]: queueName,
+        [AnalyticsProperties.JOB_IDS]: [jobId],
+        [AnalyticsProperties.JOB_COUNT]: 1,
+        [AnalyticsProperties.SUCCESS]: true,
+      })
+      queryClient.invalidateQueries({ queryKey: queryKeys.queue(connectionId ?? '', queueName) })
+      queryClient.invalidateQueries({ queryKey: ['jobs', connectionId, queueName] })
+    },
+    onError: (_, { queueName, jobId }) => {
+      trackEvent(AnalyticsEvents.JOBS_RETRIED, {
+        [AnalyticsProperties.QUEUE_NAME]: queueName,
+        [AnalyticsProperties.JOB_IDS]: [jobId],
+        [AnalyticsProperties.JOB_COUNT]: 1,
+        [AnalyticsProperties.SUCCESS]: false,
+      })
+    },
+  })
+}
+
 export function useRemoveJobs() {
   const queryClient = useQueryClient()
   const connectionId = useConnectionIdFromContextOrRoute()
@@ -1038,6 +1079,48 @@ export function useInvokeJobs() {
         queue_name: queueName,
         job_ids: jobIds,
         job_count: jobIds.length,
+        success: false,
+      })
+    },
+  })
+}
+
+export function useUpdateJobData() {
+  const queryClient = useQueryClient()
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useMutation({
+    mutationFn: async ({
+      queueName,
+      jobId,
+      data,
+    }: {
+      queueName: string
+      jobId: string
+      data: unknown
+    }) => {
+      const res = await api.c[':connectionId'].queues[':queueName'].jobs[':jobId'].data.$post({
+        param: { connectionId: connectionId!, queueName, jobId },
+        json: { data },
+      })
+      return handleRes<{ success: boolean; state: string }>(res)
+    },
+    onSuccess: (_, { queueName, jobId }) => {
+      trackEvent(AnalyticsEvents.JOB_DATA_UPDATED, {
+        queue_name: queueName,
+        job_id: jobId,
+        success: true,
+      })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.job(connectionId ?? '', queueName, jobId),
+      })
+      queryClient.invalidateQueries({ queryKey: ['jobs', connectionId, queueName] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.queue(connectionId ?? '', queueName) })
+    },
+    onError: (_, { queueName, jobId }) => {
+      trackEvent(AnalyticsEvents.JOB_DATA_UPDATED, {
+        queue_name: queueName,
+        job_id: jobId,
         success: false,
       })
     },

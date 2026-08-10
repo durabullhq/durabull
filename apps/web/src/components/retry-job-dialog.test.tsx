@@ -1,9 +1,13 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { RetryJobDialog } from '@/components/retry-job-dialog'
 import { RetryJobRequestState, type useJobRetryDialog } from '@/hooks/use-job-retry-dialog'
 import type { GetJobResponse } from '@/hooks/use-queues'
+
+function setEditorValue(value: string) {
+  fireEvent.change(screen.getByTestId('mock-json-editor'), { target: { value } })
+}
 
 const { trackEventMock } = vi.hoisted(() => ({
   trackEventMock: vi.fn(),
@@ -26,6 +30,28 @@ vi.mock('@durabull/analytics/events', () => ({
   },
 }))
 
+vi.mock('@/components/json-editor', () => ({
+  JsonEditor: ({
+    value,
+    onChange,
+  }: {
+    value: unknown
+    onChange: (value: unknown, isValid: boolean) => void
+  }) => (
+    <textarea
+      data-testid="mock-json-editor"
+      defaultValue={JSON.stringify(value)}
+      onChange={(event) => {
+        try {
+          onChange(JSON.parse(event.target.value), true)
+        } catch {
+          onChange(value, false)
+        }
+      }}
+    />
+  ),
+}))
+
 const delayedJob = {
   id: 'job-123',
   name: 'send-email',
@@ -36,6 +62,11 @@ const delayedJob = {
   timestamp: Date.now() - 5_000,
   delay: 0,
   opts: { backoff: { type: 'fixed', delay: 30_000 } },
+} as unknown as GetJobResponse
+
+const numericBackoffDelayedJob = {
+  ...delayedJob,
+  opts: { backoff: 30_000 },
 } as unknown as GetJobResponse
 
 const completedJob = {
@@ -67,20 +98,159 @@ function makeRetryController(overrides: Partial<RetryController> = {}): RetryCon
     openDialog: vi.fn(),
     setOpen: vi.fn(),
     runRetry: vi.fn(),
+    backToReview: vi.fn(),
     ...overrides,
   }
 }
+
+const sampleJobData = { message: 'hello' }
 
 const defaultProps = {
   queueName: 'emails',
   jobId: 'job-123',
   jobName: 'send-email',
+  jobData: sampleJobData,
   retry: makeRetryController(),
 }
 
 describe('RetryJobDialog', () => {
   beforeEach(() => {
     trackEventMock.mockReset()
+  })
+
+  it('renders the review step with the payload collapsed and does not auto-retry', () => {
+    const runRetry = vi.fn()
+
+    render(
+      <RetryJobDialog
+        {...defaultProps}
+        retry={makeRetryController({
+          requestState: RetryJobRequestState.REVIEW,
+          runRetry,
+        })}
+      />
+    )
+
+    expect(screen.getByText('Review Before Retry')).toBeInTheDocument()
+    expect(screen.getByText(/has not been retried yet/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit job payload' })).toBeInTheDocument()
+    expect(screen.queryByTestId('mock-json-editor')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry Job' })).toBeEnabled()
+    expect(runRetry).not.toHaveBeenCalled()
+  })
+
+  it('expands to show the editor prefilled with the current payload', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <RetryJobDialog
+        {...defaultProps}
+        retry={makeRetryController({
+          requestState: RetryJobRequestState.REVIEW,
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Edit job payload' }))
+
+    expect(screen.getByTestId('mock-json-editor')).toBeInTheDocument()
+    expect(screen.getByTestId('mock-json-editor')).toHaveValue(JSON.stringify(sampleJobData))
+  })
+
+  it('preserves edits across equal payload references and resets for changed payload content', async () => {
+    const user = userEvent.setup()
+    const retry = makeRetryController({ requestState: RetryJobRequestState.REVIEW })
+    const { rerender } = render(<RetryJobDialog {...defaultProps} retry={retry} />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit job payload' }))
+    setEditorValue(JSON.stringify({ message: 'draft edit' }))
+
+    rerender(<RetryJobDialog {...defaultProps} jobData={{ message: 'hello' }} retry={retry} />)
+    expect(screen.getByTestId('mock-json-editor')).toHaveValue(
+      JSON.stringify({ message: 'draft edit' })
+    )
+
+    rerender(
+      <RetryJobDialog {...defaultProps} jobData={{ message: 'persisted rewrite' }} retry={retry} />
+    )
+    expect(screen.queryByTestId('mock-json-editor')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit job payload' }))
+    expect(screen.getByTestId('mock-json-editor')).toHaveValue(
+      JSON.stringify({ message: 'persisted rewrite' })
+    )
+  })
+
+  it('unchanged payload Retry Job calls runRetry with no argument', async () => {
+    const user = userEvent.setup()
+    const runRetry = vi.fn()
+
+    render(
+      <RetryJobDialog
+        {...defaultProps}
+        retry={makeRetryController({
+          requestState: RetryJobRequestState.REVIEW,
+          runRetry,
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Retry Job' }))
+    expect(runRetry).toHaveBeenCalledTimes(1)
+    expect(runRetry).toHaveBeenCalledWith()
+  })
+
+  it('edited payload requires acknowledgement before overwrite retry', async () => {
+    const user = userEvent.setup()
+    const runRetry = vi.fn()
+
+    render(
+      <RetryJobDialog
+        {...defaultProps}
+        retry={makeRetryController({
+          requestState: RetryJobRequestState.REVIEW,
+          runRetry,
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Edit job payload' }))
+    setEditorValue(JSON.stringify({ message: 'rewritten' }))
+
+    const overwriteButton = screen.getByRole('button', { name: 'Overwrite Payload & Retry' })
+    expect(overwriteButton).toBeDisabled()
+
+    const acknowledgement = screen.getByLabelText(
+      'I understand, overwrite the stored payload and retry with it.'
+    )
+    expect(acknowledgement).toBeInTheDocument()
+
+    await user.click(acknowledgement)
+    expect(overwriteButton).toBeEnabled()
+
+    await user.click(overwriteButton)
+    expect(runRetry).toHaveBeenCalledWith({ message: 'rewritten' })
+  })
+
+  it('disables the primary action when JSON is invalid', async () => {
+    const user = userEvent.setup()
+    const runRetry = vi.fn()
+
+    render(
+      <RetryJobDialog
+        {...defaultProps}
+        retry={makeRetryController({
+          requestState: RetryJobRequestState.REVIEW,
+          runRetry,
+        })}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Edit job payload' }))
+    setEditorValue('{ not valid')
+
+    expect(screen.getByRole('button', { name: 'Retry Job' })).toBeDisabled()
+    expect(runRetry).not.toHaveBeenCalled()
   })
 
   it('shows retrying state without a log pane', () => {
@@ -159,6 +329,22 @@ describe('RetryJobDialog', () => {
     expect(screen.getByText(/Next retry in/i)).toBeInTheDocument()
   })
 
+  it('shows the retry countdown for numeric fixed backoff', () => {
+    render(
+      <RetryJobDialog
+        {...defaultProps}
+        retry={makeRetryController({
+          requestState: RetryJobRequestState.WATCHING,
+          isWatching: true,
+          job: numericBackoffDelayedJob,
+          jobStatus: 'delayed',
+        })}
+      />
+    )
+
+    expect(screen.getByText(/Next retry in/i)).toBeInTheDocument()
+  })
+
   it('shows success state', () => {
     render(
       <RetryJobDialog
@@ -216,9 +402,9 @@ describe('RetryJobDialog', () => {
     expect(screen.getByText('done processing')).toBeInTheDocument()
   })
 
-  it('shows failed run with reason and Retry Again', async () => {
+  it('shows failed run with reason and Retry Again returns to review', async () => {
     const user = userEvent.setup()
-    const onRetry = vi.fn()
+    const backToReview = vi.fn()
 
     render(
       <RetryJobDialog
@@ -233,7 +419,7 @@ describe('RetryJobDialog', () => {
             { id: 30, line: 'starting...' },
             { id: 31, line: 'error: timeout' },
           ],
-          runRetry: onRetry,
+          backToReview,
         })}
       />
     )
@@ -243,12 +429,12 @@ describe('RetryJobDialog', () => {
     expect(screen.getByText('error: timeout')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Retry Again' }))
-    expect(onRetry).toHaveBeenCalledTimes(1)
+    expect(backToReview).toHaveBeenCalledTimes(1)
   })
 
-  it('shows error state with Try Again', async () => {
+  it('shows error state with Try Again returning to review', async () => {
     const user = userEvent.setup()
-    const onRetry = vi.fn()
+    const backToReview = vi.fn()
 
     render(
       <RetryJobDialog
@@ -256,7 +442,7 @@ describe('RetryJobDialog', () => {
         retry={makeRetryController({
           requestState: RetryJobRequestState.ERROR,
           errorMessage: 'Job is locked',
-          runRetry: onRetry,
+          backToReview,
         })}
       />
     )
@@ -265,7 +451,7 @@ describe('RetryJobDialog', () => {
     expect(screen.getByText('Job is locked')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Try Again' }))
-    expect(onRetry).toHaveBeenCalledTimes(1)
+    expect(backToReview).toHaveBeenCalledTimes(1)
   })
 
   it('is closable while the job is running', async () => {

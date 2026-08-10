@@ -49,7 +49,7 @@ vi.mock('@/hooks/use-queues', () => ({
   fetchJobLogTail: fetchJobLogTailMock,
   useJob: useJobMock,
   useJobLogTail: useJobLogTailMock,
-  useRetryJobs: () => ({
+  useRetryJob: () => ({
     mutateAsync: mutateAsyncMock,
     isPending: false,
   }),
@@ -113,7 +113,7 @@ describe('useJobRetryDialog', () => {
     jobError = null
     logTailData = undefined
     logTailError = null
-    mutateAsyncMock.mockResolvedValue({ success: 1, failed: 0, errors: [] })
+    mutateAsyncMock.mockResolvedValue({ success: true })
     fetchQueryMock.mockResolvedValue({ logs: [], count: 2, start: 0, hasMore: false })
     fetchJobLogTailMock.mockResolvedValue({ logs: [], count: 2, start: 0, hasMore: false })
     logTailRefetchMock.mockResolvedValue({ data: { logs: [], count: 2, start: 2, hasMore: false } })
@@ -129,11 +129,31 @@ describe('useJobRetryDialog', () => {
     vi.useRealTimers()
   })
 
+  it('opens into REVIEW without starting a retry', async () => {
+    const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
+
+    await act(async () => {
+      result.current.openDialog()
+    })
+
+    expect(result.current.open).toBe(true)
+    expect(result.current.requestState).toBe(RetryJobRequestState.REVIEW)
+    expect(mutateAsyncMock).not.toHaveBeenCalled()
+    expect(useJobMock).toHaveBeenLastCalledWith(
+      'emails',
+      'job-123',
+      expect.objectContaining({ enabled: false })
+    )
+  })
+
   it('opens, snapshots log count, retries, and enters watching state', async () => {
     const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
 
     await act(async () => {
       result.current.openDialog()
+    })
+    await act(async () => {
+      await result.current.runRetry()
     })
 
     expect(result.current.open).toBe(true)
@@ -144,7 +164,7 @@ describe('useJobRetryDialog', () => {
     )
     expect(mutateAsyncMock).toHaveBeenCalledWith({
       queueName: 'emails',
-      jobIds: ['job-123'],
+      jobId: 'job-123',
     })
     await waitFor(() => {
       expect(result.current.requestState).toBe(RetryJobRequestState.WATCHING)
@@ -157,6 +177,42 @@ describe('useJobRetryDialog', () => {
     })
   })
 
+  it('runRetry with no argument omits data from the mutation payload', async () => {
+    const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
+
+    await act(async () => {
+      result.current.openDialog()
+    })
+    await act(async () => {
+      await result.current.runRetry()
+    })
+
+    expect(mutateAsyncMock).toHaveBeenCalledTimes(1)
+    expect(mutateAsyncMock.mock.calls[0]?.[0]).toEqual({
+      queueName: 'emails',
+      jobId: 'job-123',
+    })
+    expect(mutateAsyncMock.mock.calls[0]?.[0]).not.toHaveProperty('data')
+  })
+
+  it('runRetry forwards replacement data when provided', async () => {
+    const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
+    const override = { message: 'rewritten' }
+
+    await act(async () => {
+      result.current.openDialog()
+    })
+    await act(async () => {
+      await result.current.runRetry(override)
+    })
+
+    expect(mutateAsyncMock).toHaveBeenCalledWith({
+      queueName: 'emails',
+      jobId: 'job-123',
+      data: override,
+    })
+  })
+
   it('still submits the retry when the auxiliary log snapshot fails', async () => {
     fetchQueryMock.mockRejectedValue(new Error('logs unavailable'))
     const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
@@ -164,10 +220,13 @@ describe('useJobRetryDialog', () => {
     await act(async () => {
       result.current.openDialog()
     })
+    await act(async () => {
+      await result.current.runRetry()
+    })
 
     expect(mutateAsyncMock).toHaveBeenCalledWith({
       queueName: 'emails',
-      jobIds: ['job-123'],
+      jobId: 'job-123',
     })
     await waitFor(() => {
       expect(result.current.requestState).toBe(RetryJobRequestState.WATCHING)
@@ -185,6 +244,9 @@ describe('useJobRetryDialog', () => {
     await act(async () => {
       result.current.openDialog()
     })
+    await act(async () => {
+      await result.current.runRetry()
+    })
 
     jobData = makeJob('active')
     rerender()
@@ -197,6 +259,9 @@ describe('useJobRetryDialog', () => {
     const { result, rerender } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
     await act(async () => {
       result.current.openDialog()
+    })
+    await act(async () => {
+      await result.current.runRetry()
     })
 
     logTailData = { logs: ['line 1', 'line 2'], count: 4, start: 2, hasMore: false }
@@ -234,15 +299,14 @@ describe('useJobRetryDialog', () => {
   })
 
   it('sets error phase when the retry request fails', async () => {
-    mutateAsyncMock.mockResolvedValue({
-      success: 0,
-      failed: 1,
-      errors: [{ jobId: 'job-123', error: 'Job is locked' }],
-    })
+    mutateAsyncMock.mockRejectedValue(new Error('Job is locked'))
 
     const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
     await act(async () => {
       result.current.openDialog()
+    })
+    await act(async () => {
+      await result.current.runRetry()
     })
 
     await waitFor(() => {
@@ -255,6 +319,9 @@ describe('useJobRetryDialog', () => {
     const { result, rerender } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
     await act(async () => {
       result.current.openDialog()
+    })
+    await act(async () => {
+      await result.current.runRetry()
     })
 
     jobError = new Error('poll failed')
@@ -269,6 +336,9 @@ describe('useJobRetryDialog', () => {
     await act(async () => {
       result.current.openDialog()
     })
+    await act(async () => {
+      await result.current.runRetry()
+    })
 
     await act(() => {
       result.current.setOpen(false)
@@ -281,7 +351,12 @@ describe('useJobRetryDialog', () => {
   })
 
   it('ignores stale retry completions after the dialog closes', async () => {
-    let resolveSnapshot: (value: { logs: string[]; count: number; start: number; hasMore: boolean }) => void
+    let resolveSnapshot: (value: {
+      logs: string[]
+      count: number
+      start: number
+      hasMore: boolean
+    }) => void
     fetchQueryMock.mockReturnValue(
       new Promise((resolve) => {
         resolveSnapshot = resolve
@@ -292,6 +367,9 @@ describe('useJobRetryDialog', () => {
 
     act(() => {
       result.current.openDialog()
+    })
+    act(() => {
+      void result.current.runRetry()
     })
     await act(() => {
       result.current.setOpen(false)
@@ -306,6 +384,45 @@ describe('useJobRetryDialog', () => {
     expect(result.current.requestState).toBe(RetryJobRequestState.IDLE)
   })
 
+  it('backToReview clears run state and ignores late-resolving retries', async () => {
+    let resolveRetry: (value: { success: number; failed: number; errors: unknown[] }) => void
+    mutateAsyncMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRetry = resolve
+      })
+    )
+
+    const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
+
+    await act(async () => {
+      result.current.openDialog()
+    })
+    act(() => {
+      void result.current.runRetry()
+    })
+
+    await waitFor(() => {
+      expect(result.current.requestState).toBe(RetryJobRequestState.RETRYING)
+    })
+
+    await act(() => {
+      result.current.backToReview()
+    })
+
+    expect(result.current.requestState).toBe(RetryJobRequestState.REVIEW)
+    expect(result.current.errorMessage).toBeNull()
+    expect(result.current.logEntries).toEqual([])
+    expect(result.current.stillRunning).toBe(false)
+
+    await act(async () => {
+      resolveRetry({ success: 1, failed: 0, errors: [] })
+      await Promise.resolve()
+    })
+
+    expect(result.current.requestState).toBe(RetryJobRequestState.REVIEW)
+    expect(result.current.isWatching).toBe(false)
+  })
+
   it('tracks dialog opened analytics from openDialog', async () => {
     const { result } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
     await act(async () => {
@@ -315,12 +432,16 @@ describe('useJobRetryDialog', () => {
     expect(trackEventMock).toHaveBeenCalledWith('DIALOG_OPENED', {
       dialog_type: 'retry_job',
     })
+    expect(mutateAsyncMock).not.toHaveBeenCalled()
   })
 
   it('refetches final logs and invalidates cache when the watched job becomes terminal', async () => {
     const { result, rerender } = renderHook(() => useJobRetryDialog('emails', 'job-123'))
     await act(async () => {
       result.current.openDialog()
+    })
+    await act(async () => {
+      await result.current.runRetry()
     })
 
     jobData = makeJob('completed')

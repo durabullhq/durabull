@@ -1,9 +1,10 @@
+import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { routeState, topBarState, navigateMock, removeMutateMock, trackEventMock } =
-  vi.hoisted(() => ({
+const { routeState, topBarState, navigateMock, removeMutateMock, trackEventMock } = vi.hoisted(
+  () => ({
     routeState: {
       params: {
         orgSlug: 'acme',
@@ -17,7 +18,8 @@ const { routeState, topBarState, navigateMock, removeMutateMock, trackEventMock 
     navigateMock: vi.fn(),
     removeMutateMock: vi.fn(),
     trackEventMock: vi.fn(),
-  }))
+  })
+)
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/">{children}</a>,
@@ -33,13 +35,6 @@ vi.mock('@durabull/analytics/browser', () => ({
   trackEvent: trackEventMock,
 }))
 
-vi.mock('@durabull/analytics/events', () => ({
-  AnalyticsEvents: {
-    JOB_VIEWED: 'JOB_VIEWED',
-    JOB_TAB_CHANGED: 'JOB_TAB_CHANGED',
-  },
-}))
-
 vi.mock('@/components/app-top-bar', () => ({
   useAppTopBar: (config: { actions?: React.ReactNode }) => {
     topBarState.config = config
@@ -52,6 +47,10 @@ vi.mock('@/components/delete-job-logs-button', () => ({
 
 vi.mock('@/components/duplicate-job-dialog', () => ({
   DuplicateJobDialog: () => null,
+}))
+
+vi.mock('@/components/edit-job-data-dialog', () => ({
+  EditJobDataDialog: () => null,
 }))
 
 vi.mock('@/components/failed-attempts', () => ({
@@ -196,5 +195,18 @@ describe('job detail scheduled removal', () => {
         onSuccess: expect.any(Function),
       })
     )
+  })
+
+  it('tracks opening the edit-payload dialog', async () => {
+    routeState.params.jobId = 'job-123'
+    const user = userEvent.setup()
+    const Component = Route.options.component as () => React.ReactNode
+
+    render(<Component />)
+    await user.click(screen.getByRole('button', { name: 'Edit Payload' }))
+
+    expect(trackEventMock).toHaveBeenCalledWith(AnalyticsEvents.DIALOG_OPENED, {
+      [AnalyticsProperties.DIALOG_TYPE]: DialogType.EDIT_JOB_DATA,
+    })
   })
 })

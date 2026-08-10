@@ -302,6 +302,11 @@ test.describe("Pages", () => {
     await expect(retryButton).toBeVisible();
     await retryButton.click();
 
+    // The modal opens on a review step so the payload can be edited first.
+    // Scope to the dialog: the page top bar also has a "Retry Job" button.
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Retry Job" }).click();
+
     // The modal requeues the job and starts polling status + logs. Depending
     // on whether a worker picks the job up, it shows the live running phase
     // or jumps straight to a terminal phase - all of them render the log
@@ -314,7 +319,6 @@ test.describe("Pages", () => {
     await expect(page.getByTestId("retry-log-stream")).toBeVisible();
 
     // The modal is closable at any point; the job keeps running server-side.
-    const dialog = page.getByRole("dialog");
     await dialog
       .getByRole("button", { name: /^(Close|Done)$/ })
       .first()
