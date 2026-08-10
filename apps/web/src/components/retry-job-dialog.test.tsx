@@ -200,7 +200,7 @@ describe('RetryJobDialog', () => {
     expect(overwriteButton).toBeEnabled()
 
     await user.click(overwriteButton)
-    expect(runRetry).toHaveBeenCalledWith({ jobData: { message: 'rewritten' } })
+    expect(runRetry).toHaveBeenCalledWith({ message: 'rewritten' })
   })
 
   it('disables the primary action when JSON is invalid', async () => {

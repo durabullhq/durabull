@@ -156,25 +156,53 @@ describe('jobs routes', () => {
     expect(fakeJob?.updateData.mock.calls[0]?.[0]).toBeNull()
   })
 
-  it('retry with jobData and one jobIds entry calls updateData before retry', async () => {
+  it('single-job retry updates data before retrying', async () => {
     const app = await createJobsRouteApp()
     const payload = { rewritten: true }
 
-    const res = await app.request('/emails/jobs/retry', {
+    const res = await app.request('/emails/jobs/job-1/retry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobIds: ['job-1'], jobData: payload }),
+      body: JSON.stringify({ data: payload }),
     })
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ success: 1, failed: 0, errors: [] })
+    expect(await res.json()).toEqual({ success: true })
     expect(fakeJob?.updateData).toHaveBeenCalledTimes(1)
     expect(fakeJob?.updateData.mock.calls[0]?.[0]).toEqual(payload)
     expect(fakeJob?.retry).toHaveBeenCalledTimes(1)
     expect(callOrder).toEqual(['updateData', 'retry'])
   })
 
-  it('retry does not requeue the job when the payload rewrite fails', async () => {
+  it('single-job retry preserves an explicit null replacement', async () => {
+    const app = await createJobsRouteApp()
+
+    const res = await app.request('/emails/jobs/job-1/retry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: null }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(fakeJob?.updateData.mock.calls[0]?.[0]).toBeNull()
+    expect(callOrder).toEqual(['updateData', 'retry'])
+  })
+
+  it('single-job retry returns 404 when the job is missing', async () => {
+    fakeJob = null
+    const app = await createJobsRouteApp()
+
+    const res = await app.request('/emails/jobs/missing/retry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'Job not found' })
+  })
+
+  it('single-job retry does not requeue when the payload rewrite fails', async () => {
     fakeJob = {
       getState: mock(async () => 'failed'),
       updateData: mock(async () => {
@@ -193,63 +221,67 @@ describe('jobs routes', () => {
 
     const app = await createJobsRouteApp()
 
-    const res = await app.request('/emails/jobs/retry', {
+    const res = await app.request('/emails/jobs/job-1/retry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobIds: ['job-1'], jobData: { rewritten: true } }),
+      body: JSON.stringify({ data: { rewritten: true } }),
     })
 
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as {
-      success: number
-      failed: number
-      errors: Array<{ jobId: string; error: string }>
-    }
-    expect(body.success).toBe(0)
-    expect(body.failed).toBe(1)
-    expect(body.errors[0]?.jobId).toBe('job-1')
-    expect(body.errors[0]?.error).toContain('redis write failed')
+    expect(res.status).toBe(500)
     expect(fakeJob.retry).not.toHaveBeenCalled()
     expect(callOrder).toEqual([])
   })
 
-  it('retry rejects jobData combined with statuses', async () => {
+  it('single-job retry rejects a job that is no longer failed', async () => {
+    fakeJob = {
+      getState: mock(async () => 'completed'),
+      updateData: mock(async () => {
+        callOrder.push('updateData')
+      }),
+      retry: mock(async () => {
+        callOrder.push('retry')
+      }),
+    }
+    getJobMock = mock(async () => fakeJob)
+    mock.module('../lib/redis', () => ({
+      getQueue: mock(async () => ({
+        getJob: getJobMock,
+      })),
+    }))
     const app = await createJobsRouteApp()
 
-    const res = await app.request('/emails/jobs/retry', {
+    const res = await app.request('/emails/jobs/job-1/retry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ statuses: ['failed'], jobData: { x: 1 } }),
+      body: JSON.stringify({ data: { rewritten: true } }),
     })
 
-    expect(res.status).toBe(400)
-    const body = await res.json()
-    expect(JSON.stringify(body)).toContain(
-      'jobData can only be supplied when retrying a single job'
-    )
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({
+      error: 'Only failed jobs can be retried',
+      state: 'completed',
+    })
     expect(fakeJob?.updateData).not.toHaveBeenCalled()
     expect(fakeJob?.retry).not.toHaveBeenCalled()
   })
 
-  it('retry rejects jobData with two jobIds', async () => {
+  it('single-job retry without data never calls updateData', async () => {
     const app = await createJobsRouteApp()
 
-    const res = await app.request('/emails/jobs/retry', {
+    const res = await app.request('/emails/jobs/job-1/retry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobIds: ['job-1', 'job-2'], jobData: { x: 1 } }),
+      body: JSON.stringify({}),
     })
 
-    expect(res.status).toBe(400)
-    const body = await res.json()
-    expect(JSON.stringify(body)).toContain(
-      'jobData can only be supplied when retrying a single job'
-    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ success: true })
     expect(fakeJob?.updateData).not.toHaveBeenCalled()
-    expect(fakeJob?.retry).not.toHaveBeenCalled()
+    expect(fakeJob?.retry).toHaveBeenCalledTimes(1)
+    expect(callOrder).toEqual(['retry'])
   })
 
-  it('retry without jobData never calls updateData', async () => {
+  it('bulk retry remains data-agnostic', async () => {
     const app = await createJobsRouteApp()
 
     const res = await app.request('/emails/jobs/retry', {

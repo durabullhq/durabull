@@ -9,7 +9,7 @@ import {
   useConnectionIdFromContextOrRoute,
   useJob,
   useJobLogTail,
-  useRetryJobs,
+  useRetryJob,
 } from '@/hooks/use-queues'
 import { JOB_STATUS, type JobStatus } from '@/lib/constants'
 
@@ -53,18 +53,6 @@ export function isTerminalJobStatus(status: string | undefined): boolean {
   return status === JOB_STATUS.COMPLETED || status === JOB_STATUS.FAILED
 }
 
-function getRetryErrorMessage(
-  result: { failed: number; errors: Array<{ jobId: string; error: string }> },
-  jobId: string
-): string {
-  return (
-    result.errors.find((entry) => entry.jobId === jobId)?.error ??
-    (result.failed > 0
-      ? 'The job could not be retried.'
-      : 'The job was not in a failed state and could not be retried.')
-  )
-}
-
 function appendLogEntries(
   current: RetryJobLogEntry[],
   tail: JobLogTailResponse | undefined
@@ -81,7 +69,7 @@ function appendLogEntries(
 
 export function useJobRetryDialog(queueName: string, jobId: string) {
   const [state, setState] = useState(initialState)
-  const { mutateAsync: retryJobs } = useRetryJobs()
+  const { mutateAsync: retryJob } = useRetryJob()
   const queryClient = useQueryClient()
   const connectionId = useConnectionIdFromContextOrRoute()
   const retryRunIdRef = useRef(0)
@@ -108,7 +96,7 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
   }, [connectionId, jobId, queryClient, queueName])
 
   const runRetry = useCallback(
-    async (options?: { jobData?: unknown }) => {
+    async (data?: unknown) => {
       const retryRunId = retryRunIdRef.current + 1
       retryRunIdRef.current = retryRunId
 
@@ -137,30 +125,18 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
 
         if (retryRunIdRef.current !== retryRunId) return
 
-        // Omit the key entirely rather than sending `jobData: undefined`, so a
-        // plain retry is indistinguishable from what it sent before this flow
-        // existed. The API rejects `jobData` on anything but a single job.
-        const result = await retryJobs({
+        await retryJob({
           queueName,
-          jobIds: [jobId],
-          ...(options?.jobData !== undefined ? { jobData: options.jobData } : {}),
+          jobId,
+          ...(data !== undefined ? { data } : {}),
         })
 
         if (retryRunIdRef.current !== retryRunId) return
 
-        if (result.success > 0 && result.failed === 0) {
-          setState((current) => ({
-            ...current,
-            requestState: RetryJobRequestState.WATCHING,
-            logStart,
-          }))
-          return
-        }
-
         setState((current) => ({
           ...current,
-          requestState: RetryJobRequestState.ERROR,
-          errorMessage: getRetryErrorMessage(result, jobId),
+          requestState: RetryJobRequestState.WATCHING,
+          logStart,
         }))
       } catch (error) {
         if (retryRunIdRef.current !== retryRunId) return
@@ -173,7 +149,7 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
         }))
       }
     },
-    [connectionId, jobId, queryClient, queueName, retryJobs]
+    [connectionId, jobId, queryClient, queueName, retryJob]
   )
 
   const openDialog = useCallback(() => {

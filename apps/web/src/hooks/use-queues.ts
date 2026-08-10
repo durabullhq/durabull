@@ -827,16 +827,10 @@ export function useRetryJobs() {
   return useMutation({
     mutationFn: async (
       payload:
-        | { queueName: string; jobIds: Array<string>; jobData?: unknown }
+        | { queueName: string; jobIds: Array<string> }
         | { queueName: string; statuses: RetryQueueStatusOption[] }
     ) => {
-      const json =
-        'jobIds' in payload
-          ? {
-              jobIds: payload.jobIds,
-              ...(payload.jobData !== undefined ? { jobData: payload.jobData } : {}),
-            }
-          : { statuses: payload.statuses }
+      const json = 'jobIds' in payload ? { jobIds: payload.jobIds } : { statuses: payload.statuses }
       const res = await api.c[':connectionId'].queues[':queueName'].jobs.retry.$post({
         param: { connectionId: connectionId!, queueName: payload.queueName },
         json,
@@ -870,6 +864,47 @@ export function useRetryJobs() {
         queue_name: queueName,
         job_ids: jobIds,
         job_count: jobIds.length,
+        success: false,
+      })
+    },
+  })
+}
+
+export function useRetryJob() {
+  const queryClient = useQueryClient()
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useMutation({
+    mutationFn: async ({
+      queueName,
+      jobId,
+      data,
+    }: {
+      queueName: string
+      jobId: string
+      data?: unknown
+    }) => {
+      const res = await api.c[':connectionId'].queues[':queueName'].jobs[':jobId'].retry.$post({
+        param: { connectionId: connectionId!, queueName, jobId },
+        json: data === undefined ? {} : { data },
+      })
+      return handleRes<{ success: boolean }>(res)
+    },
+    onSuccess: (_, { queueName, jobId }) => {
+      trackEvent(AnalyticsEvents.JOBS_RETRIED, {
+        queue_name: queueName,
+        job_ids: [jobId],
+        job_count: 1,
+        success: true,
+      })
+      queryClient.invalidateQueries({ queryKey: queryKeys.queue(connectionId ?? '', queueName) })
+      queryClient.invalidateQueries({ queryKey: ['jobs', connectionId, queueName] })
+    },
+    onError: (_, { queueName, jobId }) => {
+      trackEvent(AnalyticsEvents.JOBS_RETRIED, {
+        queue_name: queueName,
+        job_ids: [jobId],
+        job_count: 1,
         success: false,
       })
     },

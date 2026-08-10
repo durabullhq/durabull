@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import { JsonEditor } from '@/components/json-editor'
+import { hasJobPayloadChanged } from '@/lib/job-payload'
 
 interface JobPayloadEditorProps {
   original: unknown
@@ -8,47 +9,13 @@ interface JobPayloadEditorProps {
   minHeight?: string
 }
 
-/** Recursively sort object keys so key-order-only diffs compare equal. */
-function normalizeJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(normalizeJsonValue)
-  }
-
-  if (value !== null && typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    return Object.keys(record)
-      .sort()
-      .reduce<Record<string, unknown>>((acc, key) => {
-        acc[key] = normalizeJsonValue(record[key])
-        return acc
-      }, {})
-  }
-
-  return value
-}
-
-/**
- * True when `current` is valid JSON and differs from `original` after
- * normalizing key order (so reordering / whitespace-only edits do not count).
- */
-export function hasJobPayloadChanged(
-  original: unknown,
-  current: unknown,
-  isValid: boolean
-): boolean {
-  if (!isValid) return false
-  return (
-    JSON.stringify(normalizeJsonValue(original)) !== JSON.stringify(normalizeJsonValue(current))
-  )
-}
-
 export function JobPayloadEditor({
   original,
   value,
   onChange,
   minHeight = '200px',
 }: JobPayloadEditorProps) {
-  const isModified = hasJobPayloadChanged(original, value, true)
+  const isModified = hasJobPayloadChanged(original, value)
 
   return (
     <div className="space-y-3">
