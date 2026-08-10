@@ -18,6 +18,7 @@ import {
   Info,
   Layers,
   Loader2,
+  Pencil,
   RefreshCw,
   ScrollText,
   Search,
@@ -31,6 +32,7 @@ import { z } from 'zod'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { DeleteJobLogsButton } from '@/components/delete-job-logs-button'
 import { DuplicateJobDialog } from '@/components/duplicate-job-dialog'
+import { EditJobDataDialog } from '@/components/edit-job-data-dialog'
 import { FailedAttempts } from '@/components/failed-attempts'
 import { InvokeJobDialog } from '@/components/invoke-job-dialog'
 import { JobRemoveButton } from '@/components/job-remove-button'
@@ -77,6 +79,7 @@ function JobDetailPage() {
   const navigate = useNavigate()
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false)
   const [invokeDialogOpen, setInvokeDialogOpen] = useState(false)
+  const [editJobDataDialogOpen, setEditJobDataDialogOpen] = useState(false)
   const retryDialog = useJobRetryDialog(queueName, jobId)
 
   const { data: job, isLoading, error } = useJob(queueName, jobId)
@@ -502,11 +505,22 @@ function JobDetailPage() {
         {/* Job Data Tab */}
         <TabsContent value="data" className="mt-6">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <FileJson2 className="h-4 w-4" />
                 Job Payload
               </CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                disabled={isLoading || !job}
+                onClick={() => setEditJobDataDialogOpen(true)}
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                Edit Payload
+              </Button>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -602,6 +616,7 @@ function JobDetailPage() {
           queueName={queueName}
           jobId={job.id}
           jobName={job.name}
+          jobData={job.data}
           retry={retryDialog}
         />
       )}
@@ -616,6 +631,19 @@ function JobDetailPage() {
           jobName={job.name}
           jobData={job.data}
           onSuccess={handleInvokeSuccess}
+        />
+      )}
+
+      {/* Edit Job Data Dialog */}
+      {job && (
+        <EditJobDataDialog
+          open={editJobDataDialogOpen}
+          onOpenChange={setEditJobDataDialogOpen}
+          queueName={queueName}
+          jobId={job.id}
+          jobName={job.name}
+          jobData={job.data}
+          jobStatus={job.status}
         />
       )}
     </div>

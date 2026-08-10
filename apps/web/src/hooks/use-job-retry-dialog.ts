@@ -6,9 +6,9 @@ import {
   fetchJobLogTail,
   type JobLogTailResponse,
   queryKeys,
+  useConnectionIdFromContextOrRoute,
   useJob,
   useJobLogTail,
-  useConnectionIdFromContextOrRoute,
   useRetryJobs,
 } from '@/hooks/use-queues'
 import { JOB_STATUS, type JobStatus } from '@/lib/constants'
@@ -23,13 +23,13 @@ export interface RetryJobLogEntry {
 
 export const RetryJobRequestState = {
   IDLE: 'idle',
+  REVIEW: 'review',
   RETRYING: 'retrying',
   WATCHING: 'watching',
   ERROR: 'error',
 } as const
 
-export type RetryJobRequestState =
-  (typeof RetryJobRequestState)[keyof typeof RetryJobRequestState]
+export type RetryJobRequestState = (typeof RetryJobRequestState)[keyof typeof RetryJobRequestState]
 
 interface JobRetryDialogState {
   open: boolean
@@ -107,75 +107,95 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
     queryClient.invalidateQueries({ queryKey: queryKeys.queue(connectionId, queueName) })
   }, [connectionId, jobId, queryClient, queueName])
 
-  const runRetry = useCallback(async () => {
-    const retryRunId = retryRunIdRef.current + 1
-    retryRunIdRef.current = retryRunId
+  const runRetry = useCallback(
+    async (options?: { jobData?: unknown }) => {
+      const retryRunId = retryRunIdRef.current + 1
+      retryRunIdRef.current = retryRunId
 
-    setState((current) => ({
-      ...initialState,
-      open: current.open,
-      requestState: RetryJobRequestState.RETRYING,
-    }))
+      setState((current) => ({
+        ...initialState,
+        open: current.open,
+        requestState: RetryJobRequestState.RETRYING,
+      }))
 
-    try {
-      if (!connectionId) {
-        throw new Error('Connection is still loading. Try again in a moment.')
-      }
-
-      let logStart = 0
       try {
-        const snapshot = await queryClient.fetchQuery({
-          queryKey: queryKeys.jobLogTail(connectionId, queueName, jobId, 0),
-          queryFn: () => fetchJobLogTail({ connectionId, queueName, jobId, start: 0 }),
+        if (!connectionId) {
+          throw new Error('Connection is still loading. Try again in a moment.')
+        }
+
+        let logStart = 0
+        try {
+          const snapshot = await queryClient.fetchQuery({
+            queryKey: queryKeys.jobLogTail(connectionId, queueName, jobId, 0),
+            queryFn: () => fetchJobLogTail({ connectionId, queueName, jobId, start: 0 }),
+          })
+          logStart = snapshot.count
+        } catch {
+          // Log history is auxiliary; a transient log read failure must not
+          // prevent the actual retry request from being submitted.
+        }
+
+        if (retryRunIdRef.current !== retryRunId) return
+
+        // Omit the key entirely rather than sending `jobData: undefined`, so a
+        // plain retry is indistinguishable from what it sent before this flow
+        // existed. The API rejects `jobData` on anything but a single job.
+        const result = await retryJobs({
+          queueName,
+          jobIds: [jobId],
+          ...(options?.jobData !== undefined ? { jobData: options.jobData } : {}),
         })
-        logStart = snapshot.count
-      } catch {
-        // Log history is auxiliary; a transient log read failure must not
-        // prevent the actual retry request from being submitted.
-      }
 
-      if (retryRunIdRef.current !== retryRunId) return
+        if (retryRunIdRef.current !== retryRunId) return
 
-      const result = await retryJobs({
-        queueName,
-        jobIds: [jobId],
-      })
+        if (result.success > 0 && result.failed === 0) {
+          setState((current) => ({
+            ...current,
+            requestState: RetryJobRequestState.WATCHING,
+            logStart,
+          }))
+          return
+        }
 
-      if (retryRunIdRef.current !== retryRunId) return
-
-      if (result.success > 0 && result.failed === 0) {
         setState((current) => ({
           ...current,
-          requestState: RetryJobRequestState.WATCHING,
-          logStart,
+          requestState: RetryJobRequestState.ERROR,
+          errorMessage: getRetryErrorMessage(result, jobId),
         }))
-        return
+      } catch (error) {
+        if (retryRunIdRef.current !== retryRunId) return
+
+        setState((current) => ({
+          ...current,
+          requestState: RetryJobRequestState.ERROR,
+          errorMessage:
+            error instanceof Error ? error.message : 'An unexpected error occurred while retrying.',
+        }))
       }
-
-      setState((current) => ({
-        ...current,
-        requestState: RetryJobRequestState.ERROR,
-        errorMessage: getRetryErrorMessage(result, jobId),
-      }))
-    } catch (error) {
-      if (retryRunIdRef.current !== retryRunId) return
-
-      setState((current) => ({
-        ...current,
-        requestState: RetryJobRequestState.ERROR,
-        errorMessage:
-          error instanceof Error ? error.message : 'An unexpected error occurred while retrying.',
-      }))
-    }
-  }, [connectionId, jobId, queryClient, queueName, retryJobs])
+    },
+    [connectionId, jobId, queryClient, queueName, retryJobs]
+  )
 
   const openDialog = useCallback(() => {
-    setState({ ...initialState, open: true })
+    setState({ ...initialState, open: true, requestState: RetryJobRequestState.REVIEW })
     trackEvent(AnalyticsEvents.DIALOG_OPENED, {
       [AnalyticsProperties.DIALOG_TYPE]: DialogType.RETRY_JOB,
     })
-    void runRetry()
-  }, [runRetry])
+  }, [])
+
+  const backToReview = useCallback(() => {
+    // Invalidate any in-flight run so a late resolution cannot push us back
+    // into WATCHING after the user has returned to review.
+    retryRunIdRef.current += 1
+    setState((current) => ({
+      ...current,
+      requestState: RetryJobRequestState.REVIEW,
+      errorMessage: null,
+      logStart: null,
+      logEntries: [],
+      stillRunning: false,
+    }))
+  }, [])
 
   const setOpen = useCallback(
     (open: boolean) => {
@@ -243,5 +263,6 @@ export function useJobRetryDialog(queueName: string, jobId: string) {
     openDialog,
     setOpen,
     runRetry,
+    backToReview,
   }
 }

@@ -1,9 +1,11 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
-import { AlertCircle, CheckCircle2, Info, Loader2, RefreshCw } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { AlertCircle, CheckCircle2, ChevronDown, Info, Loader2, RefreshCw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { hasJobPayloadChanged, JobPayloadEditor } from '@/components/job-payload-editor'
 import { RetryCountdown } from '@/components/retry-countdown'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -12,14 +14,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import {
-  RetryJobRequestState,
   isTerminalJobStatus,
   type RetryJobLogEntry,
+  RetryJobRequestState,
   type useJobRetryDialog,
 } from '@/hooks/use-job-retry-dialog'
 import type { GetJobResponse } from '@/hooks/use-queues'
 import { JOB_STATUS } from '@/lib/constants'
+import { cn } from '@/lib/utils'
 
 type RetryJobDialogController = ReturnType<typeof useJobRetryDialog>
 
@@ -27,6 +31,7 @@ interface RetryJobDialogProps {
   queueName: string
   jobId: string
   jobName: string
+  jobData: unknown
   retry: RetryJobDialogController
 }
 
@@ -53,6 +58,14 @@ function getDialogCopy({
   requestState: RetryJobDialogController['requestState']
   jobStatus: RetryJobDialogController['jobStatus']
 }) {
+  if (requestState === RetryJobRequestState.REVIEW) {
+    return {
+      title: 'Review Before Retry',
+      description:
+        'The job has not been retried yet. Confirm a plain retry, or expand the payload to overwrite it first.',
+    }
+  }
+
   if (requestState === RetryJobRequestState.RETRYING) {
     return {
       title: 'Retrying Job',
@@ -126,12 +139,22 @@ function LogStream({ entries, inFlight }: { entries: RetryJobLogEntry[]; inFligh
   )
 }
 
-export function RetryJobDialog({
-  queueName,
-  jobId,
-  jobName,
-  retry,
-}: RetryJobDialogProps) {
+export function RetryJobDialog({ queueName, jobId, jobName, jobData, retry }: RetryJobDialogProps) {
+  const [editorValue, setEditorValue] = useState<unknown>(jobData)
+  const [isJsonValid, setIsJsonValid] = useState(true)
+  const [payloadExpanded, setPayloadExpanded] = useState(false)
+  const [overwriteAcknowledged, setOverwriteAcknowledged] = useState(false)
+
+  const isReview = retry.requestState === RetryJobRequestState.REVIEW
+
+  useEffect(() => {
+    if (!isReview) return
+    setEditorValue(jobData)
+    setIsJsonValid(true)
+    setPayloadExpanded(false)
+    setOverwriteAcknowledged(false)
+  }, [isReview, jobData])
+
   const handleOpenChange = (nextOpen: boolean) => {
     trackEvent(nextOpen ? AnalyticsEvents.DIALOG_OPENED : AnalyticsEvents.DIALOG_CLOSED, {
       [AnalyticsProperties.DIALOG_TYPE]: DialogType.RETRY_JOB,
@@ -149,12 +172,26 @@ export function RetryJobDialog({
     requestState !== RetryJobRequestState.ERROR &&
     (inFlight || logEntries.length > 0)
 
+  const payloadChanged = hasJobPayloadChanged(jobData, editorValue, isJsonValid)
+  const primaryDisabled = !isJsonValid || (payloadChanged && !overwriteAcknowledged)
+
+  const handlePrimaryAction = () => {
+    if (primaryDisabled) return
+    if (payloadChanged) {
+      void retry.runRetry({ jobData: editorValue })
+      return
+    }
+    void retry.runRetry()
+  }
+
   return (
     <Dialog open={retry.open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {inFlight ? (
+            {isReview ? (
+              <RefreshCw className="h-5 w-5 text-muted-foreground" />
+            ) : inFlight ? (
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             ) : jobStatus === JOB_STATUS.COMPLETED ? (
               <CheckCircle2 className="h-5 w-5 text-status-success" />
@@ -179,67 +216,128 @@ export function RetryJobDialog({
             </div>
           </div>
 
-          {jobStatus === JOB_STATUS.DELAYED && job && (
-            <RetryCountdown
-              processedOn={job.processedOn ?? undefined}
-              finishedOn={job.finishedOn ?? undefined}
-              attemptsMade={job.attemptsMade}
-              maxAttempts={job.maxAttempts}
-              backoff={getRetryBackoff(job.opts)}
-              status={job.status}
-              timestamp={job.timestamp}
-              delay={job.delay}
-            />
-          )}
+          {isReview ? (
+            <>
+              <Collapsible open={payloadExpanded} onOpenChange={setPayloadExpanded}>
+                <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 rounded-lg border bg-muted/20 px-4 py-3 text-left text-sm font-medium hover:bg-muted/40">
+                  <span>Edit job payload</span>
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                      payloadExpanded && 'rotate-180'
+                    )}
+                  />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="pt-3">
+                    <JobPayloadEditor
+                      original={jobData}
+                      value={editorValue}
+                      onChange={(value, isValid) => {
+                        setEditorValue(value)
+                        setIsJsonValid(isValid)
+                      }}
+                      minHeight="180px"
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
 
-          {showLogs && (inFlight || logEntries.length > 0) && (
-            <LogStream entries={logEntries} inFlight={inFlight} />
-          )}
-
-          {inFlight && stillRunning && jobStatus !== JOB_STATUS.DELAYED && (
-            <div className="flex items-start gap-3 rounded-lg border border-status-delayed/30 bg-status-delayed/10 px-4 py-3">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-status-delayed" />
-              <p className="text-sm text-status-delayed">
-                This job is still running. It's safe to close this dialog — the job will keep
-                running in the background.
-              </p>
-            </div>
-          )}
-
-          {watchError && (
-            <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
-              <p className="text-sm text-status-danger">
-                Could not refresh this job yet. Retrying automatically...
-              </p>
-            </div>
-          )}
-
-          {jobStatus === JOB_STATUS.COMPLETED && (
-            <div className="rounded-lg border border-status-success/30 bg-status-success/10 px-4 py-3">
-              <p className="text-sm text-status-success">The job completed successfully.</p>
-            </div>
-          )}
-
-          {jobStatus === JOB_STATUS.FAILED && (
-            <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
-              <p className="text-sm font-medium text-status-danger mb-1">The job failed again.</p>
-              {failedReason && (
-                <p className="font-mono text-xs text-status-danger break-all whitespace-pre-wrap">
-                  {failedReason}
-                </p>
+              {payloadChanged ? (
+                <div className="flex items-start gap-3 rounded-lg border px-4 py-3">
+                  <input
+                    id="retry-overwrite-ack"
+                    type="checkbox"
+                    checked={overwriteAcknowledged}
+                    onChange={(e) => setOverwriteAcknowledged(e.target.checked)}
+                    className="mt-0.5 rounded border-gray-300"
+                  />
+                  <Label htmlFor="retry-overwrite-ack" className="text-sm font-normal leading-5">
+                    I understand, overwrite the stored payload and retry with it.
+                  </Label>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {jobStatus === JOB_STATUS.DELAYED && job && (
+                <RetryCountdown
+                  processedOn={job.processedOn ?? undefined}
+                  finishedOn={job.finishedOn ?? undefined}
+                  attemptsMade={job.attemptsMade}
+                  maxAttempts={job.maxAttempts}
+                  backoff={getRetryBackoff(job.opts)}
+                  status={job.status}
+                  timestamp={job.timestamp}
+                  delay={job.delay}
+                />
               )}
-            </div>
-          )}
 
-          {requestState === RetryJobRequestState.ERROR && retry.errorMessage && (
-            <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
-              <p className="text-sm text-status-danger">{retry.errorMessage}</p>
-            </div>
+              {showLogs && (inFlight || logEntries.length > 0) && (
+                <LogStream entries={logEntries} inFlight={inFlight} />
+              )}
+
+              {inFlight && stillRunning && jobStatus !== JOB_STATUS.DELAYED && (
+                <div className="flex items-start gap-3 rounded-lg border border-status-delayed/30 bg-status-delayed/10 px-4 py-3">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-status-delayed" />
+                  <p className="text-sm text-status-delayed">
+                    This job is still running. It's safe to close this dialog — the job will keep
+                    running in the background.
+                  </p>
+                </div>
+              )}
+
+              {watchError && (
+                <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
+                  <p className="text-sm text-status-danger">
+                    Could not refresh this job yet. Retrying automatically...
+                  </p>
+                </div>
+              )}
+
+              {jobStatus === JOB_STATUS.COMPLETED && (
+                <div className="rounded-lg border border-status-success/30 bg-status-success/10 px-4 py-3">
+                  <p className="text-sm text-status-success">The job completed successfully.</p>
+                </div>
+              )}
+
+              {jobStatus === JOB_STATUS.FAILED && (
+                <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
+                  <p className="text-sm font-medium text-status-danger mb-1">
+                    The job failed again.
+                  </p>
+                  {failedReason && (
+                    <p className="font-mono text-xs text-status-danger break-all whitespace-pre-wrap">
+                      {failedReason}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {requestState === RetryJobRequestState.ERROR && retry.errorMessage && (
+                <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
+                  <p className="text-sm text-status-danger">{retry.errorMessage}</p>
+                </div>
+              )}
+            </>
           )}
         </div>
 
         <DialogFooter>
-          {jobStatus === JOB_STATUS.COMPLETED ? (
+          {isReview ? (
+            <>
+              <Button variant="outline" onClick={() => handleOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant={payloadChanged ? 'destructive' : 'default'}
+                onClick={handlePrimaryAction}
+                disabled={primaryDisabled}
+              >
+                {payloadChanged ? 'Overwrite Payload & Retry' : 'Retry Job'}
+              </Button>
+            </>
+          ) : jobStatus === JOB_STATUS.COMPLETED ? (
             <Button onClick={() => handleOpenChange(false)}>Done</Button>
           ) : (
             <>
@@ -247,7 +345,7 @@ export function RetryJobDialog({
                 Close
               </Button>
               {(jobStatus === JOB_STATUS.FAILED || requestState === RetryJobRequestState.ERROR) && (
-                <Button onClick={() => void retry.runRetry()}>
+                <Button onClick={() => retry.backToReview()}>
                   <RefreshCw className="mr-2 h-4 w-4" />
                   {jobStatus === JOB_STATUS.FAILED ? 'Retry Again' : 'Try Again'}
                 </Button>

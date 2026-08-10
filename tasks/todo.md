@@ -65,6 +65,44 @@
 - [x] Removed all three duplicated `dropdown-menu` test mocks; tests now drive the real Radix menu (jsdom `ResizeObserver`/`scrollIntoView` stubs added to `src/test/setup.ts`), including menu open, item visibility per status, the click-propagation guard, and dialog open from the menu.
 - [x] Verify: full web suite 238/238 passing, `tsc --noEmit` clean, biome clean on changed files (14 pre-existing errors elsewhere confirmed on baseline via stash).
 
+## Editable Job Payload (Data tab + Retry modal)
+
+### Agreed design
+- Job payload becomes editable from two places: the job detail Data tab, and a new review step in the retry modal.
+- Data tab: "Edit Payload" swaps `JsonViewer` for `JsonEditor` prefilled with `job.data`. Saving requires typing the job ID, matching `purge-queue-dialog.tsx`.
+- Retry modal no longer fires the retry on open. It opens in a review step with the payload editor (collapsed by default, prefilled). Editing it turns the primary button destructive and requires an explicit acknowledgement before the retry runs.
+- API updates the payload with `job.updateData()`. Editing an `active` job is rejected: the worker already holds the old payload, so the write would silently do nothing.
+
+### Tasks
+- [x] API: `POST /:queueName/jobs/:jobId/data` with `{ data }`, 404 for missing job, 409 for active job
+- [x] API: optional `jobData` on `POST /:queueName/jobs/retry`, valid only with exactly one `jobId`; `updateData` then `retry()`
+- [x] API tests for both paths (11 passing, incl. null payload and failed-rewrite-skips-retry)
+- [x] Analytics: `DialogType.EDIT_JOB_DATA`, `AnalyticsEvents.JOB_DATA_UPDATED` *(web agent)*
+- [x] Web: `useUpdateJobData` hook; `useRetryJobs` accepts optional `jobData` *(web agent)*
+- [x] Web: shared `JobPayloadEditor` (editor + danger copy + dirty state) used by both flows *(web agent)*
+- [x] Web: `EditJobDataDialog` with typed-job-ID confirm, wired into the Data tab *(web agent)*
+- [x] Web: retry modal review step; `use-job-retry-dialog` no longer auto-retries on open
+- [x] Update existing retry unit tests for the review step
+- [x] Verify: typecheck, web unit tests, api tests, biome
+- [x] Verify both flows in a real browser against seeded Redis
+
+### Review
+- `RetryJobRequestState` gains `REVIEW`. `openDialog()` opens into it and no longer fires the retry; `runRetry(options?: { jobData?: unknown })` does. `backToReview()` bumps the same `retryRunIdRef` guard `setOpen(false)` uses, so a late-resolving run cannot push the dialog back into `WATCHING`.
+- `runRetry` omits the `jobData` key entirely when absent, so a plain retry sends the exact request it sent before this feature existed.
+- `Retry Again` / `Try Again` now return to the review step instead of firing immediately, so a failed attempt can be edited before the next one.
+- Verification: web 260/260 unit tests + clean `tsc`; api 263 pass with 18 failures and 1 type error confirmed pre-existing on a stashed baseline (MCP ingress and `mcp/tools/shared.test.ts`, both untouched here); biome clean on all 8 changed source files.
+- Reverted a biome mass-reformat of `apps/web/e2e/pages.spec.ts` (344 lines of quote/semicolon churn). `apps/web` lint/format scripts are scoped to `./src`, so `e2e/` is deliberately outside biome and every sibling spec uses double quotes with semicolons. The spec diff is now 6 lines.
+- Browser verification against seeded Redis, both flows. Gating behaved exactly as intended: save stayed disabled while untouched, while dirty-but-unconfirmed, and on a wrong confirmation string, unlocking only on the exact job ID. The retry primary morphed from `Retry Job` to a destructive `Overwrite Payload & Retry`, stayed disabled until acknowledged, and re-locked on invalid JSON. A real submit persisted the edited payload to Redis and left the job `waiting`; Cancel left an untouched job `failed` with its original data.
+- Reworded the retry acknowledgement to `I understand, overwrite the stored payload and retry with it.` Seeing it rendered showed "cannot be undone" twice within three lines, once in the callout and again in the checkbox.
+- `bunx playwright test -g "failed job retry"` passes. It first failed on `GET /api/connections` 500, which reproduced on an untouched test in the same file: local runs need `DURABULL_REDIS_URL_ENCRYPTION_KEY` from the root `.env` exported, otherwise the playwright config falls back to its built-in E2E key and cannot decrypt seeded connections.
+
+### Notes
+- Analytics reuses the existing job property shape (`queue_name` / `job_id` / `success`); no new interface.
+- `useUpdateJobData` posts via `api.c[':connectionId'].queues[':queueName'].jobs[':jobId'].data.$post`. `@durabull/api-client` derives types live from the API source, so no codegen step was needed.
+- `useRetryJobs` only spreads `jobData` into the body when defined, so existing callers send an identical request.
+- `EditJobDataDialog` is mocked in `job-detail-remove.test.tsx` so the page-level remove tests keep using stubbed dialogs.
+- `apps/api` `format:check` already failed on `main` for `routes/jobs.ts` (unsorted imports + formatting). Biome fixing that inflates the diff by ~100 lines but leaves the file green.
+
 ## Queue Failed Count Navigation Badge
 
 - [x] Add compact count formatting for failed queue totals.

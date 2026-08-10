@@ -827,10 +827,16 @@ export function useRetryJobs() {
   return useMutation({
     mutationFn: async (
       payload:
-        | { queueName: string; jobIds: Array<string> }
+        | { queueName: string; jobIds: Array<string>; jobData?: unknown }
         | { queueName: string; statuses: RetryQueueStatusOption[] }
     ) => {
-      const json = 'jobIds' in payload ? { jobIds: payload.jobIds } : { statuses: payload.statuses }
+      const json =
+        'jobIds' in payload
+          ? {
+              jobIds: payload.jobIds,
+              ...(payload.jobData !== undefined ? { jobData: payload.jobData } : {}),
+            }
+          : { statuses: payload.statuses }
       const res = await api.c[':connectionId'].queues[':queueName'].jobs.retry.$post({
         param: { connectionId: connectionId!, queueName: payload.queueName },
         json,
@@ -1038,6 +1044,48 @@ export function useInvokeJobs() {
         queue_name: queueName,
         job_ids: jobIds,
         job_count: jobIds.length,
+        success: false,
+      })
+    },
+  })
+}
+
+export function useUpdateJobData() {
+  const queryClient = useQueryClient()
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useMutation({
+    mutationFn: async ({
+      queueName,
+      jobId,
+      data,
+    }: {
+      queueName: string
+      jobId: string
+      data: unknown
+    }) => {
+      const res = await api.c[':connectionId'].queues[':queueName'].jobs[':jobId'].data.$post({
+        param: { connectionId: connectionId!, queueName, jobId },
+        json: { data },
+      })
+      return handleRes<{ success: boolean; state: string }>(res)
+    },
+    onSuccess: (_, { queueName, jobId }) => {
+      trackEvent(AnalyticsEvents.JOB_DATA_UPDATED, {
+        queue_name: queueName,
+        job_id: jobId,
+        success: true,
+      })
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.job(connectionId ?? '', queueName, jobId),
+      })
+      queryClient.invalidateQueries({ queryKey: ['jobs', connectionId, queueName] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.queue(connectionId ?? '', queueName) })
+    },
+    onError: (_, { queueName, jobId }) => {
+      trackEvent(AnalyticsEvents.JOB_DATA_UPDATED, {
+        queue_name: queueName,
+        job_id: jobId,
         success: false,
       })
     },
