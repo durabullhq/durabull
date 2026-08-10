@@ -1,3 +1,4 @@
+import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,13 +33,6 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@durabull/analytics/browser', () => ({
   trackEvent: trackEventMock,
-}))
-
-vi.mock('@durabull/analytics/events', () => ({
-  AnalyticsEvents: {
-    JOB_VIEWED: 'JOB_VIEWED',
-    JOB_TAB_CHANGED: 'JOB_TAB_CHANGED',
-  },
 }))
 
 vi.mock('@/components/app-top-bar', () => ({
@@ -201,5 +195,18 @@ describe('job detail scheduled removal', () => {
         onSuccess: expect.any(Function),
       })
     )
+  })
+
+  it('tracks opening the edit-payload dialog', async () => {
+    routeState.params.jobId = 'job-123'
+    const user = userEvent.setup()
+    const Component = Route.options.component as () => React.ReactNode
+
+    render(<Component />)
+    await user.click(screen.getByRole('button', { name: 'Edit Payload' }))
+
+    expect(trackEventMock).toHaveBeenCalledWith(AnalyticsEvents.DIALOG_OPENED, {
+      [AnalyticsProperties.DIALOG_TYPE]: DialogType.EDIT_JOB_DATA,
+    })
   })
 })

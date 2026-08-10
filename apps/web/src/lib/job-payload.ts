@@ -18,7 +18,9 @@ function normalizeJsonValue(value: unknown): unknown {
 
 /** True when values differ after normalizing object-key order. */
 export function hasJobPayloadChanged(original: unknown, current: unknown): boolean {
-  return (
-    JSON.stringify(normalizeJsonValue(original)) !== JSON.stringify(normalizeJsonValue(current))
-  )
+  return getJobPayloadKey(original) !== getJobPayloadKey(current)
+}
+
+export function getJobPayloadKey(value: unknown): string {
+  return JSON.stringify(normalizeJsonValue(value)) ?? 'undefined'
 }

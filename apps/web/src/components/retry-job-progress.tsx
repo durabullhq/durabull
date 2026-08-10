@@ -26,6 +26,9 @@ interface RetryJobProgressProps {
 
 function getRetryBackoff(opts: GetJobResponse['opts'] | undefined): RetryBackoffConfig | undefined {
   const backoff = opts?.backoff
+  if (typeof backoff === 'number') {
+    return { type: 'fixed', delay: backoff }
+  }
   if (!backoff || typeof backoff !== 'object') return undefined
 
   const record = backoff as Record<string, unknown>

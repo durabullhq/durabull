@@ -1,5 +1,3 @@
-import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { toast } from 'sonner'
 import { EditJobDataDialogContent } from '@/components/edit-job-data-dialog-content'
 import { Dialog } from '@/components/ui/dialog'
@@ -54,9 +52,6 @@ export function EditJobDataDialog({
       open={open}
       onOpenChange={(newOpen) => {
         if (isSubmitting) return
-        trackEvent(newOpen ? AnalyticsEvents.DIALOG_OPENED : AnalyticsEvents.DIALOG_CLOSED, {
-          [AnalyticsProperties.DIALOG_TYPE]: DialogType.EDIT_JOB_DATA,
-        })
         onOpenChange(newOpen)
       }}
     >

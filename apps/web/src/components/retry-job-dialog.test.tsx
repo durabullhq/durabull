@@ -64,6 +64,11 @@ const delayedJob = {
   opts: { backoff: { type: 'fixed', delay: 30_000 } },
 } as unknown as GetJobResponse
 
+const numericBackoffDelayedJob = {
+  ...delayedJob,
+  opts: { backoff: 30_000 },
+} as unknown as GetJobResponse
+
 const completedJob = {
   ...delayedJob,
   status: 'completed',
@@ -150,6 +155,30 @@ describe('RetryJobDialog', () => {
 
     expect(screen.getByTestId('mock-json-editor')).toBeInTheDocument()
     expect(screen.getByTestId('mock-json-editor')).toHaveValue(JSON.stringify(sampleJobData))
+  })
+
+  it('preserves edits across equal payload references and resets for changed payload content', async () => {
+    const user = userEvent.setup()
+    const retry = makeRetryController({ requestState: RetryJobRequestState.REVIEW })
+    const { rerender } = render(<RetryJobDialog {...defaultProps} retry={retry} />)
+
+    await user.click(screen.getByRole('button', { name: 'Edit job payload' }))
+    setEditorValue(JSON.stringify({ message: 'draft edit' }))
+
+    rerender(<RetryJobDialog {...defaultProps} jobData={{ message: 'hello' }} retry={retry} />)
+    expect(screen.getByTestId('mock-json-editor')).toHaveValue(
+      JSON.stringify({ message: 'draft edit' })
+    )
+
+    rerender(
+      <RetryJobDialog {...defaultProps} jobData={{ message: 'persisted rewrite' }} retry={retry} />
+    )
+    expect(screen.queryByTestId('mock-json-editor')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit job payload' }))
+    expect(screen.getByTestId('mock-json-editor')).toHaveValue(
+      JSON.stringify({ message: 'persisted rewrite' })
+    )
   })
 
   it('unchanged payload Retry Job calls runRetry with no argument', async () => {
@@ -297,6 +326,22 @@ describe('RetryJobDialog', () => {
     )
 
     expect(screen.getByText('Waiting for Retry')).toBeInTheDocument()
+    expect(screen.getByText(/Next retry in/i)).toBeInTheDocument()
+  })
+
+  it('shows the retry countdown for numeric fixed backoff', () => {
+    render(
+      <RetryJobDialog
+        {...defaultProps}
+        retry={makeRetryController({
+          requestState: RetryJobRequestState.WATCHING,
+          isWatching: true,
+          job: numericBackoffDelayedJob,
+          jobStatus: 'delayed',
+        })}
+      />
+    )
+
     expect(screen.getByText(/Next retry in/i)).toBeInTheDocument()
   })
 

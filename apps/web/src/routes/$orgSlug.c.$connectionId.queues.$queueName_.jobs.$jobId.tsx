@@ -1,5 +1,5 @@
 import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents } from '@durabull/analytics/events'
+import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { zodValidator } from '@tanstack/zod-adapter'
@@ -109,6 +109,13 @@ function JobDetailPage() {
       job_id: jobId,
       job_tab: newTab,
     })
+  }
+
+  const handleEditJobDataDialogOpenChange = (open: boolean) => {
+    trackEvent(open ? AnalyticsEvents.DIALOG_OPENED : AnalyticsEvents.DIALOG_CLOSED, {
+      [AnalyticsProperties.DIALOG_TYPE]: DialogType.EDIT_JOB_DATA,
+    })
+    setEditJobDataDialogOpen(open)
   }
 
   // Truncate long job IDs intelligently - show meaningful parts (must be before early returns)
@@ -516,7 +523,7 @@ function JobDetailPage() {
                 size="sm"
                 className="h-8 px-2 text-xs"
                 disabled={isLoading || !job}
-                onClick={() => setEditJobDataDialogOpen(true)}
+                onClick={() => handleEditJobDataDialogOpenChange(true)}
               >
                 <Pencil className="h-3.5 w-3.5 mr-1.5" />
                 Edit Payload
@@ -638,7 +645,7 @@ function JobDetailPage() {
       {job && (
         <EditJobDataDialog
           open={editJobDataDialogOpen}
-          onOpenChange={setEditJobDataDialogOpen}
+          onOpenChange={handleEditJobDataDialogOpenChange}
           queueName={queueName}
           jobId={job.id}
           jobName={job.name}

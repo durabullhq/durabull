@@ -16,6 +16,7 @@ import {
   type useJobRetryDialog,
 } from '@/hooks/use-job-retry-dialog'
 import { JOB_STATUS } from '@/lib/constants'
+import { getJobPayloadKey } from '@/lib/job-payload'
 
 type RetryJobDialogController = ReturnType<typeof useJobRetryDialog>
 
@@ -131,6 +132,7 @@ export function RetryJobDialog({ queueName, jobId, jobName, jobData, retry }: Re
 
         {isReview ? (
           <RetryJobReview
+            key={getJobPayloadKey(jobData)}
             jobData={jobData}
             onCancel={() => handleOpenChange(false)}
             onRetry={retry.runRetry}

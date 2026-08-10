@@ -7,11 +7,10 @@ function setEditorValue(value: string) {
   fireEvent.change(screen.getByTestId('mock-json-editor'), { target: { value } })
 }
 
-const { mutateAsyncMock, toastSuccessMock, mutationState, trackEventMock } = vi.hoisted(() => ({
+const { mutateAsyncMock, toastSuccessMock, mutationState } = vi.hoisted(() => ({
   mutateAsyncMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   mutationState: { isPending: false },
-  trackEventMock: vi.fn(),
 }))
 
 vi.mock('@/hooks/use-queues', async () => {
@@ -25,23 +24,6 @@ vi.mock('@/hooks/use-queues', async () => {
     }),
   }
 })
-
-vi.mock('@durabull/analytics/browser', () => ({
-  trackEvent: trackEventMock,
-}))
-
-vi.mock('@durabull/analytics/events', () => ({
-  AnalyticsEvents: {
-    DIALOG_OPENED: 'dialog_opened',
-    DIALOG_CLOSED: 'dialog_closed',
-  },
-  AnalyticsProperties: {
-    DIALOG_TYPE: 'dialog_type',
-  },
-  DialogType: {
-    EDIT_JOB_DATA: 'edit_job_data',
-  },
-}))
 
 vi.mock('sonner', () => ({
   toast: {
@@ -86,7 +68,6 @@ describe('EditJobDataDialog', () => {
     mutationState.isPending = false
     mutateAsyncMock.mockReset()
     toastSuccessMock.mockReset()
-    trackEventMock.mockReset()
     defaultProps.onOpenChange = vi.fn()
   })
 
@@ -174,5 +155,30 @@ describe('EditJobDataDialog', () => {
 
     await user.click(screen.getByTestId('edit-job-data-confirm-button'))
     expect(mutateAsyncMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the dialog open when the update fails', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    mutateAsyncMock.mockRejectedValue(new Error('Job became active'))
+
+    render(<EditJobDataDialog {...defaultProps} onOpenChange={onOpenChange} />)
+    setEditorValue('{"message":"updated"}')
+    await user.type(screen.getByTestId('edit-job-data-confirm-input'), 'job-123')
+    await user.click(screen.getByTestId('edit-job-data-confirm-button'))
+
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    expect(toastSuccessMock).not.toHaveBeenCalled()
+  })
+
+  it('disables dialog actions while an update is pending', () => {
+    mutationState.isPending = true
+
+    render(<EditJobDataDialog {...defaultProps} />)
+
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled()
+    expect(screen.getByTestId('edit-job-data-confirm-button')).toBeDisabled()
   })
 })

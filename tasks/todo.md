@@ -69,7 +69,7 @@
 
 ### Agreed design
 - Job payload becomes editable from two places: the job detail Data tab, and a new review step in the retry modal.
-- Data tab: "Edit Payload" swaps `JsonViewer` for `JsonEditor` prefilled with `job.data`. Saving requires typing the job ID, matching `purge-queue-dialog.tsx`.
+- Data tab: "Edit Payload" opens a dialog with `JsonEditor` prefilled with `job.data`. Saving requires typing the job ID, matching `purge-queue-dialog.tsx`.
 - Retry modal no longer fires the retry on open. It opens in a review step with the payload editor (collapsed by default, prefilled). Editing it turns the primary button destructive and requires an explicit acknowledgement before the retry runs.
 - API updates the payload with `job.updateData()`. Editing an `active` job is rejected: the worker already holds the old payload, so the write would silently do nothing.
 
@@ -96,7 +96,7 @@
 - Reworded the retry acknowledgement to `I understand, overwrite the stored payload and retry with it.` Seeing it rendered showed "cannot be undone" twice within three lines, once in the callout and again in the checkbox.
 - `bunx playwright test -g "failed job retry"` passes. It first failed on `GET /api/connections` 500, which reproduced on an untouched test in the same file: local runs need `DURABULL_REDIS_URL_ENCRYPTION_KEY` from the root `.env` exported, otherwise the playwright config falls back to its built-in E2E key and cannot decrypt seeded connections.
 - Thermo-nuclear remediation: `jobs.ts` is 919 lines (down from 962 on main and 1091 in the first implementation) through `getQueueFromContext` plus focused job mutation routes. `RetryJobDialog` is 144 lines, with review and progress isolated into explicit components. The standalone edit form mounts fresh while open, eliminating prop-to-state synchronization effects. Payload comparison moved to `lib/job-payload.ts`, so component files only export components and Fast Refresh stays safe.
-- React Doctor has no errors. Its sole remaining warning points at the pre-existing job-view analytics effect in the 1,360-line route file; the feature only shifted its line number.
+- React Doctor has no errors. Two warnings flag intentional initial form snapshots whose owners remount on open or payload-content change; regression tests cover both ownership boundaries. The third warning points at the pre-existing job-view analytics effect in the 1,360-line route file.
 
 ### Notes
 - Analytics reuses the existing job property shape (`queue_name` / `job_id` / `success`); no new interface.

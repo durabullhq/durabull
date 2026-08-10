@@ -90,13 +90,6 @@ describe('jobs routes', () => {
         callOrder.push('retry')
       }),
     }
-    getJobMock = mock(async () => fakeJob)
-    mock.module('../lib/redis', () => ({
-      getQueue: mock(async () => ({
-        getJob: getJobMock,
-      })),
-    }))
-
     const app = await createJobsRouteApp()
 
     const res = await app.request('/emails/jobs/job-1/data', {
@@ -212,13 +205,6 @@ describe('jobs routes', () => {
         callOrder.push('retry')
       }),
     }
-    getJobMock = mock(async () => fakeJob)
-    mock.module('../lib/redis', () => ({
-      getQueue: mock(async () => ({
-        getJob: getJobMock,
-      })),
-    }))
-
     const app = await createJobsRouteApp()
 
     const res = await app.request('/emails/jobs/job-1/retry', {
@@ -242,12 +228,6 @@ describe('jobs routes', () => {
         callOrder.push('retry')
       }),
     }
-    getJobMock = mock(async () => fakeJob)
-    mock.module('../lib/redis', () => ({
-      getQueue: mock(async () => ({
-        getJob: getJobMock,
-      })),
-    }))
     const app = await createJobsRouteApp()
 
     const res = await app.request('/emails/jobs/job-1/retry', {

@@ -4,7 +4,7 @@
  */
 
 import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents } from '@durabull/analytics/events'
+import { AnalyticsEvents, AnalyticsProperties } from '@durabull/analytics/events'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
 import { useConnection } from '@/components/connection-provider'
@@ -892,20 +892,20 @@ export function useRetryJob() {
     },
     onSuccess: (_, { queueName, jobId }) => {
       trackEvent(AnalyticsEvents.JOBS_RETRIED, {
-        queue_name: queueName,
-        job_ids: [jobId],
-        job_count: 1,
-        success: true,
+        [AnalyticsProperties.QUEUE_NAME]: queueName,
+        [AnalyticsProperties.JOB_IDS]: [jobId],
+        [AnalyticsProperties.JOB_COUNT]: 1,
+        [AnalyticsProperties.SUCCESS]: true,
       })
       queryClient.invalidateQueries({ queryKey: queryKeys.queue(connectionId ?? '', queueName) })
       queryClient.invalidateQueries({ queryKey: ['jobs', connectionId, queueName] })
     },
     onError: (_, { queueName, jobId }) => {
       trackEvent(AnalyticsEvents.JOBS_RETRIED, {
-        queue_name: queueName,
-        job_ids: [jobId],
-        job_count: 1,
-        success: false,
+        [AnalyticsProperties.QUEUE_NAME]: queueName,
+        [AnalyticsProperties.JOB_IDS]: [jobId],
+        [AnalyticsProperties.JOB_COUNT]: 1,
+        [AnalyticsProperties.SUCCESS]: false,
       })
     },
   })

@@ -65,11 +65,16 @@ export function RetryJobReview({ jobData, onCancel, onRetry }: RetryJobReviewPro
             <input
               id="retry-overwrite-ack"
               type="checkbox"
+              aria-labelledby="retry-overwrite-ack-label"
               checked={overwriteAcknowledged}
               onChange={(event) => setOverwriteAcknowledged(event.target.checked)}
               className="mt-0.5 rounded border-gray-300"
             />
-            <Label htmlFor="retry-overwrite-ack" className="text-sm font-normal leading-5">
+            <Label
+              id="retry-overwrite-ack-label"
+              htmlFor="retry-overwrite-ack"
+              className="text-sm font-normal leading-5"
+            >
               I understand, overwrite the stored payload and retry with it.
             </Label>
           </div>
