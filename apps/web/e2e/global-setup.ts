@@ -130,7 +130,12 @@ async function seedDatabase() {
     }
   } catch (error) {
     // Capture and log the actual error
-    const execError = error as { stderr?: Buffer; stdout?: Buffer; message?: string; status?: number }
+    const execError = error as {
+      stderr?: Buffer
+      stdout?: Buffer
+      message?: string
+      status?: number
+    }
     const stderr = execError.stderr?.toString() || ''
     const stdout = execError.stdout?.toString() || ''
 
@@ -172,10 +177,7 @@ async function createAuthState(baseURL: string) {
     // Submit the form and wait for the response
     const [response] = await Promise.all([
       // Wait for the sign-in API request to complete (better-auth uses /api/auth/sign-in/email)
-      page.waitForResponse(
-        (resp) => resp.url().includes('/api/auth/sign-in'),
-        { timeout: 30000 }
-      ),
+      page.waitForResponse((resp) => resp.url().includes('/api/auth/sign-in'), { timeout: 30000 }),
       page.click('button[type="submit"]'),
     ])
 
