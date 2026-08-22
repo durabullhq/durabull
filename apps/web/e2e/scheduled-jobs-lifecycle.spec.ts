@@ -61,7 +61,11 @@ test.describe('Scheduled jobs lifecycle', () => {
         )
         .toBe(updatedName)
     } finally {
-      await removeScheduledJob(page, { connectionId, queueName, schedulerId })
+      try {
+        await removeScheduledJob(page, { connectionId, queueName, schedulerId })
+      } catch (error) {
+        console.warn('Failed to cleanup scheduled job:', error)
+      }
     }
   })
 

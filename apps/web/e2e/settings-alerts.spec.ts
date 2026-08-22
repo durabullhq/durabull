@@ -13,7 +13,9 @@ test.describe('Settings and alert destinations', () => {
     const updatedName = `${destinationName}-v2`
 
     await page.goto(`/${TEST_ORG_SLUG}/settings/destinations`)
-    await expect(page.getByText('Alert destinations')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('heading', { name: 'Alert destinations' })).toBeVisible({
+      timeout: 15000,
+    })
 
     // Create: pick the Webhook type tile first, then fill the form.
     await page.getByRole('button', { name: 'Add destination' }).first().click()

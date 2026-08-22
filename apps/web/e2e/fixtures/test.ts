@@ -174,8 +174,11 @@ export async function removeScheduledJob(
   page: Page,
   options: { connectionId: string; queueName: string; schedulerId: string }
 ): Promise<void> {
+  // Cleanup runs in finally blocks where a hang must not eat the test budget;
+  // fail the request fast and let the caller's catch/log handle it.
   const response = await page.request.delete(
-    `/api/c/${options.connectionId}/scheduled-jobs/queue/${encodeURIComponent(options.queueName)}/${encodeURIComponent(options.schedulerId)}`
+    `/api/c/${options.connectionId}/scheduled-jobs/queue/${encodeURIComponent(options.queueName)}/${encodeURIComponent(options.schedulerId)}`,
+    { timeout: 10_000 }
   )
 
   await apiJson(
@@ -373,14 +376,24 @@ export async function getRedisKeySearch(
   const params = new URLSearchParams({ pattern })
   if (options?.pageSize) params.set('pageSize', String(options.pageSize))
   if (options?.excludeBull) params.set('excludeBull', 'true')
-  const response = await page.request.get(
-    `/api/c/${connectionId}/redis-keys/search?${params.toString()}`
-  )
-  const data = await apiJson<{ keys: Array<{ key: string; type: string }> }>(
-    response,
-    `GET redis-keys/search ${pattern}`
-  )
-  return data.keys ?? []
+  // SCAN is cursor-based; a single page can legitimately return zero matches
+  // even when keys exist, so walk pages until exhausted or found.
+  const collected: Array<{ key: string; type: string }> = []
+  let cursor = '0'
+  do {
+    params.set('cursor', cursor)
+    const response = await page.request.get(
+      `/api/c/${connectionId}/redis-keys/search?${params.toString()}`
+    )
+    const data = await apiJson<{
+      keys: Array<{ key: string; type: string }>
+      cursor: string
+    }>(response, `GET redis-keys/search ${pattern}`)
+    collected.push(...(data.keys ?? []))
+    cursor = data.cursor ?? '0'
+    if (collected.length >= (options?.pageSize ?? 50)) break
+  } while (cursor !== '0')
+  return collected
 }
 
 export async function setRedisKeyValue(
