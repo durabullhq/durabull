@@ -1,5 +1,6 @@
 import {
   createJob,
+  deleteQueue,
   ensureActiveOrg,
   expect,
   getDefaultConnectionId,
@@ -7,6 +8,7 @@ import {
   getTestQueueName,
   removeJobs,
   retryFailedJobs,
+  runQueueDiscovery,
   TEST_ORG_SLUG,
   test,
 } from './fixtures/test'
@@ -82,7 +84,10 @@ test.describe('Queue operations', () => {
   test('purge removes delayed jobs and keeps the most recent N', async ({ page }) => {
     await ensureActiveOrg(page)
     const connectionId = await getDefaultConnectionId(page)
-    const queueName = await getTestQueueName(page, connectionId)
+    // Purging is destructive, so this runs on a queue of its own. The shared seed
+    // queue carries job schedulers whose delayed jobs BullMQ refuses to remove,
+    // which makes the purge fail with a 409.
+    const queueName = `e2e-purge-${Date.now()}`
     const createdJobs: string[] = []
     const keepMostRecent = 1
 
@@ -98,6 +103,9 @@ test.describe('Queue operations', () => {
         })
         createdJobs.push(jobId)
       }
+
+      // The queue only exists in Redis until discovery registers it for the UI.
+      await runQueueDiscovery(page, connectionId)
 
       await page.goto(`/${TEST_ORG_SLUG}/c/${connectionId}/queues/${encodeURIComponent(queueName)}`)
       await expect(
@@ -121,7 +129,7 @@ test.describe('Queue operations', () => {
       await confirmInput.fill(queueName)
 
       const keepInput = dialog.getByTestId('purge-queue-keep-most-recent-input')
-      keepInput.fill(String(keepMostRecent))
+      await keepInput.fill(String(keepMostRecent))
 
       const submitButton = dialog.getByRole('button', { name: 'Purge Jobs' })
       await expect(submitButton).toBeEnabled()
@@ -155,6 +163,10 @@ test.describe('Queue operations', () => {
         .toBe(keepMostRecent)
     } finally {
       await safeRemoveJobs(page, { connectionId, queueName, jobIds: createdJobs })
+      // The queue is this test's own, so drop it once it is empty.
+      await deleteQueue(page, connectionId, queueName).catch((error) => {
+        console.warn(`Failed to delete queue ${queueName}:`, error)
+      })
     }
   })
 

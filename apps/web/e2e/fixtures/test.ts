@@ -141,11 +141,27 @@ export async function getQueues(page: Page, connectionId: string): Promise<Queue
   return data.queues ?? []
 }
 
-async function runQueueDiscovery(page: Page, connectionId: string): Promise<void> {
+export async function runQueueDiscovery(page: Page, connectionId: string): Promise<void> {
   const response = await page.request.post(
     `/api/c/${connectionId}/queues/discovery?wait=1&scanCount=2000`
   )
   await apiJson(response, `POST /api/c/${connectionId}/queues/discovery`)
+}
+
+/**
+ * Deletes an empty queue. Tests that create their own queue use this to avoid
+ * leaving a trail of registered queues behind in Redis.
+ */
+export async function deleteQueue(
+  page: Page,
+  connectionId: string,
+  queueName: string
+): Promise<void> {
+  const response = await page.request.delete(
+    `/api/c/${connectionId}/queues/${encodeURIComponent(queueName)}`,
+    { data: { confirmName: queueName }, timeout: 10_000 }
+  )
+  await apiJson(response, `DELETE /api/c/${connectionId}/queues/${queueName}`)
 }
 
 export async function getScheduledJobs(

@@ -25,7 +25,9 @@ test.describe('Redis Explorer', () => {
     const searchInput = page.getByPlaceholder('Search pattern (e.g., user:*, *session*)')
     await expect(searchInput).toBeVisible({ timeout: 20000 })
 
-    await searchInput.fill('session:*')
+    // Search the exact key rather than session:*. The list renders one SCAN page,
+    // which need not contain the specific key the cursor walk above returned.
+    await searchInput.fill(targetKey)
 
     // The key row is a virtualized role=button; match on the key text.
     const keyRow = page.getByRole('button').filter({ hasText: targetKey }).first()

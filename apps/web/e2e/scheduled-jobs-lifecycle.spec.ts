@@ -12,6 +12,9 @@ import {
 
 test.describe('Scheduled jobs lifecycle', () => {
   test('edit page saves changes and the API reflects the update', async ({ page }) => {
+    // Creates through the UI, waits out a toast, then polls the API for the
+    // update; the default 30s budget is not enough for that whole round trip.
+    test.slow()
     await ensureActiveOrg(page)
     const connectionId = await getDefaultConnectionId(page)
     const queueName = await getTestQueueName(page, connectionId)
@@ -40,6 +43,10 @@ test.describe('Scheduled jobs lifecycle', () => {
     )
 
     try {
+      // The "Scheduled job created" toast overlays the footer and intercepts the
+      // save click. Toasts are client state, so reload to land on a clean form.
+      await page.reload()
+
       // Edit the job name on the detail page.
       const nameInput = page.locator('#scheduled-job-name')
       await expect(nameInput).toBeVisible({ timeout: 15000 })

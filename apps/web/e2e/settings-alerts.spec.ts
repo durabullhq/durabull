@@ -24,7 +24,9 @@ test.describe('Settings and alert destinations', () => {
 
     await dialog.getByTestId('destination-type-webhook').click()
     await dialog.locator('#destination-name').fill(destinationName)
-    await dialog.locator('#destination-url').fill('https://e2e.example.com/hooks/durabull')
+    // The API resolves webhook hostnames to block SSRF, so this must be a host
+    // that actually has public DNS records. Subdomains of example.com do not.
+    await dialog.locator('#destination-url').fill('https://example.com/hooks/durabull')
 
     await dialog.getByRole('button', { name: 'Create destination' }).click()
     await expect(page.getByText('Destination created')).toBeVisible({ timeout: 15000 })
