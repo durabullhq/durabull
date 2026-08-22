@@ -51,6 +51,12 @@ type ScheduledJobsResponse = {
   total: number
 }
 
+type AlertDestinationRecord = {
+  id: string
+  name: string
+  type: 'webhook' | 'email' | 'linear'
+}
+
 async function apiJson<T>(response: APIResponse, context: string): Promise<T> {
   if (response.ok()) {
     return (await response.json()) as T
@@ -135,11 +141,27 @@ export async function getQueues(page: Page, connectionId: string): Promise<Queue
   return data.queues ?? []
 }
 
-async function runQueueDiscovery(page: Page, connectionId: string): Promise<void> {
+export async function runQueueDiscovery(page: Page, connectionId: string): Promise<void> {
   const response = await page.request.post(
     `/api/c/${connectionId}/queues/discovery?wait=1&scanCount=2000`
   )
   await apiJson(response, `POST /api/c/${connectionId}/queues/discovery`)
+}
+
+/**
+ * Deletes an empty queue. Tests that create their own queue use this to avoid
+ * leaving a trail of registered queues behind in Redis.
+ */
+export async function deleteQueue(
+  page: Page,
+  connectionId: string,
+  queueName: string
+): Promise<void> {
+  const response = await page.request.delete(
+    `/api/c/${connectionId}/queues/${encodeURIComponent(queueName)}`,
+    { data: { confirmName: queueName }, timeout: 10_000 }
+  )
+  await apiJson(response, `DELETE /api/c/${connectionId}/queues/${queueName}`)
 }
 
 export async function getScheduledJobs(
@@ -150,12 +172,29 @@ export async function getScheduledJobs(
   return apiJson<ScheduledJobsResponse>(response, `GET /api/c/${connectionId}/scheduled-jobs`)
 }
 
+export async function getScheduledJobsForQueue(
+  page: Page,
+  connectionId: string,
+  queueName: string
+): Promise<ScheduledJobsResponse> {
+  const response = await page.request.get(
+    `/api/c/${connectionId}/scheduled-jobs/queue/${encodeURIComponent(queueName)}`
+  )
+  return apiJson<ScheduledJobsResponse>(
+    response,
+    `GET /api/c/${connectionId}/scheduled-jobs/queue/${queueName}`
+  )
+}
+
 export async function removeScheduledJob(
   page: Page,
   options: { connectionId: string; queueName: string; schedulerId: string }
 ): Promise<void> {
+  // Cleanup runs in finally blocks where a hang must not eat the test budget;
+  // fail the request fast and let the caller's catch/log handle it.
   const response = await page.request.delete(
-    `/api/c/${options.connectionId}/scheduled-jobs/queue/${encodeURIComponent(options.queueName)}/${encodeURIComponent(options.schedulerId)}`
+    `/api/c/${options.connectionId}/scheduled-jobs/queue/${encodeURIComponent(options.queueName)}/${encodeURIComponent(options.schedulerId)}`,
+    { timeout: 10_000 }
   )
 
   await apiJson(
@@ -304,5 +343,109 @@ export async function removeJobs(
   await apiJson(
     response,
     `POST /api/c/${options.connectionId}/queues/${options.queueName}/jobs/remove`
+  )
+}
+
+export async function purgeQueue(
+  page: Page,
+  options: {
+    connectionId: string
+    queueName: string
+    statuses?: string[]
+    keepMostRecent?: number
+  }
+): Promise<{ totalRemoved: number }> {
+  const response = await page.request.post(
+    `/api/c/${options.connectionId}/queues/${encodeURIComponent(options.queueName)}/clean`,
+    {
+      data: {
+        confirmName: options.queueName,
+        statuses: options.statuses ?? ['all'],
+        keepMostRecent: options.keepMostRecent ?? 0,
+      },
+    }
+  )
+  return apiJson<{ totalRemoved: number }>(
+    response,
+    `POST clean on ${options.connectionId}/${options.queueName}`
+  )
+}
+
+export async function retryFailedJobs(
+  page: Page,
+  connectionId: string,
+  queueName: string
+): Promise<void> {
+  const response = await page.request.post(
+    `/api/c/${connectionId}/queues/${encodeURIComponent(queueName)}/jobs/retry`,
+    { data: { statuses: ['failed'] } }
+  )
+  await apiJson(response, `POST retry failed jobs on ${queueName}`)
+}
+
+export async function getRedisKeySearch(
+  page: Page,
+  connectionId: string,
+  pattern: string,
+  options?: { pageSize?: number; excludeBull?: boolean }
+): Promise<Array<{ key: string; type: string }>> {
+  const params = new URLSearchParams({ pattern })
+  if (options?.pageSize) params.set('pageSize', String(options.pageSize))
+  if (options?.excludeBull) params.set('excludeBull', 'true')
+  // SCAN is cursor-based; a single page can legitimately return zero matches
+  // even when keys exist, so walk pages until exhausted or found.
+  const collected: Array<{ key: string; type: string }> = []
+  let cursor = '0'
+  do {
+    params.set('cursor', cursor)
+    const response = await page.request.get(
+      `/api/c/${connectionId}/redis-keys/search?${params.toString()}`
+    )
+    const data = await apiJson<{
+      keys: Array<{ key: string; type: string }>
+      cursor: string
+    }>(response, `GET redis-keys/search ${pattern}`)
+    collected.push(...(data.keys ?? []))
+    cursor = data.cursor ?? '0'
+    if (collected.length >= (options?.pageSize ?? 50)) break
+  } while (cursor !== '0')
+  return collected
+}
+
+export async function setRedisKeyValue(
+  page: Page,
+  connectionId: string,
+  key: string,
+  value: unknown
+): Promise<void> {
+  // The API exposes read/delete only, so tests seed keys through a dedicated
+  // e2e prefix using the debug endpoint's underlying Redis client.
+  const response = await page.request.post(`/api/c/${connectionId}/queues/debug/seed-key`, {
+    data: { key, value },
+    failOnStatusCode: false,
+  })
+  if (response.status() === 404) {
+    throw new Error('debug/seed-key endpoint unavailable; seed via tooling/scripts instead')
+  }
+}
+
+export async function createWebhookDestination(
+  page: Page,
+  input: { name: string; url: string }
+): Promise<AlertDestinationRecord> {
+  const response = await page.request.post('/api/alerts/destinations', {
+    data: { type: 'webhook', name: input.name, url: input.url },
+  })
+  const data = await apiJson<{ destination: AlertDestinationRecord }>(
+    response,
+    'POST /api/alerts/destinations'
+  )
+  return data.destination
+}
+
+export async function deleteDestination(page: Page, destinationId: string): Promise<void> {
+  await apiJson(
+    await page.request.delete(`/api/alerts/destinations/${destinationId}`),
+    `DELETE /api/alerts/destinations/${destinationId}`
   )
 }
