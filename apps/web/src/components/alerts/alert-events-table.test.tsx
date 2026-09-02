@@ -62,6 +62,26 @@ function renderTable(ui: ReactElement) {
 }
 
 describe('AlertEventsTable', () => {
+  it('renders Redis health incidents as connection scope instead of a queue link', () => {
+    renderTable(
+      <AlertEventsTable
+        orgSlug="acme"
+        events={[
+          createEvent({
+            queueName: 'Redis server',
+            type: 'redis_health',
+            summary: 'Memory usage is 90%',
+          }),
+        ]}
+        emptyTitle="No incidents"
+        emptyCopy="Everything is quiet."
+      />
+    )
+
+    expect(screen.getByText('Redis server').closest('a')).toBeNull()
+    expect(screen.getByText('Redis Health')).toBeInTheDocument()
+  })
+
   it('renders the empty state when no events are present', () => {
     renderTable(
       <AlertEventsTable

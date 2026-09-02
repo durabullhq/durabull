@@ -7,6 +7,7 @@ import {
   Copy,
   Mail,
   Plus,
+  ServerCog,
   TestTube2,
   Trash2,
   Webhook,
@@ -27,6 +28,7 @@ import {
   createNotificationRouteDraft,
   createWebhookNotificationRouteDraft,
   getAlertRuleTemplate,
+  REDIS_HEALTH_METRIC_OPTIONS,
   type NotificationRouteDraft,
   serializeAlertRuleDraftsForMode,
   validateAlertRuleDraftFields,
@@ -120,6 +122,12 @@ function suggestRuleName(draft: AlertRuleDraft): string {
       return `${queuePart}: stalled ${draft.stalledMinutes || '?'}m`
     case 'job_failed':
       return `${queuePart}: Linear issue per failed job`
+    case 'redis_health': {
+      const metric = REDIS_HEALTH_METRIC_OPTIONS.find(
+        (option) => option.value === draft.redisHealthMetric
+      )
+      return `Redis: ${metric?.label ?? 'health'} ≥${draft.redisHealthThreshold || '?'}${metric?.unit ?? ''}`
+    }
     default:
       return `${queuePart}: alert`
   }
@@ -219,6 +227,9 @@ export function AlertRuleBuilder({
   useAppTopBar(topBarConfig)
 
   const errors = useMemo(() => validateAlertRuleDraftFields(draft), [draft])
+  const selectedRedisHealthMetric =
+    REDIS_HEALTH_METRIC_OPTIONS.find((option) => option.value === draft.redisHealthMetric) ??
+    REDIS_HEALTH_METRIC_OPTIONS[0]
   const sentenceTokens = useMemo(
     () => buildSentenceTokens(draft, destinations),
     [draft, destinations]
@@ -284,13 +295,19 @@ export function AlertRuleBuilder({
     try {
       const result = await onTest()
       setLastTestResult(result)
-      toast.success(
-        result.evaluation.triggered ? 'Rule would fire right now' : 'Rule would stay quiet',
-        {
-          description:
-            result.evaluation.summary || 'The live queue snapshot did not trigger this rule.',
-        }
-      )
+      if (result.evaluation.available === false) {
+        toast.warning('Metric is not available yet', {
+          description: 'Redis needs another valid INFO sample before this rule can be evaluated.',
+        })
+      } else {
+        toast.success(
+          result.evaluation.triggered ? 'Rule would fire right now' : 'Rule would stay quiet',
+          {
+            description:
+              result.evaluation.summary || 'The live metric snapshot did not trigger this rule.',
+          }
+        )
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to run a live test.'
       setFormError(message)
@@ -389,40 +406,46 @@ export function AlertRuleBuilder({
         <BuilderPanel
           id={ALERT_RULE_PANEL_IDS.condition}
           title="Condition"
-          description="Choose the failure model and tune when normal noise becomes an incident."
+          description="Choose a queue or Redis server signal and tune when normal noise becomes an incident."
         >
           <div className="grid gap-3 sm:grid-cols-2">
-            {(['failure_threshold', 'failure_rate', 'queue_stalled', 'job_failed'] as const).map(
-              (type) => {
-                const meta = getAlertTypeMeta(type)
-                const isActive = draft.type === type
+            {(
+              [
+                'failure_threshold',
+                'failure_rate',
+                'queue_stalled',
+                'job_failed',
+                'redis_health',
+              ] as const
+            ).map((type) => {
+              const meta = getAlertTypeMeta(type)
+              const isActive = draft.type === type
 
-                return (
-                  <button
-                    key={type}
-                    type="button"
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  className={cn(
+                    'rounded-md border px-4 py-3 text-left transition-colors',
+                    isActive
+                      ? 'border-foreground bg-foreground text-background'
+                      : 'border-border/70 bg-background hover:border-foreground/40'
+                  )}
+                  onClick={() => updateDraft({ type })}
+                  data-testid={`alert-rule-type-${type}`}
+                >
+                  <div className="text-sm font-semibold">{meta.label}</div>
+                  <p
                     className={cn(
-                      'rounded-md border px-4 py-3 text-left transition-colors',
-                      isActive
-                        ? 'border-foreground bg-foreground text-background'
-                        : 'border-border/70 bg-background hover:border-foreground/40'
+                      'mt-1.5 text-sm leading-6',
+                      isActive ? 'text-background/80' : 'text-muted-foreground'
                     )}
-                    onClick={() => updateDraft({ type })}
-                    data-testid={`alert-rule-type-${type}`}
                   >
-                    <div className="text-sm font-semibold">{meta.label}</div>
-                    <p
-                      className={cn(
-                        'mt-1.5 text-sm leading-6',
-                        isActive ? 'text-background/80' : 'text-muted-foreground'
-                      )}
-                    >
-                      {meta.description}
-                    </p>
-                  </button>
-                )
-              }
-            )}
+                    {meta.description}
+                  </p>
+                </button>
+              )
+            })}
           </div>
 
           <div className="mt-5">
@@ -507,31 +530,95 @@ export function AlertRuleBuilder({
                 issue cap under Advanced.
               </p>
             ) : null}
+
+            {draft.type === 'redis_health' ? (
+              <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+                <div className="space-y-2">
+                  <Label htmlFor="alert-redis-health-metric">Redis INFO metric</Label>
+                  <Select
+                    id="alert-redis-health-metric"
+                    value={draft.redisHealthMetric}
+                    onChange={(event) => {
+                      const metric = REDIS_HEALTH_METRIC_OPTIONS.find(
+                        (option) => option.value === event.target.value
+                      )
+                      if (!metric) return
+                      updateDraft({
+                        redisHealthMetric: metric.value,
+                        redisHealthThreshold: metric.defaultThreshold,
+                      })
+                    }}
+                    data-testid="alert-redis-health-metric"
+                  >
+                    {REDIS_HEALTH_METRIC_OPTIONS.map((metric) => (
+                      <option key={metric.value} value={metric.value}>
+                        {metric.label}
+                      </option>
+                    ))}
+                  </Select>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {selectedRedisHealthMetric.description}
+                  </p>
+                </div>
+                <NumberField
+                  id="alert-redis-health-threshold"
+                  label="Alert at or above"
+                  unit={selectedRedisHealthMetric.unit}
+                  value={draft.redisHealthThreshold}
+                  error={fieldError('redisHealthThreshold')}
+                  onChange={(value) => updateDraft({ redisHealthThreshold: value })}
+                  onBlur={() => markTouched('redisHealthThreshold')}
+                  helper="Compared once per alert-monitor poll."
+                />
+              </div>
+            ) : null}
           </div>
         </BuilderPanel>
 
         <BuilderPanel
           id={ALERT_RULE_PANEL_IDS.queues}
-          title="Queue scope"
-          description="Target every discovered queue on the connection or a searchable subset."
+          title={draft.type === 'redis_health' ? 'Redis scope' : 'Queue scope'}
+          description={
+            draft.type === 'redis_health'
+              ? 'Redis health rules evaluate once for the whole connection.'
+              : 'Target every discovered queue on the connection or a searchable subset.'
+          }
         >
-          <div className="space-y-4" {...(fieldError('queues') ? { 'data-field-error': '' } : {})}>
-            <QueueMultiSelect
-              availableQueues={availableQueues}
-              selectedQueueNames={draft.selectedQueueNames}
-              onSelectedQueueNamesChange={(selectedQueueNames) => {
-                markTouched('queues')
-                updateDraft({ selectedQueueNames })
-              }}
-              queueFilterMode={draft.queueFilterMode}
-              onQueueFilterModeChange={(queueFilterMode) =>
-                updateDraft({ queueFilterMode, selectedQueueNames: [] })
-              }
-            />
-            {fieldError('queues') ? (
-              <p className="text-sm text-destructive">{fieldError('queues')}</p>
-            ) : null}
-          </div>
+          {draft.type === 'redis_health' ? (
+            <div className="flex items-start gap-3 rounded-md border border-border/70 bg-muted/10 px-4 py-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground shadow-sm">
+                <ServerCog className="h-4 w-4" />
+              </span>
+              <div>
+                <div className="text-sm font-semibold">{connectionName ?? 'Redis connection'}</div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  One lightweight INFO sample covers memory, CPU, clients, and Redis resource
+                  pressure without polling each queue.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="space-y-4"
+              {...(fieldError('queues') ? { 'data-field-error': '' } : {})}
+            >
+              <QueueMultiSelect
+                availableQueues={availableQueues}
+                selectedQueueNames={draft.selectedQueueNames}
+                onSelectedQueueNamesChange={(selectedQueueNames) => {
+                  markTouched('queues')
+                  updateDraft({ selectedQueueNames })
+                }}
+                queueFilterMode={draft.queueFilterMode}
+                onQueueFilterModeChange={(queueFilterMode) =>
+                  updateDraft({ queueFilterMode, selectedQueueNames: [] })
+                }
+              />
+              {fieldError('queues') ? (
+                <p className="text-sm text-destructive">{fieldError('queues')}</p>
+              ) : null}
+            </div>
+          )}
         </BuilderPanel>
 
         <BuilderPanel
@@ -817,10 +904,7 @@ function NotifyPanelBody({
 
   return (
     <div className="space-y-5">
-      <div
-        className="space-y-2"
-        {...(fieldError('routes') ? { 'data-field-error': '' } : {})}
-      >
+      <div className="space-y-2" {...(fieldError('routes') ? { 'data-field-error': '' } : {})}>
         <Label>Saved destinations</Label>
         <DestinationMultiSelect
           destinations={destinations}
@@ -1299,16 +1383,24 @@ function LinearOverrideFields({
 }
 
 function LiveTestResultPanel({ result }: { result: AlertTestResult }) {
+  const metricUnavailable = result.evaluation.available === false
+
   return (
     <section className="rounded-lg border border-border/70 bg-background px-6 py-5">
       <h3 className="text-sm font-semibold">Latest live test</h3>
       <div className="mt-3 space-y-3 text-sm">
-        <AlertStatusBadge
-          status={result.evaluation.triggered ? 'firing' : 'resolved'}
-          emphasize={result.evaluation.triggered}
-        />
+        {metricUnavailable ? (
+          <Badge variant="outline">Unavailable</Badge>
+        ) : (
+          <AlertStatusBadge
+            status={result.evaluation.triggered ? 'firing' : 'resolved'}
+            emphasize={result.evaluation.triggered}
+          />
+        )}
         <p className="leading-6 text-muted-foreground">
-          {result.evaluation.summary || 'The live queue snapshot did not trigger this rule.'}
+          {metricUnavailable
+            ? 'Redis needs another valid INFO sample before this rule can be evaluated.'
+            : result.evaluation.summary || 'The live metric snapshot did not trigger this rule.'}
         </p>
         {result.webhookTests && result.webhookTests.length > 0 ? (
           <div className="space-y-2">

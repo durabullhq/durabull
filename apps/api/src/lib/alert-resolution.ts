@@ -179,6 +179,7 @@ function buildResolutionComment({
     queueName: event.queueName,
     alertRuleId: event.alertRuleId,
     jobId,
+    connectionWide: event.type === 'redis_health',
   })
 
   const reasonLine =
@@ -194,7 +195,7 @@ function buildResolutionComment({
     reasonLine,
     '',
     `- Connection: ${safeLinearMarkdown(connectionName, 200)}`,
-    `- Queue: ${safeLinearMarkdown(event.queueName, 200)}`,
+    `- ${event.type === 'redis_health' ? 'Scope' : 'Queue'}: ${safeLinearMarkdown(event.queueName, 200)}`,
     `- Incident: ${safeLinearMarkdown(event.summary)}`,
     `- Fired at: ${event.firedAt.toISOString()}`,
     `- Resolved at: ${(event.resolvedAt ?? new Date()).toISOString()}`,

@@ -18,6 +18,7 @@ When an alert rule routes to Linear, Durabull can create Linear issues for:
 - queue failure thresholds
 - queue failure-rate alerts
 - stalled queue alerts
+- Redis health threshold alerts
 
 For job-failed alerts, Durabull records a durable mapping between the failed BullMQ job and
 the Linear issue. That keeps repeated alert processing from creating a new Linear issue for

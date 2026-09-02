@@ -5,11 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AlertRuleBuilder } from '@/components/alerts/alert-rule-builder-v2'
 import type { AlertRuleRecord } from '@/hooks/use-alerts'
 
-const { toastSuccessMock, toastErrorMock, useAlertDestinationsMock } = vi.hoisted(() => ({
-  toastSuccessMock: vi.fn(),
-  toastErrorMock: vi.fn(),
-  useAlertDestinationsMock: vi.fn(),
-}))
+const { toastSuccessMock, toastWarningMock, toastErrorMock, useAlertDestinationsMock } = vi.hoisted(
+  () => ({
+    toastSuccessMock: vi.fn(),
+    toastWarningMock: vi.fn(),
+    toastErrorMock: vi.fn(),
+    useAlertDestinationsMock: vi.fn(),
+  })
+)
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -35,6 +38,7 @@ vi.mock('@/components/app-top-bar', () => ({
 vi.mock('sonner', () => ({
   toast: {
     success: toastSuccessMock,
+    warning: toastWarningMock,
     error: toastErrorMock,
   },
 }))
@@ -114,6 +118,35 @@ describe('AlertRuleBuilder', () => {
     expect(screen.getByTestId('sentence-token-condition')).toHaveTextContent(
       'failure rate ≥ 10% over 15 min (min 250 jobs)'
     )
+  })
+
+  it('builds a connection-scoped Redis health rule from the memory template', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+
+    renderBuilder({ initialTemplateKey: 'redis-memory', onSave })
+
+    expect(screen.getByTestId('sentence-token-queues')).toHaveTextContent('Redis server')
+    expect(screen.getByText(/One lightweight INFO sample covers memory/)).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByTestId('alert-redis-health-metric'), 'cpu_usage_percent')
+    const threshold = screen.getByLabelText('Alert at or above')
+    await user.clear(threshold)
+    await user.type(threshold, '75')
+    await user.type(screen.getByTestId('alert-rule-name-input'), 'Redis CPU pressure')
+    await user.click(screen.getByRole('button', { name: 'Create rule' }))
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    expect(onSave).toHaveBeenCalledWith([
+      expect.objectContaining({
+        name: 'Redis CPU pressure',
+        type: 'redis_health',
+        queueName: null,
+        queueFilterMode: null,
+        filterQueueNames: [],
+        config: { metric: 'cpu_usage_percent', threshold: 75 },
+      }),
+    ])
   })
 
   it('updates the sentence live as condition fields change', async () => {
@@ -311,5 +344,42 @@ describe('AlertRuleBuilder', () => {
     })
     expect(screen.getByText('Latest live test')).toBeInTheDocument()
     expect(screen.getByText('Rule would fire for email-send')).toBeInTheDocument()
+  })
+
+  it('labels an unavailable live metric without presenting it as resolved', async () => {
+    const user = userEvent.setup()
+    const onTest = vi.fn().mockResolvedValue({
+      evaluation: {
+        triggered: false,
+        available: false,
+        summary: '',
+        context: { metricUnavailable: true },
+      },
+      snapshot: {
+        kind: 'redis_health',
+        connectionName: 'Primary Redis',
+        capturedAt: '2026-09-02T18:00:00.000Z',
+        memoryCapacitySource: 'unknown',
+        metrics: {},
+      },
+    })
+
+    renderBuilder({
+      mode: 'edit',
+      rule: createRule({
+        type: 'redis_health',
+        config: { metric: 'cpu_usage_percent', threshold: 80 },
+      }),
+      onTest,
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Run live test' }))
+
+    await waitFor(() => expect(onTest).toHaveBeenCalledTimes(1))
+    expect(toastWarningMock).toHaveBeenCalledWith('Metric is not available yet', {
+      description: 'Redis needs another valid INFO sample before this rule can be evaluated.',
+    })
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('resolved')).not.toBeInTheDocument()
   })
 })

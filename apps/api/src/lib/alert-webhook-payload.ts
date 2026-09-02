@@ -61,6 +61,7 @@ export function buildAlertWebhookPayload(
     queueName: input.queueName,
     alertRuleId: input.ruleId,
     jobId,
+    connectionWide: input.ruleType === 'redis_health',
   })
 
   return {
@@ -159,9 +160,7 @@ export function serializeAlertWebhookPayload(payload: AlertWebhookPayload): stri
     return minimalBody
   }
 
-  throw new Error(
-    `Webhook payload exceeds ${WEBHOOK_MAX_BODY_BYTES} bytes even after truncation.`
-  )
+  throw new Error(`Webhook payload exceeds ${WEBHOOK_MAX_BODY_BYTES} bytes even after truncation.`)
 }
 
 function buildMinimalWebhookPayload(payload: AlertWebhookPayload): AlertWebhookPayload {

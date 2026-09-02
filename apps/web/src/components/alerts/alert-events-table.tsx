@@ -188,19 +188,25 @@ function AlertEventRow({
         )}
       </TableCell>
       <TableCell className="whitespace-nowrap">
-        <Link
-          to="/$orgSlug/c/$connectionId/queues/$queueName"
-          params={{
-            orgSlug,
-            connectionId: event.connectionId,
-            queueName: event.queueName,
-          }}
-          className="inline-flex max-w-[200px] items-center gap-1 font-medium hover:text-primary"
-          onClick={(clickEvent) => clickEvent.stopPropagation()}
-        >
-          <span className="truncate">{event.queueName}</span>
-          <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        </Link>
+        {event.type === 'redis_health' ? (
+          <span className="inline-flex max-w-[200px] items-center font-medium">
+            {event.queueName}
+          </span>
+        ) : (
+          <Link
+            to="/$orgSlug/c/$connectionId/queues/$queueName"
+            params={{
+              orgSlug,
+              connectionId: event.connectionId,
+              queueName: event.queueName,
+            }}
+            className="inline-flex max-w-[200px] items-center gap-1 font-medium hover:text-primary"
+            onClick={(clickEvent) => clickEvent.stopPropagation()}
+          >
+            <span className="truncate">{event.queueName}</span>
+            <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          </Link>
+        )}
       </TableCell>
       <TableCell className="max-w-0">
         <p className="truncate text-sm" title={event.summary}>

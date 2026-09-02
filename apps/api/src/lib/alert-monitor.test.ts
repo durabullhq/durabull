@@ -702,6 +702,104 @@ describe('alert monitor', () => {
     expect(events[0]?.queueName).toBe('email-send')
   })
 
+  it('evaluates Redis health rules once per connection without requiring a discovered queue', async () => {
+    const infoMock = mock(async () =>
+      [
+        '# Memory',
+        'used_memory:94371840',
+        'maxmemory:104857600',
+        'total_system_memory:1073741824',
+        '# CPU',
+        'used_cpu_sys:4',
+        'used_cpu_user:6',
+        '# Clients',
+        'connected_clients:10',
+        'maxclients:1000',
+        'blocked_clients:0',
+        '# Stats',
+        'evicted_keys:0',
+        'rejected_connections:0',
+      ].join('\r\n')
+    )
+    const getQueueMock = mock(async () => {
+      throw new Error('queue polling should not run for a Redis health rule')
+    })
+    mock.module('./redis', () => ({
+      ...realRedisModule,
+      getRedis: mock(async () => ({ info: infoMock })),
+      getQueue: getQueueMock,
+    }))
+
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: null,
+      queueFilterMode: null,
+      filterQueueNames: [],
+      name: 'Redis memory pressure',
+      type: 'redis_health',
+      config: { metric: 'memory_usage_percent', threshold: 80 },
+      cooldownMinutes: 30,
+    })
+
+    await __alertMonitorTestUtils.processConnection(testConnectionId, [rule])
+
+    expect(infoMock).toHaveBeenCalledTimes(1)
+    expect(getQueueMock).not.toHaveBeenCalled()
+
+    const cursors = await alertCheckCursorRepository.findByConnection(testConnectionId)
+    expect(cursors).toHaveLength(1)
+    expect(cursors[0]?.queueName).toBe('__durabull_internal__:redis_health')
+    expect(cursors[0]?.lastMetricsSnapshot).toMatchObject({ kind: 'redis_health' })
+
+    const events = await listRuleEvents(rule.id)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      queueName: 'Redis server',
+      type: 'redis_health',
+      status: 'firing',
+    })
+  })
+
+  it('keeps a firing Redis incident open when a metric sample is unavailable', async () => {
+    mock.module('./redis', () => ({
+      ...realRedisModule,
+      getRedis: mock(async () => ({
+        info: mock(async () => ['used_cpu_sys:4', 'used_cpu_user:6'].join('\r\n')),
+      })),
+    }))
+
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: null,
+      name: 'Redis CPU pressure',
+      type: 'redis_health',
+      config: { metric: 'cpu_usage_percent', threshold: 80 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'Redis server',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Redis CPU usage is high',
+      context: {},
+      firedAt: new Date(),
+    })
+
+    await __alertMonitorTestUtils.processConnection(testConnectionId, [rule])
+
+    const events = await listRuleEvents(rule.id)
+    expect(events).toHaveLength(1)
+    expect(events[0]?.id).toBe(event.id)
+    expect(events[0]?.status).toBe('firing')
+  })
+
   it('creates at most one job_failed event per failed job id', async () => {
     const dispatchAlertNotificationMock = mock(async () => {})
     mock.module('./alert-notifier', () => ({
@@ -794,10 +892,10 @@ describe('alert monitor', () => {
       firedAt: new Date(Date.now() - 10 * 60_000),
     })
 
-    const resolved = await __alertMonitorTestUtils.autoResolveCompletedJobEvents(
-      testConnectionId,
-      [completedJobEvent, stillFailedJobEvent]
-    )
+    const resolved = await __alertMonitorTestUtils.autoResolveCompletedJobEvents(testConnectionId, [
+      completedJobEvent,
+      stillFailedJobEvent,
+    ])
 
     expect(resolved).toHaveLength(1)
     expect(resolved[0]?.id).toBe(completedJobEvent.id)

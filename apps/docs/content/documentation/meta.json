@@ -21,6 +21,7 @@
     "---Using Durabull---",
     "workflows/queues-dashboard",
     "workflows/bullmq-native-metrics",
+    "workflows/redis-health-alerts",
     "workflows/queue-operations",
     "workflows/job-lifecycle-and-debugging",
     "workflows/scheduled-jobs",

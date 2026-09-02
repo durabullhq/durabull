@@ -1,0 +1,58 @@
+---
+title: Redis Health Alerts
+description: Monitor Redis INFO memory, CPU, client, eviction, and connection-pressure thresholds with durable Durabull incidents.
+---
+
+Redis health alert rules watch the Redis server behind a Durabull connection. They use one
+lightweight `INFO` sample per alert-monitor poll, regardless of how many BullMQ queues use the
+connection.
+
+## Create a Redis Health Rule
+
+1. Open a Redis connection and select **Alerts**.
+2. Select **Create rule**.
+3. Choose **Redis memory pressure** for the 80% memory template, or choose **Redis Health** under
+   **Condition**.
+4. Select the Redis INFO metric and the threshold that should open an incident.
+5. Add saved or one-off notification destinations, name the rule, and save it.
+
+Use **Run live test** from an existing rule to evaluate the latest INFO sample without creating an
+incident. Email, webhook, and Linear routing uses the same durable delivery and retry pipeline as
+queue alerts.
+
+## Available Metrics
+
+| Metric | INFO fields | Evaluation |
+| --- | --- | --- |
+| Memory usage | `used_memory`, `maxmemory` | Percent of the configured `maxmemory`; unavailable when Redis has no explicit limit. |
+| Memory allocated | `used_memory` | Absolute Redis allocation in MiB. |
+| Resident memory | `used_memory_rss` | Physical memory occupied by the Redis process in MiB. |
+| CPU usage | `used_cpu_sys`, `used_cpu_user` | CPU seconds consumed between two monitor samples, divided by elapsed wall time. |
+| Allocator fragmentation | `allocator_frag_ratio`, `allocator_frag_bytes` | Ratio threshold; overhead below 10 MiB is ignored to avoid noisy high ratios on small instances. |
+| Client capacity | `connected_clients`, `maxclients` | Connected clients as a percentage of the configured limit. |
+| Blocked clients | `blocked_clients` | Current blocked-client count. |
+| Key evictions | `evicted_keys` | Counter increase normalized to keys per minute. |
+| Rejected connections | `rejected_connections` | Counter increase normalized to rejected connections per minute. |
+
+Thresholds fire when the measured value is equal to or greater than the configured value. An open
+incident resolves automatically after a later poll observes that the condition has cleared. Missing
+INFO data never resolves an open incident because an unavailable measurement is not proof of recovery.
+
+CPU, eviction, and rejection rates need two samples. A new rule stays quiet on its first sample and
+can evaluate on the next poll. The previous sample is stored in Durabull's alert cursor, so rate
+calculations continue across API restarts. Redis counter resets are treated as zero activity rather
+than a spike.
+
+## Operational Requirements
+
+- The Durabull API and background alert monitor must remain running. Configure the monitor with
+  `DURABULL_ALERT_ENABLED` and `DURABULL_ALERT_POLL_INTERVAL_MS`.
+- The Redis user must be allowed to run `INFO`. Managed services can restrict the command or omit
+  fields; a rule stays quiet when its selected metric is unavailable.
+- When `maxmemory` is zero, percentage-based memory usage is unavailable because host memory can
+  overstate the capacity available to Redis in containers or managed services. Use an absolute
+  allocation or resident-memory rule, or configure an explicit Redis `maxmemory` limit.
+- A CPU result can exceed 100% because Redis reports CPU across the server process's threads.
+
+Redis INFO collection failures are isolated from BullMQ queue checks: a restricted or incomplete
+INFO response does not stop existing queue alert rules from being evaluated.

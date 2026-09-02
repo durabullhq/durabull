@@ -1,4 +1,4 @@
-import { BellRing, GaugeCircle, Moon, Siren, TriangleAlert } from 'lucide-react'
+import { BellRing, GaugeCircle, Moon, ServerCog, Siren, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type {
   AlertEventRecord,
@@ -40,6 +40,12 @@ const ALERT_TYPE_META: Record<
     shortLabel: 'Job',
     icon: BellRing,
     description: 'Creates a deduplicated incident for each failed job id.',
+  },
+  redis_health: {
+    label: 'Redis Health',
+    shortLabel: 'Redis',
+    icon: ServerCog,
+    description: 'Fires when Redis memory, CPU, client, or resource pressure crosses a limit.',
   },
 }
 
