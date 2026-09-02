@@ -7,6 +7,28 @@ Redis health alert rules watch the Redis server behind a Durabull connection. Th
 lightweight `INFO` sample per alert-monitor poll, regardless of how many BullMQ queues use the
 connection.
 
+The same sample feeds the **Analytics** tab, where memory allocation, resident memory, configured
+capacity, CPU, client utilization, fragmentation, evictions, blocked clients, and rejected
+connections are charted over time. History collection is enabled by default and does not require a
+Redis Health alert rule.
+
+## Observe Redis Health Over Time
+
+Open a Redis connection and select **Analytics**. The Redis Resource Health section shows:
+
+- Current resource values and whether the sample is fresh.
+- Utilization, memory-footprint, and pressure-signal time series for the selected 1-hour to 30-day
+  window.
+- Active Redis Health alert thresholds overlaid with the telemetry they evaluate.
+- Explicit gaps and a coverage percentage when collection was interrupted or `INFO` was unavailable.
+
+Coverage uses the configured poll interval as its expected cadence, so a healthy five-minute
+collector is not reported as 80% missing.
+
+Long windows are downsampled in the database before they are returned to the browser, so the chart
+response stays bounded even on high-volume installations. Downsampled buckets retain each metric's
+peak rather than its average, so a short threshold-crossing excursion remains visible.
+
 ## Create a Redis Health Rule
 
 1. Open a Redis connection and select **Alerts**.
@@ -45,8 +67,19 @@ than a spike.
 
 ## Operational Requirements
 
-- The Durabull API and background alert monitor must remain running. Configure the monitor with
-  `DURABULL_ALERT_ENABLED` and `DURABULL_ALERT_POLL_INTERVAL_MS`.
+- The Durabull API and its background monitor must remain running.
+  `DURABULL_ALERT_POLL_INTERVAL_MS` controls the sampling interval for both alert evaluation and
+  Redis history; `DURABULL_ALERT_ENABLED` independently controls alert evaluation.
+- Redis history collection is controlled independently with
+  `DURABULL_REDIS_HEALTH_HISTORY_ENABLED` (default `true`). Collection continues when alerting is
+  disabled so Analytics does not lose its server-health timeline.
+- Durabull stores at most one health sample per minute per connection. A cleanup job deletes samples
+  older than `DURABULL_REDIS_HEALTH_RETENTION_DAYS` (default `30`, bounded to the observable 1–30
+  day window), even when
+  new history collection is disabled. Cleanup deletes in 5,000-row transactions with a 100,000-row
+  per-run safety limit. If it finds a larger backlog, it schedules another bounded catch-up run after
+  five seconds instead of waiting for the next hourly sweep or creating one large blocking
+  transaction.
 - The Redis user must be allowed to run `INFO`. Managed services can restrict the command or omit
   fields; a rule stays quiet when its selected metric is unavailable.
 - When `maxmemory` is zero, percentage-based memory usage is unavailable because host memory can

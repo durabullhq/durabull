@@ -106,6 +106,19 @@ export const redisConnectionRepository = {
   },
 
   /**
+   * Get every Redis connection ID without organization scope.
+   * Reserved for trusted background workers that operate across tenants.
+   */
+  async findAllIdsUnsafe(): Promise<string[]> {
+    const db = await getDb()
+    const connections = await db
+      .select({ id: redisConnection.id })
+      .from(redisConnection)
+      .orderBy(redisConnection.createdAt)
+    return connections.map((connection) => connection.id)
+  },
+
+  /**
    * Get all Redis connections for an organization, ordered by creation date.
    */
   async findAll(organizationId: string): Promise<RedisConnection[]> {

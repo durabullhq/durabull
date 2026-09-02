@@ -42,21 +42,6 @@ export {
 } from './db/schemas/alert-delivery/schema'
 export type { AlertDelivery, NewAlertDelivery } from './db/schemas/alert-delivery/types'
 export {
-  type AlertEventStatus,
-  alertEvent,
-  alertEventStatuses,
-} from './db/schemas/alert-event/schema'
-export type { AlertEvent, NewAlertEvent } from './db/schemas/alert-event/types'
-// Redis connection exports
-export {
-  type AlertRuleType,
-  alertRule,
-  alertRuleTypes,
-  type QueueFilterMode,
-  queueFilterModes,
-} from './db/schemas/alert-rule/schema'
-export type { AlertRule, NewAlertRule } from './db/schemas/alert-rule/types'
-export {
   type AlertDestinationConfig,
   type AlertDestinationType,
   type AlertEmailDestinationConfig,
@@ -71,6 +56,21 @@ export type {
   NewAlertDestination,
   NewAlertWebhookDestination,
 } from './db/schemas/alert-destination/types'
+export {
+  type AlertEventStatus,
+  alertEvent,
+  alertEventStatuses,
+} from './db/schemas/alert-event/schema'
+export type { AlertEvent, NewAlertEvent } from './db/schemas/alert-event/types'
+// Redis connection exports
+export {
+  type AlertRuleType,
+  alertRule,
+  alertRuleTypes,
+  type QueueFilterMode,
+  queueFilterModes,
+} from './db/schemas/alert-rule/schema'
+export type { AlertRule, NewAlertRule } from './db/schemas/alert-rule/types'
 export * as authSchema from './db/schemas/auth/schema'
 // Auth schema exports for Better Auth integration
 export { authAccount, authSession, authVerification } from './db/schemas/auth/schema'
@@ -157,6 +157,11 @@ export type {
   NewRedisDiscoveredQueue,
   RedisDiscoveredQueue,
 } from './db/schemas/redis-discovered-queue/types'
+export { redisHealthSample } from './db/schemas/redis-health-sample/schema'
+export type {
+  NewRedisHealthSample,
+  RedisHealthSample,
+} from './db/schemas/redis-health-sample/types'
 export { telemetryInstallation } from './db/schemas/telemetry-installation/schema'
 export * as userSchema from './db/schemas/user/schema'
 // User schema exports
@@ -173,17 +178,17 @@ export {
 export { alertCheckCursorRepository } from './repositories/alert-check-cursor'
 export { alertDeliveryRepository } from './repositories/alert-delivery'
 export {
-  type AlertEventWithAckUser,
-  type OrganizationOpenAlertSummary,
-  alertEventRepository,
-} from './repositories/alert-event'
-export { alertRuleRepository } from './repositories/alert-rule'
-export {
-  type CreateAlertDestinationInput,
-  type UpdateAlertDestinationInput,
   alertDestinationRepository,
   alertWebhookDestinationRepository,
+  type CreateAlertDestinationInput,
+  type UpdateAlertDestinationInput,
 } from './repositories/alert-destination'
+export {
+  type AlertEventWithAckUser,
+  alertEventRepository,
+  type OrganizationOpenAlertSummary,
+} from './repositories/alert-event'
+export { alertRuleRepository } from './repositories/alert-rule'
 export { linearIntegrationRepository } from './repositories/linear-integration'
 export { linearJobIssueRepository } from './repositories/linear-job-issue'
 export { linearOauthStateRepository } from './repositories/linear-oauth-state'
@@ -191,5 +196,10 @@ export { mcpPolicyRepository } from './repositories/mcp-policy'
 // Repositories
 export { redisConnectionRepository } from './repositories/redis-connection'
 export { redisDiscoveredQueueRepository } from './repositories/redis-discovered-queue'
+export {
+  type RedisHealthSampleBucket,
+  type RedisHealthSampleInput,
+  redisHealthSampleRepository,
+} from './repositories/redis-health-sample'
 export { telemetryInstallationRepository } from './repositories/telemetry-installation'
 export { userSettingsRepository } from './repositories/user-settings'
