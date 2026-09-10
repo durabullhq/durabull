@@ -132,7 +132,6 @@ export const alertDeliverySummarySchema = z.object({
 })
 
 export const alertEventDetailSchema = alertEventSummarySchema.extend({
-  resolutionReason: z.string().nullable(),
   notificationSentAt: nullableIsoDate,
   deliveries: z.array(alertDeliverySummarySchema),
 })
@@ -892,7 +891,7 @@ export const MCP_TOOL_CATALOG: readonly McpToolDefinition[] = [
     name: 'get_alert_event',
     title: 'Get alert event',
     description:
-      'Detail for one alert event including acknowledgement, resolution reason, and notification deliveries (channel, status, attempts, last error, external link). Delivery targets are omitted.',
+      'Detail for one alert event including acknowledgement, notification timing, and notification deliveries (channel, status, attempts, last error, external link). Delivery targets are omitted.',
     requiredScopes: [MCP_SCOPE_FAILURES_READ],
     annotations: READ_ANNOTATIONS,
     inputSchema: {

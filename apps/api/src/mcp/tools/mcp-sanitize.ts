@@ -129,7 +129,6 @@ export function toMcpAlertEventDetail(
 ): McpAlertEventDetail {
   return {
     ...toMcpAlertEventSummary(event),
-    resolutionReason: event.linearResolutionReason ?? null,
     notificationSentAt: toIsoString(event.notificationSentAt),
     deliveries: deliveries.map((delivery) => toMcpAlertDeliverySummary(delivery)),
   }

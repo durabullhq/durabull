@@ -242,7 +242,6 @@ describe('alert read handlers', () => {
     acknowledgedAt: acknowledged ? new Date('2026-09-01T01:00:00.000Z') : null,
     acknowledgedBy: acknowledged ? 'user-1' : null,
     notificationSentAt: new Date('2026-09-01T00:00:05.000Z'),
-    linearResolutionReason: null,
   })
 
   const rules = [
