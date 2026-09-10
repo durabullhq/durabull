@@ -6,6 +6,11 @@
  * exists. Iteration order is randomized per Redis process, which made the explorer say
  * "No keys found" nondeterministically. This helper keeps scanning until the page has enough
  * matches, the keyspace is exhausted, or a bounded number of rounds has run.
+ *
+ * Every key matched by the rounds performed is returned: a SCAN cursor cannot be rewound, so
+ * trimming the last round's overflow would drop keys that no later page could serve. `pageSize`
+ * is therefore the size a page fills up to, not a hard cap; a page may carry up to one extra
+ * round of matches.
  */
 
 /** Upper bound on SCAN rounds per request so a rare pattern on a huge keyspace stays cheap. */
@@ -29,7 +34,7 @@ export interface ScanKeysOptions {
 }
 
 export interface ScanKeysResult {
-  /** Matching keys, at most `pageSize`. */
+  /** Every matching key from the rounds performed; at least `pageSize` when more exist. */
   keys: string[]
   /** Cursor to continue from; "0" when the keyspace is exhausted. */
   cursor: string
@@ -68,7 +73,7 @@ export async function scanKeysMatching(
   } while (keys.length < options.pageSize && cursor !== '0' && roundsScanned < MAX_KEY_SCAN_ROUNDS)
 
   return {
-    keys: keys.slice(0, options.pageSize),
+    keys,
     cursor,
     hasMore: cursor !== '0',
     roundsScanned,

@@ -56,10 +56,30 @@ describe('scanKeysMatching', () => {
       excludeBull: false,
     })
 
-    expect(result.keys).toHaveLength(50)
+    // Every key the round matched is kept: the cursor has moved past them, so trimming would
+    // drop keys no later page could return.
+    expect(result.keys).toEqual(KEYS.slice(0, 100))
     expect(result.roundsScanned).toBe(1)
     expect(result.hasMore).toBe(true)
     expect(result.cursor).toBe('100')
+  })
+
+  it('never loses keys across pages', async () => {
+    const { client } = fakeRedis(KEYS, 90)
+    const seen: string[] = []
+    let cursor = '0'
+    do {
+      const page = await scanKeysMatching(client, {
+        cursor,
+        pattern: '*',
+        pageSize: 50,
+        excludeBull: false,
+      })
+      seen.push(...page.keys)
+      cursor = page.cursor
+    } while (cursor !== '0')
+
+    expect(seen).toEqual(KEYS)
   })
 
   it('filters bull keys and scans with a larger COUNT when excluding them', async () => {
@@ -73,7 +93,8 @@ describe('scanKeysMatching', () => {
 
     expect(calls[0]?.count).toBe(200)
     expect(result.keys.every((key) => !key.startsWith('bull:'))).toBe(true)
-    expect(result.keys).toHaveLength(50)
+    expect(result.keys).toHaveLength(80)
+    expect(result.roundsScanned).toBe(1)
   })
 
   it('bounds the number of rounds for patterns that never match', async () => {
