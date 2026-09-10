@@ -1,11 +1,17 @@
 import { AlertCircle, Cpu, Database, Gauge, MemoryStick, Network, Users } from 'lucide-react'
+import { lazy, Suspense } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { RedisHealthCharts } from './redis-health-charts'
 import { formatRedisHealthThreshold, type RedisHealthMetric } from './redis-health-metrics'
 import type { RedisHealthHistoryResponse } from './redis-health-types'
+
+// The charts pull in recharts, which is heavy. Load that chunk only once there is history to
+// draw, so the summary cards above render without waiting for it.
+const RedisHealthCharts = lazy(() =>
+  import('./redis-health-charts').then((module) => ({ default: module.RedisHealthCharts }))
+)
 
 const COUNT_FORMATTER = new Intl.NumberFormat()
 
@@ -174,7 +180,9 @@ export function RedisHealthObservability({
       </Card>
 
       {data.range.sampledBuckets > 0 ? (
-        <RedisHealthCharts series={data.series} thresholds={data.thresholds} />
+        <Suspense fallback={<RedisHealthChartsFallback />}>
+          <RedisHealthCharts series={data.series} thresholds={data.thresholds} />
+        </Suspense>
       ) : null}
     </section>
   )
@@ -206,6 +214,29 @@ function ResourceCard({
       </div>
       <p className="mt-2 font-mono text-xl font-semibold tabular-nums">{value}</p>
       <p className="mt-1 text-[11px] text-muted-foreground">{detail}</p>
+    </div>
+  )
+}
+
+function RedisHealthChartsFallback() {
+  return (
+    <div
+      className="grid gap-4 lg:grid-cols-2"
+      role="status"
+      aria-busy="true"
+      aria-label="Loading charts"
+    >
+      {Array.from({ length: 4 }, (_, index) => (
+        <Card key={index}>
+          <CardHeader className="space-y-2">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-4 w-64 max-w-full" />
+          </CardHeader>
+          <CardContent>
+            <Skeleton className="h-[220px] w-full" />
+          </CardContent>
+        </Card>
+      ))}
     </div>
   )
 }

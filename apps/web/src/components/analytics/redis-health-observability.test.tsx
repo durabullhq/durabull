@@ -101,7 +101,7 @@ function createResponse(): RedisHealthHistoryResponse {
 }
 
 describe('RedisHealthObservability', () => {
-  it('shows current resource health, gaps, staleness, and alert thresholds', () => {
+  it('shows current resource health, gaps, staleness, and alert thresholds', async () => {
     render(<RedisHealthObservability data={createResponse()} />)
 
     expect(screen.getByRole('heading', { name: 'Redis Resource Health' })).toBeInTheDocument()
@@ -110,7 +110,10 @@ describe('RedisHealthObservability', () => {
     expect(screen.getByText('Data stale')).toBeInTheDocument()
     expect(screen.getByText('66.7% coverage · 1 gap')).toBeInTheDocument()
     expect(screen.getByText('Redis memory pressure ≥ 75%')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Utilization Over Time' })).toBeInTheDocument()
+    // Charts are code-split behind React.lazy, so they arrive after the summary cards.
+    expect(
+      await screen.findByRole('heading', { name: 'Utilization Over Time' })
+    ).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Memory Footprint' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Client Pressure' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Memory Pressure Signals' })).toBeInTheDocument()
