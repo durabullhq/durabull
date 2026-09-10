@@ -220,12 +220,7 @@ function ResourceCard({
 
 function RedisHealthChartsFallback() {
   return (
-    <div
-      className="grid gap-4 lg:grid-cols-2"
-      role="status"
-      aria-busy="true"
-      aria-label="Loading charts"
-    >
+    <div className="grid gap-4 lg:grid-cols-2" aria-busy="true">
       {Array.from({ length: 4 }, (_, index) => (
         <Card key={index}>
           <CardHeader className="space-y-2">
