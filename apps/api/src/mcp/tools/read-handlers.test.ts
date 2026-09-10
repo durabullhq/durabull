@@ -377,7 +377,6 @@ describe('get_redis_health', () => {
             kind: 'redis_health',
             connectionName: 'Primary',
             capturedAt: '2026-09-09T11:59:30.000Z',
-            historyPersisted: true,
             memoryCapacitySource: 'maxmemory',
             metrics: {
               memoryUsagePercent: 81.5,

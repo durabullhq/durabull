@@ -3,6 +3,7 @@ import type { GetRedisHealthHandlerInput, GetRedisHealthHandlerOutput } from '@d
 
 import {
   REDIS_HEALTH_CURSOR_SCOPE,
+  type RedisHealthSnapshot,
   redisHealthConfigSchema,
   restoreRedisHealthSnapshot,
 } from '../../lib/redis-health'
@@ -11,7 +12,6 @@ import {
   getRedisHealthRetentionDays,
   getRedisHealthSampleIntervalMs,
   isRedisHealthHistoryEnabled,
-  serializeRedisHealthSnapshot,
 } from '../../lib/redis-health-history'
 import { requireConnectionForPrincipal } from './shared'
 
@@ -40,6 +40,27 @@ const defaultDeps: GetRedisHealthHandlerDeps = {
   historyEnabled: isRedisHealthHistoryEnabled,
   retentionDays: getRedisHealthRetentionDays,
   now: () => Date.now(),
+}
+
+/** Flattens the monitor's live snapshot into the same shape the history store returns. */
+function serializeLiveSnapshot(snapshot: RedisHealthSnapshot) {
+  return {
+    capturedAt: snapshot.capturedAt,
+    memoryCapacitySource: snapshot.memoryCapacitySource,
+    memoryUsagePercent: snapshot.metrics.memoryUsagePercent,
+    usedMemoryBytes: snapshot.metrics.usedMemoryBytes,
+    residentMemoryBytes: snapshot.metrics.residentMemoryBytes ?? null,
+    memoryCapacityBytes: snapshot.metrics.memoryCapacityBytes,
+    cpuUsagePercent: snapshot.metrics.cpuUsagePercent,
+    memoryFragmentationRatio: snapshot.metrics.memoryFragmentationRatio,
+    memoryFragmentationBytes: snapshot.metrics.memoryFragmentationBytes,
+    connectedClientsPercent: snapshot.metrics.connectedClientsPercent,
+    connectedClients: snapshot.metrics.connectedClients,
+    maxClients: snapshot.metrics.maxClients,
+    blockedClients: snapshot.metrics.blockedClients,
+    evictedKeysPerMinute: snapshot.metrics.evictedKeysPerMinute,
+    rejectedConnectionsPerMinute: snapshot.metrics.rejectedConnectionsPerMinute,
+  }
 }
 
 function clamp(value: number | undefined, fallback: number, min: number, max: number): number {
@@ -83,13 +104,9 @@ export function createGetRedisHealthHandler(deps: GetRedisHealthHandlerDeps = de
       to,
       targetPoints,
       expectedSampleIntervalMinutes: sampleIntervalMs / 60_000,
-      latestObservedAt:
-        currentSnapshot?.historyPersisted === true
-          ? new Date(currentSnapshot.capturedAt)
-          : undefined,
     })
 
-    const currentLatest = currentSnapshot ? serializeRedisHealthSnapshot(currentSnapshot) : null
+    const currentLatest = currentSnapshot ? serializeLiveSnapshot(currentSnapshot) : null
     const latestSource =
       currentLatest &&
       (!history.latest ||
