@@ -1,7 +1,10 @@
-# MCP Phase 1 — GA documentation index
+# MCP — GA documentation index
 
-**Phase 1** = read-only hosted MCP at `{APP_BASE_URL}/mcp` (no write/destructive tools).  
+**Phase 1** (GA) = read-only hosted MCP at `{APP_BASE_URL}/mcp`.  
+**Phase 2** (2026-09) = same endpoint plus tool descriptions/annotations, structured output, resources, prompts, more read tools, and explicitly scoped non-destructive write tools (`retry_job`, `promote_job`, `pause_queue`, `resume_queue`, alert acknowledge/resolve/snooze). Destructive operations (remove, purge, obliterate) still have no MCP scope.  
 **GA** = approved to announce to customers after operator gates in the release checklist (not the same as “merged to `main`”).
+
+**Phase 2 migration note:** `resolve_alert_event` now requires `mcp:failures:write` instead of `mcp:failures:read`. Clients that approved consent before phase 2 must re-authorize with the write scope to keep using it.
 
 ## Reading order
 

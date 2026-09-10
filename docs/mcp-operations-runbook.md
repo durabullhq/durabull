@@ -45,6 +45,10 @@ Service accounts are **org-scoped**. Tool calls still pass `connectionId` in arg
 - Grant **least-privilege** `mcp_policy_binding` rows per **`toolName` + `scope`** (service accounts are always org-scoped).
 - Avoid `toolName: null` bindings — they grant the scope for **all** tools.
 - OAuth scopes alone do not replace bindings for service accounts — both are required.
+- Resource reads bind under `toolName = 'resource:<name>'` (`resource:server`, `resource:connections`, `resource:connection_queues`, `resource:queue`, `resource:connection_alerts`).
+- Optional-evidence tools (`explain_job_failure`, `get_connection_overview`) include a section only when the service account holds **both** the token scope and a binding for that scope on that tool. Missing evidence is reported in the response, not as a denial.
+- Write scopes (`mcp:jobs:retry`, `mcp:jobs:promote`, `mcp:queues:pause`, `mcp:failures:write`) are never injected into consent. Grant them to service accounts deliberately and per tool.
+- `acknowledge_alert_event` is user-only; service accounts get `validation_error` because acknowledgement records who acknowledged.
 - Delegated users need org membership **and** connection access; cross-org `connectionId` values are denied.
 
 ## Post-deploy validation
@@ -139,7 +143,7 @@ Example log shape:
 
 Enforced when `NODE_ENV=production` (skipped in local `development` / `test` unless you run with production `NODE_ENV`).
 
-Heavy tools (**30/min**): `get_job_logs`, `get_job_stacktraces`, `get_failure_events`, `get_queue_metrics`, `explain_job_failure`. All other tools default to **60/min per tool name**.
+Heavy tools (**30/min**, flagged `heavy` in the catalog): `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `get_failure_events`, `get_queue_metrics`, `find_job`, `get_connection_overview`, `list_scheduled_jobs`, `get_redis_health`, `get_alert_summary`. All other tools default to **60/min per tool name**. `resources/read` is limited at **60/min per resource name** (`resource:<name>`).
 
 Draft SLO targets: [release checklist — Draft SLO candidates](./mcp-ga-release-checklist.md#draft-slo-candidates-not-validated).
 
@@ -147,7 +151,7 @@ Ingress limit (**120/min**) applies to all `/mcp` HTTP methods (initialize, sess
 
 ### Audit table (`mcp_audit_event`)
 
-Successful `tools/call` paths **best-effort** write a row with principal, tool name, SHA-256 input hash, `granted`, and `response_class` (`success`, `tool_error`, `policy_denied`, `rate_limited`). Under backpressure, events may be dropped (`audit_dropped` in `mcp_telemetry`). Transport auth failures (`401`/`403` before tool execution) are not recorded here.
+Successful `tools/call` and `resources/read` paths **best-effort** write a row with principal, tool name (or `resource:<name>`), SHA-256 input hash, `granted`, and `response_class` (`success`, `tool_error`, `policy_denied`, `rate_limited`). Under backpressure, events may be dropped (`audit_dropped` in `mcp_telemetry`). Transport auth failures (`401`/`403` before tool execution) are not recorded here.
 
 Example triage query (Postgres):
 

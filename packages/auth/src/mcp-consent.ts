@@ -1,13 +1,25 @@
 import {
-  isKnownMcpPhase1Scope,
+  isKnownMcpScope,
+  isMcpWriteScope,
   MCP_SCOPE_DIAGNOSTICS_READ,
   MCP_SCOPE_DISCOVER,
   MCP_SCOPE_FAILURES_READ,
+  MCP_SCOPE_FAILURES_WRITE,
+  MCP_SCOPE_JOBS_PROMOTE,
   MCP_SCOPE_JOBS_READ,
+  MCP_SCOPE_JOBS_RETRY,
   MCP_SCOPE_LOGS_READ,
+  MCP_SCOPE_QUEUES_PAUSE,
 } from './mcp-scope-labels'
 
-export { isKnownMcpPhase1Scope, MCP_PHASE1_SCOPES } from './mcp-scope-labels'
+export {
+  isKnownMcpPhase1Scope,
+  isKnownMcpScope,
+  isMcpWriteScope,
+  MCP_ALL_SCOPES,
+  MCP_PHASE1_SCOPES,
+  MCP_WRITE_SCOPES,
+} from './mcp-scope-labels'
 
 export const MCP_OAUTH_CONSENT_PATH = '/consent'
 
@@ -47,7 +59,23 @@ export const MCP_SCOPE_LABELS: Record<string, { title: string; description: stri
   },
   [MCP_SCOPE_DIAGNOSTICS_READ]: {
     title: 'Read diagnostics',
-    description: 'View queue metrics and failure explanations.',
+    description: 'View queue metrics, Redis health, and failure explanations.',
+  },
+  [MCP_SCOPE_JOBS_RETRY]: {
+    title: 'Retry failed jobs',
+    description: 'Re-enqueue failed jobs with their existing payload. Cannot change job data.',
+  },
+  [MCP_SCOPE_JOBS_PROMOTE]: {
+    title: 'Promote delayed jobs',
+    description: 'Run delayed jobs immediately.',
+  },
+  [MCP_SCOPE_QUEUES_PAUSE]: {
+    title: 'Pause and resume queues',
+    description: 'Stop and restart job processing on a queue. Cannot remove or purge jobs.',
+  },
+  [MCP_SCOPE_FAILURES_WRITE]: {
+    title: 'Manage alerts',
+    description: 'Resolve, acknowledge, and snooze alert incidents and rules.',
   },
 }
 
@@ -66,6 +94,8 @@ export type LabeledConsentScope = {
   title: string
   description: string
   unknownScope: boolean
+  /** True for scopes that let the client change state (retry, pause, resolve, ...). */
+  writeScope: boolean
 }
 
 export function labelConsentScopes(scopes: readonly string[]): LabeledConsentScope[] {
@@ -75,7 +105,8 @@ export function labelConsentScopes(scopes: readonly string[]): LabeledConsentSco
       scope,
       title: known?.title ?? scope,
       description: known?.description ?? 'Access requested by the connecting application.',
-      unknownScope: !known && !isKnownMcpPhase1Scope(scope),
+      unknownScope: !known && !isKnownMcpScope(scope),
+      writeScope: isMcpWriteScope(scope),
     }
   })
 }
@@ -86,9 +117,7 @@ export interface McpOAuthConsentSearch {
   scope?: string
 }
 
-export function parseMcpOAuthConsentSearch(
-  search: Record<string, unknown>
-): McpOAuthConsentSearch {
+export function parseMcpOAuthConsentSearch(search: Record<string, unknown>): McpOAuthConsentSearch {
   return {
     consent_code:
       typeof search.consent_code === 'string' && search.consent_code.length > 0
@@ -98,8 +127,7 @@ export function parseMcpOAuthConsentSearch(
       typeof search.client_id === 'string' && search.client_id.length > 0
         ? search.client_id
         : undefined,
-    scope:
-      typeof search.scope === 'string' && search.scope.length > 0 ? search.scope : undefined,
+    scope: typeof search.scope === 'string' && search.scope.length > 0 ? search.scope : undefined,
   }
 }
 

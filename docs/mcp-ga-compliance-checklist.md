@@ -33,28 +33,33 @@ Auth negative scenarios: [security closure — Negative test coverage](./mcp-ga-
 
 | Requirement | Status | Evidence |
 | --- | --- | --- |
-| Per-tool scope mapping | Done | `apps/api/src/mcp/policy/policy-engine.ts` |
+| Per-tool scope mapping (catalog-driven) | Done | `packages/mcp/src/tools/tool-catalog.ts`, `apps/api/src/mcp/policy/policy-engine.ts` |
+| Resource reads authorized like tools; unknown URIs rejected | Done | `apps/api/src/mcp/mount.test.ts`, `json-rpc-tool-call.test.ts` |
 | Delegated user connection boundary | Done | `apps/api/src/mcp/mount.test.ts` |
 | Service account policy bindings | Done | `packages/dal` mcp-policy tests |
 | Fail closed on unmapped tools | Done | `apps/api/src/mcp/policy/policy-engine.test.ts` |
 | Best-effort audit on tool calls | Done | `apps/api/src/mcp/audit/mcp-audit.test.ts`; may drop under backpressure (`audit_dropped`) |
 
-## Read-only tool catalog
+## Tool catalog
 
 Tool names and scopes: [ADR-0001 §3](./adr/0001-mcp-security-architecture.md) and [MCP Server user doc](../apps/docs/content/documentation/integrations/mcp-server.mdx).
 
-| Check | Status |
-| --- | --- |
-| 11 read tools + `ping` registered | Done |
-| `explain_job_failure` requires `mcp:diagnostics:read`, `mcp:jobs:read`, `mcp:logs:read`, `mcp:failures:read` | Done |
-| No write/destructive tools | Done |
+| Check | Status | Evidence |
+| --- | --- | --- |
+| 21 read tools (incl. `ping`) + 9 write tools registered from one catalog | Done | `tool-catalog.test.ts`, `mount.test.ts` |
+| Every tool has title, description, annotations, input schema; every tool except `ping` has an output schema | Done | `tool-catalog.test.ts`, `routes.test.ts` |
+| `explain_job_failure` requires `mcp:diagnostics:read` + `mcp:jobs:read`; logs/alerts optional with `skippedSources` | Done | `policy-engine.test.ts`, `explain-job-failure-handler.test.ts` |
+| Write tools require exactly one dedicated write scope; read bundle alone is denied | Done | `policy-engine.test.ts`, `mount.test.ts` |
+| No destructive tools (remove/purge/obliterate/delete/clean) | Done | `tool-catalog.test.ts` name guard |
+| Resources and prompts served from catalogs | Done | `routes.test.ts`, `mount.test.ts` |
 
 ## Safety (PR-06)
 
 | Requirement | Status | Evidence |
 | --- | --- | --- |
 | Output sanitization | Done | `sanitize-output.test.ts` |
-| Per-tool rate limits | Done | `mcp-tool-rate-limit.test.ts` |
+| Per-tool rate limits (heavy set from catalog; resources limited per name) | Done | `mcp-tool-rate-limit.test.ts` |
+| Alert delivery targets and channel secrets omitted from MCP output | Done | `read-handlers.test.ts`, `write-handlers.test.ts` |
 | Audit `input_hash` + `response_class` | Done | `mcp-audit.test.ts` |
 | `mcp_telemetry` signals | Done | `mount.test.ts` |
 

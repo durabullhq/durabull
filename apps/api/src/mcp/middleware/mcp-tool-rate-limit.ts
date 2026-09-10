@@ -1,12 +1,17 @@
 import { createHash } from 'node:crypto'
-
-import { extractBearerToken } from '@durabull/mcp/auth'
 import { env } from '@durabull/env'
+import { isMcpHeavyTool } from '@durabull/mcp'
+import { extractBearerToken } from '@durabull/mcp/auth'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 
 import { hashMcpToolInput, writeMcpAuditEventNonBlocking } from '../audit/mcp-audit'
-import { isMcpToolsCallMethod, parseMcpJsonRpcPayloadId, parseMcpToolCallBody } from '../json-rpc-tool-call'
+import {
+  isMcpResourcesReadMethod,
+  isMcpToolsCallMethod,
+  parseMcpJsonRpcPayloadId,
+  parseMcpPolicyOperation,
+} from '../json-rpc-tool-call'
 
 interface RateLimitEntry {
   count: number
@@ -19,14 +24,6 @@ const DEFAULT_TOOL_WINDOW_MS = 60 * 1000
 const DEFAULT_TOOL_LIMIT = 60
 const HEAVY_TOOL_LIMIT = 30
 const MAX_RATE_LIMIT_ENTRIES = 4096
-
-const HEAVY_TOOLS = new Set([
-  'get_job_logs',
-  'get_job_stacktraces',
-  'explain_job_failure',
-  'get_failure_events',
-  'get_queue_metrics',
-])
 
 let forceToolRateLimitInTests = false
 
@@ -87,8 +84,9 @@ function principalRateLimitKey(c: Context): string {
   return 'anonymous'
 }
 
+/** Heavy tools (per the catalog) get the lower limit; resources use the default. */
 function toolLimitForName(toolName: string): number {
-  return HEAVY_TOOLS.has(toolName) ? HEAVY_TOOL_LIMIT : DEFAULT_TOOL_LIMIT
+  return isMcpHeavyTool(toolName) ? HEAVY_TOOL_LIMIT : DEFAULT_TOOL_LIMIT
 }
 
 function jsonRpcRateLimitResponse(
@@ -118,7 +116,10 @@ async function readMcpRequestBody(c: Context): Promise<unknown> {
     return cached
   }
 
-  const body = await c.req.raw.clone().json().catch(() => null)
+  const body = await c.req.raw
+    .clone()
+    .json()
+    .catch(() => null)
   c.set('mcpRequestJsonBody', body)
   return body
 }
@@ -130,16 +131,26 @@ export function createMcpToolRateLimitMiddleware() {
     }
 
     const body = await readMcpRequestBody(c)
-    if (!isMcpToolsCallMethod(body)) {
+    if (!isMcpToolsCallMethod(body) && !isMcpResourcesReadMethod(body)) {
       return next()
     }
 
-    const toolCall = parseMcpToolCallBody(body) ?? {
-      toolName: '__invalid_tools_call__',
-      arguments: {},
-      connectionId: null,
-      payloadId: parseMcpJsonRpcPayloadId(body),
-    }
+    const operation = parseMcpPolicyOperation(body)
+    const toolCall = operation
+      ? {
+          toolName: operation.name,
+          arguments: operation.arguments,
+          connectionId: operation.connectionId,
+          payloadId: operation.payloadId,
+        }
+      : {
+          toolName: isMcpToolsCallMethod(body)
+            ? '__invalid_tools_call__'
+            : '__invalid_resources_read__',
+          arguments: {},
+          connectionId: null,
+          payloadId: parseMcpJsonRpcPayloadId(body),
+        }
 
     if (shouldSkipToolRateLimiting()) {
       return next()

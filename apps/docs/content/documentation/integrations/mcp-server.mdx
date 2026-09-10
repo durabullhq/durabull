@@ -1,9 +1,9 @@
 ---
 title: MCP Server
-description: Connect AI assistants to Durabull read-only queue diagnostics through the hosted MCP endpoint.
+description: Connect AI assistants to Durabull queue diagnostics and scoped operations through the hosted MCP endpoint.
 ---
 
-Durabull exposes a **read-only** [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server on the same origin as the web app and API.
+Durabull exposes a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server on the same origin as the web app and API. Read tools are granted by default; a small set of non-destructive write tools sits behind dedicated scopes you approve explicitly.
 
 ```txt
 {APP_BASE_URL}/mcp
@@ -15,25 +15,54 @@ MCP runs inside the unified Durabull API process. There is no separate MCP port 
 
 ## What MCP provides
 
-Phase 1 ships diagnostic tools only — no queue mutations, retries, pauses, or purges.
+Every tool has a description, behavioural annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`), a JSON input schema, and a JSON output schema. Results are returned as `structuredContent` and as JSON text.
 
-**GA status:** Read-only MCP is implemented on the unified deployment. Before announcing production use, complete the [release checklist](https://github.com/durabullhq/durabull/blob/main/docs/mcp-ga-release-checklist.md) (staging smoke, config verification). Full GA doc set: [GA index](https://github.com/durabullhq/durabull/blob/main/docs/mcp-ga-index.md) (ADR, compliance, security closure, validation evidence).
+**GA status:** MCP is implemented on the unified deployment. Before announcing production use, complete the [release checklist](https://github.com/durabullhq/durabull/blob/main/docs/mcp-ga-release-checklist.md) (staging smoke, config verification). Full GA doc set: [GA index](https://github.com/durabullhq/durabull/blob/main/docs/mcp-ga-index.md) (ADR, compliance, security closure, validation evidence).
+
+### Read tools
 
 | Tool | Scope | Purpose |
 | --- | --- | --- |
 | `ping` | `mcp:discover` | Transport smoke check |
 | `list_connections` | `mcp:jobs:read` | Connections visible to the principal |
-| `list_queues` | `mcp:jobs:read` | Queue inventory for a connection |
-| `get_queue` | `mcp:jobs:read` | Queue detail and counts |
-| `list_jobs` | `mcp:jobs:read` | Paginated job summaries |
-| `get_job` | `mcp:jobs:read` | Safe job detail |
+| `list_queues` | `mcp:jobs:read` | Queue inventory with live counts |
+| `get_queue` | `mcp:jobs:read` | Queue detail, counts, workers |
+| `get_connection_overview` | `mcp:jobs:read` (+ optional `mcp:failures:read`, `mcp:diagnostics:read`) | One-call health check across up to 100 queues |
+| `list_jobs` | `mcp:jobs:read` | Paginated job summaries with state/name/id filters |
+| `find_job` | `mcp:jobs:read` | Locate a job id across queues |
+| `get_job` | `mcp:jobs:read` | Safe job detail (redacted payload) |
 | `get_job_logs` | `mcp:logs:read` | Paginated job logs |
 | `get_job_stacktraces` | `mcp:logs:read` | Attempt-indexed stacktraces |
-| `get_failure_events` | `mcp:failures:read` | Alert/failure events |
-| `resolve_alert_event` | `mcp:failures:read` | Mark an alert event resolved |
-| `get_queue_metrics` | `mcp:diagnostics:read` | Queue metrics window |
+| `explain_job_failure` | `mcp:diagnostics:read` + `mcp:jobs:read` (+ optional `mcp:logs:read`, `mcp:failures:read`) | Deterministic failure summary; reports skipped evidence |
+| `list_scheduled_jobs` | `mcp:jobs:read` | Job schedulers per queue or across the connection |
+| `get_scheduled_job` | `mcp:jobs:read` | One scheduler with template and failure stats |
 | `get_workers` | `mcp:jobs:read` | Worker snapshots |
-| `explain_job_failure` | `mcp:diagnostics:read` + `mcp:jobs:read` + `mcp:logs:read` + `mcp:failures:read` | Deterministic failure summary |
+| `get_queue_metrics` | `mcp:diagnostics:read` | Throughput metrics window |
+| `get_redis_health` | `mcp:diagnostics:read` | Redis health sample, thresholds, bounded history |
+| `get_failure_events` | `mcp:failures:read` | Alert/failure events with filters |
+| `get_alert_event` | `mcp:failures:read` | Event detail with acknowledgement and deliveries |
+| `get_alert_summary` | `mcp:failures:read` | Open alert counts by queue and rule |
+| `list_alert_rules` | `mcp:failures:read` | Alert rules with state and open counts |
+| `get_alert_rule` | `mcp:failures:read` | One rule with recent events |
+
+### Write tools
+
+Write tools are non-destructive and refuse to run on the wrong state (`conflict`). They never change job payloads. Removing or purging jobs, obliterating queues, editing job data, and managing schedulers or rules have **no MCP scope** and cannot be granted.
+
+| Tool | Scope | Purpose |
+| --- | --- | --- |
+| `retry_job` | `mcp:jobs:retry` | Re-enqueue a failed job |
+| `promote_job` | `mcp:jobs:promote` | Run a delayed job now |
+| `pause_queue` / `resume_queue` | `mcp:queues:pause` | Pause or resume a queue |
+| `resolve_alert_event` | `mcp:failures:write` | Manually resolve a firing alert |
+| `acknowledge_alert_event` / `unacknowledge_alert_event` | `mcp:failures:write` | Acknowledge on behalf of the signed-in user (user tokens only) |
+| `snooze_alert_rule` / `unsnooze_alert_rule` | `mcp:failures:write` | Silence a rule for up to 7 days |
+
+### Resources and prompts
+
+Resources use `durabull://` URIs and are authorized with the same scopes as tools: `durabull://server` (catalog and granted scopes), `durabull://connections`, `durabull://connections/{connectionId}/queues`, `durabull://connections/{connectionId}/queues/{queueName}`, `durabull://connections/{connectionId}/alerts`.
+
+Prompts package common workflows: `triage_failed_jobs`, `investigate_queue_backlog`, `alert_activity_review`, `connection_health_check`.
 
 ## Authentication
 
@@ -60,20 +89,27 @@ See the [MCP OAuth operator guide](https://github.com/durabullhq/durabull/blob/m
 
 | Scope | Grants |
 | --- | --- |
-| `mcp:discover` | Transport + `ping` |
-| `mcp:jobs:read` | Connection/queue/job/worker reads |
+| `mcp:discover` | Transport, `ping`, prompts, `durabull://server` |
+| `mcp:jobs:read` | Connection/queue/job/worker/scheduler reads |
 | `mcp:logs:read` | Logs and stacktraces |
-| `mcp:failures:read` | Failure/alert events |
-| `mcp:diagnostics:read` | Queue metrics; required (with jobs/logs/failures scopes) for `explain_job_failure` |
+| `mcp:failures:read` | Alert events, rules, summaries |
+| `mcp:diagnostics:read` | Queue metrics and Redis health; required (with `mcp:jobs:read`) for `explain_job_failure` |
+| `mcp:jobs:retry` | `retry_job` |
+| `mcp:jobs:promote` | `promote_job` |
+| `mcp:queues:pause` | `pause_queue`, `resume_queue` |
+| `mcp:failures:write` | Resolve, acknowledge, and snooze alerts |
 
-Delegated users receive scopes from OAuth consent. Service accounts require explicit policy bindings per tool/scope.
+Authorize requests that omit `mcp:*` scopes are expanded to the five read scopes only. Write scopes must be requested explicitly and appear on the consent screen marked "can make changes". Delegated users receive scopes from OAuth consent. Service accounts additionally require explicit policy bindings per tool/scope.
+
+**Upgrading from the read-only release:** `resolve_alert_event` now requires `mcp:failures:write`. Re-authorize the client with that scope to keep using it; all read tools continue to work with existing tokens.
 
 ## Safety controls
 
 Authenticated callers still receive:
 
 - **Output redaction** — sensitive keys and inline secrets stripped; `_mcpSafety.redactionCount` when redactions occur
-- **Rate limits** (when `NODE_ENV=production`) — 120 HTTP requests/min on `/mcp` ingress (initialize, session, and tool RPCs); **60 calls/min per tool** per bearer (30/min for `get_job_logs`, `get_job_stacktraces`, `get_failure_events`, `get_queue_metrics`, `explain_job_failure`)
+- **Rate limits** (when `NODE_ENV=production`) — 120 HTTP requests/min on `/mcp` ingress (initialize, session, and tool RPCs); **60 calls/min per tool** per bearer (30/min for heavy tools: `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `get_failure_events`, `get_queue_metrics`, `find_job`, `get_connection_overview`, `list_scheduled_jobs`, `get_redis_health`, `get_alert_summary`)
+- **Typed errors** — tool failures return `{ error: { code, message } }` with `code` in `not_found`, `validation_error`, `conflict`, `forbidden`, `internal_error`; messages are redacted before they leave the server
 - **Audit** — best-effort `mcp_audit_event` rows for tool calls (may drop under backpressure; see runbook)
 
 Operators: telemetry signals, SQL examples, and incident playbooks are in the [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md).

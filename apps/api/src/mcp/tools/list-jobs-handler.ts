@@ -1,37 +1,32 @@
-import { getQueue } from '../../lib/redis'
+import type { ListJobsHandlerInput, ListJobsHandlerOutput, McpJobState } from '@durabull/mcp'
+import { MCP_JOB_STATES } from '@durabull/mcp'
+import type { JobType } from 'bullmq'
 import { toRedisConnectionOptions } from '../../lib/connection-options'
-import type { ListJobsHandlerInput, ListJobsHandlerOutput } from '@durabull/mcp'
+import { getQueue } from '../../lib/redis'
 import {
-  McpToolError,
   decodeCursor,
   encodeCursor,
+  McpToolError,
   requireConnectionForPrincipal,
+  toMcpJobSummary,
 } from './shared'
-
-type JobState =
-  | 'waiting'
-  | 'active'
-  | 'completed'
-  | 'failed'
-  | 'delayed'
-  | 'paused'
-  | 'prioritized'
-
-const ALL_STATES: JobState[] = [
-  'waiting',
-  'active',
-  'completed',
-  'failed',
-  'delayed',
-  'paused',
-  'prioritized',
-]
 
 const FILTER_SCAN_BATCH_SIZE = 200
 const MAX_FILTER_SCAN_JOBS = 10_000
 
+function emptyPage(connectionId: string, queueName: string): ListJobsHandlerOutput {
+  return { connectionId, queueName, jobs: [], total: 0, nextCursor: null }
+}
+
 export async function listJobsHandler(input: ListJobsHandlerInput): Promise<ListJobsHandlerOutput> {
   const connection = await requireConnectionForPrincipal(input.principal, input.connectionId)
+
+  if (input.status && !(MCP_JOB_STATES as readonly string[]).includes(input.status)) {
+    throw new McpToolError(
+      'validation_error',
+      `Unknown job status "${input.status}". Expected one of: ${MCP_JOB_STATES.join(', ')}.`
+    )
+  }
 
   const queue = await getQueue(
     connection.id,
@@ -44,58 +39,27 @@ export async function listJobsHandler(input: ListJobsHandlerInput): Promise<List
   if (input.jobId) {
     const exactJob = await queue.getJob(input.jobId)
     if (!exactJob) {
-      return {
-        connectionId: connection.id,
-        queueName: input.queueName,
-        jobs: [],
-        total: 0,
-        nextCursor: null,
-      }
+      return emptyPage(connection.id, input.queueName)
     }
     const exactState = await exactJob.getState()
     if (input.status && exactState !== input.status) {
-      return {
-        connectionId: connection.id,
-        queueName: input.queueName,
-        jobs: [],
-        total: 0,
-        nextCursor: null,
-      }
+      return emptyPage(connection.id, input.queueName)
     }
     if (input.name && !exactJob.name.toLowerCase().includes(input.name.toLowerCase())) {
-      return {
-        connectionId: connection.id,
-        queueName: input.queueName,
-        jobs: [],
-        total: 0,
-        nextCursor: null,
-      }
+      return emptyPage(connection.id, input.queueName)
     }
     return {
       connectionId: connection.id,
       queueName: input.queueName,
-      jobs: [
-        {
-          id: String(exactJob.id ?? ''),
-          name: exactJob.name,
-          status: exactState,
-          attemptsMade: exactJob.attemptsMade,
-          maxAttempts: exactJob.opts.attempts ?? 1,
-          failedReason: exactJob.failedReason ?? null,
-          processedOn: exactJob.processedOn ?? null,
-          finishedOn: exactJob.finishedOn ?? null,
-          timestamp: exactJob.timestamp ?? null,
-          delay: exactJob.delay ?? 0,
-          priority: exactJob.opts.priority ?? 0,
-        },
-      ],
+      jobs: [toMcpJobSummary(exactJob, exactState)],
       total: 1,
       nextCursor: null,
     }
   }
 
-  const states: JobState[] = input.status ? [input.status as JobState] : [...ALL_STATES]
-  const hasClientFilter = Boolean(input.name || input.jobId)
+  const states: McpJobState[] = input.status ? [input.status] : [...MCP_JOB_STATES]
+  const bullStates = states as JobType[]
+  const hasClientFilter = Boolean(input.name)
   const pageSize = Math.min(100, Math.max(1, input.pageSize))
   const offset = decodeCursor(input.cursor)
 
@@ -103,12 +67,12 @@ export async function listJobsHandler(input: ListJobsHandlerInput): Promise<List
     let scannedJobs = 0
     const jobsWithState: Array<{
       job: NonNullable<Awaited<ReturnType<typeof queue.getJobs>>[number]>
-      state: JobState
+      state: McpJobState
     }> = []
     for (const state of states) {
       for (let start = 0; ; start += FILTER_SCAN_BATCH_SIZE) {
         const end = start + FILTER_SCAN_BATCH_SIZE - 1
-        const stateJobs = await queue.getJobs([state], start, end)
+        const stateJobs = await queue.getJobs([state as JobType], start, end)
         if (stateJobs.length === 0) {
           break
         }
@@ -128,23 +92,10 @@ export async function listJobsHandler(input: ListJobsHandlerInput): Promise<List
         }
       }
     }
+    const needle = input.name!.toLowerCase()
     const filtered = jobsWithState
-      .filter(({ job }) =>
-        input.name ? job.name.toLowerCase().includes(input.name.toLowerCase()) : true
-      )
-      .map(({ job, state }) => ({
-        id: String(job.id ?? ''),
-        name: job.name,
-        status: state,
-        attemptsMade: job.attemptsMade,
-        maxAttempts: job.opts.attempts ?? 1,
-        failedReason: job.failedReason ?? null,
-        processedOn: job.processedOn ?? null,
-        finishedOn: job.finishedOn ?? null,
-        timestamp: job.timestamp ?? null,
-        delay: job.delay ?? 0,
-        priority: job.opts.priority ?? 0,
-      }))
+      .filter(({ job }) => job.name.toLowerCase().includes(needle))
+      .map(({ job, state }) => toMcpJobSummary(job, state))
 
     const page = filtered.slice(offset, offset + pageSize)
     const nextOffset = offset + pageSize
@@ -159,26 +110,14 @@ export async function listJobsHandler(input: ListJobsHandlerInput): Promise<List
 
   const end = offset + pageSize - 1
 
-  const jobs = await queue.getJobs(states, offset, end)
+  const jobs = await queue.getJobs(bullStates, offset, end)
   const mappedJobs = await Promise.all(
     jobs
       .filter((job): job is NonNullable<typeof job> => job != null)
-      .map(async (job) => ({
-        id: String(job.id ?? ''),
-        name: job.name,
-        status: await job.getState(),
-        attemptsMade: job.attemptsMade,
-        maxAttempts: job.opts.attempts ?? 1,
-        failedReason: job.failedReason ?? null,
-        processedOn: job.processedOn ?? null,
-        finishedOn: job.finishedOn ?? null,
-        timestamp: job.timestamp ?? null,
-        delay: job.delay ?? 0,
-        priority: job.opts.priority ?? 0,
-      }))
+      .map(async (job) => toMcpJobSummary(job, await job.getState()))
   )
 
-  const total = await queue.getJobCountByTypes(...states)
+  const total = await queue.getJobCountByTypes(...bullStates)
   const nextOffset = offset + pageSize
   return {
     connectionId: connection.id,

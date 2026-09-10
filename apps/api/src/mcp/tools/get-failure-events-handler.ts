@@ -1,11 +1,7 @@
 import { alertEventRepository } from '@durabull/dal'
-import type {
-  GetFailureEventsHandlerInput,
-  GetFailureEventsHandlerOutput,
-} from '@durabull/mcp'
-
-import { parseOffsetPageSize, requireConnectionForPrincipal } from './shared'
+import type { GetFailureEventsHandlerInput, GetFailureEventsHandlerOutput } from '@durabull/mcp'
 import { toMcpAlertEventSummary } from './mcp-sanitize'
+import { parseOffsetPageSize, requireConnectionForPrincipal } from './shared'
 
 export async function getFailureEventsHandler(
   input: GetFailureEventsHandlerInput
@@ -17,6 +13,8 @@ export async function getFailureEventsHandler(
     status: input.status,
     queueName: input.queueName,
     jobId: input.jobId,
+    acknowledged: input.acknowledged,
+    alertRuleId: input.alertRuleId,
   }
 
   const [total, events] = await Promise.all([
