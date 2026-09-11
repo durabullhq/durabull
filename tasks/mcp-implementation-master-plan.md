@@ -324,12 +324,14 @@ Failure semantics:
 - `mcp:logs:read`
 - `mcp:diagnostics:read`
 
-Reserved for phase 2 write controls:
+Phase 2 write scopes (shipped 2026-09; see ADR-0001 §6):
 
 - `mcp:jobs:retry`
-- `mcp:jobs:remove`
+- `mcp:jobs:promote`
 - `mcp:queues:pause`
-- `mcp:queues:purge`
+- `mcp:failures:write`
+
+Deliberately **not** defined (destructive): `mcp:jobs:remove`, `mcp:queues:purge`.
 
 ### 6.3 Policy Decision Contract
 

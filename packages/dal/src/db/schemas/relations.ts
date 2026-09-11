@@ -121,6 +121,7 @@ export const relations = defineRelations(tables, (r) => ({
       to: r.organization.id,
     }),
     discoveredQueues: r.many.redisDiscoveredQueue(),
+    healthSamples: r.many.redisHealthSample(),
     alertRules: r.many.alertRule(),
     alertEvents: r.many.alertEvent(),
     alertCheckCursors: r.many.alertCheckCursor(),
@@ -129,6 +130,12 @@ export const relations = defineRelations(tables, (r) => ({
   redisDiscoveredQueue: {
     connection: r.one.redisConnection({
       from: r.redisDiscoveredQueue.connectionId,
+      to: r.redisConnection.id,
+    }),
+  },
+  redisHealthSample: {
+    connection: r.one.redisConnection({
+      from: r.redisHealthSample.connectionId,
       to: r.redisConnection.id,
     }),
   },

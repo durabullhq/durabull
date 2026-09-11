@@ -8,6 +8,7 @@ export const alertRuleTypes = [
   'failure_rate',
   'queue_stalled',
   'job_failed',
+  'redis_health',
 ] as const
 export type AlertRuleType = (typeof alertRuleTypes)[number]
 

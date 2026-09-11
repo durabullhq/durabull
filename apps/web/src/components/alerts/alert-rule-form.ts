@@ -8,6 +8,78 @@ import type {
 
 const emailSchema = z.string().email()
 
+export const REDIS_HEALTH_METRIC_OPTIONS = [
+  {
+    value: 'memory_usage_percent',
+    label: 'Memory usage',
+    description: 'Redis allocation as a percentage of its configured maxmemory limit.',
+    unit: '%',
+    defaultThreshold: '80',
+  },
+  {
+    value: 'used_memory_megabytes',
+    label: 'Memory allocated',
+    description: 'Memory allocated by Redis, useful when maxmemory is not configured.',
+    unit: ' MiB',
+    defaultThreshold: '1024',
+  },
+  {
+    value: 'resident_memory_megabytes',
+    label: 'Resident memory',
+    description: 'Physical memory currently occupied by the Redis process.',
+    unit: ' MiB',
+    defaultThreshold: '1024',
+  },
+  {
+    value: 'cpu_usage_percent',
+    label: 'CPU usage',
+    description: 'Process CPU consumed between consecutive INFO samples.',
+    unit: '%',
+    defaultThreshold: '80',
+  },
+  {
+    value: 'memory_fragmentation_ratio',
+    label: 'Allocator fragmentation',
+    description: 'Allocator overhead ratio; tiny byte overheads are ignored to reduce noise.',
+    unit: '×',
+    defaultThreshold: '1.5',
+  },
+  {
+    value: 'connected_clients_percent',
+    label: 'Client capacity',
+    description: 'Connected clients as a percentage of the configured maxclients limit.',
+    unit: '%',
+    defaultThreshold: '80',
+  },
+  {
+    value: 'blocked_clients',
+    label: 'Blocked clients',
+    description: 'Clients waiting on blocking Redis operations.',
+    unit: 'clients',
+    defaultThreshold: '10',
+  },
+  {
+    value: 'evicted_keys_per_minute',
+    label: 'Key evictions',
+    description: 'Keys evicted because Redis reached its maxmemory limit.',
+    unit: 'keys/min',
+    defaultThreshold: '1',
+  },
+  {
+    value: 'rejected_connections_per_minute',
+    label: 'Rejected connections',
+    description: 'Connections rejected because Redis reached maxclients.',
+    unit: 'connections/min',
+    defaultThreshold: '1',
+  },
+] as const
+
+export type RedisHealthMetric = (typeof REDIS_HEALTH_METRIC_OPTIONS)[number]['value']
+
+function isRedisHealthMetric(value: unknown): value is RedisHealthMetric {
+  return REDIS_HEALTH_METRIC_OPTIONS.some((option) => option.value === value)
+}
+
 export interface NotificationRouteDraft {
   id: string
   type: 'email' | 'linear' | 'webhook' | 'destination'
@@ -42,6 +114,8 @@ export interface AlertRuleDraft {
   failureRateMinSample: string
   stalledMinutes: string
   jobFailedMaxIssuesPerPoll: string
+  redisHealthMetric: RedisHealthMetric
+  redisHealthThreshold: string
 }
 
 export function createAlertRuleDraft(rule?: AlertRuleRecord | null): AlertRuleDraft {
@@ -77,6 +151,8 @@ export function createAlertRuleDraft(rule?: AlertRuleRecord | null): AlertRuleDr
     failureRateMinSample: stringifyNumber(config.minSample, 100),
     stalledMinutes: stringifyNumber(config.stalledMinutes, 10),
     jobFailedMaxIssuesPerPoll: stringifyNumber(config.maxIssuesPerPoll, 100),
+    redisHealthMetric: isRedisHealthMetric(config.metric) ? config.metric : 'memory_usage_percent',
+    redisHealthThreshold: stringifyNumber(config.threshold, 80),
   }
 }
 
@@ -230,6 +306,7 @@ export type AlertRuleDraftField =
   | 'failureRateMinSample'
   | 'stalledMinutes'
   | 'jobFailedMaxIssuesPerPoll'
+  | 'redisHealthThreshold'
   | 'routes'
   | `route:${string}`
 
@@ -257,7 +334,11 @@ export function validateAlertRuleDraftFields(
   }
 
   const selectedQueueNames = normalizeQueueNames(draft.selectedQueueNames)
-  if (draft.queueFilterMode === 'include' && selectedQueueNames.length === 0) {
+  if (
+    draft.type !== 'redis_health' &&
+    draft.queueFilterMode === 'include' &&
+    selectedQueueNames.length === 0
+  ) {
     setError('queues', 'Choose at least one queue or switch to "all except" mode.')
   }
 
@@ -406,6 +487,68 @@ export function validateAlertRuleDraftFields(
       }
       break
     }
+    case 'redis_health': {
+      const threshold = Number(draft.redisHealthThreshold)
+      const isFinitePositive = Number.isFinite(threshold) && threshold > 0
+      switch (draft.redisHealthMetric) {
+        case 'memory_usage_percent':
+          if (!isFinitePositive || threshold < 0.1 || threshold > 100) {
+            setError(
+              'redisHealthThreshold',
+              'Memory usage threshold must be between 0.1 and 100 percent.'
+            )
+          }
+          break
+        case 'used_memory_megabytes':
+        case 'resident_memory_megabytes':
+          if (!isFinitePositive || threshold > 1_000_000_000) {
+            setError(
+              'redisHealthThreshold',
+              'Memory threshold must be greater than zero and no more than 1000000000 MiB.'
+            )
+          }
+          break
+        case 'cpu_usage_percent':
+          if (!isFinitePositive || threshold < 0.1 || threshold > 1000) {
+            setError(
+              'redisHealthThreshold',
+              'CPU usage threshold must be between 0.1 and 1000 percent.'
+            )
+          }
+          break
+        case 'memory_fragmentation_ratio':
+          if (!isFinitePositive || threshold < 1 || threshold > 100) {
+            setError('redisHealthThreshold', 'Fragmentation threshold must be between 1 and 100.')
+          }
+          break
+        case 'connected_clients_percent':
+          if (!isFinitePositive || threshold < 0.1 || threshold > 100) {
+            setError(
+              'redisHealthThreshold',
+              'Client capacity threshold must be between 0.1 and 100 percent.'
+            )
+          }
+          break
+        case 'blocked_clients':
+          if (!Number.isInteger(threshold) || threshold < 1 || threshold > 1_000_000) {
+            setError(
+              'redisHealthThreshold',
+              'Blocked clients threshold must be a whole number between 1 and 1000000.'
+            )
+          }
+          break
+        case 'evicted_keys_per_minute':
+        case 'rejected_connections_per_minute':
+          if (!isFinitePositive || threshold > 1_000_000_000) {
+            setError(
+              'redisHealthThreshold',
+              'Rate threshold must be greater than zero and no more than 1000000000.'
+            )
+          }
+          break
+      }
+      break
+    }
     default:
       setError('type', 'Unsupported alert type.')
   }
@@ -493,8 +636,8 @@ export function serializeAlertRuleDraft(draft: AlertRuleDraft): AlertRuleMutatio
     name: baseName,
     type,
     queueName: null,
-    queueFilterMode: draft.queueFilterMode,
-    filterQueueNames: normalizeQueueNames(draft.selectedQueueNames),
+    queueFilterMode: type === 'redis_health' ? null : draft.queueFilterMode,
+    filterQueueNames: type === 'redis_health' ? [] : normalizeQueueNames(draft.selectedQueueNames),
     enabled: draft.enabled,
     cooldownMinutes,
     notificationChannels,
@@ -543,6 +686,11 @@ function buildAlertRuleConfig(type: AlertRuleType, draft: AlertRuleDraft): Recor
     case 'job_failed':
       return {
         maxIssuesPerPoll: parseWholeNumber(draft.jobFailedMaxIssuesPerPoll) ?? 100,
+      }
+    case 'redis_health':
+      return {
+        metric: draft.redisHealthMetric,
+        threshold: Number(draft.redisHealthThreshold) || 80,
       }
     default:
       return {}
@@ -599,6 +747,12 @@ function buildConditionFragment(draft: AlertRuleDraft): string {
       return `no completions for ${displayValue(draft.stalledMinutes)} min while jobs wait`
     case 'job_failed':
       return 'any job failure (one Linear issue per job)'
+    case 'redis_health': {
+      const metric = REDIS_HEALTH_METRIC_OPTIONS.find(
+        (option) => option.value === draft.redisHealthMetric
+      )
+      return `${metric?.label.toLowerCase() ?? 'Redis metric'} ≥ ${displayValue(draft.redisHealthThreshold)}${metric?.unit ?? ''}`
+    }
     default:
       return 'an unsupported condition'
   }
@@ -609,6 +763,7 @@ const CONDITION_FIELDS: Record<AlertRuleType, AlertRuleDraftField[]> = {
   failure_rate: ['failureRatePercent', 'failureRateWindowMinutes', 'failureRateMinSample'],
   queue_stalled: ['stalledMinutes'],
   job_failed: ['jobFailedMaxIssuesPerPoll'],
+  redis_health: ['redisHealthThreshold'],
 }
 
 /**
@@ -625,7 +780,9 @@ export function buildSentenceTokens(
 
   let queuesLabel: string
   let queuesSet = true
-  if (draft.queueFilterMode === 'exclude') {
+  if (draft.type === 'redis_health') {
+    queuesLabel = 'Redis server'
+  } else if (draft.queueFilterMode === 'exclude') {
     queuesLabel =
       selectedQueueNames.length === 0
         ? 'all queues'
@@ -711,7 +868,7 @@ export function buildSentenceTokens(
 }
 
 export interface AlertRuleTemplate {
-  key: 'failure-spike' | 'error-rate' | 'stalled' | 'linear-triage'
+  key: 'failure-spike' | 'error-rate' | 'stalled' | 'redis-memory' | 'linear-triage'
   name: string
   description: string
   type: AlertRuleType
@@ -761,6 +918,20 @@ export const ALERT_RULE_TEMPLATES: AlertRuleTemplate[] = [
       stalledMinutes: '10',
       cooldownMinutes: '30',
       queueFilterMode: 'exclude',
+      selectedQueueNames: [],
+    }),
+  },
+  {
+    key: 'redis-memory',
+    name: 'Redis memory pressure',
+    description: 'Alert when Redis consumes at least 80% of its configured memory capacity.',
+    type: 'redis_health',
+    apply: (base) => ({
+      ...base,
+      type: 'redis_health',
+      redisHealthMetric: 'memory_usage_percent',
+      redisHealthThreshold: '80',
+      cooldownMinutes: '30',
       selectedQueueNames: [],
     }),
   },

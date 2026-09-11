@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Hono } from 'hono'
 import {
   closeDb,
   getDb,
@@ -16,14 +15,10 @@ import {
   redisConnectionRepository,
   user,
 } from '@durabull/dal'
-import { MCP_PROTOCOL_VERSION } from '@durabull/mcp'
-import {
-  MCP_JSON_RPC_VERSION,
-  mcpHeaders,
-  parseSseJson,
-  postMcpJson,
-} from '@durabull/mcp/testing'
 import { env } from '@durabull/env'
+import { MCP_PROTOCOL_VERSION } from '@durabull/mcp'
+import { MCP_JSON_RPC_VERSION, mcpHeaders, parseSseJson, postMcpJson } from '@durabull/mcp/testing'
+import type { Hono } from 'hono'
 import { createApiApp } from '../app'
 import { DEFAULT_AUTHLESS_MCP_BEARER_TOKEN } from './auth/mcp-auth-config'
 
@@ -39,11 +34,9 @@ const originalRedisUrlEncryptionKey = process.env.DURABULL_REDIS_URL_ENCRYPTION_
 
 const authlessAuthorization = `Bearer ${DEFAULT_AUTHLESS_MCP_BEARER_TOKEN}`
 const mcpResource = 'http://localhost:3000/mcp'
-const resourceMetadataUrl =
-  'http://localhost:3000/api/auth/.well-known/oauth-protected-resource'
+const resourceMetadataUrl = 'http://localhost:3000/api/auth/.well-known/oauth-protected-resource'
 
-const TEST_REDIS_ENCRYPTION_KEY =
-  '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+const TEST_REDIS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
 let tempPgliteDir = ''
 let app: Hono
@@ -82,7 +75,10 @@ describe('api MCP ingress', () => {
     }
   })
 
-  const postMcp = (body: Parameters<typeof postMcpJson>[2], options?: Parameters<typeof postMcpJson>[3]) =>
+  const postMcp = (
+    body: Parameters<typeof postMcpJson>[2],
+    options?: Parameters<typeof postMcpJson>[3]
+  ) =>
     postMcpJson((path, init) => Promise.resolve(app.request(path, init)), '/mcp', body, {
       authorization: authlessAuthorization,
       ...options,
@@ -224,6 +220,47 @@ describe('api MCP ingress', () => {
     expect(toolNames).toContain('get_queue_metrics')
     expect(toolNames).toContain('get_workers')
     expect(toolNames).toContain('explain_job_failure')
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        'get_connection_overview',
+        'find_job',
+        'list_scheduled_jobs',
+        'get_scheduled_job',
+        'get_redis_health',
+        'get_alert_event',
+        'get_alert_summary',
+        'list_alert_rules',
+        'get_alert_rule',
+        'acknowledge_alert_event',
+        'unacknowledge_alert_event',
+        'snooze_alert_rule',
+        'unsnooze_alert_rule',
+        'retry_job',
+        'promote_job',
+        'pause_queue',
+        'resume_queue',
+      ])
+    )
+    const tools = listPayload.result?.tools ?? []
+    for (const tool of tools as Array<{
+      name: string
+      description?: string
+      annotations?: { readOnlyHint?: boolean }
+      outputSchema?: unknown
+    }>) {
+      expect(tool.description?.length ?? 0).toBeGreaterThan(40)
+      expect(typeof tool.annotations?.readOnlyHint).toBe('boolean')
+      if (tool.name !== 'ping') expect(tool.outputSchema).toBeDefined()
+    }
+    const byName = new Map(
+      (tools as Array<{ name: string; annotations?: { readOnlyHint?: boolean } }>).map((tool) => [
+        tool.name,
+        tool,
+      ])
+    )
+    expect(byName.get('get_queue')?.annotations?.readOnlyHint).toBe(true)
+    expect(byName.get('resolve_alert_event')?.annotations?.readOnlyHint).toBe(false)
+    expect(byName.get('pause_queue')?.annotations?.readOnlyHint).toBe(false)
 
     const callResponse = await postMcp(
       {
@@ -1137,8 +1174,7 @@ describe('api MCP ingress', () => {
       refreshTokenExpiresAt: future,
       clientId,
       userId: null,
-      scopes:
-        'mcp:discover mcp:diagnostics:read mcp:jobs:read mcp:logs:read mcp:failures:read',
+      scopes: 'mcp:discover mcp:diagnostics:read mcp:jobs:read mcp:logs:read mcp:failures:read',
       resource: mcpResource,
       createdAt: now,
       updatedAt: now,
@@ -1573,7 +1609,9 @@ describe('api MCP ingress', () => {
     const parsed = JSON.parse(payload.result?.content?.[0]?.text ?? '{}') as {
       connections?: Array<{ name: string }>
     }
-    expect(parsed.connections?.map((connection) => connection.name)).toContain('Service Account Conn')
+    expect(parsed.connections?.map((connection) => connection.name)).toContain(
+      'Service Account Conn'
+    )
   })
 
   it('does not treat GET /mcp as SPA static fallback when web build is absent', async () => {
@@ -1586,5 +1624,222 @@ describe('api MCP ingress', () => {
 
     expect(response.headers.get('content-type')).not.toContain('text/html')
     expect(response.status).toBe(400)
+  })
+
+  /** Seeds a delegated user, org, connection, and OAuth token with the given scopes. */
+  async function seedDelegatedToken(scopes: string) {
+    mutableEnv.DURABULL_AUTHLESS = false
+    await closeDb()
+    ;({ app } = await createApiApp({ enableLogging: false }))
+
+    const db = await getDb()
+    const now = new Date()
+    const suffix = crypto.randomUUID().slice(0, 8)
+    const userId = `seed-user-${suffix}`
+    const orgId = `seed-org-${suffix}`
+    await db.insert(user).values({
+      id: userId,
+      email: `${userId}@example.com`,
+      emailVerified: true,
+      name: 'Seed User',
+      createdAt: now,
+      updatedAt: now,
+      image: null,
+      lastSignInAt: null,
+    })
+    await db.insert(organization).values({
+      id: orgId,
+      name: 'Seed Org',
+      slug: `seed-org-${suffix}`,
+      createdAt: now,
+      updatedAt: now,
+    })
+    // Created through the repository so the URL is encrypted like production rows.
+    const connection = await redisConnectionRepository.create({
+      name: 'Seed Connection',
+      url: 'redis://localhost:6379/7',
+      isDefault: true,
+      environment: 'development',
+      prefix: 'bull',
+      allowSelfSignedCerts: false,
+      organizationId: orgId,
+    })
+    await db.insert(member).values({
+      id: crypto.randomUUID(),
+      organizationId: orgId,
+      userId,
+      role: 'member',
+      createdAt: now,
+      updatedAt: now,
+    })
+    const clientId = `seed-client-${suffix}`
+    await db.insert(oauthApplication).values({
+      id: crypto.randomUUID(),
+      name: 'seed-client',
+      clientId,
+      redirectUrls: 'http://127.0.0.1/callback',
+      type: 'public',
+      disabled: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+    const token = `seed-token-${suffix}`
+    const future = new Date(Date.now() + 3600_000)
+    await db.insert(oauthAccessToken).values({
+      id: crypto.randomUUID(),
+      accessToken: token,
+      refreshToken: `refresh-${token}`,
+      accessTokenExpiresAt: future,
+      refreshTokenExpiresAt: future,
+      clientId,
+      userId,
+      scopes,
+      resource: mcpResource,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    const initResponse = await postMcp(
+      {
+        jsonrpc: MCP_JSON_RPC_VERSION,
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: MCP_PROTOCOL_VERSION,
+          capabilities: {},
+          clientInfo: { name: 'seed', version: '1.0.0' },
+        },
+      },
+      { authorization: `Bearer ${token}` }
+    )
+    expect(initResponse.status).toBe(200)
+    const sessionId = initResponse.headers.get('mcp-session-id')
+    expect(sessionId).toBeTruthy()
+
+    return {
+      connectionId: connection.id,
+      call: (body: Parameters<typeof postMcpJson>[2]) =>
+        postMcp(body, { authorization: `Bearer ${token}`, sessionId: sessionId ?? undefined }),
+    }
+  }
+
+  it('denies write tools to tokens that hold only the read bundle', async () => {
+    const { connectionId, call } = await seedDelegatedToken(
+      'mcp:discover mcp:jobs:read mcp:logs:read mcp:failures:read mcp:diagnostics:read'
+    )
+
+    const denials: Array<[string, Record<string, unknown>, string]> = [
+      ['resolve_alert_event', { connectionId, eventId: 'e1' }, 'mcp:failures:write'],
+      ['snooze_alert_rule', { connectionId, ruleId: 'r1', minutes: 5 }, 'mcp:failures:write'],
+      ['retry_job', { connectionId, queueName: 'q', jobId: 'j' }, 'mcp:jobs:retry'],
+      ['promote_job', { connectionId, queueName: 'q', jobId: 'j' }, 'mcp:jobs:promote'],
+      ['pause_queue', { connectionId, queueName: 'q' }, 'mcp:queues:pause'],
+    ]
+    let id = 10
+    for (const [name, args, scope] of denials) {
+      const response = await call({
+        jsonrpc: MCP_JSON_RPC_VERSION,
+        id: id++,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      })
+      expect(response.status).toBe(403)
+      const body = await response.text()
+      expect(body).toContain('insufficient_scope')
+      expect(body).toContain(scope)
+    }
+  })
+
+  it('authorizes resources/read through the policy engine and fails closed on unknown URIs', async () => {
+    const { connectionId, call } = await seedDelegatedToken('mcp:discover mcp:jobs:read')
+
+    const serverResponse = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 2,
+      method: 'resources/read',
+      params: { uri: 'durabull://server' },
+    })
+    expect(serverResponse.status).toBe(200)
+    const serverPayload = parseSseJson(await serverResponse.text()) as {
+      result?: { contents?: Array<{ text?: string }> }
+    }
+    const serverInfo = JSON.parse(serverPayload.result?.contents?.[0]?.text ?? '{}') as {
+      grantedScopes?: string[]
+      principalType?: string
+    }
+    expect(serverInfo.principalType).toBe('delegated_user')
+    expect(serverInfo.grantedScopes).toEqual(['mcp:discover', 'mcp:jobs:read'])
+
+    const queuesResponse = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 3,
+      method: 'resources/read',
+      params: { uri: `durabull://connections/${connectionId}/queues` },
+    })
+    expect(queuesResponse.status).toBe(200)
+    const queuesPayload = parseSseJson(await queuesResponse.text()) as {
+      result?: { contents?: Array<{ text?: string }> }
+    }
+    const queues = JSON.parse(queuesPayload.result?.contents?.[0]?.text ?? '{}') as {
+      connectionId?: string
+      queues?: unknown[]
+    }
+    expect(queues.connectionId).toBe(connectionId)
+    expect(queues.queues).toEqual([])
+
+    const alertsResponse = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 4,
+      method: 'resources/read',
+      params: { uri: `durabull://connections/${connectionId}/alerts` },
+    })
+    expect(alertsResponse.status).toBe(403)
+    expect(await alertsResponse.text()).toContain('mcp:failures:read')
+
+    const unknownResponse = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 5,
+      method: 'resources/read',
+      params: { uri: `durabull://connections/${connectionId}/redis-keys` },
+    })
+    expect(unknownResponse.status).toBe(400)
+    expect(await unknownResponse.text()).toContain('unknown resource URI')
+  })
+
+  it('serves prompts and returns structured results for catalog tools', async () => {
+    const { connectionId, call } = await seedDelegatedToken('mcp:discover mcp:jobs:read')
+
+    const promptResponse = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 2,
+      method: 'prompts/get',
+      params: {
+        name: 'connection_health_check',
+        arguments: { connectionId },
+      },
+    })
+    expect(promptResponse.status).toBe(200)
+    const promptPayload = parseSseJson(await promptResponse.text()) as {
+      result?: { messages?: Array<{ content: { text?: string } }> }
+    }
+    expect(promptPayload.result?.messages?.[0]?.content.text).toContain('get_connection_overview')
+
+    const listResponse = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'list_connections', arguments: { pageSize: 5 } },
+    })
+    expect(listResponse.status).toBe(200)
+    const listPayload = parseSseJson(await listResponse.text()) as {
+      result?: {
+        isError?: boolean
+        structuredContent?: { connections?: Array<{ id: string; name: string }> }
+      }
+      error?: unknown
+    }
+    expect(listPayload.error).toBeUndefined()
+    expect(listPayload.result?.isError).toBeUndefined()
+    expect(listPayload.result?.structuredContent?.connections?.[0]?.name).toBe('Seed Connection')
   })
 })

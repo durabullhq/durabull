@@ -15,7 +15,13 @@ import {
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { type CursorState, evaluateRule, type QueueSnapshot } from '../lib/alert-evaluator'
+import {
+  type AlertEvaluation,
+  type CursorState,
+  evaluateRedisHealthRule,
+  evaluateRule,
+  type QueueSnapshot,
+} from '../lib/alert-evaluator'
 import { processAlertDeliveries } from '../lib/alert-notifier'
 import { syncLinearIssuesForResolvedEvents } from '../lib/alert-resolution'
 import {
@@ -27,9 +33,23 @@ import {
 } from '../lib/alert-webhook-channels'
 import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
 import { getConnectionRedisOptions } from '../lib/connection-options'
-import { getQueue } from '../lib/redis'
+import { getQueue, getRedis } from '../lib/redis'
+import {
+  buildRedisHealthSnapshot,
+  REDIS_HEALTH_CURSOR_SCOPE,
+  REDIS_HEALTH_EVENT_SCOPE,
+  type RedisHealthSnapshot,
+  redisHealthConfigSchema,
+  restoreRedisHealthSnapshot,
+} from '../lib/redis-health'
 
-const alertTypeSchema = z.enum(['failure_threshold', 'failure_rate', 'queue_stalled', 'job_failed'])
+const alertTypeSchema = z.enum([
+  'failure_threshold',
+  'failure_rate',
+  'queue_stalled',
+  'job_failed',
+  'redis_health',
+])
 const queueFilterModeSchema = z.enum(['include', 'exclude'])
 const alertEventStatusSchema = z.enum(['firing', 'resolved', 'suppressed'])
 const emailNotificationChannelSchema = z.object({
@@ -187,8 +207,12 @@ const app = new Hono()
       return c.json({ error: 'Maximum of 50 alert rules per connection' }, 400)
     }
 
+    const ruleInput =
+      body.type === 'redis_health'
+        ? { ...body, queueName: null, queueFilterMode: null, filterQueueNames: [] }
+        : body
     const rule = await alertRuleRepository.create({
-      ...body,
+      ...ruleInput,
       connectionId,
       organizationId,
     })
@@ -230,12 +254,26 @@ const app = new Hono()
       )
     }
 
+    const scopeChanged =
+      (body.type !== undefined && body.type !== existingRule.type) ||
+      (body.queueName !== undefined && body.queueName !== existingRule.queueName) ||
+      (body.queueFilterMode !== undefined &&
+        body.queueFilterMode !== existingRule.queueFilterMode) ||
+      (body.filterQueueNames !== undefined &&
+        JSON.stringify(body.filterQueueNames) !== JSON.stringify(existingRule.filterQueueNames))
+
+    if ((body.type ?? existingRule.type) === 'redis_health') {
+      body.queueName = null
+      body.queueFilterMode = null
+      body.filterQueueNames = []
+    }
+
     const rule = await alertRuleRepository.update(ruleId, organizationId, body)
     if (!rule) {
       return c.json({ error: 'Rule not found' }, 404)
     }
 
-    if (body.enabled === false) {
+    if (body.enabled === false || scopeChanged) {
       await alertEventRepository.resolveAllForRule(rule.id)
     }
 
@@ -320,63 +358,85 @@ const app = new Hono()
         return c.json({ error: 'Rule not found' }, 404)
       }
 
-      let queueName = rule.queueName
-      if (!queueName) {
-        const discovered = await redisDiscoveredQueueRepository.listByConnection(connectionId, {
-          offset: 0,
-          limit: 1,
-        })
-        queueName = discovered[0]?.name ?? null
+      let queueName: string
+      let snapshot: QueueSnapshot | RedisHealthSnapshot
+      let evaluation: AlertEvaluation
+
+      if (rule.type === 'redis_health') {
+        queueName = REDIS_HEALTH_EVENT_SCOPE
+        const cursorRow = await alertCheckCursorRepository.findByConnectionQueue(
+          connectionId,
+          REDIS_HEALTH_CURSOR_SCOPE
+        )
+        const previous = restoreRedisHealthSnapshot(cursorRow?.lastMetricsSnapshot)
+        const redis = await getRedis(connectionId, connectionUrl, connectionName, redisOptions)
+        snapshot = buildRedisHealthSnapshot(
+          await redis.info(),
+          connectionName,
+          new Date(),
+          previous
+        )
+        evaluation = evaluateRedisHealthRule(rule, snapshot)
+      } else {
+        let resolvedQueueName = rule.queueName
+        if (!resolvedQueueName) {
+          const discovered = await redisDiscoveredQueueRepository.listByConnection(connectionId, {
+            offset: 0,
+            limit: 1,
+          })
+          resolvedQueueName = discovered[0]?.name ?? null
+        }
+        if (!resolvedQueueName) {
+          return c.json({ error: 'No queue available to test this rule yet' }, 400)
+        }
+        queueName = resolvedQueueName
+
+        const queue = await getQueue(
+          connectionId,
+          connectionUrl,
+          queueName,
+          connectionPrefix,
+          redisOptions
+        )
+        const [jobCountsRaw, failedMetricsRaw, completedMetricsRaw] = await Promise.all([
+          queue.getJobCounts('failed', 'waiting', 'active', 'completed'),
+          queue.getMetrics('failed', 0, 60),
+          queue.getMetrics('completed', 0, 60),
+        ])
+
+        snapshot = {
+          queueName,
+          connectionName,
+          jobCounts: {
+            failed: jobCountsRaw.failed ?? 0,
+            waiting: jobCountsRaw.waiting ?? 0,
+            active: jobCountsRaw.active ?? 0,
+            completed: jobCountsRaw.completed ?? 0,
+          },
+          failedMetrics: {
+            count: failedMetricsRaw.meta.count,
+            dataPoints: failedMetricsRaw.data,
+          },
+          completedMetrics: {
+            count: completedMetricsRaw.meta.count,
+            dataPoints: completedMetricsRaw.data,
+          },
+        }
+
+        const cursorRow = await alertCheckCursorRepository.findByConnectionQueue(
+          connectionId,
+          queueName
+        )
+        const cursor: CursorState | null = cursorRow
+          ? {
+              lastCheckedAt: cursorRow.lastCheckedAt,
+              lastFailedCount: cursorRow.lastFailedCount,
+              lastCompletedCount: cursorRow.lastCompletedCount,
+            }
+          : null
+
+        evaluation = evaluateRule(rule, snapshot, cursor)
       }
-      if (!queueName) {
-        return c.json({ error: 'No queue available to test this rule yet' }, 400)
-      }
-
-      const queue = await getQueue(
-        connectionId,
-        connectionUrl,
-        queueName,
-        connectionPrefix,
-        redisOptions
-      )
-      const [jobCountsRaw, failedMetricsRaw, completedMetricsRaw] = await Promise.all([
-        queue.getJobCounts('failed', 'waiting', 'active', 'completed'),
-        queue.getMetrics('failed', 0, 60),
-        queue.getMetrics('completed', 0, 60),
-      ])
-
-      const snapshot: QueueSnapshot = {
-        queueName,
-        connectionName,
-        jobCounts: {
-          failed: jobCountsRaw.failed ?? 0,
-          waiting: jobCountsRaw.waiting ?? 0,
-          active: jobCountsRaw.active ?? 0,
-          completed: jobCountsRaw.completed ?? 0,
-        },
-        failedMetrics: {
-          count: failedMetricsRaw.meta.count,
-          dataPoints: failedMetricsRaw.data,
-        },
-        completedMetrics: {
-          count: completedMetricsRaw.meta.count,
-          dataPoints: completedMetricsRaw.data,
-        },
-      }
-
-      const cursorRow = await alertCheckCursorRepository.findByConnectionQueue(
-        connectionId,
-        queueName
-      )
-      const cursor: CursorState | null = cursorRow
-        ? {
-            lastCheckedAt: cursorRow.lastCheckedAt,
-            lastFailedCount: cursorRow.lastFailedCount,
-            lastCompletedCount: cursorRow.lastCompletedCount,
-          }
-        : null
-
-      const evaluation = evaluateRule(rule, snapshot, cursor)
 
       const notificationChannels = Array.isArray(rule.notificationChannels)
         ? rule.notificationChannels
@@ -706,6 +766,10 @@ function validateAlertConfig(type: string, config: Record<string, unknown>): str
       const result = schema.safeParse(config)
       return result.success ? null : `Invalid config: ${result.error.message}`
     }
+    case 'redis_health': {
+      const result = redisHealthConfigSchema.safeParse(config)
+      return result.success ? null : `Invalid config: ${result.error.message}`
+    }
     default:
       return `Unknown alert type: ${type}`
   }
@@ -748,7 +812,9 @@ async function validateNotificationChannels(
       organizationId
     )
     if (!destination) {
-      return isDestination ? 'Notification destination not found.' : 'Webhook destination not found.'
+      return isDestination
+        ? 'Notification destination not found.'
+        : 'Webhook destination not found.'
     }
     if (isSavedWebhook && destination.type !== 'webhook') {
       return `Destination "${destination.name}" is not a webhook destination.`

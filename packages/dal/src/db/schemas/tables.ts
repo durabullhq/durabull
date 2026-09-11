@@ -6,9 +6,9 @@
 // Alert schema tables
 export { alertCheckCursor } from './alert-check-cursor/schema'
 export { alertDelivery } from './alert-delivery/schema'
+export { alertDestination } from './alert-destination/schema'
 export { alertEvent } from './alert-event/schema'
 export { alertRule } from './alert-rule/schema'
-export { alertDestination } from './alert-destination/schema'
 // Auth schema tables
 export { authAccount, authSession, authVerification } from './auth/schema'
 export { linearIntegration } from './linear-integration/schema'
@@ -27,6 +27,7 @@ export { invitation, member, organization } from './organization/schema'
 // Redis Connection schema tables
 export { connectionEnvironments, redisConnection } from './redis-connection/schema'
 export { redisDiscoveredQueue } from './redis-discovered-queue/schema'
+export { redisHealthSample } from './redis-health-sample/schema'
 // Telemetry installation schema tables
 export { telemetryInstallation } from './telemetry-installation/schema'
 // User schema tables

@@ -10,6 +10,8 @@ export interface McpRequestPrincipal {
 export interface McpResolvedConnection {
   id: string
   organizationId: string
+  name: string
+  environment: string | null
   url: string
   prefix: string
   allowSelfSignedCerts: boolean
@@ -26,7 +28,12 @@ export interface McpToolInvocationAuditInput {
 export interface McpRequestContext {
   principal?: McpRequestPrincipal
   correlationId?: string
-  grantedScopes?: string[]
+  /**
+   * Effective scopes for this call: token scopes for delegated users; for service accounts,
+   * token scopes that also have a matching policy binding. Handlers use these to decide which
+   * optional sections to include.
+   */
+  grantedScopes?: readonly string[]
   resolvedConnection?: McpResolvedConnection
   onToolInvocationComplete?: (input: McpToolInvocationAuditInput) => void
   onRedactionApplied?: (redactionCount: number) => void
@@ -46,4 +53,9 @@ export function runWithMcpRequestContext<T>(
 
 export function getMcpRequestContext(): McpRequestContext | undefined {
   return store.getStore()
+}
+
+/** True when the current request's effective scopes include `scope`. */
+export function mcpRequestHasScope(scope: string): boolean {
+  return getMcpRequestContext()?.grantedScopes?.includes(scope) ?? false
 }

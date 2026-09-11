@@ -19,6 +19,9 @@ import {
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { Hono } from 'hono'
+import * as redisModule from '../lib/redis'
+
+const realRedisModule = { ...redisModule }
 
 const TEST_ORG_ID = 'alert-routes-org'
 const TEST_CONNECTION_ID = '55555555-5555-4555-8555-555555555555'
@@ -121,6 +124,8 @@ describe('alerts routes', () => {
   })
 
   afterEach(async () => {
+    mock.restore()
+    mock.module('../lib/redis', () => realRedisModule)
     await closeDb()
     mutableEnv.DATABASE_URL = originalDatabaseUrl
 
@@ -134,6 +139,37 @@ describe('alerts routes', () => {
       await rm(tempPgliteDir, { recursive: true, force: true })
       tempPgliteDir = ''
     }
+  })
+
+  it('creates a connection-scoped Redis health rule', async () => {
+    const app = await createAlertsRouteApp()
+
+    const response = await app.request(
+      '/rules',
+      jsonRequest({
+        name: 'Redis memory pressure',
+        type: 'redis_health',
+        queueName: null,
+        queueFilterMode: null,
+        filterQueueNames: [],
+        config: { metric: 'memory_usage_percent', threshold: 80 },
+        notificationChannels: [],
+        cooldownMinutes: 30,
+        enabled: true,
+      })
+    )
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({
+      rule: {
+        name: 'Redis memory pressure',
+        type: 'redis_health',
+        queueName: null,
+        queueFilterMode: null,
+        filterQueueNames: [],
+        config: { metric: 'memory_usage_percent', threshold: 80 },
+      },
+    })
   })
 
   it('rejects invalid rule configs on create', async () => {
@@ -449,6 +485,45 @@ describe('alerts routes', () => {
     expect(updatedRule?.enabled).toBe(false)
   })
 
+  it('resolves active incidents when a rule changes between queue and Redis scope', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Queue pressure',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Queue pressure is high',
+      context: {},
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        type: 'redis_health',
+        config: { metric: 'memory_usage_percent', threshold: 80 },
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    const events = await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })
+    expect(events).toHaveLength(1)
+    expect(events[0]?.id).toBe(event.id)
+    expect(events[0]?.status).toBe('resolved')
+  })
+
   it('returns a 400 from the live test endpoint when no queue is available yet', async () => {
     const rule = await alertRuleRepository.create({
       organizationId: TEST_ORG_ID,
@@ -483,6 +558,7 @@ describe('alerts routes', () => {
       }),
     }))
     mock.module('../lib/redis', () => ({
+      ...realRedisModule,
       getQueue: getQueueMock,
     }))
 
@@ -522,6 +598,53 @@ describe('alerts routes', () => {
 
     const events = await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })
     expect(events).toHaveLength(0)
+  })
+
+  it('runs a live Redis health evaluation without requiring a queue', async () => {
+    const infoMock = mock(async () =>
+      [
+        '# Memory',
+        'used_memory:94371840',
+        'maxmemory:104857600',
+        'total_system_memory:1073741824',
+        '# CPU',
+        'used_cpu_sys:4',
+        'used_cpu_user:6',
+      ].join('\r\n')
+    )
+    mock.module('../lib/redis', () => ({
+      ...realRedisModule,
+      getRedis: mock(async () => ({ info: infoMock })),
+    }))
+
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: null,
+      name: 'Redis memory pressure',
+      type: 'redis_health',
+      config: { metric: 'memory_usage_percent', threshold: 80 },
+      cooldownMinutes: 30,
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}/test`, { method: 'POST' })
+
+    expect(response.status).toBe(200)
+    expect(infoMock).toHaveBeenCalledTimes(1)
+    expect(await response.json()).toMatchObject({
+      evaluation: {
+        triggered: true,
+        context: { metric: 'memory_usage_percent', value: 90, threshold: 80 },
+      },
+      snapshot: {
+        kind: 'redis_health',
+        connectionName: 'Primary Redis',
+        metrics: { memoryUsagePercent: 90 },
+      },
+    })
+
+    expect(await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })).toHaveLength(0)
   })
 
   it('lists connection events and resolves them through the API', async () => {
@@ -949,10 +1072,7 @@ describe('alerts routes', () => {
       cooldownMinutes: 30,
     })
 
-    const tooLong = await app.request(
-      `/rules/${rule.id}/snooze`,
-      jsonRequest({ minutes: 10081 })
-    )
+    const tooLong = await app.request(`/rules/${rule.id}/snooze`, jsonRequest({ minutes: 10081 }))
     expect(tooLong.status).toBe(400)
   })
 
@@ -1001,10 +1121,9 @@ describe('alerts routes', () => {
 
   it('requires an authenticated user to acknowledge', async () => {
     const app = await createAlertsRouteApp()
-    const response = await app.request(
-      '/events/66666666-6666-4666-8666-666666666666/acknowledge',
-      { method: 'POST' }
-    )
+    const response = await app.request('/events/66666666-6666-4666-8666-666666666666/acknowledge', {
+      method: 'POST',
+    })
     expect(response.status).toBe(401)
   })
 

@@ -1,3 +1,4 @@
+import { alertRuleRepository } from '@durabull/dal'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -7,8 +8,15 @@ import {
   DEFAULT_PRIORITY_BUCKETS,
   MAX_METRICS_WINDOW_MINUTES,
 } from '../lib/bullmq-metrics'
-import { discoverQueues, getQueue } from '../lib/redis'
 import { getConnectionRedisOptions } from '../lib/connection-options'
+import { discoverQueues, getQueue } from '../lib/redis'
+import { redisHealthConfigSchema } from '../lib/redis-health'
+import {
+  getRedisHealthHistory,
+  getRedisHealthRetentionDays,
+  getRedisHealthSampleIntervalMs,
+  isRedisHealthHistoryEnabled,
+} from '../lib/redis-health-history'
 
 // Default and max page sizes for pagination
 const DEFAULT_PAGE_SIZE = 50
@@ -18,6 +26,10 @@ const metricsQuerySchema = z.object({
   windowMinutes: z.string().optional(),
   includePrometheus: z.string().optional(),
   priorities: z.string().optional(),
+})
+const redisHealthHistoryQuerySchema = z.object({
+  windowMinutes: z.coerce.number().int().min(5).max(43_200).default(1_440),
+  targetPoints: z.coerce.number().int().min(30).max(1_000).default(480),
 })
 
 function parseInteger(value: string | undefined): number | null {
@@ -46,6 +58,53 @@ function parsePriorities(value: string | undefined): number[] {
 }
 
 const app = new Hono()
+  .get('/redis-health', zValidator('query', redisHealthHistoryQuerySchema), async (c) => {
+    const connectionId = c.get('connectionId')
+    const organizationId = c.get('organizationId')
+    if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
+
+    const query = c.req.valid('query')
+    const to = new Date()
+    const from = new Date(to.getTime() - query.windowMinutes * 60_000)
+    const sampleIntervalMs = getRedisHealthSampleIntervalMs()
+    const [history, rules] = await Promise.all([
+      getRedisHealthHistory(connectionId, {
+        from,
+        to,
+        targetPoints: query.targetPoints,
+        expectedSampleIntervalMinutes: sampleIntervalMs / 60_000,
+      }),
+      alertRuleRepository.findByConnection(connectionId, organizationId),
+    ])
+    const now = Date.now()
+    const thresholds = rules.flatMap((rule) => {
+      if (
+        rule.type !== 'redis_health' ||
+        !rule.enabled ||
+        (rule.mutedUntil !== null && rule.mutedUntil.getTime() > now)
+      ) {
+        return []
+      }
+      const config = redisHealthConfigSchema.safeParse(rule.config)
+      if (!config.success) return []
+      return [
+        {
+          ruleId: rule.id,
+          name: rule.name,
+          metric: config.data.metric,
+          threshold: config.data.threshold,
+        },
+      ]
+    })
+
+    return c.json({
+      ...history,
+      thresholds,
+      collectionEnabled: isRedisHealthHistoryEnabled(),
+      retentionDays: getRedisHealthRetentionDays(),
+      staleAfterMs: Math.max(180_000, sampleIntervalMs * 3),
+    })
+  })
   // Get all metrics (paginated by queue)
   .get('/', zValidator('query', metricsQuerySchema), async (c) => {
     const connectionId = c.get('connectionId')
@@ -62,7 +121,12 @@ const app = new Hono()
       MAX_PAGE_SIZE
     )
 
-    const allQueueNames = await discoverQueues(connectionId, connectionUrl, connectionPrefix, redisOptions)
+    const allQueueNames = await discoverQueues(
+      connectionId,
+      connectionUrl,
+      connectionPrefix,
+      redisOptions
+    )
     const total = allQueueNames.length
 
     // Paginate the queue names BEFORE fetching metrics
@@ -80,7 +144,13 @@ const app = new Hono()
 
     const metrics = await Promise.all(
       paginatedQueueNames.map(async (queueName) => {
-        const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+        const queue = await getQueue(
+          connectionId,
+          connectionUrl,
+          queueName,
+          connectionPrefix,
+          redisOptions
+        )
         const nativeMetrics = await collectQueueNativeMetrics(queue, {
           queueName,
           start: 0,

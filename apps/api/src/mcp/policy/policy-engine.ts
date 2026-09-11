@@ -1,28 +1,8 @@
 import { mcpPolicyRepository } from '@durabull/dal'
+import { getMcpToolRequiredScopes } from '@durabull/mcp'
 
 import type { McpSession } from '../auth/mcp-session-middleware'
 import type { McpPolicyDecision, McpPrincipal, McpToolCallRequest } from './types'
-
-const TOOL_REQUIRED_SCOPES: Record<string, string[]> = {
-  ping: ['mcp:discover'],
-  list_connections: ['mcp:jobs:read'],
-  list_queues: ['mcp:jobs:read'],
-  get_queue: ['mcp:jobs:read'],
-  list_jobs: ['mcp:jobs:read'],
-  get_job: ['mcp:jobs:read'],
-  get_job_logs: ['mcp:logs:read'],
-  get_job_stacktraces: ['mcp:logs:read'],
-  get_failure_events: ['mcp:failures:read'],
-  resolve_alert_event: ['mcp:failures:read'],
-  get_queue_metrics: ['mcp:diagnostics:read'],
-  get_workers: ['mcp:jobs:read'],
-  explain_job_failure: [
-    'mcp:diagnostics:read',
-    'mcp:jobs:read',
-    'mcp:logs:read',
-    'mcp:failures:read',
-  ],
-}
 
 function parseScopes(scopeString: string): string[] {
   return scopeString
@@ -31,13 +11,37 @@ function parseScopes(scopeString: string): string[] {
     .filter(Boolean)
 }
 
-function missingScopes(grantedScopes: string[], requiredScopes: string[]): string[] {
+function missingScopes(grantedScopes: string[], requiredScopes: readonly string[]): string[] {
   const grantedSet = new Set(grantedScopes)
   return requiredScopes.filter((scope) => !grantedSet.has(scope))
 }
 
-function getRequiredScopes(toolName: string): string[] | null {
-  return TOOL_REQUIRED_SCOPES[toolName] ?? null
+/** Required scopes for an operation: explicit for resources, catalog-driven for tools. */
+function getRequiredScopes(call: McpToolCallRequest): readonly string[] | null {
+  if (call.requiredScopes) return call.requiredScopes
+  return getMcpToolRequiredScopes(call.toolName)
+}
+
+type PolicyBinding = Awaited<ReturnType<typeof mcpPolicyRepository.listPolicyBindings>>[number]
+
+function bindingCovers(
+  binding: PolicyBinding,
+  scope: string,
+  toolName: string,
+  organizationId: string
+): boolean {
+  return (
+    binding.scope === scope &&
+    (binding.toolName === null || binding.toolName === toolName) &&
+    (binding.organizationId === null || binding.organizationId === organizationId)
+  )
+}
+
+function deny(
+  base: Omit<McpPolicyDecision, 'granted' | 'denialReason' | 'effectiveScopes'>,
+  denialReason: string
+): McpPolicyDecision {
+  return { ...base, effectiveScopes: [], granted: false, denialReason }
 }
 
 export async function evaluateMcpToolPolicy(input: {
@@ -46,112 +50,82 @@ export async function evaluateMcpToolPolicy(input: {
   session: McpSession
   call: McpToolCallRequest
 }): Promise<McpPolicyDecision> {
-  const requiredScopes = getRequiredScopes(input.call.toolName)
-  if (!requiredScopes) {
-    return {
-      correlationId: input.correlationId,
-      principalType: input.principal.type,
-      principalId: input.principal.principalId,
-      organizationId: input.principal.organizationId,
-      connectionId: input.call.connectionId,
-      toolName: input.call.toolName,
-      requiredScopes: [],
-      granted: false,
-      denialReason: 'policy_configuration_missing',
-    }
-  }
-
-  const grantedScopes = parseScopes(input.session.scopes)
-  const missing = missingScopes(grantedScopes, requiredScopes)
-
-  if (missing.length > 0) {
-    return {
-      correlationId: input.correlationId,
-      principalType: input.principal.type,
-      principalId: input.principal.principalId,
-      organizationId: input.principal.organizationId,
-      connectionId: input.call.connectionId,
-      toolName: input.call.toolName,
-      requiredScopes,
-      granted: false,
-      denialReason: `missing_scopes:${missing.join(',')}`,
-    }
-  }
-
-  if (input.call.connectionId && input.principal.type === 'delegated_user') {
-    const canAccess = await mcpPolicyRepository.canDelegatedUserAccessConnection(
-      input.principal.userId,
-      input.call.connectionId
-    )
-    if (!canAccess) {
-      return {
-        correlationId: input.correlationId,
-        principalType: input.principal.type,
-        principalId: input.principal.principalId,
-        organizationId: null,
-        connectionId: input.call.connectionId,
-        toolName: input.call.toolName,
-        requiredScopes,
-        granted: false,
-        denialReason: 'connection_out_of_scope',
-      }
-    }
-  }
-
-  if (input.principal.type === 'service_account') {
-    const policyBindings = await mcpPolicyRepository.listPolicyBindings('service_account', input.principal.serviceAccountId)
-    const hasPolicyBinding = requiredScopes.every((scope) =>
-      policyBindings.some(
-        (binding) =>
-          binding.scope === scope &&
-          (binding.toolName === null || binding.toolName === input.call.toolName) &&
-          (binding.organizationId === null || binding.organizationId === input.principal.organizationId)
-      )
-    )
-
-    if (!hasPolicyBinding) {
-      return {
-        correlationId: input.correlationId,
-        principalType: input.principal.type,
-        principalId: input.principal.principalId,
-        organizationId: input.principal.organizationId,
-        connectionId: input.call.connectionId,
-        toolName: input.call.toolName,
-        requiredScopes,
-        granted: false,
-        denialReason: 'service_account_policy_denied',
-      }
-    }
-
-    if (input.call.connectionId) {
-      const belongsToOrg = await mcpPolicyRepository.doesConnectionBelongToOrganization(
-        input.call.connectionId,
-        input.principal.organizationId
-      )
-      if (!belongsToOrg) {
-        return {
-          correlationId: input.correlationId,
-          principalType: input.principal.type,
-          principalId: input.principal.principalId,
-          organizationId: input.principal.organizationId,
-          connectionId: input.call.connectionId,
-          toolName: input.call.toolName,
-          requiredScopes,
-          granted: false,
-          denialReason: 'connection_out_of_scope',
-        }
-      }
-    }
-  }
-
-  return {
+  const base = {
     correlationId: input.correlationId,
     principalType: input.principal.type,
     principalId: input.principal.principalId,
     organizationId: input.principal.organizationId,
     connectionId: input.call.connectionId,
     toolName: input.call.toolName,
-    requiredScopes,
+    requiredScopes: [] as string[],
+  }
+
+  const requiredScopes = getRequiredScopes(input.call)
+  if (!requiredScopes) {
+    return deny(base, 'policy_configuration_missing')
+  }
+  base.requiredScopes = [...requiredScopes]
+
+  const grantedScopes = parseScopes(input.session.scopes)
+  const missing = missingScopes(grantedScopes, requiredScopes)
+  if (missing.length > 0) {
+    return deny(base, `missing_scopes:${missing.join(',')}`)
+  }
+
+  if (input.principal.type === 'delegated_user') {
+    if (input.call.connectionId) {
+      const canAccess = await mcpPolicyRepository.canDelegatedUserAccessConnection(
+        input.principal.userId,
+        input.call.connectionId
+      )
+      if (!canAccess) {
+        return deny({ ...base, organizationId: null }, 'connection_out_of_scope')
+      }
+    }
+
+    return {
+      ...base,
+      effectiveScopes: grantedScopes,
+      granted: true,
+      denialReason: null,
+    }
+  }
+
+  const organizationId = input.principal.organizationId
+  const policyBindings = await mcpPolicyRepository.listPolicyBindings(
+    'service_account',
+    input.principal.serviceAccountId
+  )
+  const hasPolicyBinding = requiredScopes.every((scope) =>
+    policyBindings.some((binding) =>
+      bindingCovers(binding, scope, input.call.toolName, organizationId)
+    )
+  )
+  if (!hasPolicyBinding) {
+    return deny(base, 'service_account_policy_denied')
+  }
+
+  if (input.call.connectionId) {
+    const belongsToOrg = await mcpPolicyRepository.doesConnectionBelongToOrganization(
+      input.call.connectionId,
+      organizationId
+    )
+    if (!belongsToOrg) {
+      return deny(base, 'connection_out_of_scope')
+    }
+  }
+
+  // A service account may exercise optional scopes only when both the token and a binding for
+  // this operation carry them.
+  const effectiveScopes = grantedScopes.filter((scope) =>
+    policyBindings.some((binding) =>
+      bindingCovers(binding, scope, input.call.toolName, organizationId)
+    )
+  )
+
+  return {
+    ...base,
+    effectiveScopes,
     granted: true,
     denialReason: null,
   }

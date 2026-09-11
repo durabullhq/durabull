@@ -74,6 +74,21 @@ describe('buildAlertAppUrls', () => {
     expect(urls.jobUrl).not.toBe(urls.dashboardUrl)
   })
 
+  it('builds alert routes for connection-scoped Redis health incidents', () => {
+    const urls = buildAlertAppUrls({
+      appBaseUrl: 'https://app.durabull.io/',
+      organizationSlug: 'acme-inc',
+      connectionId: 'conn_123',
+      queueName: 'Redis server',
+      alertRuleId: 'rule_456',
+      connectionWide: true,
+    })
+
+    expect(urls.dashboardUrl).toBe('https://app.durabull.io/acme-inc/c/conn_123/alerts')
+    expect(urls.jobUrl).toBe(urls.dashboardUrl)
+    expect(urls.muteUrl).toBe('https://app.durabull.io/acme-inc/c/conn_123/alerts?ruleId=rule_456')
+  })
+
   it('falls back to the app root if the organization slug is unavailable', () => {
     const urls = buildAlertAppUrls({
       appBaseUrl: 'https://app.durabull.io',

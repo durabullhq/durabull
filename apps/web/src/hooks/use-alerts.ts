@@ -83,7 +83,12 @@ type TestAlertDestinationResponse = InferResponseType<
   200
 >
 export type AlertSummaryConnection = AlertSummaryResponse['connections'][number]
-export type AlertRuleType = 'failure_threshold' | 'failure_rate' | 'queue_stalled' | 'job_failed'
+export type AlertRuleType =
+  | 'failure_threshold'
+  | 'failure_rate'
+  | 'queue_stalled'
+  | 'job_failed'
+  | 'redis_health'
 export type QueueFilterMode = 'include' | 'exclude'
 export type AlertEventStatus = 'firing' | 'resolved' | 'suppressed'
 export type AlertRuleState = 'active' | 'snoozed' | 'disabled'
@@ -251,16 +256,25 @@ export interface AlertDestinationTestResult {
 export interface AlertTestResult {
   evaluation: {
     triggered: boolean
+    available?: boolean
     summary: string
     context: Record<string, unknown>
   }
-  snapshot: {
-    queueName: string
-    connectionName: string
-    jobCounts: { failed: number; waiting: number; active: number; completed: number }
-    failedMetrics: { count: number; dataPoints: number[] }
-    completedMetrics: { count: number; dataPoints: number[] }
-  }
+  snapshot:
+    | {
+        queueName: string
+        connectionName: string
+        jobCounts: { failed: number; waiting: number; active: number; completed: number }
+        failedMetrics: { count: number; dataPoints: number[] }
+        completedMetrics: { count: number; dataPoints: number[] }
+      }
+    | {
+        kind: 'redis_health'
+        connectionName: string
+        capturedAt: string
+        memoryCapacitySource: 'maxmemory' | 'system_memory' | 'unknown'
+        metrics: Record<string, number | null>
+      }
   webhookTests?: Array<{
     url: string
     success: boolean
@@ -328,7 +342,8 @@ function isAlertRuleType(value: unknown): value is AlertRuleType {
     value === 'failure_threshold' ||
     value === 'failure_rate' ||
     value === 'queue_stalled' ||
-    value === 'job_failed'
+    value === 'job_failed' ||
+    value === 'redis_health'
   )
 }
 

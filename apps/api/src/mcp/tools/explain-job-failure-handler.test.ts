@@ -17,6 +17,14 @@ const connection = {
   allowSelfSignedCerts: false,
 }
 
+const fullScopes = [
+  'mcp:discover',
+  'mcp:jobs:read',
+  'mcp:logs:read',
+  'mcp:failures:read',
+  'mcp:diagnostics:read',
+]
+
 describe('explain_job_failure handler', () => {
   it('composes a high-confidence summary for failed jobs', async () => {
     const explainJobFailureHandler = createExplainJobFailureHandler({
@@ -70,6 +78,7 @@ describe('explain_job_failure handler', () => {
       connectionId: 'conn-1',
       queueName: 'email',
       jobId: 'job-1',
+      grantedScopes: fullScopes,
     })
 
     expect(result.status).toBe('failed')
@@ -120,6 +129,7 @@ describe('explain_job_failure handler', () => {
       connectionId: 'conn-1',
       queueName: 'email',
       jobId: 'job-1',
+      grantedScopes: fullScopes,
     })
 
     expect(result.confidence).toBe('low')
@@ -177,6 +187,7 @@ describe('explain_job_failure handler', () => {
       connectionId: 'conn-1',
       queueName: 'email',
       jobId: 'job-1',
+      grantedScopes: fullScopes,
     })
 
     expect(logCalls).toEqual([
@@ -185,13 +196,7 @@ describe('explain_job_failure handler', () => {
     ])
     expect(result.topSignal.source).toBe('logs')
     expect(result.topSignal.excerpt).toBe('line-10')
-    expect(result.recentLogLines).toEqual([
-      'line-6',
-      'line-7',
-      'line-8',
-      'line-9',
-      'line-10',
-    ])
+    expect(result.recentLogLines).toEqual(['line-6', 'line-7', 'line-8', 'line-9', 'line-10'])
   })
 
   it('throws not_found when the job is missing', async () => {
@@ -220,7 +225,71 @@ describe('explain_job_failure handler', () => {
         connectionId: 'conn-1',
         queueName: 'email',
         jobId: 'missing',
+        grantedScopes: fullScopes,
       })
     ).rejects.toBeInstanceOf(McpToolError)
+  })
+
+  it('degrades gracefully when logs and failures scopes are missing', async () => {
+    let logCalls = 0
+    let alertCalls = 0
+    const explainJobFailureHandler = createExplainJobFailureHandler({
+      async requireConnectionForPrincipal() {
+        return connection as never
+      },
+      async getQueue() {
+        return {
+          async getJob() {
+            return {
+              id: 'job-1',
+              failedReason: 'Timeout',
+              stacktrace: ['Error: Timeout'],
+              attemptsMade: 1,
+              opts: { attempts: 1 },
+              processedOn: 1,
+              finishedOn: 2,
+              timestamp: 0,
+              async getState() {
+                return 'failed'
+              },
+            }
+          },
+          async getJobLogs() {
+            logCalls += 1
+            return { logs: ['should not be read'], count: 1 }
+          },
+        } as never
+      },
+      async findAlertEvents() {
+        alertCalls += 1
+        return []
+      },
+      async countAlertEvents() {
+        alertCalls += 1
+        return 0
+      },
+    })
+
+    const result = await explainJobFailureHandler({
+      principal,
+      connectionId: 'conn-1',
+      queueName: 'email',
+      jobId: 'job-1',
+      grantedScopes: ['mcp:discover', 'mcp:jobs:read', 'mcp:diagnostics:read'],
+    })
+
+    expect(logCalls).toBe(0)
+    expect(alertCalls).toBe(0)
+    expect(result.topSignal).toEqual({ source: 'failed_reason', excerpt: 'Timeout' })
+    expect(result.recentLogLines).toEqual([])
+    expect(result.relatedAlertEvents).toEqual([])
+    expect(result.sources).toEqual(['job.failedReason'])
+    expect(result.skippedSources.map((entry) => entry.source)).toEqual([
+      'job.stacktrace',
+      'queue.getJobLogs',
+      'alert_event',
+    ])
+    expect(result.skippedSources[0]?.reason).toBe('missing_scope:mcp:logs:read')
+    expect(result.summary).toContain('not checked')
   })
 })

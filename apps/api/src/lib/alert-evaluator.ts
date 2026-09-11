@@ -1,8 +1,16 @@
 import type { AlertRule } from '@durabull/dal'
 import { z } from 'zod'
+import {
+  type RedisHealthConfig,
+  type RedisHealthMetric,
+  type RedisHealthSnapshot,
+  redisHealthConfigSchema,
+} from './redis-health'
 
 export interface AlertEvaluation {
   triggered: boolean
+  /** False means this sample cannot determine whether the condition is healthy. */
+  available?: boolean
   summary: string
   context: Record<string, unknown>
 }
@@ -50,6 +58,116 @@ const failureRateConfigSchema = z.object({
 const queueStalledConfigSchema = z.object({
   stalledMinutes: z.number().int().min(1),
 })
+
+const MIN_FRAGMENTATION_BYTES = 10 * 1024 * 1024
+
+const REDIS_HEALTH_METRIC_META: Record<
+  RedisHealthMetric,
+  {
+    label: string
+    unit: '%' | 'MiB' | 'ratio' | 'clients' | 'keys/min' | 'connections/min'
+  }
+> = {
+  memory_usage_percent: { label: 'Memory usage', unit: '%' },
+  used_memory_megabytes: { label: 'Memory allocated', unit: 'MiB' },
+  resident_memory_megabytes: { label: 'Resident memory', unit: 'MiB' },
+  cpu_usage_percent: { label: 'CPU usage', unit: '%' },
+  memory_fragmentation_ratio: { label: 'Memory fragmentation', unit: 'ratio' },
+  connected_clients_percent: { label: 'Client capacity', unit: '%' },
+  blocked_clients: { label: 'Blocked clients', unit: 'clients' },
+  evicted_keys_per_minute: { label: 'Key evictions', unit: 'keys/min' },
+  rejected_connections_per_minute: {
+    label: 'Rejected connections',
+    unit: 'connections/min',
+  },
+}
+
+function getRedisHealthMetricValue(
+  metric: RedisHealthMetric,
+  snapshot: RedisHealthSnapshot
+): number | null {
+  switch (metric) {
+    case 'memory_usage_percent':
+      return snapshot.metrics.memoryUsagePercent
+    case 'used_memory_megabytes':
+      return snapshot.metrics.usedMemoryMegabytes ?? null
+    case 'resident_memory_megabytes':
+      return snapshot.metrics.residentMemoryMegabytes ?? null
+    case 'cpu_usage_percent':
+      return snapshot.metrics.cpuUsagePercent
+    case 'memory_fragmentation_ratio':
+      return snapshot.metrics.memoryFragmentationRatio
+    case 'connected_clients_percent':
+      return snapshot.metrics.connectedClientsPercent
+    case 'blocked_clients':
+      return snapshot.metrics.blockedClients
+    case 'evicted_keys_per_minute':
+      return snapshot.metrics.evictedKeysPerMinute
+    case 'rejected_connections_per_minute':
+      return snapshot.metrics.rejectedConnectionsPerMinute
+  }
+}
+
+function formatRedisHealthValue(value: number, unit: string): string {
+  const formatted = Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '')
+  if (unit === '%') return `${formatted}%`
+  if (unit === 'ratio') return `${formatted}×`
+  return `${formatted} ${unit}`
+}
+
+export function evaluateRedisHealth(
+  config: RedisHealthConfig,
+  snapshot: RedisHealthSnapshot
+): AlertEvaluation {
+  const value = getRedisHealthMetricValue(config.metric, snapshot)
+  const meta = REDIS_HEALTH_METRIC_META[config.metric]
+  const belowFragmentationByteFloor =
+    config.metric === 'memory_fragmentation_ratio' &&
+    snapshot.metrics.memoryFragmentationBytes !== null &&
+    snapshot.metrics.memoryFragmentationBytes < MIN_FRAGMENTATION_BYTES
+
+  const context = {
+    metric: config.metric,
+    value,
+    threshold: config.threshold,
+    unit: meta.unit,
+    capturedAt: snapshot.capturedAt,
+    memoryCapacitySource: snapshot.memoryCapacitySource,
+    metricUnavailable: value === null,
+    belowFragmentationByteFloor,
+    ...snapshot.metrics,
+  }
+
+  if (value === null || belowFragmentationByteFloor) {
+    return { triggered: false, available: value !== null, summary: '', context }
+  }
+
+  const triggered = value >= config.threshold
+  return {
+    triggered,
+    available: true,
+    summary: triggered
+      ? `${meta.label} is ${formatRedisHealthValue(value, meta.unit)} on ${snapshot.connectionName} (threshold: ≥ ${formatRedisHealthValue(config.threshold, meta.unit)})`
+      : '',
+    context,
+  }
+}
+
+export function evaluateRedisHealthRule(
+  rule: AlertRule,
+  snapshot: RedisHealthSnapshot
+): AlertEvaluation {
+  const parsed = redisHealthConfigSchema.safeParse(rule.config ?? {})
+  if (!parsed.success) {
+    return {
+      triggered: false,
+      available: false,
+      summary: `Invalid config for rule ${rule.id}: ${parsed.error.message}`,
+      context: {},
+    }
+  }
+  return evaluateRedisHealth(parsed.data, snapshot)
+}
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0)
@@ -228,6 +346,12 @@ export function evaluateRule(
         summary:
           'job_failed rules are evaluated by the failed-job scan and are not supported by this live test yet.',
         context: { unsupportedLiveTest: true },
+      }
+    case 'redis_health':
+      return {
+        triggered: false,
+        summary: 'redis_health rules require a connection-level Redis INFO snapshot.',
+        context: { unsupportedQueueSnapshot: true },
       }
     default:
       return { triggered: false, summary: `Unknown rule type: ${rule.type}`, context: {} }

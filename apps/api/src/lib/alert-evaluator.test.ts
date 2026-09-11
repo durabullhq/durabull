@@ -3,11 +3,13 @@ import type { AlertRule } from '@durabull/dal'
 import {
   evaluateFailureRate,
   evaluateFailureThreshold,
+  evaluateRedisHealth,
   evaluateRule,
   evaluateQueueStalled,
   type CursorState,
   type QueueSnapshot,
 } from './alert-evaluator'
+import type { RedisHealthSnapshot } from './redis-health'
 
 function createSnapshot(overrides: Partial<QueueSnapshot> = {}): QueueSnapshot {
   return {
@@ -32,6 +34,146 @@ function createSnapshot(overrides: Partial<QueueSnapshot> = {}): QueueSnapshot {
 }
 
 describe('alert evaluator', () => {
+  it('fires a Redis health alert when a metric meets its threshold exactly', () => {
+    const snapshot = {
+      kind: 'redis_health',
+      connectionName: 'Primary Redis',
+      capturedAt: '2026-09-02T18:00:00.000Z',
+      memoryCapacitySource: 'maxmemory',
+      metrics: {
+        memoryUsagePercent: 80,
+        cpuUsagePercent: 42,
+        memoryFragmentationRatio: 1.2,
+        memoryFragmentationBytes: 20 * 1024 * 1024,
+        connectedClientsPercent: 5,
+        blockedClients: 0,
+        evictedKeysPerMinute: 0,
+        rejectedConnectionsPerMinute: 0,
+        usedMemoryBytes: 80 * 1024 * 1024,
+        memoryCapacityBytes: 100 * 1024 * 1024,
+        connectedClients: 50,
+        maxClients: 1000,
+      },
+      raw: { cpuSeconds: 10, evictedKeys: 0, rejectedConnections: 0 },
+    } satisfies RedisHealthSnapshot
+
+    const evaluation = evaluateRedisHealth(
+      { metric: 'memory_usage_percent', threshold: 80 },
+      snapshot
+    )
+
+    expect(evaluation.triggered).toBe(true)
+    expect(evaluation.summary).toContain('Memory usage is 80%')
+    expect(evaluation.context).toMatchObject({
+      metric: 'memory_usage_percent',
+      value: 80,
+      threshold: 80,
+    })
+  })
+
+  it('does not treat a high fragmentation ratio with tiny byte overhead as critical', () => {
+    const snapshot = {
+      kind: 'redis_health',
+      connectionName: 'Primary Redis',
+      capturedAt: '2026-09-02T18:00:00.000Z',
+      memoryCapacitySource: 'maxmemory',
+      metrics: {
+        memoryUsagePercent: 50,
+        cpuUsagePercent: null,
+        memoryFragmentationRatio: 2,
+        memoryFragmentationBytes: 2 * 1024 * 1024,
+        connectedClientsPercent: 5,
+        blockedClients: 0,
+        evictedKeysPerMinute: null,
+        rejectedConnectionsPerMinute: null,
+        usedMemoryBytes: 50,
+        memoryCapacityBytes: 100,
+        connectedClients: 5,
+        maxClients: 100,
+      },
+      raw: { cpuSeconds: 10, evictedKeys: 0, rejectedConnections: 0 },
+    } satisfies RedisHealthSnapshot
+
+    const evaluation = evaluateRedisHealth(
+      { metric: 'memory_fragmentation_ratio', threshold: 1.5 },
+      snapshot
+    )
+
+    expect(evaluation.triggered).toBe(false)
+    expect(evaluation.context.belowFragmentationByteFloor).toBe(true)
+  })
+
+  it('keeps rate-based Redis health rules quiet until a previous sample exists', () => {
+    const snapshot = {
+      kind: 'redis_health',
+      connectionName: 'Primary Redis',
+      capturedAt: '2026-09-02T18:00:00.000Z',
+      memoryCapacitySource: 'unknown',
+      metrics: {
+        memoryUsagePercent: null,
+        cpuUsagePercent: null,
+        memoryFragmentationRatio: null,
+        memoryFragmentationBytes: null,
+        connectedClientsPercent: null,
+        blockedClients: null,
+        evictedKeysPerMinute: null,
+        rejectedConnectionsPerMinute: null,
+        usedMemoryBytes: null,
+        memoryCapacityBytes: null,
+        connectedClients: null,
+        maxClients: null,
+      },
+      raw: { cpuSeconds: 10, evictedKeys: 0, rejectedConnections: 0 },
+    } satisfies RedisHealthSnapshot
+
+    const evaluation = evaluateRedisHealth({ metric: 'cpu_usage_percent', threshold: 80 }, snapshot)
+
+    expect(evaluation.triggered).toBe(false)
+    expect(evaluation.available).toBe(false)
+    expect(evaluation.summary).toBe('')
+    expect(evaluation.context.metricUnavailable).toBe(true)
+  })
+
+  it('evaluates absolute Redis allocation when no maxmemory limit is configured', () => {
+    const snapshot = {
+      kind: 'redis_health',
+      connectionName: 'Primary Redis',
+      capturedAt: '2026-09-02T18:00:00.000Z',
+      memoryCapacitySource: 'unknown',
+      metrics: {
+        memoryUsagePercent: null,
+        cpuUsagePercent: null,
+        memoryFragmentationRatio: null,
+        memoryFragmentationBytes: null,
+        connectedClientsPercent: null,
+        blockedClients: 0,
+        evictedKeysPerMinute: null,
+        rejectedConnectionsPerMinute: null,
+        usedMemoryBytes: 512 * 1024 * 1024,
+        usedMemoryMegabytes: 512,
+        residentMemoryBytes: 640 * 1024 * 1024,
+        residentMemoryMegabytes: 640,
+        memoryCapacityBytes: null,
+        connectedClients: 5,
+        maxClients: 100,
+      },
+      raw: { cpuSeconds: 10, evictedKeys: 0, rejectedConnections: 0 },
+    } satisfies RedisHealthSnapshot
+
+    const allocated = evaluateRedisHealth(
+      { metric: 'used_memory_megabytes', threshold: 500 },
+      snapshot
+    )
+    const resident = evaluateRedisHealth(
+      { metric: 'resident_memory_megabytes', threshold: 700 },
+      snapshot
+    )
+
+    expect(allocated).toMatchObject({ triggered: true, available: true })
+    expect(allocated.summary).toContain('Memory allocated is 512 MiB')
+    expect(resident).toMatchObject({ triggered: false, available: true })
+  })
+
   it('fires failure threshold only on new failures beyond the cursor delta', () => {
     const cursor: CursorState = {
       lastFailedCount: 35,

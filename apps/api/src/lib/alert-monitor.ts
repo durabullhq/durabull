@@ -1,28 +1,45 @@
 import {
-  alertDeliveryRepository,
-  alertCheckCursorRepository,
-  alertEventRepository,
-  alertRuleRepository,
-  redisConnectionRepository,
-  redisDiscoveredQueueRepository,
   type AlertDelivery,
   type AlertEvent,
   type AlertRule,
+  alertCheckCursorRepository,
+  alertDeliveryRepository,
+  alertEventRepository,
+  alertRuleRepository,
   type RedisConnection,
+  redisConnectionRepository,
+  redisDiscoveredQueueRepository,
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import type { JobType } from 'bullmq'
-import { evaluateRule, type CursorState, type QueueSnapshot } from './alert-evaluator'
-import { syncLinearIssuesForResolvedEvents } from './alert-resolution'
+import {
+  type AlertEvaluation,
+  type CursorState,
+  evaluateRedisHealthRule,
+  evaluateRule,
+  type QueueSnapshot,
+} from './alert-evaluator'
 import {
   dispatchAlertNotification,
-  processAlertDeliveries,
   type NotificationChannel,
+  processAlertDeliveries,
 } from './alert-notifier'
-import { getQueue } from './redis'
+import { syncLinearIssuesForResolvedEvents } from './alert-resolution'
 import { toRedisConnectionOptions } from './connection-options'
+import { getQueue, getRedis } from './redis'
+import {
+  buildRedisHealthSnapshot,
+  REDIS_HEALTH_CURSOR_SCOPE,
+  REDIS_HEALTH_EVENT_SCOPE,
+  restoreRedisHealthSnapshot,
+} from './redis-health'
+import {
+  getRedisHealthRetentionDays,
+  getRedisHealthSampleIntervalMs,
+  isRedisHealthHistoryEnabled,
+  recordRedisHealthSnapshot,
+} from './redis-health-history'
 
-const DEFAULT_POLL_INTERVAL_MS = 60_000
 const DEFAULT_DELIVERY_SWEEP_INTERVAL_MS = 15_000
 const MAX_STARTUP_JITTER_MS = 30_000
 const CONNECTION_TIMEOUT_MS = 30_000
@@ -50,7 +67,7 @@ let deliverySweepInProgress = false
 let jobAutoResolveInProgress = false
 
 function getPollIntervalMs(): number {
-  return Math.max(5_000, env.DURABULL_ALERT_POLL_INTERVAL_MS ?? DEFAULT_POLL_INTERVAL_MS)
+  return getRedisHealthSampleIntervalMs()
 }
 
 function getDeliverySweepIntervalMs(): number {
@@ -153,31 +170,33 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
 
 export function startAlertMonitor(): void {
   if (isRunning) return
-  if (!isAlertMonitorEnabled()) {
-    console.log('[alert-monitor] Disabled via DURABULL_ALERT_ENABLED=false')
-    return
-  }
+  const alertsEnabled = isAlertMonitorEnabled()
+  const redisHealthHistoryEnabled = isRedisHealthHistoryEnabled()
 
   isRunning = true
   const pollIntervalMs = getPollIntervalMs()
   const deliverySweepIntervalMs = getDeliverySweepIntervalMs()
   const jitter = Math.floor(Math.random() * MAX_STARTUP_JITTER_MS)
   console.log(
-    `[alert-monitor] Starting in ${(jitter / 1000).toFixed(0)}s, poll interval ${Math.round(pollIntervalMs / 1000)}s, delivery sweep interval ${Math.round(deliverySweepIntervalMs / 1000)}s`
+    `[alert-monitor] Starting in ${(jitter / 1000).toFixed(0)}s, poll interval ${Math.round(pollIntervalMs / 1000)}s, alerts ${alertsEnabled ? 'enabled' : 'disabled'}, Redis health history ${redisHealthHistoryEnabled ? `enabled (${getRedisHealthRetentionDays()}d retention)` : 'disabled'}`
   )
 
   startupTimer = setTimeout(() => {
-    void runPollCycle()
-    void runDeliverySweepCycle()
     void runCleanup()
-    void runJobAutoResolveCycle()
-    pollTimer = setInterval(() => void runPollCycle(), pollIntervalMs)
-    deliverySweepTimer = setInterval(() => void runDeliverySweepCycle(), deliverySweepIntervalMs)
     cleanupTimer = setInterval(() => void runCleanup(), CLEANUP_INTERVAL_MS)
-    jobAutoResolveTimer = setInterval(
-      () => void runJobAutoResolveCycle(),
-      getJobAutoResolveIntervalMs()
-    )
+    if (alertsEnabled || redisHealthHistoryEnabled) {
+      void runPollCycle()
+      pollTimer = setInterval(() => void runPollCycle(), pollIntervalMs)
+    }
+    if (alertsEnabled) {
+      void runDeliverySweepCycle()
+      void runJobAutoResolveCycle()
+      deliverySweepTimer = setInterval(() => void runDeliverySweepCycle(), deliverySweepIntervalMs)
+      jobAutoResolveTimer = setInterval(
+        () => void runJobAutoResolveCycle(),
+        getJobAutoResolveIntervalMs()
+      )
+    }
   }, jitter)
 }
 
@@ -213,27 +232,32 @@ async function runPollCycle(): Promise<void> {
   try {
     // Skips disabled rules and rules snoozed via mutedUntil; snoozed rules
     // resume automatically on the first poll after the timestamp passes.
-    const rules = await alertRuleRepository.findAllActive()
-    if (rules.length > 0) {
-      const rulesByConnection = new Map<string, AlertRule[]>()
-      for (const rule of rules) {
-        const existing = rulesByConnection.get(rule.connectionId) ?? []
-        existing.push(rule)
-        rulesByConnection.set(rule.connectionId, existing)
-      }
-
-      await processWithConcurrency(
-        Array.from(rulesByConnection.entries()),
-        MAX_CONCURRENT_CONNECTIONS,
-        async ([connectionId, connectionRules]) => {
-          await withTimeout(
-            processConnection(connectionId, connectionRules),
-            CONNECTION_TIMEOUT_MS,
-            `Connection ${connectionId}`
-          )
-        }
-      )
+    const collectRedisHealth = isRedisHealthHistoryEnabled()
+    const [rules, connections] = await Promise.all([
+      isAlertMonitorEnabled() ? alertRuleRepository.findAllActive() : Promise.resolve([]),
+      collectRedisHealth ? redisConnectionRepository.findAllIdsUnsafe() : Promise.resolve([]),
+    ])
+    const rulesByConnection = new Map<string, AlertRule[]>()
+    for (const rule of rules) {
+      const existing = rulesByConnection.get(rule.connectionId) ?? []
+      existing.push(rule)
+      rulesByConnection.set(rule.connectionId, existing)
     }
+    for (const connectionId of connections) {
+      if (!rulesByConnection.has(connectionId)) rulesByConnection.set(connectionId, [])
+    }
+
+    await processWithConcurrency(
+      Array.from(rulesByConnection.entries()),
+      MAX_CONCURRENT_CONNECTIONS,
+      async ([connectionId, connectionRules]) => {
+        await withTimeout(
+          processConnection(connectionId, connectionRules, { collectRedisHealth }),
+          CONNECTION_TIMEOUT_MS,
+          `Connection ${connectionId}`
+        )
+      }
+    )
   } catch (error) {
     console.error('[alert-monitor] Poll cycle failed:', error)
   } finally {
@@ -344,7 +368,11 @@ async function markDeliveryFailedForRetry(delivery: AlertDelivery, error: string
   })
 }
 
-async function processConnection(connectionId: string, rules: AlertRule[]): Promise<void> {
+async function processConnection(
+  connectionId: string,
+  rules: AlertRule[],
+  options: { collectRedisHealth?: boolean } = {}
+): Promise<void> {
   try {
     // findByIdUnsafe bypasses org-scoping because the background monitor needs to
     // access connections across all organizations. Access is implicitly scoped via
@@ -352,12 +380,22 @@ async function processConnection(connectionId: string, rules: AlertRule[]): Prom
     const connection = await redisConnectionRepository.findByIdUnsafe(connectionId)
     if (!connection) return
 
-    const discoveredQueueNames = await loadDiscoveredQueueNames(connectionId)
-    const queueNames = getUniqueQueueNames(rules, discoveredQueueNames)
-    if (queueNames.length === 0) return
-
     const cursors = await alertCheckCursorRepository.findByConnection(connectionId)
     const cursorMap = new Map(cursors.map((cursor) => [cursor.queueName, cursor]))
+    const redisHealthRules = rules.filter((rule) => rule.type === 'redis_health')
+    const queueRules = rules.filter((rule) => rule.type !== 'redis_health')
+
+    if (redisHealthRules.length > 0 || options.collectRedisHealth === true) {
+      await processRedisHealthRules(connection, redisHealthRules, cursorMap, {
+        persistHistory: options.collectRedisHealth === true,
+      })
+    }
+
+    if (queueRules.length === 0) return
+
+    const discoveredQueueNames = await loadDiscoveredQueueNames(connectionId)
+    const queueNames = getUniqueQueueNames(queueRules, discoveredQueueNames)
+    if (queueNames.length === 0) return
 
     await processWithConcurrency(queueNames, MAX_CONCURRENT_QUEUES, async (queueName) => {
       const queue = await getQueue(
@@ -402,7 +440,7 @@ async function processConnection(connectionId: string, rules: AlertRule[]): Prom
           }
         : null
 
-      const applicableRules = rules.filter((rule) => isRuleApplicableToQueue(rule, queueName))
+      const applicableRules = queueRules.filter((rule) => isRuleApplicableToQueue(rule, queueName))
       for (const rule of applicableRules) {
         if (rule.type === 'job_failed') {
           await scanFailedJobsAndMaybeAlert(rule, queue, connection, queueName)
@@ -429,6 +467,67 @@ async function processConnection(connectionId: string, rules: AlertRule[]): Prom
   }
 }
 
+async function processRedisHealthRules(
+  connection: RedisConnection,
+  rules: AlertRule[],
+  cursorMap: Map<
+    string,
+    {
+      lastMetricsSnapshot: unknown
+      lastCheckedAt: Date
+      lastFailedCount: number
+      lastCompletedCount: number
+    }
+  >,
+  options: { persistHistory?: boolean } = {}
+): Promise<void> {
+  try {
+    const cursor = cursorMap.get(REDIS_HEALTH_CURSOR_SCOPE)
+    const previous = restoreRedisHealthSnapshot(cursor?.lastMetricsSnapshot)
+    const redis = await getRedis(
+      connection.id,
+      connection.url,
+      connection.name,
+      toRedisConnectionOptions(connection.allowSelfSignedCerts)
+    )
+    const capturedAt = new Date()
+    const info = await redis.info()
+    const snapshot = buildRedisHealthSnapshot(info, connection.name, capturedAt, previous)
+
+    if (options.persistHistory === true) {
+      try {
+        await recordRedisHealthSnapshot(connection.id, snapshot)
+      } catch (error) {
+        // History persistence must not prevent active rules from evaluating.
+        console.error(
+          `[alert-monitor] Redis health history write failed for ${connection.id}:`,
+          error
+        )
+      }
+    }
+
+    for (const rule of rules) {
+      await processAlertEvaluation(
+        rule,
+        REDIS_HEALTH_EVENT_SCOPE,
+        evaluateRedisHealthRule(rule, snapshot),
+        connection
+      )
+    }
+
+    await alertCheckCursorRepository.upsert({
+      connectionId: connection.id,
+      queueName: REDIS_HEALTH_CURSOR_SCOPE,
+      lastCheckedAt: capturedAt,
+      lastFailedCount: 0,
+      lastCompletedCount: 0,
+      lastMetricsSnapshot: snapshot,
+    })
+  } catch (error) {
+    console.error(`[alert-monitor] Redis INFO health check failed for ${connection.id}:`, error)
+  }
+}
+
 async function evaluateAndMaybeAlert(
   rule: AlertRule,
   snapshot: QueueSnapshot,
@@ -437,8 +536,21 @@ async function evaluateAndMaybeAlert(
 ): Promise<void> {
   const evaluation = evaluateRule(rule, snapshot, cursor)
 
+  await processAlertEvaluation(rule, snapshot.queueName, evaluation, connection)
+}
+
+async function processAlertEvaluation(
+  rule: AlertRule,
+  eventScope: string,
+  evaluation: AlertEvaluation,
+  connection: RedisConnection
+): Promise<void> {
+  // An absent INFO field or missing rate baseline is unknown, not healthy.
+  // Preserve an open incident until a later sample can actually evaluate it.
+  if (evaluation.available === false) return
+
   if (!evaluation.triggered) {
-    const activeEvent = await alertEventRepository.findActiveFiring(rule.id, snapshot.queueName)
+    const activeEvent = await alertEventRepository.findActiveFiring(rule.id, eventScope)
     if (activeEvent) {
       const resolvedEvent = await alertEventRepository.resolve(activeEvent.id, rule.organizationId)
       if (resolvedEvent) {
@@ -450,7 +562,7 @@ async function evaluateAndMaybeAlert(
     return
   }
 
-  const activeEvent = await alertEventRepository.findActiveFiring(rule.id, snapshot.queueName)
+  const activeEvent = await alertEventRepository.findActiveFiring(rule.id, eventScope)
   if (activeEvent) {
     try {
       await processAlertDeliveries(activeEvent, connection, rule.name)
@@ -463,10 +575,7 @@ async function evaluateAndMaybeAlert(
 
   // Cooldown anchors to the most recent non-suppressed event; anchoring to
   // suppressed events would extend the window on every suppression.
-  const recentEvent = await alertEventRepository.findMostRecentFiredForRule(
-    rule.id,
-    snapshot.queueName
-  )
+  const recentEvent = await alertEventRepository.findMostRecentFiredForRule(rule.id, eventScope)
   if (recentEvent) {
     const cooldownMs = rule.cooldownMinutes * 60_000
     const elapsedMs = Date.now() - recentEvent.firedAt.getTime()
@@ -477,15 +586,13 @@ async function evaluateAndMaybeAlert(
         alertRuleId: rule.id,
         organizationId: rule.organizationId,
         connectionId: rule.connectionId,
-        queueName: snapshot.queueName,
+        queueName: eventScope,
         type: rule.type,
         summary: evaluation.summary,
         context: (evaluation.context ?? {}) as Record<string, unknown>,
         dedupeKey: `suppressed:${recentEvent.id}`,
       })
-      console.log(
-        `[alert-monitor] Suppressed alert for rule "${rule.name}" on ${snapshot.queueName}`
-      )
+      console.log(`[alert-monitor] Suppressed alert for rule "${rule.name}" on ${eventScope}`)
       return
     }
   }
@@ -494,7 +601,7 @@ async function evaluateAndMaybeAlert(
     alertRuleId: rule.id,
     organizationId: rule.organizationId,
     connectionId: rule.connectionId,
-    queueName: snapshot.queueName,
+    queueName: eventScope,
     type: rule.type,
     status: 'firing',
     summary: evaluation.summary,
@@ -715,7 +822,7 @@ async function runCleanup(): Promise<void> {
       console.log(`[alert-monitor] Cleaned up ${deleted} old alert events`)
     }
   } catch (error) {
-    console.error('[alert-monitor] Cleanup failed:', error)
+    console.error('[alert-monitor] Alert event cleanup failed:', error)
   }
 }
 
@@ -745,9 +852,12 @@ export const __alertMonitorTestUtils = {
   scanFailedJobsAndMaybeAlert,
   normalizeFailedJob,
   processConnection,
+  processRedisHealthRules,
   processDueAlertDeliveries,
   processWithConcurrency,
+  runPollCycle,
   runJobAutoResolveCycle,
   autoResolveCompletedJobEvents,
   getEventJobId,
+  runCleanup,
 }

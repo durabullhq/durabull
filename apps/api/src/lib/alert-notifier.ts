@@ -304,6 +304,7 @@ async function sendAlertEmail(
     connectionId: connection.id,
     queueName: event.queueName,
     alertRuleId: event.alertRuleId,
+    connectionWide: event.type === 'redis_health',
   })
 
   await sendAlertNotificationEmail({
@@ -351,6 +352,7 @@ async function sendLinearAlert(
     queueName: event.queueName,
     alertRuleId: event.alertRuleId,
     jobId: jobContext.jobId,
+    connectionWide: event.type === 'redis_health',
   })
 
   const existingIssue = jobContext.jobId
@@ -507,10 +509,7 @@ async function sendDestinationAlert(
     throw new NonRetryableDeliveryError('Destination delivery is missing its destination id.')
   }
 
-  const destination = await alertDestinationRepository.findById(
-    destinationId,
-    event.organizationId
-  )
+  const destination = await alertDestinationRepository.findById(destinationId, event.organizationId)
   if (!destination) {
     throw new NonRetryableDeliveryError('Notification destination no longer exists.')
   }
@@ -755,7 +754,11 @@ function getJobContext(context: unknown): {
   }
 }
 
-function buildLinearIssueTitle(event: AlertEvent, ruleName: string, jobName: string | null): string {
+function buildLinearIssueTitle(
+  event: AlertEvent,
+  ruleName: string,
+  jobName: string | null
+): string {
   // Linear issue titles are plain text, not markdown — never escape them.
   // The connection name is omitted: it's in the description and only crowds the title.
   if (event.type === 'job_failed') {
@@ -784,7 +787,7 @@ function buildLinearIssueDescription({
     `Durabull alert rule **${plainLinearText(ruleName, 200)}** fired.`,
     '',
     `- **Connection:** ${linearInlineCode(connection.name)}`,
-    `- **Queue:** ${linearInlineCode(event.queueName)}`,
+    `- **${event.type === 'redis_health' ? 'Scope' : 'Queue'}:** ${linearInlineCode(event.queueName)}`,
     `- **Summary:** ${plainLinearText(event.summary)}`,
     `- **Fired at:** ${event.firedAt.toISOString()}`,
   ]

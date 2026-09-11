@@ -1,6 +1,6 @@
 # MCP Phase 1 — Release and Rollback Checklist
 
-Use this checklist when enabling or announcing read-only MCP GA on Durabull Cloud or self-hosted installs.
+Use this checklist when enabling or announcing MCP GA on Durabull Cloud or self-hosted installs (read tools by default; write tools behind explicit scopes, see ADR-0001 §6).
 
 **Index:** [mcp-ga-index.md](./mcp-ga-index.md)
 

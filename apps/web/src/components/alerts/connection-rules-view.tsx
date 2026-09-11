@@ -300,11 +300,13 @@ function RulesTable({
                   )}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {rule.queueFilterMode === 'include' && rule.filterQueueNames.length > 0
-                    ? `${formatNumber(rule.filterQueueNames.length)} queue${rule.filterQueueNames.length === 1 ? '' : 's'}`
-                    : rule.queueFilterMode === 'exclude' && rule.filterQueueNames.length > 0
-                      ? `All except ${formatNumber(rule.filterQueueNames.length)}`
-                      : (rule.queueName ?? 'All queues')}
+                  {rule.type === 'redis_health'
+                    ? 'Redis server'
+                    : rule.queueFilterMode === 'include' && rule.filterQueueNames.length > 0
+                      ? `${formatNumber(rule.filterQueueNames.length)} queue${rule.filterQueueNames.length === 1 ? '' : 's'}`
+                      : rule.queueFilterMode === 'exclude' && rule.filterQueueNames.length > 0
+                        ? `All except ${formatNumber(rule.filterQueueNames.length)}`
+                        : (rule.queueName ?? 'All queues')}
                 </TableCell>
                 <TableCell className="font-mono text-xs tabular-nums">
                   {formatNumber(rule.cooldownMinutes)} min

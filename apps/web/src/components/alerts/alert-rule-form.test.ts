@@ -15,6 +15,37 @@ import {
 } from '@/components/alerts/alert-rule-form'
 
 describe('alert rule form helpers', () => {
+  it('serializes connection-scoped Redis health rules without queue filters', () => {
+    const draft = {
+      ...createAlertRuleDraft(),
+      name: 'Redis memory pressure',
+      type: 'redis_health' as const,
+      redisHealthMetric: 'memory_usage_percent' as const,
+      redisHealthThreshold: '80',
+    }
+
+    expect(validateAlertRuleDraft(draft)).toBeNull()
+    expect(serializeAlertRuleDraft(draft)).toMatchObject({
+      type: 'redis_health',
+      queueName: null,
+      queueFilterMode: null,
+      filterQueueNames: [],
+      config: { metric: 'memory_usage_percent', threshold: 80 },
+    })
+  })
+
+  it('validates Redis health thresholds using metric-specific limits', () => {
+    const error = validateAlertRuleDraft({
+      ...createAlertRuleDraft(),
+      name: 'Impossible memory threshold',
+      type: 'redis_health',
+      redisHealthMetric: 'memory_usage_percent',
+      redisHealthThreshold: '101',
+    })
+
+    expect(error).toBe('Memory usage threshold must be between 0.1 and 100 percent.')
+  })
+
   it('creates a stable default draft for new rules', () => {
     const draft = createAlertRuleDraft()
 
@@ -744,11 +775,12 @@ describe('buildSentenceTokens', () => {
 })
 
 describe('ALERT_RULE_TEMPLATES', () => {
-  it('exposes the four canonical templates', () => {
+  it('exposes the canonical templates', () => {
     expect(ALERT_RULE_TEMPLATES.map((template) => template.key)).toEqual([
       'failure-spike',
       'error-rate',
       'stalled',
+      'redis-memory',
       'linear-triage',
     ])
     expect(getAlertRuleTemplate('error-rate')?.name).toBe('Elevated error rate')

@@ -18,7 +18,10 @@ Phase 1 MCP documentation and automated tests show **no critical or high** open 
 | SEC-03 | Low | `mcp:e2e` registers OAuth clients and writes DB tokens | **Accepted** — staging/local only; runbook warnings |
 | SEC-04 | Medium (accepted) | Dynamic OAuth client registration is unauthenticated (20/min rate limit) | **Accepted** — edge monitoring + alert on `POST /api/auth/mcp/register` required before public GA announcement |
 | SEC-05 | Info | Domain logic in API handlers vs `packages/mcp-domain` | **Accepted** — same tenancy checks as REST; extraction optional |
-| SEC-06 | — | No write/destructive MCP tools in phase 1 | **Verified** — tool registry is read-only |
+| SEC-06 | — | No write/destructive MCP tools in phase 1 | **Superseded (phase 2)** — non-destructive write tools added behind dedicated write scopes that are never auto-injected; destructive operations still have no scope (`tool-catalog.test.ts`) |
+| SEC-12 | Medium | `resolve_alert_event` (phase 1) mutated state under the read scope `mcp:failures:read` | **Closed (phase 2)** — moved to `mcp:failures:write`; read-bundle tokens now receive `403 insufficient_scope` (`mount.test.ts`) |
+| SEC-13 | — | `resources/read` bypassing tool policy | **Verified** — resource reads pass through the same policy engine and rate limiter; unknown URIs rejected pre-auth (`mount.test.ts`) |
+| SEC-14 | — | Alert delivery targets / channel secrets in MCP output | **Verified** — omitted by projection (`read-handlers.test.ts`, `write-handlers.test.ts`) |
 | SEC-07 | — | Cross-org `connectionId` denied for delegated users | **Verified** — `mount.test.ts` |
 | SEC-08 | — | Service account requires policy binding + scopes | **Verified** — `mount.test.ts`, `mcp-policy.test.ts` |
 | SEC-09 | — | Output redaction for secrets/Redis URLs | **Verified** — `sanitize-output.test.ts` |

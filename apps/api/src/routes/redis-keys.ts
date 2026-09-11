@@ -1,19 +1,15 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { getRedis } from '../lib/redis'
 import { getConnectionRedisOptions } from '../lib/connection-options'
+import { getRedis } from '../lib/redis'
+import { isBullKey, scanKeysMatching } from '../lib/redis-key-scan'
 
 const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
 
 // Redis data types
 type RedisDataType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'none' | 'unknown'
-
-// Helper to check if a key is a BullMQ-managed key
-function isBullKey(key: string): boolean {
-  return key.startsWith('bull:') || key.startsWith('bullmq:')
-}
 
 const app = new Hono()
   // Search Redis keys with pattern matching
@@ -39,16 +35,13 @@ const app = new Hono()
 
       const redis = await getRedis(connectionId, connectionUrl, undefined, redisOptions)
 
-      // Use SCAN for efficient key discovery
-      // When excluding bull keys, we need to scan more to get enough non-bull keys
-      const scanCount = excludeBull ? pageSize * 4 : pageSize * 2
-      const [nextCursor, rawKeys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', scanCount)
-
-      // Filter out bull keys if requested
-      const filteredKeys = excludeBull ? rawKeys.filter((key) => !isBullKey(key)) : rawKeys
+      // SCAN until the page fills (or the keyspace / round budget is exhausted) so narrow
+      // patterns such as an exact key are found regardless of hash-table iteration order.
+      const scanned = await scanKeysMatching(redis, { cursor, pattern, pageSize, excludeBull })
+      const nextCursor = scanned.cursor
 
       // Get key info for each key (type, TTL)
-      const keyInfoPromises = filteredKeys.slice(0, pageSize).map(async (key) => {
+      const keyInfoPromises = scanned.keys.map(async (key) => {
         const [type, ttl] = await Promise.all([redis.type(key), redis.ttl(key)])
 
         // Try to get memory usage (may not be available in all Redis versions)

@@ -1,4 +1,26 @@
-# MCP Phase 1 — Validation Evidence (PR-08)
+# MCP — Validation Evidence
+
+## Phase 2 (2026-09-09) — catalog, structured output, resources, prompts, write tools
+
+```bash
+cd packages/mcp && bunx tsc --noEmit && bun test      # 68 pass (12 files)
+cd packages/auth && bun test                             # 8 pass
+cd apps/api && bunx tsc --noEmit && bun test src/mcp     # 81 pass (14 files)
+cd apps/web && bunx tsc --noEmit -p .                    # consent screen write-scope badge
+```
+
+New or extended coverage:
+
+- `packages/mcp/src/tools/tool-catalog.test.ts` — every tool has title/description/annotations, read-only ⇔ no write scope, no destructive names, output schema present, scopes known.
+- `packages/mcp/src/tools/docs-consistency.test.ts` — user doc and ADR list every tool, scope, resource template, and prompt.
+- `packages/mcp/src/resources/resource-catalog.test.ts`, `prompts/prompt-catalog.test.ts` — URI parsing fails closed; prompts reference only real tools.
+- `packages/mcp/src/routes.test.ts` — `tools/list` metadata, `structuredContent`, argument validation, `resources/*`, `prompts/*` end to end.
+- `apps/api/src/mcp/policy/policy-engine.test.ts` — catalog-driven scopes, write scopes denied to the read bundle, resource operations, effective scopes.
+- `apps/api/src/mcp/json-rpc-tool-call.test.ts` — `tools/call` and `resources/read` parsing.
+- `apps/api/src/mcp/tools/write-handlers.test.ts`, `read-handlers.test.ts` — every new handler validated against its output schema; secrets/targets stripped; state guards return `conflict`.
+- `apps/api/src/mcp/mount.test.ts` — full catalog advertised; write tools return `403 insufficient_scope` for read-bundle tokens; `resources/read` authorized and unknown URIs rejected with `400`; prompts served; `structuredContent` returned.
+
+# Phase 1 — Validation Evidence (PR-08)
 
 **Recorded:** 2026-05-28  
 **Branch:** `feat/no-linear-mcp-pr08-ga-readiness`  

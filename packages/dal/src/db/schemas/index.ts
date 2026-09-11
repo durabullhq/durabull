@@ -12,12 +12,6 @@ export {
   alertDeliveryStatuses,
 } from './alert-delivery/schema'
 export type { AlertDelivery, NewAlertDelivery } from './alert-delivery/types'
-// Alert Event schema exports
-export { type AlertEventStatus, alertEvent, alertEventStatuses } from './alert-event/schema'
-export type { AlertEvent, NewAlertEvent } from './alert-event/types'
-// Alert Rule schema exports
-export { type AlertRuleType, alertRule, alertRuleTypes } from './alert-rule/schema'
-export type { AlertRule, NewAlertRule } from './alert-rule/types'
 // Alert Destination schema exports
 export {
   type AlertDestinationConfig,
@@ -34,6 +28,12 @@ export type {
   NewAlertDestination,
   NewAlertWebhookDestination,
 } from './alert-destination/types'
+// Alert Event schema exports
+export { type AlertEventStatus, alertEvent, alertEventStatuses } from './alert-event/schema'
+export type { AlertEvent, NewAlertEvent } from './alert-event/types'
+// Alert Rule schema exports
+export { type AlertRuleType, alertRule, alertRuleTypes } from './alert-rule/schema'
+export type { AlertRule, NewAlertRule } from './alert-rule/types'
 // Auth schema exports
 export { authAccount, authSession, authVerification } from './auth/schema'
 export type {
@@ -116,6 +116,8 @@ export type {
   NewRedisDiscoveredQueue,
   RedisDiscoveredQueue,
 } from './redis-discovered-queue/types'
+export { redisHealthSample } from './redis-health-sample/schema'
+export type { NewRedisHealthSample, RedisHealthSample } from './redis-health-sample/types'
 // Relations v2 - single consolidated relations object
 export { relations } from './relations'
 // Telemetry installation schema exports

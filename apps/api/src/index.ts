@@ -8,6 +8,11 @@ import { serveStatic } from 'hono/bun'
 import { createApiApp } from './app'
 import { startAlertMonitor, stopAlertMonitor } from './lib/alert-monitor'
 import { isAuthlessMode } from './lib/authless'
+import { startRedisHealthCleanupJob, stopRedisHealthCleanupJob } from './lib/redis-health-cleanup'
+import {
+  getRedisHealthRetentionDays,
+  isRedisHealthHistoryEnabled,
+} from './lib/redis-health-history'
 
 process.on('unhandledRejection', (reason) => {
   console.error('[process] Unhandled promise rejection:', reason)
@@ -27,6 +32,7 @@ async function shutdown(reason: NodeJS.Signals): Promise<void> {
 
     try {
       stopAlertMonitor()
+      stopRedisHealthCleanupJob()
       console.log('[shutdown] Alert monitor stopped.')
 
       console.log('[shutdown] Closing database...')
@@ -60,6 +66,7 @@ if (!process.stdin.isTTY) {
 // Create the API app
 const { app } = await createApiApp()
 startAlertMonitor()
+startRedisHealthCleanupJob()
 
 // Serve static files from web app build (for production)
 const webDistPath = join(import.meta.dir, '../../web/dist')
@@ -124,6 +131,9 @@ const alertBanner =
   env.DURABULL_ALERT_ENABLED === false
     ? '🔔 Alerts: Disabled'
     : `🔔 Alerts: Monitor active (${Math.round((env.DURABULL_ALERT_POLL_INTERVAL_MS ?? 60000) / 1000)}s)`
+const redisHealthBanner = isRedisHealthHistoryEnabled()
+  ? `📈 Redis health: History active (${getRedisHealthRetentionDays()}d retention)`
+  : '📈 Redis health: History disabled'
 const authlessProductionWarning =
   isAuthlessMode() && env.NODE_ENV === 'production'
     ? '⚠️  WARNING: Authless mode is enabled in production. Restrict network access to trusted environments only.'
@@ -139,6 +149,7 @@ ${dbBanner}
 ${authBanner}
 ${connectionsBanner}
 ${alertBanner}
+${redisHealthBanner}
 ${emailBanner}
 ${authlessProductionWarning ? `${authlessProductionWarning}` : ''}
 ${hasWebBuild ? `🌐 Web:    http://localhost:${port}` : '⚠️  Web: Run "bun run build" first'}

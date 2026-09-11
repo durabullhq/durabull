@@ -130,7 +130,7 @@ export function AlertEmail({
             <Text style={severityText}>ALERT FIRING</Text>
           </Section>
 
-          <Heading style={heading}>Queue Alert Triggered</Heading>
+          <Heading style={heading}>Alert Triggered</Heading>
 
           <Section style={card}>
             <Text style={summaryText}>{summary}</Text>
@@ -141,7 +141,7 @@ export function AlertEmail({
               Connection: <span style={detailStrong}>{connectionName}</span>
             </Text>
             <Text style={detailText}>
-              Queue: <span style={detailStrong}>{queueName}</span>
+              Scope: <span style={detailStrong}>{queueName}</span>
             </Text>
             <Text style={detailText}>
               Fired at:{' '}
@@ -167,7 +167,7 @@ export function AlertEmail({
 
           <Section style={buttonSection}>
             <Button style={primaryButton} href={dashboardUrl}>
-              View Queue
+              View Alert
             </Button>
           </Section>
 

@@ -7,6 +7,8 @@ export type ToolPrincipal = ListConnectionsHandlerInput['principal']
 function toResolvedConnection(connection: {
   id: string
   organizationId: string
+  name: string
+  environment?: string | null
   url: string
   prefix: string
   allowSelfSignedCerts: boolean
@@ -14,6 +16,8 @@ function toResolvedConnection(connection: {
   return {
     id: connection.id,
     organizationId: connection.organizationId,
+    name: connection.name,
+    environment: connection.environment ?? null,
     url: connection.url,
     prefix: connection.prefix,
     allowSelfSignedCerts: connection.allowSelfSignedCerts,

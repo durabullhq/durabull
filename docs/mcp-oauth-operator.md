@@ -51,7 +51,7 @@ Protected resource metadata advertises:
 
 - `resource`: `{APP_BASE_URL}/mcp`
 - `authorization_servers`: Better Auth base URL (e.g. `https://app.durabull.io/api/auth`); use `authorization_endpoint` from AS metadata for `/api/auth/mcp/authorize`
-- `scopes_supported`: phase-1 MCP read scopes (`mcp:discover`, `mcp:jobs:read`, …) — prefer PRM over AS metadata for MCP scope discovery
+- `scopes_supported`: all MCP scopes — the read bundle (`mcp:discover`, `mcp:jobs:read`, `mcp:logs:read`, `mcp:failures:read`, `mcp:diagnostics:read`) and the write scopes (`mcp:jobs:retry`, `mcp:jobs:promote`, `mcp:queues:pause`, `mcp:failures:write`) — prefer PRM over AS metadata for MCP scope discovery
 
 ## Client configuration checklist
 
@@ -59,9 +59,12 @@ Protected resource metadata advertises:
 2. Complete authorization code + PKCE against `/api/auth/mcp/authorize` with `resource={APP_BASE_URL}/mcp` (Durabull injects phase-1 scopes and `prompt=consent` when missing).
 3. Exchange the code at `/api/auth/mcp/token` with `resource={APP_BASE_URL}/mcp`.
 4. Call MCP transport at `POST/GET/DELETE {APP_BASE_URL}/mcp` with `Authorization: Bearer <access_token>`.
-5. Request at least the `mcp:discover` scope for transport smoke (`ping`). Queue/job/log tools require the full phase-1 read bundle (`mcp:jobs:read`, `mcp:logs:read`, `mcp:failures:read`, `mcp:diagnostics:read`). Authorize requests without explicit `mcp:*` scopes are expanded server-side to that bundle.
+5. Request at least the `mcp:discover` scope for transport smoke (`ping`). Queue/job/log tools require the read bundle (`mcp:jobs:read`, `mcp:logs:read`, `mcp:failures:read`, `mcp:diagnostics:read`). Authorize requests without explicit `mcp:*` scopes are expanded server-side to that bundle **only**.
+6. Write tools need their write scope requested explicitly: `mcp:jobs:retry` (`retry_job`), `mcp:jobs:promote` (`promote_job`), `mcp:queues:pause` (`pause_queue`, `resume_queue`), `mcp:failures:write` (`resolve_alert_event`, `acknowledge_alert_event`, `unacknowledge_alert_event`, `snooze_alert_rule`, `unsnooze_alert_rule`). The consent screen labels these "can make changes".
 
 **Linear / re-authorize:** If a connection was approved before this behavior, disconnect the MCP integration in Linear and authorize again so a new token is issued with the full scope set.
+
+**Phase 2 migration:** `resolve_alert_event` moved from `mcp:failures:read` to `mcp:failures:write`. Tokens issued before phase 2 receive `403 insufficient_scope` on that tool until the client re-authorizes with the write scope; all read tools keep working.
 
 Dynamic client registration (`POST /api/auth/mcp/register`) is rate-limited (**20 registrations/minute** per bearer or `cf-connecting-ip` / `x-real-ip`) but unauthenticated. Configure your edge to set one of those headers if you rely on per-IP limits behind a proxy. Monitor registration volume on public deployments and block at the edge if abused.
 

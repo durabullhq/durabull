@@ -27,24 +27,31 @@ import {
   CartesianGrid,
   Cell,
   Line,
-  LineChart as RechartsLineChart,
   Pie,
   PieChart,
+  LineChart as RechartsLineChart,
   XAxis,
   YAxis,
 } from 'recharts'
 import { z } from 'zod'
+import { AnalyticsWindowControls } from '@/components/analytics/analytics-window-controls'
+import {
+  type AnalyticsWindowValue,
+  METRICS_WINDOWS,
+} from '@/components/analytics/analytics-window-options'
+import { RedisHealthObservability } from '@/components/analytics/redis-health-observability'
+import type { RedisHealthHistoryResponse } from '@/components/analytics/redis-health-types'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
+  type ChartConfig,
   ChartContainer,
   ChartLegend,
   ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
-  type ChartConfig,
 } from '@/components/ui/chart'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -59,15 +66,6 @@ import {
 import type { QueueNativeMetricsResponse } from '@/hooks/use-queues'
 import { fetchApi } from '@/lib/api'
 import { cn, formatNumber, getTimezoneAbbreviation } from '@/lib/utils'
-
-const METRICS_WINDOWS = [
-  { label: '1H', value: '1h', minutes: 60 },
-  { label: '6H', value: '6h', minutes: 360 },
-  { label: '24H', value: '24h', minutes: 1440 },
-  { label: '7D', value: '7d', minutes: 10080 },
-  { label: '14D', value: '14d', minutes: 20160 },
-  { label: '30D', value: '30d', minutes: 43200 },
-] as const
 
 const PRIORITY_BUCKETS = [1, 2, 5, 10, 20, 50, 100, 500]
 const METRICS_PAGE_SIZE = 25
@@ -408,16 +406,40 @@ function AnalyticsPage() {
     [window]
   )
 
-  const metricsQuery = useQuery({
+  const {
+    data: metricsData,
+    error: metricsError,
+    isFetching: isFetchingMetrics,
+    isLoading: isLoadingMetrics,
+    refetch: refetchMetrics,
+  } = useQuery({
     queryKey: ['analytics', connectionId, 'metrics', selectedWindow.value],
     queryFn: () => fetchAllQueueMetrics(connectionId, selectedWindow.minutes),
     placeholderData: (previousData) => previousData,
     enabled: !!connectionId,
   })
 
-  const schedulesQuery = useQuery({
+  const {
+    data: schedulesData,
+    error: schedulesError,
+    isFetching: isFetchingSchedules,
+    refetch: refetchSchedules,
+  } = useQuery({
     queryKey: ['analytics', connectionId, 'scheduled-jobs'],
     queryFn: () => fetchAllScheduledJobs(connectionId),
+    placeholderData: (previousData) => previousData,
+    enabled: !!connectionId,
+  })
+
+  const {
+    data: redisHealthData,
+    error: redisHealthError,
+    isFetching: isFetchingRedisHealth,
+    isLoading: isLoadingRedisHealth,
+    refetch: refetchRedisHealth,
+  } = useQuery({
+    queryKey: ['analytics', connectionId, 'redis-health', selectedWindow.value],
+    queryFn: () => fetchRedisHealthHistory(connectionId, selectedWindow.minutes),
     placeholderData: (previousData) => previousData,
     enabled: !!connectionId,
   })
@@ -427,20 +449,17 @@ function AnalyticsPage() {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         return
       }
-      void metricsQuery.refetch()
-      void schedulesQuery.refetch()
+      void refetchMetrics()
+      void refetchSchedules()
+      void refetchRedisHealth()
     }, ANALYTICS_REFRESH_MS)
 
     return () => clearInterval(interval)
-  }, [metricsQuery.refetch, schedulesQuery.refetch])
+  }, [refetchMetrics, refetchRedisHealth, refetchSchedules])
 
   const analytics = useMemo<FleetAnalytics>(
-    () =>
-      buildFleetAnalytics(
-        metricsQuery.data?.metrics ?? [],
-        schedulesQuery.data?.scheduledJobs ?? []
-      ),
-    [metricsQuery.data?.metrics, schedulesQuery.data?.scheduledJobs]
+    () => buildFleetAnalytics(metricsData?.metrics ?? [], schedulesData?.scheduledJobs ?? []),
+    [metricsData?.metrics, schedulesData?.scheduledJobs]
   )
 
   const sortedQueueRows = useMemo(() => {
@@ -491,10 +510,8 @@ function AnalyticsPage() {
 
   useAppTopBar(topBarConfig)
 
-  const isLoading = metricsQuery.isLoading && !metricsQuery.data
-  const isRefreshing = metricsQuery.isFetching || schedulesQuery.isFetching
-  const metricsError = metricsQuery.error as Error | null
-  const schedulesError = schedulesQuery.error as Error | null
+  const isLoading = isLoadingMetrics && !metricsData
+  const isRefreshing = isFetchingMetrics || isFetchingSchedules || isFetchingRedisHealth
   const hasNoQueues = !isLoading && analytics.queueRows.length === 0
   const freshnessLabel = formatAgeFromMs(analytics.totals.metricsLatestSampleAgeMs)
   const staleThresholdMs = 5 * 60 * 1000
@@ -503,8 +520,32 @@ function AnalyticsPage() {
     analytics.totals.metricsLatestSampleAgeMs > staleThresholdMs
 
   const handleRefresh = () => {
-    void Promise.all([metricsQuery.refetch(), schedulesQuery.refetch()])
+    void Promise.all([refetchMetrics(), refetchSchedules(), refetchRedisHealth()])
   }
+
+  const handleWindowChange = (nextWindow: AnalyticsWindowValue) => {
+    void navigate({
+      to: '.',
+      search: { window: nextWindow },
+      replace: true,
+    })
+  }
+
+  const windowControls = (
+    <AnalyticsWindowControls
+      selectedWindow={selectedWindow.value}
+      isRefreshing={isRefreshing}
+      onWindowChange={handleWindowChange}
+      onRefresh={handleRefresh}
+    />
+  )
+  const redisHealthPanel = (
+    <RedisHealthObservability
+      data={redisHealthData}
+      error={redisHealthError}
+      isLoading={isLoadingRedisHealth}
+    />
+  )
 
   if (isLoading) {
     return <AnalyticsLoadingState />
@@ -512,32 +553,40 @@ function AnalyticsPage() {
 
   if (metricsError) {
     return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <div className="mb-4 rounded-full bg-destructive/10 p-4 text-destructive">
-          <AlertCircle className="h-8 w-8" />
+      <div className="space-y-6">
+        {windowControls}
+        {redisHealthPanel}
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="mb-4 rounded-full bg-destructive/10 p-4 text-destructive">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="text-xl font-semibold">Unable to load queue analytics</h2>
+          <p className="mt-2 max-w-xl text-center text-sm text-muted-foreground">
+            {metricsError.message}
+          </p>
+          <Button className="mt-5" onClick={handleRefresh}>
+            Retry
+          </Button>
         </div>
-        <h2 className="text-xl font-semibold">Unable to load analytics</h2>
-        <p className="mt-2 max-w-xl text-center text-sm text-muted-foreground">
-          {metricsError.message}
-        </p>
-        <Button className="mt-5" onClick={handleRefresh}>
-          Retry
-        </Button>
       </div>
     )
   }
 
   if (hasNoQueues) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 py-16">
-        <div className="mb-4 rounded-full bg-muted p-4">
-          <Layers className="h-8 w-8 text-muted-foreground" />
+      <div className="space-y-6">
+        {windowControls}
+        {redisHealthPanel}
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 py-16">
+          <div className="mb-4 rounded-full bg-muted p-4">
+            <Layers className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-semibold">No queues detected</h3>
+          <p className="mt-1 max-w-lg text-center text-sm text-muted-foreground">
+            Connect at least one BullMQ queue to unlock queue-level analytics. Redis server
+            observability remains available above.
+          </p>
         </div>
-        <h3 className="text-lg font-semibold">No queues detected</h3>
-        <p className="mt-1 max-w-lg text-center text-sm text-muted-foreground">
-          Connect at least one BullMQ queue to unlock connection-wide analytics and queue health
-          intelligence.
-        </p>
       </div>
     )
   }
@@ -557,10 +606,10 @@ function AnalyticsPage() {
                 </Badge>
                 <Badge variant={isStale ? 'warning' : 'success'}>Freshness: {freshnessLabel}</Badge>
                 <Badge variant="outline">
-                  Queues Scanned: {formatNumber(metricsQuery.data?.totalQueues ?? 0)}
+                  Queues Scanned: {formatNumber(metricsData?.totalQueues ?? 0)}
                 </Badge>
                 <Badge variant="outline">
-                  Metrics Pages: {formatNumber(metricsQuery.data?.totalPages ?? 0)}
+                  Metrics Pages: {formatNumber(metricsData?.totalPages ?? 0)}
                 </Badge>
               </div>
               <CardTitle className="text-2xl md:text-3xl">BullMQ Fleet Analytics</CardTitle>
@@ -580,37 +629,10 @@ function AnalyticsPage() {
           </div>
         </CardHeader>
 
-        <CardContent className="pt-5">
-          <div className="flex flex-wrap items-center gap-2">
-            {METRICS_WINDOWS.map((entry) => (
-              <Button
-                key={entry.value}
-                size="xs"
-                variant={selectedWindow.value === entry.value ? 'default' : 'outline'}
-                onClick={() =>
-                  navigate({
-                    to: '.',
-                    search: { window: entry.value },
-                    replace: true,
-                  })
-                }
-              >
-                {entry.label}
-              </Button>
-            ))}
-            <Button
-              size="xs"
-              variant="outline"
-              className="ml-2"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-            >
-              <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
-              Refresh
-            </Button>
-          </div>
-        </CardContent>
+        <CardContent className="pt-5">{windowControls}</CardContent>
       </Card>
+
+      {redisHealthPanel}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
         <AnalyticsMetricCard
@@ -1520,6 +1542,16 @@ async function fetchAllQueueMetrics(connectionId: string, windowMinutes: number)
     totalPages,
     fetchedAt: Date.now(),
   } satisfies FleetMetricsPayload
+}
+
+async function fetchRedisHealthHistory(connectionId: string, windowMinutes: number) {
+  const params = new URLSearchParams({
+    windowMinutes: String(windowMinutes),
+    targetPoints: '480',
+  })
+  return fetchApi<RedisHealthHistoryResponse>(
+    `/api/c/${encodeURIComponent(connectionId)}/metrics/redis-health?${params.toString()}`
+  )
 }
 
 async function fetchAllScheduledJobs(connectionId: string) {

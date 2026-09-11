@@ -1,21 +1,28 @@
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
-
-import type { McpSession } from '../auth/mcp-session-middleware'
 import { hashMcpToolInput, writeMcpAuditEventNonBlocking } from '../audit/mcp-audit'
+import type { McpSession } from '../auth/mcp-session-middleware'
+import { resolveConnectionForPrincipal } from '../connections/resolve-connection'
 import {
+  isMcpResourcesReadMethod,
   isMcpToolsCallMethod,
   parseMcpJsonRpcMethod,
   parseMcpJsonRpcPayloadId,
-  parseMcpToolCallBody,
+  parseMcpPolicyOperation,
 } from '../json-rpc-tool-call'
-import { recordMcpRpcAnalytics, type McpAnalyticsIdentity } from '../observability/mcp-analytics'
-import { resolveConnectionForPrincipal } from '../connections/resolve-connection'
+import { type McpAnalyticsIdentity, recordMcpRpcAnalytics } from '../observability/mcp-analytics'
 import { evaluateMcpToolPolicy } from './policy-engine'
 import { resolveMcpPrincipal } from './principal-resolver'
 import type { McpPolicyDecision, McpPrincipal } from './types'
 
-const RPC_ANALYTICS_METHODS = new Set(['initialize', 'tools/list'])
+const RPC_ANALYTICS_METHODS = new Set([
+  'initialize',
+  'tools/list',
+  'resources/list',
+  'resources/templates/list',
+  'prompts/list',
+  'prompts/get',
+])
 
 function buildCorrelationId(): string {
   return crypto.randomUUID()
@@ -49,7 +56,10 @@ async function readMcpRequestBody(c: Context): Promise<unknown> {
     return cached
   }
 
-  const body = await c.req.raw.clone().json().catch(() => null)
+  const body = await c.req.raw
+    .clone()
+    .json()
+    .catch(() => null)
   c.set('mcpRequestJsonBody', body)
   return body
 }
@@ -97,8 +107,8 @@ export function createMcpPolicyMiddleware() {
     }
 
     const payloadId = parseMcpJsonRpcPayloadId(body)
-    const toolCall = parseMcpToolCallBody(body)
-    if (isMcpToolsCallMethod(body) && !toolCall) {
+    const operation = parseMcpPolicyOperation(body)
+    if (isMcpToolsCallMethod(body) && !operation) {
       return jsonRpcErrorResponse(
         c,
         400,
@@ -107,7 +117,18 @@ export function createMcpPolicyMiddleware() {
         payloadId
       )
     }
-    if (!toolCall) {
+    if (isMcpResourcesReadMethod(body) && !operation) {
+      // Unknown or malformed resource URIs never reach the MCP server: fail closed here so a
+      // typo cannot probe for unregistered resources.
+      return jsonRpcErrorResponse(
+        c,
+        400,
+        -32_602,
+        'Invalid params: unknown resource URI. Read durabull://server for the resource catalog.',
+        payloadId
+      )
+    }
+    if (!operation) {
       const mcpMethod = parseMcpJsonRpcMethod(body)
       if (mcpMethod && RPC_ANALYTICS_METHODS.has(mcpMethod)) {
         const session = c.get('mcpSession')
@@ -118,6 +139,13 @@ export function createMcpPolicyMiddleware() {
         })
       }
       return next()
+    }
+
+    const toolCall = {
+      toolName: operation.name,
+      arguments: operation.arguments,
+      connectionId: operation.connectionId,
+      ...(operation.kind === 'resource' ? { requiredScopes: operation.requiredScopes } : {}),
     }
 
     const session = c.get('mcpSession')
@@ -208,13 +236,7 @@ export function createMcpPolicyMiddleware() {
     c.set('mcpPrincipal', principal)
     c.set('mcpPolicyDecision', decision)
     c.set('mcpToolInputHash', inputHash)
-    c.set(
-      'mcpGrantedScopes',
-      session.scopes
-        .split(/\s+/)
-        .map((scope) => scope.trim())
-        .filter(Boolean)
-    )
+    c.set('mcpGrantedScopes', decision.effectiveScopes)
     return next()
   })
 }
@@ -226,7 +248,7 @@ declare module 'hono' {
     mcpPolicyDecision: McpPolicyDecision
     mcpSession: McpSession
     mcpResolvedConnection?: import('@durabull/mcp').McpResolvedConnection
-    mcpGrantedScopes?: string[]
+    mcpGrantedScopes?: readonly string[]
     mcpToolInputHash?: string
   }
 }

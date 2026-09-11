@@ -1,5 +1,5 @@
-import { AnalyticsEvents } from '@durabull/analytics/events'
 import { trackEvent } from '@durabull/analytics/browser'
+import { AnalyticsEvents } from '@durabull/analytics/events'
 import {
   labelConsentScopes,
   type McpOAuthConsentContext,
@@ -205,6 +205,11 @@ function ConsentPage() {
                     >
                       <p className="text-sm font-medium">
                         {entry.title}
+                        {entry.writeScope ? (
+                          <span className="ml-2 text-xs font-normal text-status-warning">
+                            (can make changes)
+                          </span>
+                        ) : null}
                         {entry.unknownScope ? (
                           <span className="ml-2 text-xs font-normal text-status-warning">
                             (unrecognized scope)
