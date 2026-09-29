@@ -18,6 +18,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart'
+import { formatRedisHealthChartTick } from './redis-health-chart-format'
 import { type RedisHealthThreshold, thresholdsForChart } from './redis-health-metrics'
 import type { RedisHealthHistoryPoint } from './redis-health-types'
 
@@ -91,9 +92,11 @@ interface MetricLineSpec {
 export function RedisHealthCharts({
   series,
   thresholds,
+  bucketMinutes,
 }: {
   series: RedisHealthHistoryPoint[]
   thresholds: RedisHealthThreshold[]
+  bucketMinutes: number
 }) {
   const chartData: RedisHealthChartPoint[] = series.map((point) => ({
     ...point,
@@ -102,6 +105,12 @@ export function RedisHealthCharts({
     residentMemoryMiB: bytesToMiB(point.residentMemoryBytes),
     memoryCapacityMiB: bytesToMiB(point.memoryCapacityBytes),
   }))
+  const rangeDurationMs = Math.max(
+    0,
+    (chartData.at(-1)?.timestamp ?? 0) -
+      (chartData[0]?.timestamp ?? 0) +
+      (chartData.length > 1 ? bucketMinutes * 60_000 : 0)
+  )
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
@@ -111,6 +120,7 @@ export function RedisHealthCharts({
       >
         <UtilizationChart
           data={chartData}
+          rangeDurationMs={rangeDurationMs}
           thresholds={thresholdsForChart(thresholds, 'utilization')}
         />
       </MetricChartCard>
@@ -122,6 +132,7 @@ export function RedisHealthCharts({
         <LineMetricChart
           config={memoryChartConfig}
           data={chartData}
+          rangeDurationMs={rangeDurationMs}
           thresholds={thresholdsForChart(thresholds, 'memory')}
           leftUnit=" MiB"
           lines={[
@@ -144,6 +155,7 @@ export function RedisHealthCharts({
         <LineMetricChart
           config={clientPressureChartConfig}
           data={chartData}
+          rangeDurationMs={rangeDurationMs}
           thresholds={thresholdsForChart(thresholds, 'clientPressure')}
           rightUnit="/m"
           thresholdAxis={(threshold) => (threshold.metric === 'blocked_clients' ? 'left' : 'right')}
@@ -165,6 +177,7 @@ export function RedisHealthCharts({
         <LineMetricChart
           config={memoryPressureChartConfig}
           data={chartData}
+          rangeDurationMs={rangeDurationMs}
           thresholds={thresholdsForChart(thresholds, 'memoryPressure')}
           rightUnit="×"
           thresholdAxis={(threshold) =>
@@ -186,23 +199,26 @@ export function RedisHealthCharts({
 
 function UtilizationChart({
   data,
+  rangeDurationMs,
   thresholds,
 }: {
   data: RedisHealthChartPoint[]
+  rangeDurationMs: number
   thresholds: RedisHealthThreshold[]
 }) {
   return (
     <ChartContainer config={utilizationChartConfig} className="h-[300px] w-full">
       <AreaChart data={data} margin={{ left: 0, right: 14, top: 12, bottom: 6 }}>
         <CartesianGrid vertical={false} />
-        <TimeAxis />
-        <YAxis unit="%" tickLine={false} axisLine={false} width={44} />
+        <TimeAxis rangeDurationMs={rangeDurationMs} />
+        <YAxis yAxisId="left" unit="%" tickLine={false} axisLine={false} width={44} />
         <HealthChartTooltip />
         <ChartLegend content={<ChartLegendContent />} />
         {thresholds.map((threshold) => (
-          <ThresholdLine key={threshold.ruleId} threshold={threshold} />
+          <ThresholdLine key={threshold.ruleId} threshold={threshold} axis="left" />
         ))}
         <Area
+          yAxisId="left"
           type="monotone"
           dataKey="memoryUsagePercent"
           stroke="var(--color-memoryUsagePercent)"
@@ -224,6 +240,7 @@ function UtilizationChart({
 function LineMetricChart({
   config,
   data,
+  rangeDurationMs,
   thresholds,
   lines,
   leftUnit,
@@ -232,6 +249,7 @@ function LineMetricChart({
 }: {
   config: ChartConfig
   data: RedisHealthChartPoint[]
+  rangeDurationMs: number
   thresholds: RedisHealthThreshold[]
   lines: MetricLineSpec[]
   leftUnit?: string
@@ -242,7 +260,7 @@ function LineMetricChart({
     <ChartContainer config={config} className="h-[300px] w-full">
       <LineChart data={data} margin={{ left: 0, right: 8, top: 12, bottom: 6 }}>
         <CartesianGrid vertical={false} />
-        <TimeAxis />
+        <TimeAxis rangeDurationMs={rangeDurationMs} />
         <YAxis
           yAxisId="left"
           unit={leftUnit}
@@ -316,9 +334,15 @@ function ThresholdLine({
   )
 }
 
-function TimeAxis() {
+function TimeAxis({ rangeDurationMs }: { rangeDurationMs: number }) {
   return (
-    <XAxis dataKey="timestamp" tickFormatter={formatChartTime} tickLine={false} axisLine={false} />
+    <XAxis
+      dataKey="timestamp"
+      tickFormatter={(value) => formatRedisHealthChartTick(Number(value), rangeDurationMs)}
+      tickLine={false}
+      axisLine={false}
+      minTickGap={24}
+    />
   )
 }
 
@@ -355,10 +379,6 @@ function MetricChartCard({
 
 function bytesToMiB(value: number | null) {
   return value === null ? null : value / (1024 * 1024)
-}
-
-function formatChartTime(value: number) {
-  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 function formatChartDate(value: number) {

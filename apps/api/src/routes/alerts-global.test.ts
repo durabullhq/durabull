@@ -216,7 +216,6 @@ describe('global alerts routes', () => {
       config: { count: 5, windowMinutes: 5 },
       cooldownMinutes: 30,
     })
-
     await alertEventRepository.create({
       alertRuleId: firstRule.id,
       organizationId: TEST_ORG_ID,
@@ -331,13 +330,22 @@ describe('global alerts routes', () => {
       config: { count: 5, windowMinutes: 5 },
       cooldownMinutes: 30,
     })
-
-    await alertEventRepository.create({
-      alertRuleId: firstRule.id,
+    const anotherFirstRule = await alertRuleRepository.create({
       organizationId: TEST_ORG_ID,
       connectionId: FIRST_CONNECTION_ID,
       queueName: 'email-send',
-      type: firstRule.type,
+      name: 'Email failure rate',
+      type: 'failure_rate',
+      config: { rate: 20, windowMinutes: 5, minSamples: 5 },
+      cooldownMinutes: 30,
+    })
+
+    await alertEventRepository.create({
+      alertRuleId: anotherFirstRule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: anotherFirstRule.type,
       status: 'firing',
       summary: 'Primary incident',
       context: {},
@@ -394,6 +402,15 @@ describe('global alerts routes', () => {
       config: { count: 5, windowMinutes: 5 },
       cooldownMinutes: 30,
     })
+    const secondRule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Email failure rate',
+      type: 'failure_rate',
+      config: { rate: 20, windowMinutes: 5, minSamples: 5 },
+      cooldownMinutes: 30,
+    })
 
     const first = await alertEventRepository.create({
       alertRuleId: rule.id,
@@ -407,11 +424,11 @@ describe('global alerts routes', () => {
       firedAt: new Date(),
     })
     await alertEventRepository.create({
-      alertRuleId: rule.id,
+      alertRuleId: secondRule.id,
       organizationId: TEST_ORG_ID,
       connectionId: FIRST_CONNECTION_ID,
       queueName: 'email-send',
-      type: rule.type,
+      type: secondRule.type,
       status: 'firing',
       summary: 'Incident B',
       context: {},

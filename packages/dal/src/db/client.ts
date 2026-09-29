@@ -9,13 +9,17 @@ import { drizzle as drizzlePglite } from 'drizzle-orm/pglite'
 import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator'
 import pg from 'pg'
 import { shouldUseEnvConnections, syncEnvConnectionsForOrganization } from './env-redis-connections'
-import { organization } from './schemas/organization/schema'
 import * as schema from './schemas'
+import { organization } from './schemas/organization/schema'
 import { relations } from './schemas/relations'
 
 // Get the directory of this file to resolve paths relative to the dal package
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, './migrations')
+// Stable application-scoped PostgreSQL advisory lock. Every replica must hold
+// this session lock while the migrator reads and advances its journal.
+const MIGRATION_LOCK_NAMESPACE = 0x44555241
+const MIGRATION_LOCK_ID = 0x42554c4c
 
 export type Database = NodePgDatabase<typeof schema>
 
@@ -26,6 +30,7 @@ let db: Database | null = null
 let pgPool: pg.Pool | null = null
 let pgliteClient: PGlite | null = null
 let initialized = false
+let initializationPromise: Promise<Database> | null = null
 
 export function getDatabaseMode(): DatabaseMode {
   return env.DATABASE_URL ? 'postgres' : 'pglite'
@@ -54,7 +59,10 @@ function shouldDisableSslForPostgresUrl(connectionString: string): boolean {
  * Automatically runs migrations on first connection.
  */
 export async function getDb(): Promise<Database> {
-  if (!db) {
+  if (db && initialized) return db
+  if (initializationPromise) return initializationPromise
+
+  initializationPromise = (async () => {
     const dbMode = getDatabaseMode()
 
     if (dbMode === 'postgres') {
@@ -68,11 +76,29 @@ export async function getDb(): Promise<Database> {
         ...(shouldDisableSslForPostgresUrl(connectionString) ? { ssl: false } : {}),
       })
       const pgDb = drizzleNodePg({ client: pgPool, schema, relations })
-      db = pgDb
 
-      if (!initialized) {
+      try {
         console.log('🐘 Connecting to PostgreSQL...')
-        await migrateNodePg(pgDb, { migrationsFolder: migrationsDir })
+        const migrationLockClient = await pgPool.connect()
+        try {
+          await migrationLockClient.query('SELECT pg_advisory_lock($1, $2)', [
+            MIGRATION_LOCK_NAMESPACE,
+            MIGRATION_LOCK_ID,
+          ])
+          // Run on the lock-owning session so connection loss cannot release
+          // the lock while a different pool connection continues migrating.
+          const migrationDb = drizzleNodePg({ client: migrationLockClient, schema, relations })
+          await migrateNodePg(migrationDb, { migrationsFolder: migrationsDir })
+        } finally {
+          try {
+            await migrationLockClient.query('SELECT pg_advisory_unlock($1, $2)', [
+              MIGRATION_LOCK_NAMESPACE,
+              MIGRATION_LOCK_ID,
+            ])
+          } finally {
+            migrationLockClient.release()
+          }
+        }
 
         if (shouldUseEnvConnections()) {
           const orgs = await pgDb.select({ id: organization.id }).from(organization)
@@ -82,33 +108,48 @@ export async function getDb(): Promise<Database> {
         }
 
         console.log('✅ Database migrations applied')
+        db = pgDb
         initialized = true
-      }
-    } else {
-      const dataDir = getPgliteDataDir()
-      await mkdir(dataDir, { recursive: true })
-      pgliteClient = new PGlite({ dataDir })
-      const pgliteDb = drizzlePglite({ client: pgliteClient, schema, relations })
-      db = pgliteDb as unknown as Database
-
-      if (!initialized) {
-        console.log(`🪶 Using PGlite at ${dataDir}`)
-        await migratePglite(pgliteDb, { migrationsFolder: migrationsDir })
-
-        if (shouldUseEnvConnections()) {
-          const orgs = await pgliteDb.select({ id: organization.id }).from(organization)
-          for (const org of orgs) {
-            await syncEnvConnectionsForOrganization(pgliteDb as unknown as Database, org.id)
-          }
-        }
-
-        console.log('✅ Database migrations applied')
-        initialized = true
+        return pgDb
+      } catch (error) {
+        await pgPool.end().catch(() => {})
+        pgPool = null
+        throw error
       }
     }
-  }
 
-  return db
+    const dataDir = getPgliteDataDir()
+    await mkdir(dataDir, { recursive: true })
+    pgliteClient = new PGlite({ dataDir })
+    const pgliteDb = drizzlePglite({ client: pgliteClient, schema, relations })
+
+    try {
+      console.log(`🪶 Using PGlite at ${dataDir}`)
+      await migratePglite(pgliteDb, { migrationsFolder: migrationsDir })
+
+      if (shouldUseEnvConnections()) {
+        const orgs = await pgliteDb.select({ id: organization.id }).from(organization)
+        for (const org of orgs) {
+          await syncEnvConnectionsForOrganization(pgliteDb as unknown as Database, org.id)
+        }
+      }
+
+      console.log('✅ Database migrations applied')
+      db = pgliteDb as unknown as Database
+      initialized = true
+      return db
+    } catch (error) {
+      await pgliteClient.close().catch(() => {})
+      pgliteClient = null
+      throw error
+    }
+  })()
+
+  try {
+    return await initializationPromise
+  } finally {
+    initializationPromise = null
+  }
 }
 
 /**
@@ -130,6 +171,9 @@ export async function getPgPool(): Promise<pg.Pool> {
  * Close the database connection.
  */
 export async function closeDb(): Promise<void> {
+  if (initializationPromise) {
+    await initializationPromise.catch(() => {})
+  }
   if (pgPool) {
     await pgPool.end()
     pgPool = null
@@ -142,4 +186,5 @@ export async function closeDb(): Promise<void> {
 
   db = null
   initialized = false
+  initializationPromise = null
 }

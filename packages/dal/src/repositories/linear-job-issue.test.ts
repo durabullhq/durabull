@@ -7,6 +7,7 @@ import { closeDb, getDb } from '../db/client'
 import { organization } from '../db/schemas/organization/schema'
 import { alertEventRepository } from './alert-event'
 import { alertRuleRepository } from './alert-rule'
+import { linearIssueResolutionRepository } from './linear-issue-resolution'
 import { linearJobIssueRepository } from './linear-job-issue'
 import { redisConnectionRepository } from './redis-connection'
 
@@ -88,6 +89,49 @@ describe('linearJobIssueRepository', () => {
     }
   })
 
+  it('invalidates an in-flight resolution only when a new incident links to the issue', async () => {
+    const { connection, rule } = await seedBase()
+    const eventInput = {
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: connection.id,
+      queueName: 'email-send',
+      type: 'job_failed',
+      status: 'firing' as const,
+      summary: 'Failed job',
+      context: { jobId: 'job-1' },
+      firedAt: new Date(),
+    }
+    const firstEvent = await alertEventRepository.create(eventInput)
+    const issueInput = {
+      organizationId: TEST_ORG_ID,
+      connectionId: connection.id,
+      queueName: 'email-send',
+      jobId: 'job-1',
+      alertEventId: firstEvent.id,
+      linearIssueId: 'issue-1',
+      linearIssueIdentifier: 'OPS-1',
+      linearIssueUrl: 'https://linear.app/acme/issue/OPS-1',
+    }
+    await linearJobIssueRepository.createOrGet(issueInput)
+    expect(await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'issue-1', 'old-worker')).toBe(
+      'claimed'
+    )
+    // An idempotent link replay must leave an existing worker's lease intact.
+    await linearJobIssueRepository.createOrGet(issueInput)
+    expect(
+      await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'issue-1', 'other-worker')
+    ).toBe('busy')
+
+    const secondEvent = await alertEventRepository.create(eventInput)
+    await linearJobIssueRepository.createOrGet({ ...issueInput, alertEventId: secondEvent.id })
+    // A worker that checked peers before the new link cannot complete its ledger.
+    expect(await linearIssueResolutionRepository.markCompleted('issue-1', 'old-worker')).toBe(false)
+    expect(await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'issue-1', 'new-worker')).toBe(
+      'claimed'
+    )
+  })
+
   it('links reused job issues to every alert event that reused them', async () => {
     const { connection, rule } = await seedBase()
     const firstEvent = await alertEventRepository.create({
@@ -123,6 +167,25 @@ describe('linearJobIssueRepository', () => {
       linearIssueIdentifier: 'OPS-1',
       linearIssueUrl: 'https://linear.app/acme/issue/OPS-1',
     })
+    expect(
+      await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'issue-1', 'first-worker')
+    ).toBe('claimed')
+    await linearIssueResolutionRepository.markCompleted('issue-1', 'first-worker')
+    // Replaying the first event does not invalidate its completed resolution.
+    await linearJobIssueRepository.createOrGet({
+      organizationId: TEST_ORG_ID,
+      connectionId: connection.id,
+      queueName: 'email-send',
+      jobId: 'job-1',
+      alertEventId: firstEvent.id,
+      linearIssueId: 'issue-1',
+      linearIssueIdentifier: 'OPS-1',
+      linearIssueUrl: 'https://linear.app/acme/issue/OPS-1',
+    })
+    expect(
+      await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'issue-1', 'replay-worker')
+    ).toBe('completed')
+
     const reusedIssue = await linearJobIssueRepository.createOrGet({
       organizationId: TEST_ORG_ID,
       connectionId: connection.id,
@@ -135,6 +198,10 @@ describe('linearJobIssueRepository', () => {
     })
 
     expect(reusedIssue.id).toBe(firstIssue.id)
+    // A new incident must be allowed to close this issue again if it was reopened.
+    expect(
+      await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'issue-1', 'second-worker')
+    ).toBe('claimed')
     await expect(linearJobIssueRepository.findByEvent(firstEvent.id)).resolves.toEqual([
       expect.objectContaining({ id: firstIssue.id, linearIssueIdentifier: 'OPS-1' }),
     ])

@@ -4,6 +4,11 @@ import { buildIoRedisConnectionOptions, type RedisConnectionOptions } from './co
 
 export type { RedisConnectionOptions } from './connection-options'
 
+export interface RedisClientLifecycle {
+  /** Set to false for bounded, caller-owned clients such as background INFO probes. */
+  cache?: boolean
+}
+
 export class RedisUnavailableError extends Error {
   readonly code = 'REDIS_UNAVAILABLE'
   readonly connectionId: string
@@ -164,19 +169,24 @@ export async function getRedis(
   connectionId: string,
   connectionUrl: string,
   connectionName?: string,
-  options?: RedisConnectionOptions
+  options?: RedisConnectionOptions,
+  lifecycle: RedisClientLifecycle = {}
 ): Promise<Redis> {
-  const cacheKey = JSON.stringify([
+  const shouldCache = lifecycle.cache !== false
+  const sharedCacheKey = JSON.stringify([
     connectionId,
     connectionUrl,
     options?.allowSelfSignedCerts ?? false,
   ])
-  const existingConnection = redisConnections.get(cacheKey)
-  if (existingConnection) {
-    if (existingConnection.status !== 'end') {
-      return existingConnection
+  const cacheKey = shouldCache ? sharedCacheKey : `caller-owned:${sharedCacheKey}`
+  if (shouldCache) {
+    const existingConnection = redisConnections.get(cacheKey)
+    if (existingConnection) {
+      if (existingConnection.status !== 'end') {
+        return existingConnection
+      }
+      redisConnections.delete(cacheKey)
     }
-    redisConnections.delete(cacheKey)
   }
 
   const recentFailure = recentRedisConnectionFailures.get(cacheKey)
@@ -188,9 +198,11 @@ export async function getRedis(
     recentRedisConnectionFailures.delete(cacheKey)
   }
 
-  const inFlightConnection = redisConnectionPromises.get(cacheKey)
-  if (inFlightConnection) {
-    return inFlightConnection
+  if (shouldCache) {
+    const inFlightConnection = redisConnectionPromises.get(cacheKey)
+    if (inFlightConnection) {
+      return inFlightConnection
+    }
   }
 
   const connectPromise = (async () => {
@@ -198,9 +210,9 @@ export async function getRedis(
 
     try {
       await redis.connect()
-      redisConnections.set(cacheKey, redis)
+      if (shouldCache) redisConnections.set(cacheKey, redis)
       recentRedisConnectionFailures.delete(cacheKey)
-      console.log(`✅ Connected to Redis: ${connectionName ?? connectionId}`)
+      if (shouldCache) console.log(`✅ Connected to Redis: ${connectionName ?? connectionId}`)
       return redis
     } catch (error) {
       const message = getSafeRedisErrorMessage(error)
@@ -215,11 +227,11 @@ export async function getRedis(
       disconnectRedisClient(redis)
       throw toRedisUnavailableError(connectionId, connectionName, failureMessage)
     } finally {
-      redisConnectionPromises.delete(cacheKey)
+      if (shouldCache) redisConnectionPromises.delete(cacheKey)
     }
   })()
 
-  redisConnectionPromises.set(cacheKey, connectPromise)
+  if (shouldCache) redisConnectionPromises.set(cacheKey, connectPromise)
   return connectPromise
 }
 

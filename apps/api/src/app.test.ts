@@ -6,6 +6,7 @@ import { closeDb } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { createApiApp } from './app'
 import { APP_BUILD_ID, APP_VERSION } from './lib/build-info'
+import { bootstrapServerAnalytics } from './lib/configure-server-analytics'
 
 const mutableEnv = env as {
   APP_BASE_URL?: string
@@ -14,6 +15,7 @@ const mutableEnv = env as {
   DURABULL_AUTHLESS?: boolean
   DURABULL_CLOUD?: boolean
   DURABULL_TELEMETRY_POSTHOG_KEY?: string
+  MCP_AUTHLESS_BEARER_TOKEN?: string
   NODE_ENV?: 'development' | 'test' | 'production'
   POSTHOG_KEY?: string
 }
@@ -24,11 +26,17 @@ const originalCi = mutableEnv.CI
 const originalDatabaseUrl = mutableEnv.DATABASE_URL
 const originalDurabullCloud = mutableEnv.DURABULL_CLOUD
 const originalDurabullTelemetryPosthogKey = mutableEnv.DURABULL_TELEMETRY_POSTHOG_KEY
+const originalMcpAuthlessBearerToken = mutableEnv.MCP_AUTHLESS_BEARER_TOKEN
 const originalNodeEnv = mutableEnv.NODE_ENV
 const originalPosthogKey = mutableEnv.POSTHOG_KEY
 const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
 
 let tempPgliteDir = ''
+
+async function createConfiguredApiApp() {
+  bootstrapServerAnalytics()
+  return createApiApp({ enableLogging: false })
+}
 
 describe('api app config', () => {
   beforeEach(async () => {
@@ -40,6 +48,7 @@ describe('api app config', () => {
     mutableEnv.DURABULL_AUTHLESS = true
     mutableEnv.DURABULL_CLOUD = false
     mutableEnv.DURABULL_TELEMETRY_POSTHOG_KEY = undefined
+    mutableEnv.MCP_AUTHLESS_BEARER_TOKEN = 'app-test-bearer-token'
     await closeDb()
   })
 
@@ -51,6 +60,7 @@ describe('api app config', () => {
     mutableEnv.DURABULL_AUTHLESS = originalAuthless
     mutableEnv.DURABULL_CLOUD = originalDurabullCloud
     mutableEnv.DURABULL_TELEMETRY_POSTHOG_KEY = originalDurabullTelemetryPosthogKey
+    mutableEnv.MCP_AUTHLESS_BEARER_TOKEN = originalMcpAuthlessBearerToken
     mutableEnv.NODE_ENV = originalNodeEnv
     mutableEnv.POSTHOG_KEY = originalPosthogKey
 
@@ -69,7 +79,7 @@ describe('api app config', () => {
   it('exposes required telemetry status without treating POSTHOG_KEY as an opt-out', async () => {
     mutableEnv.NODE_ENV = 'production'
     mutableEnv.POSTHOG_KEY = 'phc_instance_owner_project'
-    const { app } = await createApiApp({ enableLogging: false })
+    const { app } = await createConfiguredApiApp()
 
     const response = await app.request('/api/app/config')
 
@@ -92,7 +102,7 @@ describe('api app config', () => {
     mutableEnv.APP_BASE_URL = 'https://app.durabull.io'
     mutableEnv.NODE_ENV = 'production'
     mutableEnv.POSTHOG_KEY = 'phc_durabull_cloud_project'
-    const { app } = await createApiApp({ enableLogging: false })
+    const { app } = await createConfiguredApiApp()
 
     const response = await app.request('/api/app/config')
 
@@ -114,7 +124,7 @@ describe('api app config', () => {
     mutableEnv.NODE_ENV = 'production'
     mutableEnv.POSTHOG_KEY = 'phc_durabull_cloud_native_project'
     mutableEnv.DURABULL_TELEMETRY_POSTHOG_KEY = 'phc_durabull_separate_telemetry_project'
-    const { app } = await createApiApp({ enableLogging: false })
+    const { app } = await createConfiguredApiApp()
 
     const response = await app.request('/api/app/config')
 
@@ -129,7 +139,7 @@ describe('api app config', () => {
   })
 
   it('exposes no-store app version checks without session state', async () => {
-    const { app } = await createApiApp({ enableLogging: false })
+    const { app } = await createConfiguredApiApp()
 
     const staleResponse = await app.request(
       '/api/app/version?clientVersion=0.0.0&clientBuildId=old-build'

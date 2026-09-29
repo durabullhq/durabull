@@ -123,8 +123,78 @@ describe('alertRuleRepository', () => {
     const cleared = await alertRuleRepository.setMutedUntil(rule.id, TEST_ORG_ID, null)
     expect(cleared?.mutedUntil).toBeNull()
 
-    await expect(
-      alertRuleRepository.setMutedUntil(rule.id, 'other-org', until)
-    ).resolves.toBeNull()
+    await expect(alertRuleRepository.setMutedUntil(rule.id, 'other-org', until)).resolves.toBeNull()
+  })
+
+  it('rejects a stale concurrent mutation before it can skip scope invalidation', async () => {
+    const connectionId = await seedConnection()
+    const original = await createRule(connectionId, 'Concurrent rule')
+    const first = await alertRuleRepository.updateIfCurrent(
+      original.id,
+      TEST_ORG_ID,
+      { type: 'redis_health', config: { metric: 'cpu_usage_percent', threshold: 80 } },
+      original,
+      { resolveActive: true }
+    )
+    expect(first.conflict).toBe(false)
+
+    const stale = await alertRuleRepository.updateIfCurrent(
+      original.id,
+      TEST_ORG_ID,
+      { config: { count: 10, windowMinutes: 5 } },
+      original,
+      { resolveActive: false }
+    )
+
+    expect(stale).toMatchObject({ rule: null, resolvedEvents: [], conflict: true })
+    expect(await alertRuleRepository.findById(original.id, TEST_ORG_ID)).toMatchObject({
+      type: 'redis_health',
+      config: { metric: 'cpu_usage_percent', threshold: 80 },
+    })
+  })
+
+  it('claims deletion tombstones fairly and defers failed claims', async () => {
+    const connectionId = await seedConnection()
+    const rules = await Promise.all(
+      ['One', 'Two', 'Three', 'Four'].map((name) => createRule(connectionId, name))
+    )
+    const requestedAt = new Date(Date.now() - 60_000)
+    for (const [index, rule] of rules.entries()) {
+      const retryAt = new Date(requestedAt.getTime() + index)
+      await alertRuleRepository.update(rule.id, TEST_ORG_ID, {
+        enabled: false,
+        deletionRequestedAt: retryAt,
+        deletionRetryAt: retryAt,
+      })
+    }
+
+    const firstClaim = await alertRuleRepository.claimDeletionRequested(3, 'worker-a')
+    expect(firstClaim).toHaveLength(3)
+    for (const rule of firstClaim) {
+      await alertRuleRepository.releaseDeletionClaim(
+        rule.id,
+        'worker-a',
+        new Date(Date.now() + 30_000)
+      )
+    }
+
+    const secondClaim = await alertRuleRepository.claimDeletionRequested(3, 'worker-b')
+    expect(secondClaim).toHaveLength(1)
+    expect(secondClaim[0]?.id).toBe(rules[3]?.id)
+  })
+
+  it('blocks connection deletion atomically while any alert rule still depends on it', async () => {
+    const connectionId = await seedConnection()
+    const rule = await createRule(connectionId, 'Connection guard')
+
+    expect(await redisConnectionRepository.deleteIfNoAlertRules(connectionId, TEST_ORG_ID)).toBe(
+      'blocked'
+    )
+    expect(await redisConnectionRepository.findById(connectionId, TEST_ORG_ID)).not.toBeNull()
+
+    await alertRuleRepository.delete(rule.id, TEST_ORG_ID)
+    expect(await redisConnectionRepository.deleteIfNoAlertRules(connectionId, TEST_ORG_ID)).toBe(
+      'deleted'
+    )
   })
 })

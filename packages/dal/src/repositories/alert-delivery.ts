@@ -6,6 +6,7 @@ import {
   alertDelivery,
 } from '../db/schemas/alert-delivery/schema'
 import type { AlertDelivery } from '../db/schemas/alert-delivery/types'
+import { alertEvent } from '../db/schemas/alert-event/schema'
 
 const STALE_CLAIM_MS = 10 * 60 * 1000
 
@@ -284,29 +285,66 @@ export const alertDeliveryRepository = {
     expectedClaimedAt: Date
   ): Promise<boolean> {
     const db = await getDb()
-    const rows = await db
-      .update(alertDelivery)
-      .set({
-        status: 'delivered',
-        claimedAt: null,
-        nextRetryAt: null,
-        lastError: null,
-        externalId: metadata.externalId ?? null,
-        externalIdentifier: metadata.externalIdentifier ?? null,
-        externalUrl: metadata.externalUrl ?? null,
-        providerMetadata: metadata.providerMetadata ?? {},
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(alertDelivery.id, id),
-          eq(alertDelivery.status, 'claimed'),
-          eq(alertDelivery.claimedAt, expectedClaimedAt)
-        )
-      )
-      .returning({ id: alertDelivery.id })
+    return db.transaction(async (tx) => {
+      const [delivery] = await tx
+        .select({ alertEventId: alertDelivery.alertEventId })
+        .from(alertDelivery)
+        .where(eq(alertDelivery.id, id))
+        .limit(1)
+      if (!delivery) return false
 
-    return rows.length > 0
+      // Serialize with resolution before publishing the issue reference. Lock
+      // the event first, matching cascading deletion's parent-to-child order.
+      await tx
+        .select({ id: alertEvent.id })
+        .from(alertEvent)
+        .where(eq(alertEvent.id, delivery.alertEventId))
+        .for('update')
+      const now = new Date()
+      const [delivered] = await tx
+        .update(alertDelivery)
+        .set({
+          status: 'delivered',
+          claimedAt: null,
+          nextRetryAt: null,
+          lastError: null,
+          externalId: metadata.externalId ?? null,
+          externalIdentifier: metadata.externalIdentifier ?? null,
+          externalUrl: metadata.externalUrl ?? null,
+          providerMetadata: metadata.providerMetadata ?? {},
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(alertDelivery.id, id),
+            eq(alertDelivery.status, 'claimed'),
+            eq(alertDelivery.claimedAt, expectedClaimedAt)
+          )
+        )
+        .returning()
+      if (!delivered) return false
+
+      const isLinear =
+        delivered.channelType === 'linear' ||
+        (delivered.channelType === 'destination' &&
+          delivered.providerMetadata?.resolvedType === 'linear')
+      if (isLinear && delivered.externalId) {
+        await tx
+          .update(alertEvent)
+          .set({
+            linearResolutionSyncPending: true,
+            // A collector that ran before this delivery cannot acknowledge
+            // work that now includes a new external issue reference.
+            linearResolutionSyncClaimToken: null,
+            linearResolutionSyncClaimedAt: null,
+            linearResolutionRetryAt: now,
+            linearResolutionAttempts: 0,
+            updatedAt: now,
+          })
+          .where(and(eq(alertEvent.id, delivered.alertEventId), eq(alertEvent.status, 'resolved')))
+      }
+      return true
+    })
   },
 
   async markFailed(

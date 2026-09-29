@@ -2,10 +2,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { alertRuleRepository, closeDb, getDb, organization, redisConnection } from '@durabull/dal'
+import {
+  alertCheckCursorRepository,
+  alertRuleRepository,
+  closeDb,
+  getDb,
+  organization,
+  redisConnection,
+} from '@durabull/dal'
 import { env } from '@durabull/env'
 import { Hono } from 'hono'
-import { buildRedisHealthSnapshot } from '../lib/redis-health'
+import { buildRedisHealthSnapshot, REDIS_HEALTH_CURSOR_SCOPE } from '../lib/redis-health'
 import { recordRedisHealthSnapshot } from '../lib/redis-health-history'
 
 const TEST_ORG_ID = 'metrics-routes-org'
@@ -127,5 +134,45 @@ describe('metrics routes', () => {
         threshold: 75,
       },
     ])
+  })
+
+  it('returns the exact current snapshot while chart buckets retain intra-minute peaks', async () => {
+    const peakAt = new Date(Date.now() - 2 * 60_000)
+    peakAt.setUTCSeconds(5, 0)
+    const currentAt = new Date(peakAt.getTime() + 30_000)
+    const peak = buildRedisHealthSnapshot(
+      ['used_memory:94371840', 'maxmemory:104857600'].join('\r\n'),
+      'Primary Redis',
+      peakAt
+    )
+    const current = buildRedisHealthSnapshot(
+      ['used_memory:31457280', 'maxmemory:104857600'].join('\r\n'),
+      'Primary Redis',
+      currentAt,
+      peak
+    )
+    await recordRedisHealthSnapshot(TEST_CONNECTION_ID, peak)
+    await recordRedisHealthSnapshot(TEST_CONNECTION_ID, current)
+    await alertCheckCursorRepository.upsert({
+      connectionId: TEST_CONNECTION_ID,
+      queueName: REDIS_HEALTH_CURSOR_SCOPE,
+      lastCheckedAt: currentAt,
+      lastFailedCount: 0,
+      lastCompletedCount: 0,
+      lastMetricsSnapshot: current,
+    })
+
+    const app = await createMetricsRouteApp()
+    const response = await app.request('/redis-health?windowMinutes=60&targetPoints=60')
+    const body = (await response.json()) as {
+      latest: { memoryUsagePercent: number; capturedAt: string }
+      series: Array<{ memoryUsagePercent: number | null }>
+    }
+
+    expect(body.latest).toMatchObject({
+      memoryUsagePercent: 30,
+      capturedAt: currentAt.toISOString(),
+    })
+    expect(body.series.some((point) => point.memoryUsagePercent === 90)).toBe(true)
   })
 })

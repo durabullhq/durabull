@@ -1,10 +1,15 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { env } from '@durabull/env'
 import { eq } from 'drizzle-orm'
 import { closeDb, getDb } from '../db/client'
+import {
+  clearEnvConnectionCache,
+  clearSeededEnvConnections,
+  getEnvRedisConnectionId,
+} from '../db/env-redis-connections'
 import { encryptRedisUrl, isRedisUrlEncrypted } from '../db/redis-url-encryption'
 import { organization } from '../db/schemas/organization/schema'
 import { redisConnection } from '../db/schemas/redis-connection/schema'
@@ -20,11 +25,20 @@ const originalDatabaseUrl = mutableEnv.DATABASE_URL
 const originalEnvConnectionsFlag = mutableEnv.DURABULL_ENV_CONNECTIONS
 const originalEncryptionKey = mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY
 const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
+const originalRedisUrlEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => key.startsWith('DURABULL_REDIS_URL_'))
+)
 
 const TEST_ORG_ID = 'org-repo-encryption'
 const TEST_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
 
 let tempPgliteDir = ''
+
+function clearRedisUrlEnv(): void {
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith('DURABULL_REDIS_URL_')) delete process.env[key]
+  }
+}
 
 async function setupBaseOrganization() {
   const db = await getDb()
@@ -46,6 +60,9 @@ describe('redisConnectionRepository encryption', () => {
     mutableEnv.DATABASE_URL = undefined
     mutableEnv.DURABULL_ENV_CONNECTIONS = false
     mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY = TEST_ENCRYPTION_KEY
+    clearRedisUrlEnv()
+    clearEnvConnectionCache()
+    clearSeededEnvConnections()
     await closeDb()
   })
 
@@ -54,6 +71,12 @@ describe('redisConnectionRepository encryption', () => {
     mutableEnv.DATABASE_URL = originalDatabaseUrl
     mutableEnv.DURABULL_ENV_CONNECTIONS = originalEnvConnectionsFlag
     mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY = originalEncryptionKey
+    clearRedisUrlEnv()
+    for (const [key, value] of Object.entries(originalRedisUrlEnv)) {
+      if (value !== undefined) process.env[key] = value
+    }
+    clearEnvConnectionCache()
+    clearSeededEnvConnections()
 
     if (originalPgliteDir) {
       process.env.DURABULL_PGLITE_DIR = originalPgliteDir
@@ -162,5 +185,42 @@ describe('redisConnectionRepository encryption', () => {
         'redis://encrypted-a:secret@localhost:6379/2',
       ].sort()
     )
+  })
+
+  it('returns and seeds only currently configured connections for every organization', async () => {
+    const db = await setupBaseOrganization()
+    const now = new Date()
+    const secondOrganizationId = 'org-repo-encryption-secondary'
+    await db.insert(organization).values({
+      id: secondOrganizationId,
+      name: 'Secondary Repository Encryption Org',
+      slug: secondOrganizationId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    const staleConnection = await redisConnectionRepository.create({
+      name: 'Removed environment connection',
+      url: 'redis://localhost:6380/0',
+      environment: 'development',
+      isDefault: false,
+      organizationId: TEST_ORG_ID,
+    })
+
+    process.env.DURABULL_REDIS_URL_REPOSITORY_TEST = 'redis://localhost:6379/0'
+    mutableEnv.DURABULL_ENV_CONNECTIONS = true
+    clearEnvConnectionCache()
+    clearSeededEnvConnections()
+
+    const ids = await redisConnectionRepository.findAllIdsUnsafe()
+    const expectedIds = [
+      getEnvRedisConnectionId(TEST_ORG_ID, 'REPOSITORY_TEST'),
+      getEnvRedisConnectionId(secondOrganizationId, 'REPOSITORY_TEST'),
+    ]
+
+    expect(ids.sort()).toEqual(expectedIds.sort())
+    expect(ids).not.toContain(staleConnection.id)
+    for (const id of expectedIds) {
+      expect(await redisConnectionRepository.findByIdUnsafe(id)).not.toBeNull()
+    }
   })
 })
