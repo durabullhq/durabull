@@ -1,4 +1,4 @@
-import { alertRuleRepository } from '@durabull/dal'
+import { alertCheckCursorRepository, alertRuleRepository } from '@durabull/dal'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -10,12 +10,17 @@ import {
 } from '../lib/bullmq-metrics'
 import { getConnectionRedisOptions } from '../lib/connection-options'
 import { discoverQueues, getQueue } from '../lib/redis'
-import { redisHealthConfigSchema } from '../lib/redis-health'
+import {
+  REDIS_HEALTH_CURSOR_SCOPE,
+  redisHealthConfigSchema,
+  restoreRedisHealthSnapshot,
+} from '../lib/redis-health'
 import {
   getRedisHealthHistory,
   getRedisHealthRetentionDays,
   getRedisHealthSampleIntervalMs,
   isRedisHealthHistoryEnabled,
+  serializeRedisHealthSnapshot,
 } from '../lib/redis-health-history'
 
 // Default and max page sizes for pagination
@@ -67,15 +72,31 @@ const app = new Hono()
     const to = new Date()
     const from = new Date(to.getTime() - query.windowMinutes * 60_000)
     const sampleIntervalMs = getRedisHealthSampleIntervalMs()
+    const cursor = await alertCheckCursorRepository.findByConnectionQueue(
+      connectionId,
+      REDIS_HEALTH_CURSOR_SCOPE
+    )
+    const currentSnapshot = restoreRedisHealthSnapshot(cursor?.lastMetricsSnapshot)
     const [history, rules] = await Promise.all([
       getRedisHealthHistory(connectionId, {
         from,
         to,
         targetPoints: query.targetPoints,
         expectedSampleIntervalMinutes: sampleIntervalMs / 60_000,
+        latestObservedAt:
+          currentSnapshot?.historyPersisted === true
+            ? new Date(currentSnapshot.capturedAt)
+            : undefined,
       }),
       alertRuleRepository.findByConnection(connectionId, organizationId),
     ])
+    const currentLatest = currentSnapshot ? serializeRedisHealthSnapshot(currentSnapshot) : null
+    const latest =
+      currentLatest &&
+      (!history.latest ||
+        Date.parse(currentLatest.capturedAt) >= Date.parse(history.latest.capturedAt))
+        ? currentLatest
+        : history.latest
     const now = Date.now()
     const thresholds = rules.flatMap((rule) => {
       if (
@@ -99,6 +120,7 @@ const app = new Hono()
 
     return c.json({
       ...history,
+      latest,
       thresholds,
       collectionEnabled: isRedisHealthHistoryEnabled(),
       retentionDays: getRedisHealthRetentionDays(),

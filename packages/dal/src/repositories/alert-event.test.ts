@@ -3,12 +3,16 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { env } from '@durabull/env'
+import { eq } from 'drizzle-orm'
 import { closeDb, getDb } from '../db/client'
+import { alertEvent } from '../db/schemas/alert-event/schema'
+import type { AlertRule } from '../db/schemas/alert-rule/types'
 import { organization } from '../db/schemas/organization/schema'
 import { user } from '../db/schemas/user/schema'
-import type { AlertRule } from '../db/schemas/alert-rule/types'
+import { alertCheckCursorRepository } from './alert-check-cursor'
 import { alertEventRepository } from './alert-event'
 import { alertRuleRepository } from './alert-rule'
+import { linearIssueResolutionRepository } from './linear-issue-resolution'
 import { redisConnectionRepository } from './redis-connection'
 
 const TEST_ORG_ID = 'alert-event-org'
@@ -117,11 +121,7 @@ describe('alertEventRepository', () => {
     const { connectionId, rule } = await seedBase()
     const event = await createFiringEvent(rule, connectionId)
 
-    const acknowledged = await alertEventRepository.acknowledge(
-      event.id,
-      TEST_ORG_ID,
-      TEST_USER_ID
-    )
+    const acknowledged = await alertEventRepository.acknowledge(event.id, TEST_ORG_ID, TEST_USER_ID)
 
     expect(acknowledged?.acknowledgedBy).toBe(TEST_USER_ID)
     expect(acknowledged?.acknowledgedAt).toBeInstanceOf(Date)
@@ -131,6 +131,443 @@ describe('alertEventRepository', () => {
     await expect(
       alertEventRepository.acknowledge(event.id, TEST_ORG_ID, TEST_USER_ID)
     ).resolves.toBeNull()
+  })
+
+  it('creates only one active incident when evaluators race', async () => {
+    const { connectionId, rule } = await seedBase()
+    const input = {
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId,
+      queueName: 'email-send',
+      type: rule.type,
+      summary: 'Failures crossed the configured threshold.',
+      context: { value: 12, threshold: 5 },
+      firedAt: new Date(),
+    }
+
+    const results = await Promise.all([
+      alertEventRepository.createOrGetActive(input),
+      alertEventRepository.createOrGetActive(input),
+    ])
+
+    expect(results.filter((result) => result.created)).toHaveLength(1)
+    const eventIds = results.flatMap((result) => (result.event ? [result.event.id] : []))
+    expect(new Set(eventIds).size).toBe(1)
+    expect(await alertEventRepository.findActiveFiring(rule.id, 'email-send')).toMatchObject({
+      id: eventIds[0],
+      status: 'firing',
+    })
+  })
+
+  it('does not create an incident from a stale rule snapshot', async () => {
+    const { connectionId, rule } = await seedBase()
+    await alertRuleRepository.update(rule.id, TEST_ORG_ID, { enabled: false })
+
+    const result = await alertEventRepository.createOrGetActive(
+      {
+        alertRuleId: rule.id,
+        organizationId: TEST_ORG_ID,
+        connectionId,
+        queueName: 'email-send',
+        type: rule.type,
+        summary: 'Stale evaluation',
+        context: {},
+        firedAt: new Date(),
+      },
+      { expectedRule: rule }
+    )
+
+    expect(result).toMatchObject({ event: null, created: false, staleRule: true })
+    expect(await alertEventRepository.findActiveFiring(rule.id, 'email-send')).toBeNull()
+  })
+
+  it('does not resolve a newer incident from a stale rule evaluation', async () => {
+    const { connectionId, rule } = await seedBase()
+    const event = await createFiringEvent(rule, connectionId)
+    await alertRuleRepository.update(rule.id, TEST_ORG_ID, {
+      config: { count: 10, windowMinutes: 5 },
+    })
+
+    const result = await alertEventRepository.resolveActiveIfRuleCurrent(
+      event.id,
+      TEST_ORG_ID,
+      rule
+    )
+
+    expect(result).toEqual({ event: null, staleRule: true })
+    expect(await alertEventRepository.findActiveFiring(rule.id, 'email-send')).toMatchObject({
+      id: event.id,
+      status: 'firing',
+    })
+  })
+
+  it('does not create an incident from an observation superseded by another replica', async () => {
+    const { connectionId, rule } = await seedBase()
+    const olderAt = new Date('2026-09-02T18:04:00.000Z')
+    const newerAt = new Date('2026-09-02T18:05:00.000Z')
+    await alertCheckCursorRepository.upsert({
+      connectionId,
+      queueName: 'email-send',
+      lastCheckedAt: newerAt,
+      observationToken: 'newer-observation',
+      lastFailedCount: 10,
+      lastCompletedCount: 0,
+    })
+
+    const result = await alertEventRepository.createOrGetActive(
+      {
+        alertRuleId: rule.id,
+        organizationId: TEST_ORG_ID,
+        connectionId,
+        queueName: 'email-send',
+        type: rule.type,
+        summary: 'Stale observation',
+        firedAt: olderAt,
+      },
+      {
+        expectedRule: rule,
+        latestEvaluation: {
+          connectionId,
+          queueName: 'email-send',
+          capturedAt: olderAt,
+          observationToken: 'older-observation',
+        },
+      }
+    )
+
+    expect(result).toEqual({ event: null, created: false, staleRule: true })
+    expect(await alertEventRepository.findActiveFiring(rule.id, 'email-send')).toBeNull()
+  })
+
+  it('does not resolve an incident from an observation superseded by another replica', async () => {
+    const { connectionId, rule } = await seedBase()
+    const event = await createFiringEvent(rule, connectionId)
+    const olderAt = new Date('2026-09-02T18:04:00.000Z')
+    const newerAt = new Date('2026-09-02T18:05:00.000Z')
+    await alertCheckCursorRepository.upsert({
+      connectionId,
+      queueName: 'email-send',
+      lastCheckedAt: newerAt,
+      observationToken: 'newer-observation',
+      lastFailedCount: 0,
+      lastCompletedCount: 10,
+    })
+
+    const result = await alertEventRepository.resolveActiveIfRuleCurrent(
+      event.id,
+      TEST_ORG_ID,
+      rule,
+      {
+        connectionId,
+        queueName: 'email-send',
+        capturedAt: olderAt,
+        observationToken: 'older-observation',
+      }
+    )
+
+    expect(result).toEqual({ event: null, staleRule: true })
+    expect(await alertEventRepository.findActiveFiring(rule.id, 'email-send')).toMatchObject({
+      id: event.id,
+      status: 'firing',
+    })
+  })
+
+  it('keeps the newest cursor when monitor replicas finish out of order', async () => {
+    const { connectionId } = await seedBase()
+    const newerAt = new Date('2026-09-02T18:05:00.000Z')
+    const olderAt = new Date('2026-09-02T18:04:00.000Z')
+
+    await alertCheckCursorRepository.upsert({
+      connectionId,
+      queueName: '__durabull_internal__:redis_health',
+      lastCheckedAt: newerAt,
+      lastFailedCount: 2,
+      lastCompletedCount: 3,
+      lastMetricsSnapshot: { capturedAt: newerAt.toISOString() },
+    })
+    const result = await alertCheckCursorRepository.upsert({
+      connectionId,
+      queueName: '__durabull_internal__:redis_health',
+      lastCheckedAt: olderAt,
+      lastFailedCount: 99,
+      lastCompletedCount: 99,
+      lastMetricsSnapshot: { capturedAt: olderAt.toISOString() },
+    })
+
+    expect(result.lastCheckedAt).toEqual(newerAt)
+    expect(result.lastFailedCount).toBe(2)
+    expect(result.lastMetricsSnapshot).toEqual({ capturedAt: newerAt.toISOString() })
+  })
+
+  it('uses an observation token to arbitrate samples captured in the same millisecond', async () => {
+    const { connectionId, rule } = await seedBase()
+    const capturedAt = new Date('2026-09-02T18:05:00.000Z')
+    await alertCheckCursorRepository.upsert({
+      connectionId,
+      queueName: 'email-send',
+      lastCheckedAt: capturedAt,
+      observationToken: 'observation-a',
+      lastFailedCount: 1,
+      lastCompletedCount: 1,
+    })
+    const winner = await alertCheckCursorRepository.upsert({
+      connectionId,
+      queueName: 'email-send',
+      lastCheckedAt: capturedAt,
+      observationToken: 'observation-z',
+      lastFailedCount: 9,
+      lastCompletedCount: 9,
+    })
+
+    expect(winner.lastObservationToken).toBe('observation-z')
+    const staleResult = await alertEventRepository.createOrGetActive(
+      {
+        alertRuleId: rule.id,
+        organizationId: TEST_ORG_ID,
+        connectionId,
+        queueName: 'email-send',
+        type: rule.type,
+        summary: 'Same-millisecond stale observation',
+        firedAt: capturedAt,
+      },
+      {
+        expectedRule: rule,
+        latestEvaluation: {
+          connectionId,
+          queueName: 'email-send',
+          capturedAt,
+          observationToken: 'observation-a',
+        },
+      }
+    )
+    expect(staleResult).toEqual({ event: null, created: false, staleRule: true })
+  })
+
+  it('does not record a suppression from an observation superseded by another replica', async () => {
+    const { connectionId, rule } = await seedBase()
+    const olderAt = new Date('2026-09-02T18:05:00.000Z')
+    const newerAt = new Date('2026-09-02T18:06:00.000Z')
+    await alertCheckCursorRepository.upsert({
+      connectionId,
+      queueName: 'email-send',
+      lastCheckedAt: newerAt,
+      observationToken: 'newer-observation',
+      lastFailedCount: 10,
+      lastCompletedCount: 100,
+    })
+
+    const result = await alertEventRepository.upsertSuppressed(
+      {
+        alertRuleId: rule.id,
+        organizationId: TEST_ORG_ID,
+        connectionId,
+        queueName: 'email-send',
+        type: rule.type,
+        summary: 'Stale suppression',
+        context: {},
+        dedupeKey: 'suppressed:anchor',
+        observationToken: 'older-observation',
+      },
+      {
+        latestEvaluation: {
+          connectionId,
+          queueName: 'email-send',
+          capturedAt: olderAt,
+          observationToken: 'older-observation',
+        },
+      }
+    )
+
+    expect(result).toBeNull()
+    expect(await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })).toEqual([])
+  })
+
+  it('durably tracks external resolution work until it is cleared', async () => {
+    const { connectionId, rule } = await seedBase()
+    const firing = await createFiringEvent(rule, connectionId)
+    const resolved = await alertEventRepository.resolve(firing.id, TEST_ORG_ID)
+    expect(resolved).toMatchObject({
+      linearResolutionSyncPending: true,
+      linearResolutionReason: 'manual',
+    })
+
+    expect(await alertEventRepository.findPendingLinearResolutionSyncForRule(rule.id)).toEqual([
+      expect.objectContaining({ id: firing.id, status: 'resolved' }),
+    ])
+
+    expect(
+      await alertEventRepository.claimLinearResolutionSync(firing.id, 'worker-a')
+    ).toMatchObject({ id: firing.id, linearResolutionSyncClaimToken: 'worker-a' })
+    expect(await alertEventRepository.claimLinearResolutionSync(firing.id, 'worker-b')).toBeNull()
+
+    await alertEventRepository.releaseLinearResolutionSyncClaims(
+      [firing.id],
+      'worker-a',
+      new Date()
+    )
+    expect(
+      await alertEventRepository.claimLinearResolutionSync(firing.id, 'worker-b')
+    ).toMatchObject({ id: firing.id, linearResolutionSyncClaimToken: 'worker-b' })
+
+    await alertEventRepository.clearLinearResolutionSyncPending([firing.id], 'worker-b')
+    expect(await alertEventRepository.findPendingLinearResolutionSyncForRule(rule.id)).toEqual([])
+  })
+
+  it('promotes legacy rolling-deployment resolution markers into the typed outbox', async () => {
+    const { connectionId, rule } = await seedBase()
+    const firing = await createFiringEvent(rule, connectionId)
+    const db = await getDb()
+    await db
+      .update(alertEvent)
+      .set({
+        status: 'resolved',
+        resolvedAt: new Date(),
+        linearResolutionSyncPending: false,
+        context: { linearResolutionSyncPending: true },
+      })
+      .where(eq(alertEvent.id, firing.id))
+
+    const pending = await alertEventRepository.findPendingLinearResolutionSync(10)
+    expect(pending).toEqual([
+      expect.objectContaining({ id: firing.id, linearResolutionSyncPending: true }),
+    ])
+    expect(
+      await alertEventRepository.claimLinearResolutionSync(firing.id, 'rolling-upgrade-worker')
+    ).toMatchObject({
+      id: firing.id,
+      linearResolutionSyncPending: true,
+      linearResolutionSyncClaimToken: 'rolling-upgrade-worker',
+    })
+  })
+
+  it('backs off failed external sync work until its next retry time', async () => {
+    const { connectionId, rule } = await seedBase()
+    const firing = await createFiringEvent(rule, connectionId)
+    await alertEventRepository.resolve(firing.id, TEST_ORG_ID)
+    await alertEventRepository.claimLinearResolutionSync(firing.id, 'backoff-worker')
+    await alertEventRepository.releaseLinearResolutionSyncClaims(
+      [firing.id],
+      'backoff-worker',
+      new Date(Date.now() + 60_000)
+    )
+
+    expect(await alertEventRepository.findPendingLinearResolutionSync(10)).toEqual([])
+    expect(
+      await alertEventRepository.claimLinearResolutionSync(firing.id, 'early-worker')
+    ).toBeNull()
+    expect(await alertEventRepository.findPendingLinearResolutionSyncForRule(rule.id, 1)).toEqual([
+      expect.objectContaining({ id: firing.id, linearResolutionAttempts: 1 }),
+    ])
+  })
+
+  it('deduplicates Linear issue resolution across workers and completed events', async () => {
+    await seedBase()
+    expect(
+      await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'linear-issue-1', 'worker-a')
+    ).toBe('claimed')
+    expect(
+      await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'linear-issue-1', 'worker-b')
+    ).toBe('busy')
+    expect(await linearIssueResolutionRepository.markCompleted('linear-issue-1', 'worker-a')).toBe(
+      true
+    )
+    expect(
+      await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'linear-issue-1', 'worker-b')
+    ).toBe('completed')
+  })
+
+  it('deletes ordinary expired events without treating missing legacy flags as pending sync', async () => {
+    const { connectionId, rule } = await seedBase()
+    const firedAt = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000)
+    const events = []
+    for (const status of ['resolved', 'suppressed'] as const) {
+      for (const context of [null, {}, { linearResolutionSyncPending: false }]) {
+        events.push(
+          await alertEventRepository.create({
+            alertRuleId: rule.id,
+            organizationId: TEST_ORG_ID,
+            connectionId,
+            queueName: 'expired-event',
+            type: rule.type,
+            status,
+            summary: 'Expired event without pending external sync.',
+            context,
+            firedAt,
+          })
+        )
+      }
+    }
+
+    expect(await alertEventRepository.deleteOlderThan(90, 365)).toBe(events.length)
+    for (const event of events) {
+      expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toBeNull()
+    }
+  })
+
+  it('retains pending external sync work temporarily but enforces a hard retention cap', async () => {
+    const { connectionId, rule } = await seedBase()
+    const now = Date.now()
+    const retained = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId,
+      queueName: 'retained-pending-sync',
+      type: rule.type,
+      status: 'resolved',
+      summary: 'Pending external sync within the hard cap.',
+      firedAt: new Date(now - 100 * 24 * 60 * 60 * 1000),
+      resolvedAt: new Date(now - 100 * 24 * 60 * 60 * 1000),
+      linearResolutionSyncPending: true,
+    })
+    const expired = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId,
+      queueName: 'expired-pending-sync',
+      type: rule.type,
+      status: 'resolved',
+      summary: 'Pending external sync beyond the hard cap.',
+      firedAt: new Date(now - 400 * 24 * 60 * 60 * 1000),
+      resolvedAt: new Date(now - 400 * 24 * 60 * 60 * 1000),
+      linearResolutionSyncPending: true,
+    })
+    const stillFiring = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId,
+      queueName: 'long-running-firing-incident',
+      type: rule.type,
+      status: 'firing',
+      summary: 'A long-running incident must never be removed by retention.',
+      firedAt: new Date(now - 400 * 24 * 60 * 60 * 1000),
+    })
+
+    expect(await alertEventRepository.deleteOlderThan(90, 365)).toBe(1)
+    expect(await alertEventRepository.findById(retained.id, TEST_ORG_ID)).not.toBeNull()
+    expect(await alertEventRepository.findById(expired.id, TEST_ORG_ID)).toBeNull()
+    expect(await alertEventRepository.findById(stillFiring.id, TEST_ORG_ID)).not.toBeNull()
+  })
+
+  it('does not hard-delete pending external sync work while its lease is active', async () => {
+    const { connectionId, rule } = await seedBase()
+    const now = Date.now()
+    const claimed = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId,
+      queueName: 'actively-claimed-sync',
+      type: rule.type,
+      status: 'resolved',
+      summary: 'Actively claimed external sync beyond the hard cap.',
+      firedAt: new Date(now - 400 * 24 * 60 * 60 * 1000),
+      resolvedAt: new Date(now - 400 * 24 * 60 * 60 * 1000),
+      linearResolutionSyncPending: true,
+    })
+    await alertEventRepository.claimLinearResolutionSync(claimed.id, 'active-worker')
+
+    expect(await alertEventRepository.deleteOlderThan(90, 365)).toBe(0)
+    expect(await alertEventRepository.findById(claimed.id, TEST_ORG_ID)).not.toBeNull()
   })
 
   it('rejects acknowledging resolved events and preserves ack through resolve', async () => {
@@ -157,7 +594,6 @@ describe('alertEventRepository', () => {
 
     await alertEventRepository.acknowledge(event.id, TEST_ORG_ID, TEST_USER_ID)
     const cleared = await alertEventRepository.unacknowledge(event.id, TEST_ORG_ID)
-
     expect(cleared?.acknowledgedAt).toBeNull()
     expect(cleared?.acknowledgedBy).toBeNull()
   })
@@ -178,17 +614,28 @@ describe('alertEventRepository', () => {
     }
 
     const first = await alertEventRepository.upsertSuppressed(base)
-    expect(first.created).toBe(true)
-    expect(first.event.status).toBe('suppressed')
-    expect((first.event.context as Record<string, unknown>).suppressedCount).toBe(1)
+    expect(first?.created).toBe(true)
+    expect(first?.event.status).toBe('suppressed')
+    expect((first?.event.context as Record<string, unknown>).suppressedCount).toBe(1)
 
     const second = await alertEventRepository.upsertSuppressed(base)
-    expect(second.created).toBe(false)
-    expect(second.event.id).toBe(first.event.id)
-    expect((second.event.context as Record<string, unknown>).suppressedCount).toBe(2)
+    expect(second?.created).toBe(false)
+    expect(second?.event.id).toBe(first?.event.id)
+    expect((second?.event.context as Record<string, unknown>).suppressedCount).toBe(2)
 
     const third = await alertEventRepository.upsertSuppressed(base)
-    expect((third.event.context as Record<string, unknown>).suppressedCount).toBe(3)
+    expect((third?.event.context as Record<string, unknown>).suppressedCount).toBe(3)
+
+    const replayed = await alertEventRepository.upsertSuppressed({
+      ...base,
+      observationToken: 'durable-observation',
+    })
+    const duplicateReplay = await alertEventRepository.upsertSuppressed({
+      ...base,
+      observationToken: 'durable-observation',
+    })
+    expect((replayed?.event.context as Record<string, unknown>).suppressedCount).toBe(4)
+    expect((duplicateReplay?.event.context as Record<string, unknown>).suppressedCount).toBe(4)
   })
 
   it('anchors cooldown lookups to non-suppressed events', async () => {
@@ -229,9 +676,7 @@ describe('alertEventRepository', () => {
     await alertEventRepository.resolve(resolved.id, TEST_ORG_ID)
 
     const summary = await alertEventRepository.summarizeOpenByOrganization(TEST_ORG_ID)
-    expect(summary).toEqual([
-      { connectionId, firing: 2, acknowledged: 1, open: 3 },
-    ])
+    expect(summary).toEqual([{ connectionId, firing: 2, acknowledged: 1, open: 3 }])
   })
 
   it('filters by acknowledgement and returns the acknowledging user name', async () => {

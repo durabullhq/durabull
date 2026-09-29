@@ -270,18 +270,24 @@ const app = new Hono()
       return c.json({ error: 'Connection not found' }, 404)
     }
 
-    // If deleting the default connection, make the first remaining one default
-    if (existing.isDefault) {
-      const allConnections = await redisConnectionRepository.findAll(organizationId)
-      const nextDefault = allConnections.find((conn) => conn.id !== id)
-      if (nextDefault) {
-        await redisConnectionRepository.setDefault(nextDefault.id, organizationId)
-      }
+    const deleteResult = await redisConnectionRepository.deleteIfNoAlertRules(id, organizationId)
+    if (deleteResult === 'blocked') {
+      return c.json(
+        {
+          error:
+            'Delete this connection’s alert rules first and wait for their external incident cleanup to complete.',
+        },
+        409
+      )
+    }
+    if (deleteResult !== 'deleted') {
+      return c.json({ error: 'Connection not found' }, 404)
     }
 
-    const deleted = await redisConnectionRepository.delete(id, organizationId)
-    if (!deleted) {
-      return c.json({ error: 'Failed to delete connection' }, 500)
+    // If deleting the default connection, make the first remaining one default.
+    if (existing.isDefault) {
+      const [nextDefault] = await redisConnectionRepository.findAll(organizationId)
+      if (nextDefault) await redisConnectionRepository.setDefault(nextDefault.id, organizationId)
     }
 
     return c.json({ success: true, deleted: id })

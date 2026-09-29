@@ -23,7 +23,6 @@ import {
   type QueueSnapshot,
 } from '../lib/alert-evaluator'
 import { processAlertDeliveries } from '../lib/alert-notifier'
-import { syncLinearIssuesForResolvedEvents } from '../lib/alert-resolution'
 import {
   mergeWebhookSecretsOnUpdate,
   resolveWebhookTestSecret,
@@ -52,6 +51,7 @@ const alertTypeSchema = z.enum([
 ])
 const queueFilterModeSchema = z.enum(['include', 'exclude'])
 const alertEventStatusSchema = z.enum(['firing', 'resolved', 'suppressed'])
+const REDIS_LIVE_TEST_TIMEOUT_MS = 20_000
 const emailNotificationChannelSchema = z.object({
   type: z.literal('email'),
   target: z.string().email(),
@@ -79,6 +79,23 @@ const savedWebhookNotificationChannelSchema = z
     destinationId: z.string().uuid(),
   })
   .strict()
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Redis test timed out after ${timeoutMs}ms`)),
+          timeoutMs
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 const destinationNotificationChannelSchema = z
   .object({
     type: z.literal('destination'),
@@ -144,6 +161,11 @@ function serializeAlertRule(rule: AlertRuleRow) {
       Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
     ),
   }
+}
+
+function redisHealthMetric(config: unknown): string | null {
+  const parsed = redisHealthConfigSchema.safeParse(config)
+  return parsed.success ? parsed.data.metric : null
 }
 
 const app = new Hono()
@@ -254,27 +276,40 @@ const app = new Hono()
       )
     }
 
+    const nextType = body.type ?? existingRule.type
+    const nextConfig = body.config ?? existingRule.config
+    const redisMetricChanged =
+      existingRule.type === 'redis_health' &&
+      nextType === 'redis_health' &&
+      redisHealthMetric(existingRule.config) !== redisHealthMetric(nextConfig)
     const scopeChanged =
       (body.type !== undefined && body.type !== existingRule.type) ||
+      redisMetricChanged ||
       (body.queueName !== undefined && body.queueName !== existingRule.queueName) ||
       (body.queueFilterMode !== undefined &&
         body.queueFilterMode !== existingRule.queueFilterMode) ||
       (body.filterQueueNames !== undefined &&
         JSON.stringify(body.filterQueueNames) !== JSON.stringify(existingRule.filterQueueNames))
 
-    if ((body.type ?? existingRule.type) === 'redis_health') {
+    if (nextType === 'redis_health') {
       body.queueName = null
       body.queueFilterMode = null
       body.filterQueueNames = []
     }
 
-    const rule = await alertRuleRepository.update(ruleId, organizationId, body)
+    const shouldResolveActive = body.enabled === false || scopeChanged
+    const { rule, conflict } = await alertRuleRepository.updateIfCurrent(
+      ruleId,
+      organizationId,
+      body,
+      existingRule,
+      { resolveActive: shouldResolveActive }
+    )
+    if (conflict) {
+      return c.json({ error: 'Rule changed concurrently. Reload and retry.' }, 409)
+    }
     if (!rule) {
       return c.json({ error: 'Rule not found' }, 404)
-    }
-
-    if (body.enabled === false || scopeChanged) {
-      await alertEventRepository.resolveAllForRule(rule.id)
     }
 
     return c.json({ rule: serializeAlertRule(rule) })
@@ -291,10 +326,22 @@ const app = new Hono()
       return c.json({ error: 'Rule not found' }, 404)
     }
 
-    await alertEventRepository.resolveAllForRule(ruleId)
-    await alertRuleRepository.delete(ruleId, organizationId)
-
-    return c.json({ success: true })
+    const deletionRequestedAt = new Date()
+    const { rule: disabledRule, conflict } = await alertRuleRepository.updateIfCurrent(
+      ruleId,
+      organizationId,
+      { enabled: false, deletionRequestedAt, deletionRetryAt: deletionRequestedAt },
+      existingRule,
+      { resolveActive: true }
+    )
+    if (conflict) {
+      return c.json({ error: 'Rule changed concurrently. Reload and retry.' }, 409)
+    }
+    if (!disabledRule) return c.json({ error: 'Rule not found' }, 404)
+    // The rule disappears from user-facing queries immediately, but remains
+    // as a tombstone until bounded background outbox batches have synchronized
+    // external incidents. This preserves cascade-linked delivery metadata.
+    return c.json({ success: true, deletionPending: true }, 202)
   })
   .post('/rules/:ruleId/snooze', zValidator('json', snoozeRuleSchema), async (c) => {
     const { ruleId } = c.req.param()
@@ -369,13 +416,19 @@ const app = new Hono()
           REDIS_HEALTH_CURSOR_SCOPE
         )
         const previous = restoreRedisHealthSnapshot(cursorRow?.lastMetricsSnapshot)
-        const redis = await getRedis(connectionId, connectionUrl, connectionName, redisOptions)
-        snapshot = buildRedisHealthSnapshot(
-          await redis.info(),
-          connectionName,
-          new Date(),
-          previous
-        )
+        const redis = await getRedis(connectionId, connectionUrl, connectionName, redisOptions, {
+          cache: false,
+        })
+        try {
+          snapshot = buildRedisHealthSnapshot(
+            await withTimeout(redis.info(), REDIS_LIVE_TEST_TIMEOUT_MS),
+            connectionName,
+            new Date(),
+            previous
+          )
+        } finally {
+          redis.disconnect?.(false)
+        }
         evaluation = evaluateRedisHealthRule(rule, snapshot)
       } else {
         let resolvedQueueName = rule.queueName
@@ -607,12 +660,6 @@ const app = new Hono()
         connectionId,
       })
 
-      // Close linked Linear issues in the background — a bulk resolve can cover
-      // hundreds of incidents and must not block on external API calls.
-      if (resolvedEvents.length > 0) {
-        void syncLinearIssuesForResolvedEvents(resolvedEvents, { kind: 'manual' })
-      }
-
       return c.json({
         resolvedCount: resolvedEvents.length,
         events: resolvedEvents,
@@ -634,15 +681,9 @@ const app = new Hono()
     if (existing.status === 'suppressed') {
       return c.json({ error: 'Suppressed events are informational and cannot be resolved.' }, 409)
     }
-    const wasFiring = existing.status === 'firing'
-
     const event = await alertEventRepository.resolve(eventId, organizationId)
     if (!event) {
       return c.json({ error: 'Event not found' }, 404)
-    }
-
-    if (wasFiring) {
-      void syncLinearIssuesForResolvedEvents([event], { kind: 'manual' })
     }
 
     return c.json({ event })

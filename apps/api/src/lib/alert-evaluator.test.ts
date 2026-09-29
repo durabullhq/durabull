@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'bun:test'
 import type { AlertRule } from '@durabull/dal'
 import {
+  type CursorState,
   evaluateFailureRate,
   evaluateFailureThreshold,
+  evaluateQueueStalled,
   evaluateRedisHealth,
   evaluateRule,
-  evaluateQueueStalled,
-  type CursorState,
   type QueueSnapshot,
 } from './alert-evaluator'
 import type { RedisHealthSnapshot } from './redis-health'
@@ -377,6 +377,10 @@ describe('alert evaluator', () => {
       notificationChannels: [],
       cooldownMinutes: 30,
       mutedUntil: null,
+      deletionRequestedAt: null,
+      deletionRetryAt: null,
+      deletionClaimToken: null,
+      deletionClaimedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     } satisfies AlertRule

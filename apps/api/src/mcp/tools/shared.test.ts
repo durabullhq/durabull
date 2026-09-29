@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
 const canDelegatedUserAccessConnection = mock(async () => true)
-const findById = mock(async () => null)
-const findByIdUnsafe = mock(async () => null)
+type MockConnection = {
+  id: string
+  organizationId: string
+  url: string
+  prefix: string
+  allowSelfSignedCerts: boolean
+}
+const findById = mock(async (): Promise<MockConnection | null> => null)
+const findByIdUnsafe = mock(async (): Promise<MockConnection | null> => null)
 
 mock.module('@durabull/dal', () => ({
   mcpPolicyRepository: {

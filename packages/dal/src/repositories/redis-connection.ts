@@ -7,6 +7,8 @@ import {
   syncEnvConnectionsForOrganization,
 } from '../db/env-redis-connections'
 import { decryptRedisUrl, encryptRedisUrl } from '../db/redis-url-encryption'
+import { alertRule } from '../db/schemas/alert-rule/schema'
+import { organization } from '../db/schemas/organization/schema'
 import { redisConnection } from '../db/schemas/redis-connection/schema'
 import type { NewRedisConnection, RedisConnection } from '../db/schemas/redis-connection/types'
 
@@ -106,11 +108,29 @@ export const redisConnectionRepository = {
   },
 
   /**
-   * Get every Redis connection ID without organization scope.
-   * Reserved for trusted background workers that operate across tenants.
+   * Get every active Redis connection ID without organization scope.
+   * In env-managed mode, this seeds each organization and returns only IDs
+   * derived from the current environment configuration. Persisted rows from a
+   * previous configuration are deliberately excluded.
    */
   async findAllIdsUnsafe(): Promise<string[]> {
     const db = await getDb()
+
+    if (shouldUseEnvConnections()) {
+      const organizations = await db
+        .select({ id: organization.id })
+        .from(organization)
+        .orderBy(organization.createdAt)
+      const activeIds: string[] = []
+
+      for (const { id } of organizations) {
+        await syncEnvConnectionsForOrganization(db, id)
+        activeIds.push(...getEnvRedisConnectionIdsForOrganization(id))
+      }
+
+      return activeIds
+    }
+
     const connections = await db
       .select({ id: redisConnection.id })
       .from(redisConnection)
@@ -212,20 +232,33 @@ export const redisConnectionRepository = {
     return result ? withDecryptedUrl(result) : null
   },
 
-  /**
-   * Delete a Redis connection by ID, scoped to an organization.
-   * Returns false if connection doesn't exist or doesn't belong to organization.
-   */
-  async delete(id: string, organizationId: string): Promise<boolean> {
+  async deleteIfNoAlertRules(
+    id: string,
+    organizationId: string
+  ): Promise<'deleted' | 'blocked' | 'not_found'> {
     assertConnectionWritesEnabled()
     const db = await getDbForOrganization(organizationId)
+    return db.transaction(async (tx) => {
+      // FOR UPDATE conflicts with the key-share lock required by a concurrent
+      // alert-rule FK insert, closing the count/delete race before cascading.
+      const [connection] = await tx
+        .select({ id: redisConnection.id })
+        .from(redisConnection)
+        .where(and(eq(redisConnection.id, id), eq(redisConnection.organizationId, organizationId)))
+        .for('update')
+        .limit(1)
+      if (!connection) return 'not_found'
 
-    const result = await db
-      .delete(redisConnection)
-      .where(and(eq(redisConnection.id, id), eq(redisConnection.organizationId, organizationId)))
-      .returning({ id: redisConnection.id })
+      const [dependentRule] = await tx
+        .select({ id: alertRule.id })
+        .from(alertRule)
+        .where(eq(alertRule.connectionId, id))
+        .limit(1)
+      if (dependentRule) return 'blocked'
 
-    return result.length > 0
+      await tx.delete(redisConnection).where(eq(redisConnection.id, id))
+      return 'deleted'
+    })
   },
 
   /**

@@ -184,6 +184,24 @@ If a Linear issue may have been created but Durabull cannot prove it persisted t
 mapping, Durabull stops automatic retry for that delivery. That protects teams from duplicate
 Linear issues and leaves a clear manual reconciliation error for operators.
 
+## Incident Resolution and Rule Deletion
+
+Resolving an incident saves its resolved status and queues Linear cleanup in the same database
+transaction. A background worker closes linked issues and adds a resolution comment. Cleanup
+survives application restarts and retries failures with backoff, even when automatic alert
+evaluation is disabled. An issue shared by several job incidents stays open while another
+linked incident is firing.
+
+Disabling a rule or changing its scope resolves its active incidents. Deleting a rule hides it
+immediately, then retains its incident and delivery records until Linear cleanup finishes.
+The delete API returns `202` with `deletionPending: true`. Connection deletion returns `409`
+while any alert rule, including one awaiting cleanup, remains on the connection.
+
+If cleanup is delayed, check that the organization's Linear integration is connected and the
+issue's team has a completed workflow state. In-flight notifications must finish or their
+worker claims must expire before cleanup can complete. The worker automatically retries after
+the integration is repaired.
+
 ## What Gets Stored
 
 Durabull stores:

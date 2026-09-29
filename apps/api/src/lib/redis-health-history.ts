@@ -77,6 +77,26 @@ function serializeLatest(row: Awaited<ReturnType<typeof redisHealthSampleReposit
   }
 }
 
+export function serializeRedisHealthSnapshot(snapshot: RedisHealthSnapshot) {
+  return {
+    capturedAt: snapshot.capturedAt,
+    memoryCapacitySource: snapshot.memoryCapacitySource,
+    memoryUsagePercent: snapshot.metrics.memoryUsagePercent,
+    usedMemoryBytes: snapshot.metrics.usedMemoryBytes,
+    residentMemoryBytes: snapshot.metrics.residentMemoryBytes ?? null,
+    memoryCapacityBytes: snapshot.metrics.memoryCapacityBytes,
+    cpuUsagePercent: snapshot.metrics.cpuUsagePercent,
+    memoryFragmentationRatio: snapshot.metrics.memoryFragmentationRatio,
+    memoryFragmentationBytes: snapshot.metrics.memoryFragmentationBytes,
+    connectedClientsPercent: snapshot.metrics.connectedClientsPercent,
+    connectedClients: snapshot.metrics.connectedClients,
+    maxClients: snapshot.metrics.maxClients,
+    blockedClients: snapshot.metrics.blockedClients,
+    evictedKeysPerMinute: snapshot.metrics.evictedKeysPerMinute,
+    rejectedConnectionsPerMinute: snapshot.metrics.rejectedConnectionsPerMinute,
+  }
+}
+
 export async function recordRedisHealthSnapshot(
   connectionId: string,
   snapshot: RedisHealthSnapshot
@@ -111,6 +131,7 @@ export async function getRedisHealthHistory(
     to: Date
     targetPoints: number
     expectedSampleIntervalMinutes?: number
+    latestObservedAt?: Date
   }
 ) {
   const durationMs = Math.max(options.to.getTime() - options.from.getTime(), 0)
@@ -122,13 +143,23 @@ export async function getRedisHealthHistory(
     1,
     Math.ceil(options.expectedSampleIntervalMinutes ?? 1)
   )
-  const bucketMinutes = Math.max(
+  let bucketMinutes = Math.max(
     expectedSampleIntervalMinutes,
     Math.ceil(estimatedMinuteBuckets / targetPoints)
   )
-  const bucketMs = bucketMinutes * MINUTE_MS
-  const start = alignToBucket(options.from.getTime(), bucketMs)
-  const requestedEnd = alignToBucket(options.to.getTime(), bucketMs)
+  let bucketMs = bucketMinutes * MINUTE_MS
+  let start = alignToBucket(options.from.getTime(), bucketMs)
+  let requestedEnd = alignToBucket(options.to.getTime(), bucketMs)
+
+  // Epoch alignment can add one more boundary than the initial duration-only
+  // estimate predicts. Widen the bucket until the inclusive series respects
+  // the caller's hard point budget.
+  while ((requestedEnd - start) / bucketMs + 1 > targetPoints) {
+    bucketMinutes += 1
+    bucketMs = bucketMinutes * MINUTE_MS
+    start = alignToBucket(options.from.getTime(), bucketMs)
+    requestedEnd = alignToBucket(options.to.getTime(), bucketMs)
+  }
   const [buckets, latest] = await Promise.all([
     redisHealthSampleRepository.findBuckets({
       connectionId,
@@ -142,11 +173,18 @@ export async function getRedisHealthHistory(
     buckets.map((bucket) => [alignToBucket(bucket.capturedAt.getTime(), bucketMs), bucket])
   )
   const latestCapturedAt = latest?.capturedAt.getTime()
+  const exactLatestObservedAt = options.latestObservedAt?.getTime()
+  const latestObservationTimestamp = Math.max(
+    latestCapturedAt ?? Number.NEGATIVE_INFINITY,
+    typeof exactLatestObservedAt === 'number' && Number.isFinite(exactLatestObservedAt)
+      ? exactLatestObservedAt
+      : Number.NEGATIVE_INFINITY
+  )
   const nextSampleDueAt =
-    latestCapturedAt !== undefined &&
-    latestCapturedAt >= options.from.getTime() &&
-    latestCapturedAt <= options.to.getTime()
-      ? latestCapturedAt + expectedSampleIntervalMinutes * MINUTE_MS
+    Number.isFinite(latestObservationTimestamp) &&
+    latestObservationTimestamp >= options.from.getTime() &&
+    latestObservationTimestamp <= options.to.getTime()
+      ? latestObservationTimestamp + expectedSampleIntervalMinutes * MINUTE_MS
       : null
   const pendingEndBucket =
     requestedEnd > start &&

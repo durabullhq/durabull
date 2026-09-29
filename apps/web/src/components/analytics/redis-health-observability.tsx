@@ -181,7 +181,11 @@ export function RedisHealthObservability({
 
       {data.range.sampledBuckets > 0 ? (
         <Suspense fallback={<RedisHealthChartsFallback />}>
-          <RedisHealthCharts series={data.series} thresholds={data.thresholds} />
+          <RedisHealthCharts
+            series={data.series}
+            thresholds={data.thresholds}
+            bucketMinutes={data.range.bucketMinutes}
+          />
         </Suspense>
       ) : null}
     </section>

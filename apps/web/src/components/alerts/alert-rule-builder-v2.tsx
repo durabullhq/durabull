@@ -28,8 +28,8 @@ import {
   createNotificationRouteDraft,
   createWebhookNotificationRouteDraft,
   getAlertRuleTemplate,
-  REDIS_HEALTH_METRIC_OPTIONS,
   type NotificationRouteDraft,
+  REDIS_HEALTH_METRIC_OPTIONS,
   serializeAlertRuleDraftsForMode,
   validateAlertRuleDraftFields,
 } from '@/components/alerts/alert-rule-form'

@@ -225,7 +225,6 @@ function sanitizeAlertContext(
     }
     if (Array.isArray(value)) {
       sanitized[key] = value.slice(0, 50)
-      continue
     }
   }
   return sanitized

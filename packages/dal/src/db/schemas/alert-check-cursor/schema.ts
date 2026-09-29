@@ -11,6 +11,7 @@ export const alertCheckCursor = pgTable(
       .references(() => redisConnection.id, { onDelete: 'cascade' }),
     queueName: text('queue_name').notNull(),
     lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }).notNull(),
+    lastObservationToken: text('last_observation_token').notNull().default('legacy'),
     lastFailedCount: integer('last_failed_count').notNull().default(0),
     lastCompletedCount: integer('last_completed_count').notNull().default(0),
     lastMetricsSnapshot: jsonb('last_metrics_snapshot'),
