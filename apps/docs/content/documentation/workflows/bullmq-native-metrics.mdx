@@ -3,7 +3,7 @@ title: BullMQ Native Metrics
 description: Enable BullMQ worker metrics and use Durabull's native telemetry charts without storing extra metrics data.
 ---
 
-## Why This Page Exists
+## How metrics are collected
 
 Durabull's queue telemetry panels pull directly from BullMQ and Redis at request time.
 
@@ -23,12 +23,14 @@ Open a queue and use the **BullMQ Native Telemetry** section.
 
 ## Enable Metrics in BullMQ Workers
 
-BullMQ metrics are only populated when workers are configured with `metrics.maxDataPoints`.
+BullMQ throughput metrics are populated when workers are configured with `metrics.maxDataPoints`.
+Use the same retention setting on **every worker for a queue** so their metrics remain consistent.
+See [BullMQ metrics](https://docs.bullmq.io/guide/metrics) for the underlying behavior.
 
 ```ts
 import { MetricsTime, Worker } from 'bullmq'
 
-const worker = new Worker('email:delivery', async (job) => {
+const worker = new Worker('email.delivery', async (job) => {
   // process job
 }, {
   connection: { host: 'localhost', port: 6379 },
@@ -55,9 +57,9 @@ Each point is one minute of finished-job counts.
 - 24 hours: `1_440`
 - 1 week: `10_080`
 - 2 weeks: `20_160`
-- 4 weeks: `80_640`
+- 4 weeks: `40_320`
 
-If you want native enum values, BullMQ exposes `MetricsTime` constants for these ranges.
+Use `MetricsTime` constants where available, or calculate the desired number of minutes.
 
 ## Native Data Durabull Pulls
 
@@ -66,7 +68,7 @@ Durabull requests all of the following directly from BullMQ queue APIs:
 - `getMetrics("completed")` and `getMetrics("failed")`
   - raw `data[]` buckets
   - `meta.count`, `meta.prevTS`, `meta.prevCount`
-  - returned window `count`
+  - returned `count` (number of stored data points, not jobs in the selected window)
 - `getJobCounts(...)`
   - waiting, active, delayed, completed, failed, paused, prioritized, waiting-children
 - `count()`
@@ -108,7 +110,7 @@ Optional query params:
 
 If chart data stays empty:
 
-1. Confirm each producer queue has at least one worker with `metrics.maxDataPoints` configured.
+1. Confirm every worker for the queue uses the same `metrics.maxDataPoints` setting.
 2. Confirm jobs are actually finishing (completed or failed). Metrics are based on finished jobs.
 3. Verify the same Redis connection is selected in Durabull and in your BullMQ worker.
 4. Increase retention (`maxDataPoints`) if your selected chart window is larger than retained data.

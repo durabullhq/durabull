@@ -1,13 +1,18 @@
 # MCP Phase 1 — Security Review Closure
 
-**Review date:** 2026-05-28  
-**Scope:** Read-only hosted MCP (PR-02–PR-07 on `main`, PR-08 GA closure)  
-**ADR:** [0001-mcp-security-architecture.md](./adr/0001-mcp-security-architecture.md)  
+**Review date:** 2026-05-28
+
+**Scope:** Initial hosted MCP review (PR-02–PR-08), with phase 2 capability amendments below
+
+**ADR:** [0001-mcp-security-architecture.md](./adr/0001-mcp-security-architecture.md)
+
 **Status:** **Draft** — does not replace independent security review or human sign-off.
 
 ## Review summary
 
-Phase 1 MCP documentation and automated tests show **no critical or high** open code/doc mismatches. **Production announcement** remains gated on operator steps in [mcp-ga-release-checklist.md](./mcp-ga-release-checklist.md) and human security sign-off below.
+The original review recorded **no critical or high** open code/doc mismatches. This is a dated
+review statement, not a current independent security assessment; phase 2 amendments and tests do
+not replace reviewer sign-off. **Production announcement** remains gated on operator steps in [mcp-ga-release-checklist.md](./mcp-ga-release-checklist.md) and human security sign-off below.
 
 ## Findings and disposition
 
@@ -21,7 +26,7 @@ Phase 1 MCP documentation and automated tests show **no critical or high** open 
 | SEC-06 | — | No write/destructive MCP tools in phase 1 | **Superseded (phase 2)** — non-destructive write tools added behind dedicated write scopes that are never auto-injected; destructive operations still have no scope (`tool-catalog.test.ts`) |
 | SEC-12 | Medium | `resolve_alert_event` (phase 1) mutated state under the read scope `mcp:failures:read` | **Closed (phase 2)** — moved to `mcp:failures:write`; read-bundle tokens now receive `403 insufficient_scope` (`mount.test.ts`) |
 | SEC-13 | — | `resources/read` bypassing tool policy | **Verified** — resource reads pass through the same policy engine and rate limiter; unknown URIs rejected pre-auth (`mount.test.ts`) |
-| SEC-14 | — | Alert delivery targets / channel secrets in MCP output | **Verified** — omitted by projection (`read-handlers.test.ts`, `write-handlers.test.ts`) |
+| SEC-14 | — | Delivery target fields / channel signing secrets in MCP output | **Verified** — omitted by projection (`read-handlers.test.ts`, `write-handlers.test.ts`) |
 | SEC-07 | — | Cross-org `connectionId` denied for delegated users | **Verified** — `mount.test.ts` |
 | SEC-08 | — | Service account requires policy binding + scopes | **Verified** — `mount.test.ts`, `mcp-policy.test.ts` |
 | SEC-09 | — | Output redaction for secrets/Redis URLs | **Verified** — `sanitize-output.test.ts` |

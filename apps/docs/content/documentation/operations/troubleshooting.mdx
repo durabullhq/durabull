@@ -24,7 +24,8 @@ Symptoms:
 Checks:
 
 - verify selected connection points to expected Redis
-- verify BullMQ is writing keys (`bull:*:meta`)
+- verify BullMQ is writing meta keys (`<prefix>:*:meta`, with `bull` as the default prefix)
+- match the connection's prefix and Redis database number to the BullMQ application
 - confirm env connection names and default key are correct
 
 ### 2. Cannot Create/Edit Connections
@@ -39,7 +40,8 @@ Cause:
 
 Fix:
 
-- set `DURABULL_ENV_CONNECTIONS=false` if you need UI-managed CRUD
+- set `DURABULL_ENV_CONNECTIONS=false` and restart the API if you need UI-managed connections
+- verify the user has an active organization; a `403` can also indicate missing organization access
 
 ### 3. Login/Session Issues
 
@@ -105,19 +107,19 @@ Symptom:
 
 Expected:
 
-- Bull keys (`bull:`/`bullmq:`) are protected and must be managed through queue/job workflows
+- keys starting with `bull:` or `bullmq:` are protected and must be managed through queue/job workflows
+- custom BullMQ prefixes are not covered by this guard; avoid deleting their keys directly
 
 ## Local Reset Recipes
 
-Rebuild local stack state:
+Restart the local stack without deleting its Docker volumes:
 
 ```bash
 bun docker:down
 bun docker
-bun docker:seed
 ```
 
-Wipe and reseed:
+Wipe and reseed the configured database and Redis targets (destructive; check `.env` first):
 
 ```bash
 bun docker:wipe
@@ -131,7 +133,3 @@ bun docker:seed
 3. Inspect worker connectivity and idle/active states.
 4. Validate Redis keyspace health.
 5. Audit recent deployment/env changes.
-
-Screenshot placeholder: troubleshooting flowchart.
-
-Video placeholder: live incident triage from queue failure to recovery.

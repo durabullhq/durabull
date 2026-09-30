@@ -2,7 +2,7 @@
 
 Operator guide for deploying, validating, and troubleshooting Durabull's hosted MCP endpoint on the **unified** API + web deployment.
 
-MCP is **always available** at `{APP_BASE_URL}/mcp` when the Durabull API process is running. There is no separate MCP service, container, or public port in phase 1.
+MCP is **always available** at `{APP_BASE_URL}/mcp` when the Durabull API process is running. There is no separate MCP service, container, or public port.
 
 For OAuth client setup and HTTP status semantics, see [mcp-oauth-operator.md](./mcp-oauth-operator.md).
 
@@ -206,7 +206,7 @@ Full checklist: see [mcp-oauth-operator.md](./mcp-oauth-operator.md). Common cau
 
 Ingress and per-tool limits are **in-memory per process**. Each replica enforces its own window; adding replicas multiplies effective quota.
 
-**Mitigation:** Terminate TLS at a shared edge limiter with global limits, or plan Redis-backed limits (not shipped in phase 1).
+**Mitigation:** Terminate TLS at a shared edge limiter with global limits, or plan Redis-backed limits (not currently shipped).
 
 ## Key rotation
 
@@ -224,11 +224,11 @@ After rotation, run `mcp:e2e` on **staging/local** before closing the change.
 - Terminate TLS at your edge; forward to Durabull on the app port.
 - Path-based routing: `/mcp` must reach the Durabull API process (same upstream as `/api/*`).
 - Present the public hostname as `Host` to the upstream.
-- No second hostname is required for MCP in phase 1.
-- WebSocket upgrades are not required for Streamable HTTP MCP in phase 1.
+- No second hostname is required for MCP.
+- WebSocket upgrades are not required for Streamable HTTP MCP.
 
 ## Related documentation
 
-- User-facing: `apps/docs/content/documentation/integrations/mcp-server.mdx`
+- User-facing: [MCP Server](../apps/docs/content/documentation/integrations/mcp-server.mdx)
 - OAuth: [mcp-oauth-operator.md](./mcp-oauth-operator.md)
-- Security: `apps/docs/content/documentation/operations/security-and-hardening.mdx`
+- Security: [Security and Hardening](../apps/docs/content/documentation/operations/security-and-hardening.mdx)

@@ -23,7 +23,9 @@ Queues and workers are sorted for stable layout. Edge styling reflects queue and
 
 ## Worker Status Rules
 
-Durabull classifies workers as active/idle using idle time.
+Durabull classifies workers as active/idle using the idle time reported by Redis client introspection.
+This is a connectivity heuristic, not proof that a worker is executing a job. Check the queue's
+active-job count and individual jobs to confirm processing.
 
 Current UI rule:
 
@@ -45,7 +47,3 @@ Returns:
 - Verify worker registration after deployment changes.
 - Detect queues with waiting jobs but no workers.
 - Confirm whether queue pause state is intentional.
-
-Screenshot placeholder: workers graph with queue branches and worker nodes.
-
-Video placeholder: diagnosing an idle worker fleet incident.

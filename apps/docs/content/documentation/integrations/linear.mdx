@@ -184,6 +184,17 @@ If a Linear issue may have been created but Durabull cannot prove it persisted t
 mapping, Durabull stops automatic retry for that delivery. That protects teams from duplicate
 Linear issues and leaves a clear manual reconciliation error for operators.
 
+## Incident resolution
+
+When an incident resolves manually or after recovery, Durabull attempts to close the linked Linear
+issue and add a resolution comment. Job incidents recover when the job is found completed;
+threshold incidents recover when a later valid sample clears the condition. An issue shared by
+several job incidents stays open while another linked incident is firing.
+
+Issue closure is best-effort in this release. Failed sync is logged, without a durable closure
+retry queue. Reconcile missed closures in Linear. Deleting a rule returns `200` and removes its
+event and delivery history; it does not guarantee external issues were closed.
+
 ## What Gets Stored
 
 Durabull stores:

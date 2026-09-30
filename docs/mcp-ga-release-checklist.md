@@ -1,4 +1,4 @@
-# MCP Phase 1 — Release and Rollback Checklist
+# MCP — Release and Rollback Checklist
 
 Use this checklist when enabling or announcing MCP GA on Durabull Cloud or self-hosted installs (read tools by default; write tools behind explicit scopes, see ADR-0001 §6).
 
@@ -6,8 +6,8 @@ Use this checklist when enabling or announcing MCP GA on Durabull Cloud or self-
 
 ## Pre-release
 
-- [x] `main` includes PR-02 through PR-08 (GA docs + ADR) plus OAuth consent UI follow-up.
-- [x] Automated tests green — commands and results: [validation evidence](./mcp-ga-validation-evidence.md) (includes Playwright `mcp-oauth.spec.ts`).
+- [ ] Confirm the release commit includes the intended tool catalog, scopes, migrations, and OAuth consent behavior.
+- [ ] Run the current automated checks and record their results; [validation evidence](./mcp-ga-validation-evidence.md) contains dated historical runs, including Playwright `mcp-oauth.spec.ts`.
 - [ ] [Compliance checklist](./mcp-ga-compliance-checklist.md) reviewed.
 - [ ] [Security closure](./mcp-ga-security-closure.md) reviewed (human sign-off if required).
 - [ ] Staging: PRM + health checks per [mcp-operations-runbook.md](./mcp-operations-runbook.md).
@@ -15,7 +15,7 @@ Use this checklist when enabling or announcing MCP GA on Durabull Cloud or self-
 - [ ] Staging: `cd apps/web && bun run test:e2e e2e/mcp-oauth.spec.ts` (browser OAuth consent path).
 - [ ] Staging: alert or edge rate limit on `POST /api/auth/mcp/register` (SEC-04).
 - [ ] Production config: `APP_BASE_URL` matches public URL; `DURABULL_AUTHLESS=false`.
-- [x] Docs published: [MCP Server](https://github.com/durabullhq/durabull/blob/main/apps/docs/content/documentation/integrations/mcp-server.mdx) (consent flow), [GA index](./mcp-ga-index.md), [OAuth operator guide](./mcp-oauth-operator.md).
+- [ ] Verify docs published: [MCP Server](https://github.com/durabullhq/durabull/blob/main/apps/docs/content/documentation/integrations/mcp-server.mdx) (consent flow), [GA index](./mcp-ga-index.md), [OAuth operator guide](./mcp-oauth-operator.md).
 
 ## Release steps
 
@@ -71,4 +71,4 @@ After rollback:
 - [ ] Review `mcp_audit_event` volume and deny reasons vs baseline.
 - [ ] Review `mcp_telemetry` deny/limit rates vs baseline.
 - [ ] Confirm no unexpected OAuth client registration volume.
-- [ ] Capture customer feedback on scope/tool gaps for phase 2 planning.
+- [ ] Capture customer feedback on scope/tool gaps for future releases.

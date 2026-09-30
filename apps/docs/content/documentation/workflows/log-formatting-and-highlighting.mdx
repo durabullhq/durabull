@@ -3,7 +3,7 @@ title: Log Formatting and Highlighting
 description: Format job logs so the Logs tab can parse, color, and search them cleanly.
 ---
 
-Durabull's Logs tab now applies structured highlighting by parsing common log patterns.  
+Durabull's Logs tab applies structured highlighting by parsing common log patterns.
 If your workers emit logs in the formats below, users get:
 
 - timestamp detection
@@ -31,11 +31,13 @@ Example:
 
 The viewer makes these assumptions, in order:
 
-1. Timestamp:
+### Timestamp
+
 - first token in brackets, like `[2026-02-13T21:25:43.232Z]`
 - or a plain timestamp prefix like `2026-02-13T21:25:43.232Z ...`
 
-2. Level:
+### Level
+
 - first bracket token after timestamp if it matches known levels
 - or a plain prefix, like `INFO ...`, `ERROR: ...`
 
@@ -50,11 +52,13 @@ Recognized levels:
 - `SUCCESS`
 - `CONTEXT`
 
-3. Context tags:
-- additional bracket tokens after timestamp/level are treated as context tags
+### Context tags
+
+- up to four additional bracket tokens after timestamp/level are treated as context tags
 - examples: `[Worker-1]`, `[SyncService]`, `[CONTEXT]`
 
-4. Message body:
+### Message body
+
 - remaining text is treated as the message
 - `|` delimiters split visual segments
 - `key=value` segments are highlighted as structured fields
@@ -72,7 +76,7 @@ Also supported:
 ```text
 2026-02-13T21:25:43.232Z
 2026-02-13 21:25:43.232Z
-2026/02/13 21:25:43
+[2026/02/13 21:25:43]
 ```
 
 Recommendation:
@@ -112,8 +116,8 @@ Recommendation:
 To keep logs readable in the UI:
 
 - very long message bodies are automatically truncated
-- truncation is intentionally not expandable in the viewer
-- full raw line remains available via copy/export behavior
+- use **Expand log line** to view the full message body
+- copy includes the full raw text of the currently loaded, filtered lines
 
 Implication:
 
@@ -122,7 +126,8 @@ Implication:
 
 ## Search Behavior
 
-The Logs tab search is case-insensitive and scans the full raw line text.
+The Logs tab search is case-insensitive and scans the full raw text of **loaded** log lines.
+Scroll to load additional pages before assuming a missing search result is absent from all logs.
 
 Best practices:
 
@@ -150,7 +155,7 @@ something failed maybe 404 id 123 retrying ??? {"huge":"payload", ...}
 type LogLevel = 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL' | 'SUCCESS'
 
 export function emitJobLog(
-  log: (line: string) => void,
+  log: (line: string) => Promise<unknown>,
   level: LogLevel,
   message: string,
   fields: Record<string, string | number | boolean> = {},
@@ -163,8 +168,14 @@ export function emitJobLog(
     .join(' | ')
 
   const suffix = fieldText ? ` | ${fieldText}` : ''
-  log(`[${timestamp}] [${level}]${contextPart} ${message}${suffix}`)
+  return log(`[${timestamp}] [${level}]${contextPart} ${message}${suffix}`)
 }
 ```
 
-This keeps log output consistent with viewer parsing and highlighting rules.
+Use it with BullMQ's `job.log` and await the write:
+
+```ts
+await emitJobLog((line) => job.log(line), 'INFO', 'Processing job', { attempt: 1 })
+```
+
+Console logs are not automatically captured by BullMQ; write to `job.log` for the Durabull Logs tab.

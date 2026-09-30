@@ -3,6 +3,9 @@ title: Queues Dashboard
 description: Use the queues dashboard to monitor queue health and navigate queue-specific operations.
 ---
 
+Open a Redis connection to see its queues, job counts, and pause state. Select a queue to inspect
+jobs or take action. Counts describe current Redis state; use native metrics for throughput trends.
+
 ## Route Scope
 
 Primary queues overview route:
@@ -31,7 +34,7 @@ For queue-level native telemetry charts and worker metrics setup, see:
 
 Queue discovery is Redis key based:
 
-- Scans for `bull:*:meta`
+- Scans for `<prefix>:*:meta`, using the connection's BullMQ prefix (`bull` by default)
 - Extracts queue names from those meta keys
 - Pulls job counts and pause state for each discovered queue
 
@@ -40,6 +43,7 @@ This is why empty results usually indicate either:
 - wrong connection
 - empty Redis instance
 - non-BullMQ workloads only
+- a BullMQ prefix or Redis database number that does not match the application
 
 ## Operational Reading Tips
 
@@ -47,7 +51,3 @@ This is why empty results usually indicate either:
 - Prioritized counts surface urgent jobs that are processed ahead of the standard waiting set; watch these alongside waiting for at-a-glance triage.
 - Rising failed counts should be investigated from queue/job details.
 - Delayed growth can be expected for time-based workloads but should be correlated with scheduled jobs and invoke actions.
-
-Screenshot placeholder: queues dashboard with stats cards and populated table.
-
-Video placeholder: from queue list to queue detail drill-down.

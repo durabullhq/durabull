@@ -1,5 +1,10 @@
 # Alerting System — Complete Implementation Plan
 
+> Historical design plan. Background monitoring and alert integrations are now implemented.
+> For current behavior, see [Redis Health and Alerts](apps/docs/content/documentation/workflows/redis-health-alerts.mdx),
+> [Webhooks](apps/docs/content/documentation/integrations/webhooks.mdx), and
+> [Linear](apps/docs/content/documentation/integrations/linear.mdx).
+
 ## Problem Statement
 
 Durabull currently only connects to customer Redis instances on-demand — when a user is actively browsing the dashboard. There is no background process monitoring queues for failures. To offer alerting (e.g. "your `email-send` queue has 50 failed jobs in the last 5 minutes"), we need a persistent connection layer that runs independently of user sessions.

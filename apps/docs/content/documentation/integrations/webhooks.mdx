@@ -66,8 +66,8 @@ Durabull does not include full BullMQ `job.data` payloads in webhook bodies.
 | --- | --- |
 | `Content-Type` | `application/json` |
 | `User-Agent` | `Durabull-Alerts/1.0` |
-| `Idempotency-Key` | Alert event id — use to dedupe retries |
-| `X-Durabull-Delivery-Id` | Delivery attempt id |
+| `Idempotency-Key` | Stable alert event id — dedupe retries per notification destination |
+| `X-Durabull-Delivery-Id` | Outbox delivery id, reused across retries |
 | `X-Durabull-Timestamp` | Unix seconds (when signing is enabled) |
 | `X-Durabull-Signature` | `sha256=<hex>` HMAC (when signing is enabled) |
 
@@ -79,7 +79,9 @@ When a signing secret is configured, verify:
 signature = HMAC-SHA256(secret, "{timestamp}.{rawBody}")
 ```
 
-Reject requests older than five minutes to limit replay attacks.
+Reject timestamps more than five minutes in the past or future to limit replay attacks. Verify
+the exact raw request body **before** parsing JSON; reserializing JSON changes the signature.
+Deduplicate accepted deliveries as well, because a valid request can be replayed within the window.
 
 ```typescript
 import { createHmac, timingSafeEqual } from 'node:crypto'
@@ -88,14 +90,18 @@ function verifyDurabullWebhook(rawBody: string, headers: Headers, secret: string
   const timestamp = headers.get('x-durabull-timestamp')
   const signature = headers.get('x-durabull-signature')
   if (!timestamp || !signature) return false
-  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false
+  if (!/^\d+$/.test(timestamp) || !/^sha256=[0-9a-f]{64}$/.test(signature)) return false
+  const timestampSeconds = Number(timestamp)
+  if (!Number.isSafeInteger(timestampSeconds)) return false
+  if (Math.abs(Date.now() / 1000 - timestampSeconds) > 300) return false
 
   const expected = createHmac('sha256', secret)
     .update(`${timestamp}.${rawBody}`)
     .digest('hex')
 
-  const provided = signature.replace(/^sha256=/, '')
-  return timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
+  const provided = Buffer.from(signature.slice('sha256='.length), 'hex')
+  const expectedBytes = Buffer.from(expected, 'hex')
+  return provided.length === expectedBytes.length && timingSafeEqual(provided, expectedBytes)
 }
 ```
 
@@ -116,4 +122,6 @@ function verifyDurabullWebhook(rawBody: string, headers: Headers, secret: string
 - Saved destination signing secrets are encrypted at rest and masked in API responses.
 - Custom per-rule webhook signing secrets remain scoped to that alert rule and are masked in API responses after save.
 
-For local development only, set `DURABULL_WEBHOOK_ALLOW_HTTP=true` to permit HTTP webhook URLs.
+HTTP is allowed when `NODE_ENV=development` or `DURABULL_WEBHOOK_ALLOW_HTTP=true`. Keep the
+override unset in production. Allowing HTTP does not permit private or localhost targets; use a
+publicly reachable test endpoint when validating local webhook delivery.

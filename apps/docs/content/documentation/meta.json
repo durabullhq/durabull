@@ -33,6 +33,7 @@
     "---Integrations---",
     "integrations/mcp-server",
     "integrations/linear",
+    "integrations/webhooks",
     "---Reference---",
     "reference/http-api",
     "---Operations---",

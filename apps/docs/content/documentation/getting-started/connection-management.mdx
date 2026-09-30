@@ -13,7 +13,9 @@ Connections are defined through environment variables:
 
 ```bash
 DURABULL_REDIS_URL_MAIN=redis://localhost:6379
+DURABULL_ENV_CONNECTIONS=true
 DURABULL_REDIS_URL_MAIN_ENVIRONMENT=development
+DURABULL_REDIS_URL_MAIN_PREFIX=bull
 DURABULL_REDIS_URL_MAIN_ALLOW_SELF_SIGNED_CERTS=false
 DURABULL_REDIS_URL_WORKERS=redis://localhost:6380
 DURABULL_REDIS_URL_WORKERS_ENVIRONMENT=staging
@@ -24,7 +26,9 @@ Behavior:
 
 - Connections are synchronized into org scope.
 - Connection create/edit/delete endpoints return `403`.
-- Deterministic and infrastructure-driven.
+- Restart the API after changing environment variables; connection definitions are cached per process.
+- Connection names use uppercase letters, digits, and underscores, beginning with a letter (for example `MAIN` or `PROD_EAST`).
+- `_PREFIX` defaults to `bull`; it must match the `prefix` option used by your BullMQ queues and workers.
 
 ### DB-Managed Connections (`DURABULL_ENV_CONNECTIONS=false`)
 
@@ -32,23 +36,24 @@ Connections are managed in UI/API:
 
 - Create connection
 - Test connection
-- Edit name/url/environment/default/TLS options
+- Edit name, URL, environment, default selection, BullMQ prefix, and TLS options
 - Delete with guardrails
 
 ## Connection Validation and Safety
 
 When creating/testing a connection URL:
 
-- URL is validated to reduce SSRF risk.
+- URLs must use `redis://` or `rediss://`. Private and internal hosts are allowed so Durabull can reach your infrastructure; URL validation is not a network isolation boundary.
 - Connection test endpoint is rate-limited.
 - Production error messages are sanitized.
-- Redis connection URLs are encrypted at rest in the `redis_connection` table.
+- Redis connection URLs are encrypted at rest in the `redis_connection` table, including environment-managed connections. Set `DURABULL_REDIS_URL_ENCRYPTION_KEY` in either connection mode.
 
 ## Default Connection Rules
 
-- Exactly one default connection is used for org-level routing fallback.
-- Deleting the default promotes another remaining connection.
-- Deleting the last connection is blocked.
+- The selected default is used as the organization-level routing fallback.
+- In environment mode, `DURABULL_REDIS_URL_DEFAULT` selects the connection key. If it is unset or invalid, the first valid key in alphabetical order becomes the default.
+- In database-managed mode, deleting a default connection promotes another remaining connection.
+- The API permits deleting the last connection. Add another connection to resume queue operations. Deleting a connection removes its Durabull configuration, not its Redis database.
 
 ## UI Behavior
 
@@ -64,7 +69,3 @@ From connection selector:
 
 Need help adding a connection or resolving test failures? See
 [Connection Troubleshooting](/documentation/getting-started/connection-troubleshooting).
-
-Screenshot placeholder: connection list with create/edit/delete/test flow.
-
-Video placeholder: switching between staging and production connections.

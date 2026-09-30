@@ -15,6 +15,7 @@ release/
 .env.keys
 .env.local
 .env.docker
+.env.self-hosted
 
 # Editor
 .idea/
@@ -24,3 +25,4 @@ release/
 
 # Local PGlite data (created by the API when DATABASE_URL is unset)
 apps/api/data/
+/data/

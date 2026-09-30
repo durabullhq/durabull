@@ -22,6 +22,11 @@ Features:
 - optional `excludeBull=true`
 - key type, TTL, and best-effort memory usage
 
+`pageSize` is a scan target, not a strict result limit; Redis SCAN can return more keys in a batch.
+Continue with the returned `cursor` until it is `"0"`. `total`, when available, is the database's
+key count, not the number matching the search pattern. TTL `-1` means no expiration, and `-2`
+means the key no longer exists.
+
 ## Key Value Inspection
 
 Value endpoint:
@@ -37,15 +42,19 @@ Type-aware parsing:
 - zset
 - stream
 
+Lists and sorted sets support `offset` and `limit`. Hash inspection reads the whole hash; set
+and stream inspection is bounded but does not provide a resumable cursor. Large collections
+may therefore show only a sample.
+
 ## Deletion Safety Rule
 
 Delete endpoint:
 
 - `DELETE /api/c/:connectionId/redis-keys/:key`
 
-Durabull blocks deletion of BullMQ-managed keys:
-
-- keys starting with `bull:` or `bullmq:`
+Durabull blocks deletion of keys starting with `bull:` or `bullmq:`. The `excludeBull=true`
+search filter uses the same prefixes. **Custom BullMQ prefixes are not covered by this guard**;
+manage those keys through queue and job operations too.
 
 Reason:
 
@@ -56,7 +65,3 @@ Reason:
 - Use key explorer for app-level cache/session/config keys.
 - Keep BullMQ internal cleanup within queue/job workflows.
 - Prefer pattern filtering to reduce broad scans in large keyspaces.
-
-Screenshot placeholder: key explorer with type panel and delete confirmation.
-
-Video placeholder: inspect string/hash/zset keys and safe delete example.

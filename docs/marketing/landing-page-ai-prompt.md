@@ -24,7 +24,7 @@ You are a senior B2B SaaS copywriter and conversion-focused landing page designe
 
 ## Product identity (what Durabull is)
 
-**Durabull** is **the modern dashboard for BullMQ** — an open-source BullMQ operations platform for teams that need **visibility, control, and fast incident response** over background jobs.
+**Durabull** is **the modern dashboard for BullMQ** — a source-available BullMQ operations platform for teams that need **visibility, control, and fast incident response** over background jobs.
 
 **One-line pitch:**
 
@@ -34,10 +34,12 @@ You are a senior B2B SaaS copywriter and conversion-focused landing page designe
 
 **Built by:** Engineers who run job queues daily; positioned as **community-first**, not a VC-maximized profit play.
 
-**License:** Elastic License 2.0 (ELv2) — open source, self-hostable.
+**License:** Elastic License 2.0 (ELv2) — source-available and self-hostable; do not describe ELv2 as an OSI-approved open-source license.
 
-**Website:** https://durabull.io  
-**Hosted app:** Cloud signup  
+**Website:** https://durabull.io
+
+**Hosted app:** Cloud signup
+
 **Documentation:** https://durabull.io/documentation
 
 ---
@@ -46,38 +48,38 @@ You are a senior B2B SaaS copywriter and conversion-focused landing page designe
 
 Use these as **primary conversion angles**:
 
-1. **Zero integration tax**  
+1. **Zero integration tax**
    Connects directly to Redis and reads BullMQ data structures. **No changes to existing queue/worker code.** Point at Redis and go.
 
-2. **Incident-first UX**  
-   Designed for **on-call speed**: failed jobs → stack traces → logs → retry/remove/invoke in one flow, with guarded destructive actions (queue name confirmation for purges/deletes).
+2. **Incident-first UX**
+   Designed for **on-call speed**: failed jobs → stack traces → logs → retry/remove/invoke in one flow, with queue name confirmation for purges and deletes. Describe obliteration separately because it lacks those safeguards.
 
-3. **Fleet-level intelligence, not just per-queue tabs**  
+3. **Fleet-level intelligence, not just per-queue tabs**
    **Fleet Analytics** aggregates cross-queue health: throughput trends, backlog pressure, failure rates, worker capacity signals, scheduler risk, and a fleet health score — using **BullMQ-native metrics** (no separate metrics database).
 
-4. **BullMQ-native telemetry**  
+4. **BullMQ-native telemetry**
    Charts pull directly from BullMQ APIs (`getMetrics`, job counts, worker counts, pause state, rate limits, etc.). Enable with `metrics.maxDataPoints` on workers — Durabull does not run a custom metrics pipeline.
 
-5. **Proactive alerting that meets teams where they work**  
+5. **Proactive alerting that meets teams where they work**
    Background alert monitor (not only when someone has the UI open). Routes to **email**, **signed webhooks** (Slack/PagerDuty/automation via middleware), and **Linear** (OAuth, deduped job→issue mapping).
 
-6. **Deploy your way**  
-   - **Hosted cloud** (fastest time to value)  
-   - **Self-hosted** (Docker, full control, private network)  
-   - **Native desktop** (Apple Silicon macOS, Windows, Homebrew cask)  
+6. **Deploy your way**
+   - **Hosted cloud** (fastest time to value)
+   - **Self-hosted** (Docker, full control, private network)
+   - **Native desktop** (Apple Silicon macOS, Windows, Homebrew cask)
    - **Authless mode** for trusted local/private environments (Postgres or PGlite persistence)
 
-7. **Multi-connection, multi-environment**  
+7. **Multi-connection, multi-environment**
    Manage production, staging, and dev Redis instances from one org-scoped dashboard.
 
-8. **Team-ready when you need it**  
+8. **Team-ready when you need it**
    Organizations, invitations, OAuth (Google/GitHub), role context — without forcing complexity for solo devs.
 
-9. **Honest pricing philosophy**  
-   **Free during beta.** Future pricing intended to be **break-even** (cover cloud compute only), community-oriented.
+9. **Honest pricing philosophy**
+   Use the currently published pricing and limits. Verify them before publication; do not promise future prices or unlimited usage.
 
-10. **Privacy-conscious operations**  
-    Job payloads stay in **your Redis**; Durabull reads queue metadata for display. Telemetry is anonymous/pseudonymous and excludes Redis URLs, queue names, job data, logs, emails, etc.
+10. **Privacy-conscious operations**
+    Job data is read from **your Redis** and processed by the API and browser for inspection. Self-host when that processing must stay in your infrastructure. The built-in Durabull usage telemetry excludes Redis URLs, queue names, job data, logs, and emails; optional operator-configured PostHog is a separate analytics integration.
 
 ---
 
@@ -89,7 +91,7 @@ Use these as **primary conversion angles**:
 | **Platform / SRE** | No fleet-wide view of queue pressure | Fleet Analytics + worker topology + stall/failure alerts |
 | **Eng manager / lead** | Incidents lack accountability | Linear issues from alerts; webhook routing to existing tools |
 | **Security-conscious org** | SaaS can't see job data | Self-host, authless behind VPN, env-driven connections |
-| **Solo founder / indie** | Bull Board feels limited | Beautiful, fast dashboard; desktop app; free beta |
+| **Solo founder / indie** | Bull Board feels limited | Dashboard, desktop app, and self-hosting |
 
 ---
 
@@ -100,7 +102,7 @@ Organize the landing page into **feature pillars** with 2–4 bullets each.
 ### 1. Unified Queue Command Center
 
 - Connection-scoped **Queues Dashboard** with live counts: waiting, active, delayed, completed, failed, paused.
-- Queue discovery via BullMQ meta keys (`bull:*:meta`).
+- Queue discovery via BullMQ meta keys (`<prefix>:*:meta`), with `bull` as the default prefix.
 - Drill-down from fleet view → queue → jobs in seconds.
 - Empty-state guidance when no BullMQ queues are found (wrong connection vs empty Redis).
 
@@ -120,8 +122,8 @@ Organize the landing page into **feature pillars** with 2–4 bullets each.
 - **Pause / resume** queue.
 - **Clean** by status with grace period and limits.
 - **Purge** (multi-status or `all`) — requires typing **exact queue name** to confirm.
-- **Obliterate** and **delete queue** with pre-flight `can-delete` checks.
-- Destructive flows designed for incident control, not accidents.
+- **Delete queue** uses a preflight check. **Obliterate** is a separate destructive endpoint without the delete preflight or queue-name confirmation.
+- Explain which actions have confirmation and which require the operator to stop producers, schedulers, and workers first.
 
 ### 4. Scheduled Jobs (cron & intervals)
 
@@ -210,7 +212,7 @@ Cross-queue operational intelligence per Redis connection:
 | **Desktop app** | Local-first, encrypted saved Redis URLs, bundled Bun API + web UI |
 | **Authless** | Trusted LAN/VPN; auto local org |
 | **Postgres** | Full team persistence |
-| **PGlite** | Stateless/local without Postgres |
+| **PGlite** | Persistent local database without a PostgreSQL service |
 
 **Desktop specifics:**
 
@@ -224,9 +226,9 @@ Cross-queue operational intelligence per Redis connection:
 
 ### 14. MCP for AI-assisted operations (position carefully)
 
-Durabull is adding a **hosted MCP server** at `{APP_BASE_URL}/mcp` (same origin as API) for AI clients (e.g. Cursor) with OAuth 2.1 scoped bearer tokens and read-oriented tools (queue/job discovery, diagnostics).
+Durabull implements an **MCP server** at `{APP_BASE_URL}/mcp` (same origin as API), with scoped OAuth bearer tokens, diagnostic tools, resources, prompts, and explicitly scoped write tools such as retry, promote, pause, and resume. Destructive queue/job removal is not exposed over MCP. See the current tool catalog in the documentation.
 
-**Landing page guidance:** Mention as **"AI-native queue operations (MCP)"** in a smaller "What's next" or innovation strip — **do not oversell** if not generally available; use "rolling out" or "for teams connecting AI assistants to production queue context."
+**Landing page guidance:** Separate implemented capabilities from rollout status. Confirm the MCP release checklist and operator approval before making a general-availability claim.
 
 ---
 
@@ -239,7 +241,6 @@ From public roadmap — do **not** present as shipped:
 - Slack notifications (native)
 - Plugin marketplace
 - Advanced audit logging
-- Authless deployment guide (expanded)
 
 **Now / recently emphasized (safe to mention as current focus):**
 
@@ -251,25 +252,24 @@ From public roadmap — do **not** present as shipped:
 
 ## Pricing & commercial positioning
 
-- **Current price: $0/month — Free during beta**
-- Beta includes: unlimited connections, unlimited queues, real-time monitoring, job debugging, team collaboration, all features.
-- Philosophy: **community-first**, **break-even future pricing**, engineers not profit-maximizers.
-- Open source on GitHub; self-host anytime.
-- Support tiers mentioned in FAQ (docs/community; priority for paid tiers in future) — keep soft.
+- Verify current prices, beta status, usage limits, and support terms against the published product page before writing copy.
+- Do not promise future pricing, unlimited usage, or paid support that has not been announced.
+- Source is available on GitHub under ELv2; self-hosting is supported within the license terms.
 
-**Primary CTA:** "Start Free" → hosted signup  
+**Primary CTA:** "Start Free" → hosted signup
+
 **Secondary CTAs:** "Read Documentation", "Download macOS App", "Self-Host with Docker", "View on GitHub"
 
 ---
 
 ## Trust, security & compliance talking points
 
-- Encrypted connections to Redis.
+- TLS connections to Redis when configured with `rediss://`; saved Redis URLs are encrypted at rest.
 - **Does not store job payloads** in Durabull's database for display purposes — reads from your Redis.
-- Guarded destructive operations (explicit queue name confirmation).
-- Blocks raw deletion of BullMQ internal Redis keys.
+- Purge and delete require queue name confirmation; obliteration has no equivalent preflight or confirmation.
+- Blocks raw deletion of `bull:` and `bullmq:` Redis keys. Custom prefixes are not covered by this safeguard.
 - Authless mode warning: only for private/trusted networks.
-- BullMQ **v4+** supported.
+- Verify compatibility claims against the tested BullMQ version. Job Scheduler features require BullMQ versions that implement those APIs.
 - Telemetry transparency: anonymous usage telemetry in production/self-hosted; no Redis URLs, queue names, job data, logs, PII in telemetry payload.
 
 ---
@@ -318,8 +318,8 @@ Do **not** name competitors aggressively; speak to "scattered tools" and "built 
 9. **Alerts & integrations** (email, webhook, Linear diagram).
 10. **Deploy your way** (Cloud | Self-hosted | Desktop | Authless) — comparison cards.
 11. **Zero code changes** — 3-step "Connect Redis → See queues → Fix failures".
-12. **Open source & community** — ELv2, GitHub, honest pricing philosophy.
-13. **Pricing** — single $0 beta card with feature checklist.
+12. **Source & community** — ELv2, GitHub, contribution guide.
+13. **Pricing** — current published plans and limits, verified before publication.
 14. **FAQ** (see FAQ data below).
 15. **Final CTA:** "Ready to roll out Durabull your way?" + benefits list (cloud, native apps, Homebrew, self-host docs).
 
@@ -327,7 +327,7 @@ Do **not** name competitors aggressively; speak to "scattered tools" and "built 
 
 ## Copy constraints & words to use
 
-**Use:** clarity, control, incidents, on-call, throughput, backlog, workers, schedulers, fleet, native metrics, zero integration, open source, self-host, beta, community.
+**Use:** clarity, control, incidents, on-call, throughput, backlog, workers, schedulers, fleet, native metrics, zero integration, source-available, self-host, community.
 
 **Avoid:** "revolutionary", "AI-powered" (except MCP strip), "enterprise-grade" without substance, claiming SOC2/ISO unless verified.
 
@@ -341,12 +341,12 @@ Include these answers in the FAQ section:
 
 1. **What is Durabull?** Modern dashboard for BullMQ: monitoring, debugging, workers, team collaboration, developer-focused UI.
 2. **Code changes?** None — connects to Redis, reads BullMQ structures.
-3. **Data security?** Encrypted Redis connections; job data stays in your Redis; metadata read for UI.
+3. **Data security?** Redis remains the source of job data. The API and browser read payloads for inspection. TLS is available with `rediss://`; self-host to keep processing in your infrastructure.
 4. **Multiple Redis?** Yes — prod/staging/dev in one place.
-5. **Pricing?** Free in beta; future pricing covers compute only.
+5. **Pricing?** Use current published pricing and limits; make no promise about future prices.
 6. **Install?** Hosted web, desktop (macOS/Windows/Homebrew), Docker, source.
 7. **Authless?** Yes; Postgres or PGlite; not for public internet.
-8. **BullMQ versions?** v4+.
+8. **BullMQ versions?** Verify the tested version and required APIs before claiming a minimum supported version.
 
 ---
 
@@ -375,5 +375,5 @@ Include these answers in the FAQ section:
 - Product site: https://durabull.io
 - Docs: https://durabull.io/documentation
 - Signup: hosted web app `/signup`
-- GitHub: durabullhq/durabull (open source)
+- GitHub: durabullhq/durabull (source-available under ELv2)
 - Contact: hello@durabull.io

@@ -1,51 +1,63 @@
 ---
 title: How to Use Durabull
-description: A friendly map of the product so you can go from first login to confident day-to-day operations.
+description: Connect your Redis instance, find your queues, and investigate your first failed job.
 ---
 
-Durabull is designed for operators who need clear visibility into BullMQ queues and fast actions during incidents.
+Durabull connects to Redis to inspect and manage the jobs your BullMQ application creates.
+It does not run your workers. You can explore queues without changing worker code; throughput
+charts need [BullMQ metrics enabled on workers](/documentation/workflows/bullmq-native-metrics).
 
-If you are brand new, read this page first, then move into the deeper workflow pages.
+## Get connected
 
-## The Main Areas of the App
+1. Open [Durabull Cloud](https://app.durabull.io), install a
+   [desktop app](/documentation/getting-started/desktop-apps), or follow the
+   [self-hosted installation](/documentation/self-hosting/installation).
+2. Sign in and create or select an organization when authentication is enabled. Authless mode
+   creates a local organization automatically.
+3. Select a Redis connection, or add one in **Settings → Connections** when UI management is enabled.
+   Match the Redis database and BullMQ prefix used by your application; the default prefix is `bull`.
+4. Open **Queues**. An empty Redis instance has no queues until your application creates them.
+   If you expected queues, use [Connection Troubleshooting](/documentation/getting-started/connection-troubleshooting).
 
-| App Area | What it helps with | Read next |
+The Redis URL must be reachable from the Durabull API. For desktop, that is your workstation;
+for Docker, it is the container; for Cloud, it is the hosted service.
+
+## Investigate a failed job
+
+1. Confirm the selected organization, connection, and environment.
+2. Open a queue with failed jobs, then filter its jobs by **Failed**.
+3. Open a job and read the failure reason, stack traces, data, and logs. Workers must write
+   logs with `job.log`; console output does not automatically appear here.
+4. Fix the cause in your application or its dependencies. Before retrying, consider whether
+   the previous attempt may already have performed part of its work.
+5. Retry the job and watch its state and new logs. If it stays waiting, confirm that a worker
+   is listening to the same queue and prefix.
+
+Use a development queue for your first drill. See
+[Job Lifecycle and Debugging](/documentation/workflows/job-lifecycle-and-debugging) for editing,
+retrying, and removing jobs.
+
+## Find the right workspace
+
+| Workspace | Use it to | Read next |
 | --- | --- | --- |
-| Queues Dashboard | See queue health and spot bottlenecks quickly | [Queues Dashboard](/documentation/workflows/queues-dashboard) |
-| Queue Detail | Pause/resume, purge, clean, and delete safely | [Queue Operations](/documentation/workflows/queue-operations) |
-| Jobs | Inspect payloads, logs, stacktraces, and retries | [Job Lifecycle and Debugging](/documentation/workflows/job-lifecycle-and-debugging) |
-| Scheduled Jobs | Create, inspect, and remove recurring schedulers | [Scheduled Jobs](/documentation/workflows/scheduled-jobs) |
-| Workers | Confirm workers are connected and active | [Workers Topology](/documentation/workflows/workers-topology) |
-| Redis Key Explorer | Inspect non-BullMQ keys safely | [Redis Key Explorer](/documentation/workflows/redis-key-explorer) |
+| Queues | Compare current job counts and spot backlogs | [Queues Dashboard](/documentation/workflows/queues-dashboard) |
+| Queue detail | Inspect jobs, metrics, and queue controls | [Queue Operations](/documentation/workflows/queue-operations) |
+| Analytics | Compare throughput and fleet signals | [BullMQ Native Metrics](/documentation/workflows/bullmq-native-metrics) |
+| Scheduled Jobs | Create and manage recurring job templates | [Scheduled Jobs](/documentation/workflows/scheduled-jobs) |
+| Workers | See Redis clients and connection activity | [Workers Topology](/documentation/workflows/workers-topology) |
+| Redis Keys | Inspect keys, values, and expiry | [Redis Key Explorer](/documentation/workflows/redis-key-explorer) |
+| Alerts | Monitor failures and Redis pressure in the background | [Redis Health and Alerts](/documentation/workflows/redis-health-alerts) |
 
-## A Simple Daily Workflow
+Queue pause stops workers from starting new jobs; active jobs can continue. Purge and delete
+have confirmation steps. Obliteration is a separate destructive action without those safeguards.
+Read [Queue Operations](/documentation/workflows/queue-operations) before removing queue data.
 
-1. Choose the correct connection for the environment you want to inspect.
-2. Open **Queues Dashboard** and check waiting/active/failed trends.
-3. Drill into the queue that looks unhealthy.
-4. Review failed jobs, logs, and stacktraces.
-5. Confirm scheduler and worker state if delays continue.
-6. Use destructive actions only after queue-name confirmation and safety checks.
+## Make future incidents easier
 
-## First 15-Minute Onboarding Path
-
-If you want a quick success path:
-
-1. Pick your install path:
-   - [Desktop Apps](/documentation/getting-started/desktop-apps)
-   - [Self Hosting Setup](/documentation/self-hosting/setup)
-2. Run [Installation](/documentation/self-hosting/installation) or [Docker Image and Compose](/documentation/deployment/docker) if you are self-hosting.
-3. Read [Connection Management](/documentation/getting-started/connection-management).
-4. Run one queue incident drill using:
-   - [Queue Operations](/documentation/workflows/queue-operations)
-   - [Job Lifecycle and Debugging](/documentation/workflows/job-lifecycle-and-debugging)
-   - [Troubleshooting](/documentation/operations/troubleshooting)
-
-## Naming and Logging Standards
-
-Two practices dramatically improve triage speed:
-
-- Consistent queue and scheduler naming:
-  [Queue and Scheduled Job Naming Best Practices](/documentation/workflows/naming-best-practices)
-- Structured logs that Durabull can parse and highlight:
-  [Log Formatting and Highlighting](/documentation/workflows/log-formatting-and-highlighting)
+- Use [consistent queue and scheduler names](/documentation/workflows/naming-best-practices).
+- Write [structured job logs](/documentation/workflows/log-formatting-and-highlighting).
+- Route alerts to [webhooks](/documentation/integrations/webhooks) or
+  [Linear](/documentation/integrations/linear).
+- Use [Troubleshooting](/documentation/operations/troubleshooting) when a queue is missing,
+  jobs remain waiting, or integrations fail.

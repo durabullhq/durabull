@@ -14,8 +14,8 @@ export default function DocumentationLayout({ children }: { children: ReactNode 
       search={{
         enabled: true,
         options: {
-          type: 'fetch',
-          api: '/api/search/',
+          type: 'static',
+          api: '/api/search',
         },
       }}
     >

@@ -14,8 +14,8 @@ If you want to self-host Durabull instead, start with
 | Platform | Recommended path | Notes |
 | --- | --- | --- |
 | Apple Silicon macOS | [Download the macOS app](https://github.com/durabullhq/durabull/releases/latest) | Latest GitHub release for the current arm64 macOS build. Verify the download with the SHA-256 step below before opening. |
-| Windows | [Download the Windows installer](https://github.com/durabullhq/durabull/releases/download/v1.3.0/Durabull.Setup.1.3.0.exe) | Best choice for standard workstation installs. |
-| Windows (portable) | [Download the Windows zip](https://github.com/durabullhq/durabull/releases/download/v1.3.0/Durabull-1.3.0-win.zip) | Useful when you prefer a portable archive. |
+| Windows | [Download the Windows installer](https://github.com/durabullhq/durabull/releases/latest) | Select `Durabull.Setup.<version>.exe` from the latest release assets. |
+| Windows (portable) | [Download the Windows zip](https://github.com/durabullhq/durabull/releases/latest) | Select `Durabull-<version>-win.zip` from the latest release assets. |
 | Homebrew (Apple Silicon macOS) | `brew install --cask durabullhq/tap/durabull` | Good for repeatable rollout on managed Apple Silicon Mac fleets. |
 
 ## Verify the macOS Download
@@ -43,10 +43,11 @@ installing.
 
 ## First Launch Checklist
 
-1. On Apple Silicon macOS, mount the verified `.dmg`, drag Durabull to Applications, and run
-   `xattr -cr /Applications/Durabull.app` once if macOS blocks first launch.
+1. On Apple Silicon macOS, mount the verified `.dmg` and drag Durabull to Applications.
+   The current macOS app is unsigned. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway**, or, after verifying the download, run `xattr -dr com.apple.quarantine /Applications/Durabull.app`.
 2. Launch Durabull from your Applications folder on Apple Silicon macOS or from the Start menu on Windows.
-3. Add or select the Redis connection you want to inspect.
+3. Add or select the Redis connection you want to inspect. The desktop app runs its own local API
+   and stores settings in its user-data directory; it does not require a separately hosted Durabull API.
 4. Open **Queues Dashboard** and confirm queues load successfully.
 5. Open a queue detail or failed job view to verify the desktop app can inspect live data.
 

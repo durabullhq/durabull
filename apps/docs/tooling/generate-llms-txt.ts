@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const docsRoot = resolve(import.meta.dir, '../content/documentation')
@@ -36,7 +36,8 @@ const MARKETING_LINKS: MarketingLink[] = [
   {
     path: '/features',
     title: 'Features',
-    description: 'Queue monitoring, job debugging, scheduling, workers topology, and team workflows.',
+    description:
+      'Queue monitoring, job debugging, scheduling, workers topology, and team workflows.',
   },
   {
     path: '/pricing',
@@ -234,7 +235,7 @@ function buildLlmsTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSect
   const lines: string[] = [
     '# Durabull',
     '',
-    '> Durabull is an open-source BullMQ management platform for monitoring queues, inspecting and retrying jobs, managing schedulers, and debugging background work in browser, desktop, and self-hosted environments.',
+    '> Durabull is a BullMQ management platform for monitoring queues, inspecting and retrying jobs, managing schedulers, and debugging background work in browser, desktop, and self-hosted environments.',
     '',
     'Use this file to find authoritative product and documentation URLs on durabull.io.',
     'Prefer linked documentation pages over marketing summaries when answering setup, operations, or API questions.',

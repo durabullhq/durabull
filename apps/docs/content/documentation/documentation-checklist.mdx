@@ -1,49 +1,32 @@
 ---
 title: Documentation Checklist
-description: High-level setup options and feature coverage checklist for Durabull documentation.
+description: Check a new deployment and find the guides for setup, workflows, and operations.
 ---
 
-This checklist is the high-level documentation backlog and coverage map.
+Use this checklist to verify a new Durabull deployment. Each item links to the guide that explains
+how to complete it.
 
-## Setup Options
+## Before connecting production Redis
 
-- [x] Runtime prerequisites and repository bootstrap
-- [x] Fast local setup (`dev:authless`)
-- [x] Full local stack setup (Postgres + Redis + seeded data)
-- [x] Authentication mode selection (authless vs Better Auth)
-- [x] Connection source selection (env-driven vs DB-managed)
-- [x] Environment variable reference and examples
-- [x] Docker image and Docker Compose deployment
-- [x] Render deployment and demo-account refresh system
-- [x] Cloud hosted option vs self-hosted guidance
+- Choose an [installation path](/documentation/self-hosting/installation).
+- Confirm [authentication and persistence modes](/documentation/getting-started/architecture-and-modes).
+- Replace example secrets and configure [environment variables](/documentation/getting-started/environment-variables).
+- Set the [BullMQ prefix, Redis URL, and connection environment](/documentation/getting-started/connection-management).
+- Apply [security and network controls](/documentation/operations/security-and-hardening).
+- Preserve the database, encryption keys, and Redis data needed for recovery.
 
-## Core Product Features
+## Verify the dashboard
 
-- [x] Queues dashboard and queue health interpretation
-- [x] Queue operations (pause/resume/clean/delete/obliterate)
-- [x] Job workflows (inspect/retry/remove/invoke/add)
-- [x] Job logs and stacktrace debugging patterns
-- [x] Scheduled jobs overview and queue-level management
-- [x] Worker topology graph and worker table interpretation
-- [x] Redis key explorer (search, inspect, safe deletion rules)
-- [x] Connection management UI and connection testing behavior
-- [x] Team and invitation workflows with role model guidance
-- [x] Settings and authentication provider linking behavior
+- Confirm your [queues and job counts](/documentation/workflows/queues-dashboard).
+- Inspect [job details, logs, and stack traces](/documentation/workflows/job-lifecycle-and-debugging).
+- Check [schedulers](/documentation/workflows/scheduled-jobs) and [worker connectivity](/documentation/workflows/workers-topology).
+- Enable [BullMQ throughput metrics](/documentation/workflows/bullmq-native-metrics) in all workers.
+- Review [Redis health history and thresholds](/documentation/workflows/redis-health-alerts).
 
-## API and Operations
+## Prepare for routine operation
 
-- [x] API endpoint overview by resource
-- [x] Pagination and request-size constraints
-- [x] Rate limiting behavior and environment caveats
-- [x] Security hardening checklist
-- [x] Troubleshooting playbook for common failures
-
-## Visual Deliverables
-
-- [ ] Screenshot set for each major workflow page
-- [ ] Video walkthrough for setup and first operational run
-- [ ] GIF snippets for key user actions (retry job, delete scheduler, inspect key)
-
-Screenshot placeholder: checklist snapshot for release notes.
-
-Video placeholder: documentation tour recording.
+- Configure [team access](/documentation/workflows/team-and-invitations) when using authenticated mode.
+- Test [Linear](/documentation/integrations/linear) or [webhook notifications](/documentation/integrations/webhooks) if you use alert routing.
+- Bookmark [Troubleshooting](/documentation/operations/troubleshooting) and the [HTTP API Reference](/documentation/reference/http-api).
+- Use a disposable queue to practice [queue operations](/documentation/workflows/queue-operations).
+- If using assistants, verify [MCP access and approved scopes](/documentation/integrations/mcp-server).

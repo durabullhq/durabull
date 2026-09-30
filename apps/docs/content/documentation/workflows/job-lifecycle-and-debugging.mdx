@@ -1,7 +1,10 @@
 ---
 title: Job Lifecycle and Debugging
-description: Inspect, filter, retry, remove, invoke, and create jobs with logs and stacktrace analysis.
+description: Inspect, filter, edit, retry, remove, invoke, and create jobs with logs and stack trace analysis.
 ---
+
+Start with the failed job's reason, payload, attempts, and logs. Correct the underlying problem
+before retrying; retries can repeat application side effects, so check your worker's idempotency.
 
 ## Job List
 
@@ -13,7 +16,8 @@ Job listing supports:
 
 - status filter
 - job name filter
-- pagination (`page`, `pageSize`)
+- exact job ID and payload search
+- pagination (`page`, `pageSize`, or index `cursor`)
 
 API route:
 
@@ -54,9 +58,25 @@ Important detail:
 - BullMQ stores stacktraces in the job hash as an array.
 - Pagination reduces transfer cost but still starts from full job retrieval.
 
+## Edit data and retry one job
+
+From job detail, use the data editor to correct a payload before retrying. The API exposes:
+
+- `POST /api/c/:connectionId/queues/:queueName/jobs/:jobId/data` with `{ "data": ... }`.
+- `POST /api/c/:connectionId/queues/:queueName/jobs/:jobId/retry` with `{}` or `{ "data": ... }`.
+
+Editing an active job returns `409` because a worker is already processing its old payload.
+Single-job retry is allowed only when the job is failed.
+
+## Clear logs or stack traces
+
+The Logs and Stack Traces tabs support permanent cleanup with optional retention of the newest N
+entries. Use `POST .../jobs/:jobId/logs/clear` or `POST .../jobs/:jobId/stacktraces/clear` with
+`{ "keepMostRecent": N }`. Omitting N clears all entries. Cleanup changes the data stored in Redis.
+
 ## Bulk and Single-Job Actions
 
-Supported actions:
+The paths below are relative to `/api/c/:connectionId/queues/:queueName`:
 
 - Retry failed jobs
   - `POST /jobs/retry`
@@ -69,7 +89,9 @@ Supported actions:
 
 Request safety limits:
 
-- Bulk endpoints cap `jobIds` arrays at 100 per request.
+- Bulk endpoints cap explicit `jobIds` arrays at 100 per request.
+- Bulk retry can instead select `statuses`: `failed`, `completed`, or `all`; do not send both `jobIds` and `statuses`.
+- State conflicts can produce partial results; inspect the response before retrying a bulk operation.
 
 ## Scheduled/Repeat Job Removal Nuance
 
@@ -77,7 +99,3 @@ For repeat/scheduled jobs (`jobId` starts with `repeat:`):
 
 - removing the job may require removing its scheduler
 - UI/API support a "remove scheduler too" behavior to stop future runs
-
-Screenshot placeholder: job detail view with tabs for data/logs/stacktraces.
-
-Video placeholder: failed job triage from queue list to retry/remove decision.
