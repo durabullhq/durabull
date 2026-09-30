@@ -7,6 +7,7 @@ export const dynamic = 'force-static'
 
 const docsRoot = resolve(process.cwd(), 'content/documentation')
 
+/** Turn a directory slug into a breadcrumb label. */
 function toTitleCase(segment: string): string {
   return segment
     .split('-')
@@ -14,6 +15,7 @@ function toTitleCase(segment: string): string {
     .join(' ')
 }
 
+/** Read simple string metadata separately from the MDX body. */
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?/)
   if (!match) return { frontmatter: {}, body: content }
@@ -33,11 +35,13 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
   }
 }
 
+/** Map an MDX source path to its documentation URL, including the index page. */
 function relativePathToUrl(relativePath: string): string {
   if (relativePath === 'index.mdx') return '/documentation'
   return `/documentation/${relativePath.replace(/\.mdx$/, '')}`
 }
 
+/** Recursively collect the MDX sources used to build the search index. */
 async function collectMdxFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true })
   const files: string[] = []
@@ -57,6 +61,7 @@ async function collectMdxFiles(dir: string): Promise<string[]> {
   return files
 }
 
+/** Index page metadata, headings, and prose for section-level browser search. */
 async function buildIndexes(): Promise<AdvancedIndex[]> {
   const files = await collectMdxFiles(docsRoot)
   const indexes: AdvancedIndex[] = []
@@ -96,5 +101,5 @@ const searchAPI = createSearchAPI('advanced', {
   indexes: () => buildIndexes(),
 })
 
-// Search the exported index in the browser in both server and static deployments.
+/** Serve the browser-searchable index in both server and static deployments. */
 export const GET = searchAPI.staticGET

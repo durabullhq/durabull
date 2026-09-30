@@ -23,6 +23,7 @@ interface RenderableDocPage {
   }
 }
 
+/** Render MDX with Fumadocs controls for code blocks, tables, and heading links. */
 export default async function DocumentationPage({ params }: DocumentationPageProps) {
   const { slug } = await params
   const page = source.getPage(slug) as RenderableDocPage | undefined
@@ -44,10 +45,12 @@ export default async function DocumentationPage({ params }: DocumentationPagePro
   )
 }
 
+/** Enumerate documentation slugs for static generation. */
 export function generateStaticParams() {
   return source.generateParams()
 }
 
+/** Derive page metadata and its canonical URL from the documentation source. */
 export async function generateMetadata({ params }: DocumentationPageProps): Promise<Metadata> {
   const { slug } = await params
   const page = source.getPage(slug) as RenderableDocPage | undefined

@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { WEB_APP_URL } from '@/lib/config'
 import { source } from '../../source'
 
+/** Share documentation navigation and browser-side index search across pages. */
 export default function DocumentationLayout({ children }: { children: ReactNode }) {
   const webAppUrl = WEB_APP_URL.replace(/\/$/, '')
 
@@ -15,6 +16,7 @@ export default function DocumentationLayout({ children }: { children: ReactNode 
         enabled: true,
         options: {
           type: 'static',
+          // Static export writes a file at out/api/search, not api/search/index.html.
           api: '/api/search',
         },
       }}

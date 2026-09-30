@@ -127,14 +127,21 @@ Run its automated `mcp:e2e` checks only against disposable local or staging data
 
 1. Back up the database, encryption keys, and relevant Redis data.
 2. Set `DURABULL_IMAGE` in `.env.self-hosted` to the target published image tag.
-3. Pull and recreate the app service, including any override files you use:
+3. Pull and recreate the app with the **same Compose files used for deployment**. For the
+   PostgreSQL override above:
 
    ```bash
    docker compose --env-file .env.self-hosted \
-     -f tooling/docker/docker-compose.self-hosted.yaml pull durabull
+     -f tooling/docker/docker-compose.self-hosted.yaml \
+     -f compose.override.yaml pull durabull
    docker compose --env-file .env.self-hosted \
-     -f tooling/docker/docker-compose.self-hosted.yaml up -d durabull
+     -f tooling/docker/docker-compose.self-hosted.yaml \
+     -f compose.override.yaml up -d durabull
    ```
+
+   If you use only the base stack, omit `-f compose.override.yaml` from both commands. Include
+   any other override files in their original order. Omitting an override can change the database
+   or other settings; Compose does not remember files from previous invocations.
 
 4. Repeat the health, login, and queue checks.
 
