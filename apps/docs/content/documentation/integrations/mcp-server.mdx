@@ -116,7 +116,7 @@ See the [MCP OAuth operator guide](https://github.com/durabullhq/durabull/blob/m
 
 Authorize requests that omit `mcp:*` scopes are expanded to the five read scopes only. Write scopes must be requested explicitly and appear on the consent screen marked "can make changes". Delegated users receive scopes from OAuth consent. Service accounts additionally require explicit policy bindings per tool/scope.
 
-**Upgrading from the read-only release:** `resolve_alert_event` now requires `mcp:failures:write`. Re-authorize the client with that scope to keep using it; all read tools continue to work with existing tokens.
+**Upgrading from the initial diagnostic release:** `resolve_alert_event` now requires `mcp:failures:write`. Re-authorize the client with that scope to keep using it; all read tools continue to work with existing tokens.
 
 ## Safety controls
 
