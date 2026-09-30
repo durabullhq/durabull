@@ -102,7 +102,10 @@ export function V2Showcase() {
   const reduceMotion = useReducedMotion()
 
   return (
-    <section id="product" className="v2-dark relative scroll-mt-20 overflow-hidden bg-[var(--v2-bg)] py-24">
+    <section
+      id="product"
+      className="v2-dark relative scroll-mt-20 overflow-hidden bg-[var(--v2-bg)] py-24"
+    >
       <EmberField count={34} intensity={0.9} spread={1} />
       <div className="relative mx-auto max-w-7xl px-5 sm:px-8">
         <Reveal className="text-center">

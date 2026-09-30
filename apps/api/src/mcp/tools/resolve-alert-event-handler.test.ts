@@ -1,7 +1,13 @@
 import { describe, expect, it, mock } from 'bun:test'
 
-const findById = mock(async () => null as Awaited<ReturnType<typeof import('@durabull/dal').alertEventRepository.findById>>)
-const resolve = mock(async () => null as Awaited<ReturnType<typeof import('@durabull/dal').alertEventRepository.resolve>>)
+const findById = mock(
+  async () =>
+    null as Awaited<ReturnType<typeof import('@durabull/dal').alertEventRepository.findById>>
+)
+const resolve = mock(
+  async () =>
+    null as Awaited<ReturnType<typeof import('@durabull/dal').alertEventRepository.resolve>>
+)
 
 mock.module('@durabull/dal', () => ({
   alertEventRepository: { findById, resolve },

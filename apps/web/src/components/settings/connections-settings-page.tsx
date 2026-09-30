@@ -1179,7 +1179,9 @@ function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: St
         {loading ? (
           <div className="h-8 w-12 bg-muted rounded animate-pulse" />
         ) : (
-          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
+          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
+            {value}
+          </div>
         )}
       </CardContent>
     </Card>

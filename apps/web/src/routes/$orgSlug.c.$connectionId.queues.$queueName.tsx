@@ -724,7 +724,10 @@ function QueueDetailPage() {
       {section === 'jobs' && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <Card className="relative overflow-hidden">
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-neutral/40" aria-hidden="true" />
+            <span
+              className="absolute inset-x-0 top-0 h-0.5 bg-status-neutral/40"
+              aria-hidden="true"
+            />
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
               <CardTitle className="eyebrow">Waiting</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
@@ -772,7 +775,10 @@ function QueueDetailPage() {
             </CardContent>
           </Card>
           <Card className="relative overflow-hidden">
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-priority" aria-hidden="true" />
+            <span
+              className="absolute inset-x-0 top-0 h-0.5 bg-status-priority"
+              aria-hidden="true"
+            />
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
               <CardTitle className="eyebrow">Prioritized</CardTitle>
               <Rocket className="h-4 w-4 text-status-priority" />

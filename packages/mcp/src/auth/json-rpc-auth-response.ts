@@ -7,8 +7,7 @@ export function buildMcpUnauthorizedResponse(
   const challenge = buildWwwAuthenticateChallenge({
     resourceMetadataUrl,
     error: 'invalid_token',
-    errorDescription:
-      options?.errorDescription ?? 'The access token is invalid or expired',
+    errorDescription: options?.errorDescription ?? 'The access token is invalid or expired',
   })
 
   return Response.json(

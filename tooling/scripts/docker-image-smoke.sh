@@ -2,17 +2,16 @@
 
 set -euo pipefail
 
-PROJECT_NAME="${PROJECT_NAME:-durabull-smoke}"
+PROJECT_NAME="${PROJECT_NAME:-durabull-smoke-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$$}"
 COMPOSE_FILE="${COMPOSE_FILE:-tooling/docker/docker-compose.self-hosted.yaml}"
-APP_PORT="${DURABULL_APP_PORT:-38080}"
-REDIS_PORT="${DURABULL_REDIS_PORT:-36379}"
+# An empty host port asks Docker to allocate an available localhost port.
+APP_PORT="${DURABULL_APP_PORT:-127.0.0.1:}"
 IMAGE_TAG="${DURABULL_IMAGE:-ghcr.io/durabullhq/durabull:latest}"
 
 export DURABULL_IMAGE="$IMAGE_TAG"
 export DURABULL_APP_PORT="$APP_PORT"
-export DURABULL_REDIS_PORT="$REDIS_PORT"
-export APP_BASE_URL="${APP_BASE_URL:-http://127.0.0.1:${APP_PORT}}"
-export VITE_PUBLIC_APP_URL="${VITE_PUBLIC_APP_URL:-http://127.0.0.1:${APP_PORT}}"
+export APP_BASE_URL="${APP_BASE_URL:-http://127.0.0.1:3000}"
+export VITE_PUBLIC_APP_URL="${VITE_PUBLIC_APP_URL:-$APP_BASE_URL}"
 export DURABULL_AUTHLESS="${DURABULL_AUTHLESS:-true}"
 export MCP_AUTHLESS_BEARER_TOKEN="${MCP_AUTHLESS_BEARER_TOKEN:-durabull-authless-mcp-smoke}"
 export DURABULL_ENV_CONNECTIONS="${DURABULL_ENV_CONNECTIONS:-true}"
@@ -69,19 +68,24 @@ assert_json_contains() {
 echo "Starting smoke stack with image: $DURABULL_IMAGE"
 compose up -d
 
-wait_for_url "${APP_BASE_URL}/api/health"
+published_address="$(compose port durabull 3000)"
+published_address="${published_address%%$'\n'*}"
+smoke_base_url="http://127.0.0.1:${published_address##*:}"
+echo "Probing smoke stack at: $smoke_base_url"
 
-assert_json_contains "${APP_BASE_URL}/api/health" '"status":"ok"'
-assert_json_contains "${APP_BASE_URL}/api/app/config" '"authless":true'
-assert_json_contains "${APP_BASE_URL}/api/app/config" '"persistence":"pglite"'
+wait_for_url "${smoke_base_url}/api/health"
+
+assert_json_contains "${smoke_base_url}/api/health" '"status":"ok"'
+assert_json_contains "${smoke_base_url}/api/app/config" '"authless":true'
+assert_json_contains "${smoke_base_url}/api/app/config" '"persistence":"pglite"'
 if [[ -n "${DURABULL_EXPECTED_BUILD_ID:-}" ]]; then
-  assert_json_contains "${APP_BASE_URL}/api/app/version" "\"buildId\":\"${DURABULL_EXPECTED_BUILD_ID}\""
+  assert_json_contains "${smoke_base_url}/api/app/version" "\"buildId\":\"${DURABULL_EXPECTED_BUILD_ID}\""
 fi
 if [[ -n "${DURABULL_EXPECTED_RELEASE_CHANNEL:-}" ]]; then
   assert_json_contains \
-    "${APP_BASE_URL}/api/app/version" \
+    "${smoke_base_url}/api/app/version" \
     "\"releaseChannel\":\"${DURABULL_EXPECTED_RELEASE_CHANNEL}\""
 fi
-assert_json_contains "${APP_BASE_URL}/api/auth/get-session" '"id":"authless-user"'
+assert_json_contains "${smoke_base_url}/api/auth/get-session" '"id":"authless-user"'
 
 echo "Docker image smoke test passed."

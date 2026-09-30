@@ -37,9 +37,7 @@ describe('allowed hosts', () => {
     const hosts = getProductionAllowedHosts('https://app.durabull.io')
 
     expect(hosts.has('localhost')).toBe(false)
-    expect(isAllowedHost('app.durabull.io', hosts, { allowHostnameWithoutPort: false })).toBe(
-      true
-    )
+    expect(isAllowedHost('app.durabull.io', hosts, { allowHostnameWithoutPort: false })).toBe(true)
     expect(isAllowedHost('app.durabull.io:443', hosts, { allowHostnameWithoutPort: false })).toBe(
       true
     )

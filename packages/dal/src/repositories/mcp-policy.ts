@@ -87,7 +87,12 @@ export const mcpPolicyRepository = {
     const rows = await db
       .select()
       .from(mcpServiceAccount)
-      .where(and(eq(mcpServiceAccount.oauthClientId, oauthClientId), eq(mcpServiceAccount.disabled, false)))
+      .where(
+        and(
+          eq(mcpServiceAccount.oauthClientId, oauthClientId),
+          eq(mcpServiceAccount.disabled, false)
+        )
+      )
       .limit(1)
     return rows[0] ?? null
   },
@@ -102,7 +107,10 @@ export const mcpPolicyRepository = {
     return rows[0] ?? null
   },
 
-  async issueServiceAccountSecret(serviceAccountId: string, opts?: { createdByUserId?: string | null; label?: string | null; expiresAt?: Date | null }) {
+  async issueServiceAccountSecret(
+    serviceAccountId: string,
+    opts?: { createdByUserId?: string | null; label?: string | null; expiresAt?: Date | null }
+  ) {
     const db = await getDb()
     const secret = generateServiceAccountSecret()
     const now = new Date()
@@ -126,7 +134,10 @@ export const mcpPolicyRepository = {
     return { secret, record }
   },
 
-  async rotateServiceAccountSecret(serviceAccountId: string, opts?: { createdByUserId?: string | null; label?: string | null; revokeActiveSecrets?: boolean }) {
+  async rotateServiceAccountSecret(
+    serviceAccountId: string,
+    opts?: { createdByUserId?: string | null; label?: string | null; revokeActiveSecrets?: boolean }
+  ) {
     const db = await getDb()
     const now = new Date()
     return db.transaction(async (tx) => {
@@ -261,7 +272,10 @@ export const mcpPolicyRepository = {
     return rows
   },
 
-  async doesConnectionBelongToOrganization(connectionId: string, organizationId: string): Promise<boolean> {
+  async doesConnectionBelongToOrganization(
+    connectionId: string,
+    organizationId: string
+  ): Promise<boolean> {
     const db = await getDb()
     const envConnectionIds = shouldUseEnvConnections()
       ? getEnvRedisConnectionIdsForOrganization(organizationId)

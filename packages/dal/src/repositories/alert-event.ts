@@ -21,9 +21,7 @@ function toNumber(value: number | string | bigint | null | undefined): number {
 
 function acknowledgedFilter(acknowledged: boolean | undefined) {
   if (acknowledged === undefined) return []
-  return [
-    acknowledged ? isNotNull(alertEvent.acknowledgedAt) : isNull(alertEvent.acknowledgedAt),
-  ]
+  return [acknowledged ? isNotNull(alertEvent.acknowledgedAt) : isNull(alertEvent.acknowledgedAt)]
 }
 
 function buildAlertEventConnectionFilter(

@@ -14,10 +14,7 @@ import {
 import { createMiddleware } from 'hono/factory'
 
 import { isAuthlessMode } from '../../lib/authless'
-import {
-  getAuthlessMcpBearerToken,
-  getMcpAuthConfig,
-} from './mcp-auth-config'
+import { getAuthlessMcpBearerToken, getMcpAuthConfig } from './mcp-auth-config'
 import { recordMcpTelemetry } from '../observability/mcp-telemetry'
 import { resolveMcpSessionFromAccessToken } from './resolve-mcp-session'
 

@@ -24,10 +24,7 @@ function logCollectFailure(result: IngestCollectBatchResult): void {
   console.warn(`[analytics] async /collect batch failed: ${result.error}`)
 }
 
-const collectQueue = createBoundedAsyncQueue<
-  TelemetryCollectQueueItem,
-  IngestCollectBatchResult
->({
+const collectQueue = createBoundedAsyncQueue<TelemetryCollectQueueItem, IngestCollectBatchResult>({
   maxInFlight: MAX_COLLECT_IN_FLIGHT,
   maxQueueDepth: MAX_COLLECT_QUEUE_DEPTH,
   onDrop: (_input, state) => {

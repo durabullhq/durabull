@@ -4,11 +4,7 @@ import { mcpPolicyRepository } from '@durabull/dal'
 
 import { recordMcpTelemetry } from '../observability/mcp-telemetry'
 
-export type McpAuditResponseClass =
-  | 'policy_denied'
-  | 'rate_limited'
-  | 'success'
-  | 'tool_error'
+export type McpAuditResponseClass = 'policy_denied' | 'rate_limited' | 'success' | 'tool_error'
 
 export interface McpAuditEventInput {
   correlationId: string

@@ -143,8 +143,7 @@ export function createMcpSessionRegistry(options: McpSessionRegistryOptions) {
 }
 
 function jsonRpcErrorResponse(code: number, message: string, httpStatus?: number): Response {
-  const status =
-    httpStatus ?? (code === 404 ? 404 : code === -32_000 ? 400 : code < 0 ? 500 : code)
+  const status = httpStatus ?? (code === 404 ? 404 : code === -32_000 ? 400 : code < 0 ? 500 : code)
 
   return Response.json(
     {

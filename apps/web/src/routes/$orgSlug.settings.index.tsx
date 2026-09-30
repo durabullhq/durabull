@@ -7,11 +7,5 @@ export const Route = createFileRoute('/$orgSlug/settings/')({
 function SettingsIndexRedirect() {
   const { orgSlug } = Route.useParams()
 
-  return (
-    <Navigate
-      to="/$orgSlug/settings/connections"
-      params={{ orgSlug }}
-      replace
-    />
-  )
+  return <Navigate to="/$orgSlug/settings/connections" params={{ orgSlug }} replace />
 }

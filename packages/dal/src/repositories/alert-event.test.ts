@@ -117,11 +117,7 @@ describe('alertEventRepository', () => {
     const { connectionId, rule } = await seedBase()
     const event = await createFiringEvent(rule, connectionId)
 
-    const acknowledged = await alertEventRepository.acknowledge(
-      event.id,
-      TEST_ORG_ID,
-      TEST_USER_ID
-    )
+    const acknowledged = await alertEventRepository.acknowledge(event.id, TEST_ORG_ID, TEST_USER_ID)
 
     expect(acknowledged?.acknowledgedBy).toBe(TEST_USER_ID)
     expect(acknowledged?.acknowledgedAt).toBeInstanceOf(Date)
@@ -229,9 +225,7 @@ describe('alertEventRepository', () => {
     await alertEventRepository.resolve(resolved.id, TEST_ORG_ID)
 
     const summary = await alertEventRepository.summarizeOpenByOrganization(TEST_ORG_ID)
-    expect(summary).toEqual([
-      { connectionId, firing: 2, acknowledged: 1, open: 3 },
-    ])
+    expect(summary).toEqual([{ connectionId, firing: 2, acknowledged: 1, open: 3 }])
   })
 
   it('filters by acknowledgement and returns the acknowledging user name', async () => {

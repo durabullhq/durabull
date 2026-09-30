@@ -103,7 +103,9 @@ export function getWebhookDeliveryTarget(rawUrl: string): string {
   return `${parsed.origin}${parsed.pathname}${parsed.search}`
 }
 
-export async function resolveAllowedWebhookEndpoint(rawUrl: string): Promise<ResolvedWebhookEndpoint> {
+export async function resolveAllowedWebhookEndpoint(
+  rawUrl: string
+): Promise<ResolvedWebhookEndpoint> {
   let parsed: URL
   try {
     parsed = new URL(normalizeWebhookUrl(rawUrl))
@@ -120,12 +122,7 @@ export async function resolveAllowedWebhookEndpoint(rawUrl: string): Promise<Res
   const hostname = parsed.hostname.toLowerCase()
   assertAllowedHostname(hostname)
 
-  const port =
-    parsed.port !== ''
-      ? Number(parsed.port)
-      : parsed.protocol === 'https:'
-        ? 443
-        : 80
+  const port = parsed.port !== '' ? Number(parsed.port) : parsed.protocol === 'https:' ? 443 : 80
   const path = `${parsed.pathname}${parsed.search}`
 
   const directIpVersion = isIP(hostname)

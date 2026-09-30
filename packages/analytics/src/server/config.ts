@@ -56,9 +56,7 @@ export function resetServerAnalyticsForTests(): void {
   configuredOptions = null
 }
 
-export function getTelemetryStatusFromOptions(
-  options: ServerAnalyticsOptions
-): {
+export function getTelemetryStatusFromOptions(options: ServerAnalyticsOptions): {
   enabled: boolean
   collectionRequired: true
   dedupeIdentifiedPosthogEvents: boolean

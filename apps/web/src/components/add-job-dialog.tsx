@@ -37,7 +37,9 @@ export function AddJobDialog({ open, onOpenChange, queueName, onSuccess }: AddJo
   const [jobName, setJobName] = useState('')
   const [jobData, setJobData] = useState<unknown>({})
   const [isJsonValid, setIsJsonValid] = useState(true)
-  const [jobOptions, setJobOptions] = useState<JobOptionsFormValue>(createDefaultJobOptionsFormValue())
+  const [jobOptions, setJobOptions] = useState<JobOptionsFormValue>(
+    createDefaultJobOptionsFormValue()
+  )
 
   const addJobMutation = useAddJob()
   const jobOptionsErrors = useMemo(
