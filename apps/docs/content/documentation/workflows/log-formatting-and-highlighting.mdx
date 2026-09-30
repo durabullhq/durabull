@@ -1,153 +1,42 @@
 ---
 title: Log Formatting and Highlighting
-description: Format job logs so the Logs tab can parse, color, and search them cleanly.
+description: Write job logs that the Logs tab can highlight and search.
 ---
 
-Durabull's Logs tab applies structured highlighting by parsing common log patterns.
-If your workers emit logs in the formats below, users get:
+Write logs with BullMQ's `job.log`; console output is not automatically captured. Use consistent
+field names and put important fields first. Prefer UTC ISO 8601 timestamps and compact JSON.
 
-- timestamp detection
-- level badges (`DEBUG`, `INFO`, `WARN`, `ERROR`, etc.)
-- context tags
-- key/value coloring
-- reliable keyword search
-- automatic long-line truncation for readability
-
-## Recommended Log Line Format
-
-Use this shape whenever possible:
+## Recommended format
 
 ```text
 [<timestamp>] [<LEVEL>] [<OPTIONAL_CONTEXT>] message | key=value | key2=value2
 ```
 
-Example:
-
 ```text
-[2026-02-13T21:25:43.232Z] [INFO] [SYNC] Processing adjustment | jobId=sync-adjustment-123 | queue=shipment-rebill | attempt=3
+[2026-02-13T21:25:43.232Z] [ERROR] [SYNC] Request failed | jobId=42 | requestId=req_123 | status=404
 ```
 
-## Parsing Rules Used by the Logs Viewer
+## Highlighting rules
 
-The viewer makes these assumptions, in order:
+| Part | Behavior |
+| --- | --- |
+| Timestamp | A bracketed timestamp or plain timestamp prefix is recognized. |
+| Level | A bracketed level after the timestamp or a plain prefix such as `ERROR:` is recognized. |
+| Context | Up to four additional bracketed tokens become context tags. |
+| Message | Remaining text forms the message; `|` separates visual segments. |
+| Fields | `key=value` segments and JSON fragments receive highlighting. |
 
-### Timestamp
+Recognized levels are `TRACE`, `DEBUG`, `INFO`, `WARN` / `WARNING`, `ERROR`, `FATAL`, `SUCCESS`,
+and `CONTEXT`.
 
-- first token in brackets, like `[2026-02-13T21:25:43.232Z]`
-- or a plain timestamp prefix like `2026-02-13T21:25:43.232Z ...`
+## Search, expand, and copy
 
-### Level
+Search is case-insensitive and checks the full raw text of **loaded** lines. Scroll to load more
+pages before assuming a missing result is absent from all logs.
 
-- first bracket token after timestamp if it matches known levels
-- or a plain prefix, like `INFO ...`, `ERROR: ...`
-
-Recognized levels:
-
-- `TRACE`
-- `DEBUG`
-- `INFO`
-- `WARN` / `WARNING`
-- `ERROR`
-- `FATAL`
-- `SUCCESS`
-- `CONTEXT`
-
-### Context tags
-
-- up to four additional bracket tokens after timestamp/level are treated as context tags
-- examples: `[Worker-1]`, `[SyncService]`, `[CONTEXT]`
-
-### Message body
-
-- remaining text is treated as the message
-- `|` delimiters split visual segments
-- `key=value` segments are highlighted as structured fields
-
-## Timestamp Guidance
-
-Preferred:
-
-```text
-[2026-02-13T21:25:43.232Z]
-```
-
-Also supported:
-
-```text
-2026-02-13T21:25:43.232Z
-2026-02-13 21:25:43.232Z
-[2026/02/13 21:25:43]
-```
-
-Recommendation:
-
-- always include timezone (UTC `Z` preferred)
-- use ISO 8601 for machine-friendly parsing
-
-## Structured Segment Guidance
-
-Use `|` as a stable delimiter between logical parts:
-
-```text
-[2026-02-13T21:25:43.232Z] [DEBUG] Recomputing totals | orderId=ord_123 | attempt=2 | source=worker
-```
-
-Why:
-
-- each segment is easier to scan
-- key/value pairs are highlighted cleanly
-- search results are easier to understand
-
-## JSON Payloads in Logs
-
-JSON fragments in the message are highlighted, but still treated as text lines:
-
-```text
-[2026-02-13T21:25:43.232Z] [INFO] Payload received | data={"adjustmentId":"abc123","mode":"dry-run"}
-```
-
-Recommendation:
-
-- keep JSON compact (single-line) in logs
-- put large payloads in job data/trace storage, not inline logs
-
-## Long Line Behavior
-
-To keep logs readable in the UI:
-
-- very long message bodies are automatically truncated
-- use **Expand log line** to view the full message body
-- copy includes the full raw text of the currently loaded, filtered lines
-
-Implication:
-
-- put critical fields early in the line
-- avoid large stack traces or huge JSON blobs in a single log line
-
-## Search Behavior
-
-The Logs tab search is case-insensitive and scans the full raw text of **loaded** log lines.
-Scroll to load additional pages before assuming a missing search result is absent from all logs.
-
-Best practices:
-
-- include stable field names (`jobId`, `requestId`, `queue`, `attempt`)
-- prefer consistent level tags and context tags
-- avoid free-form variants for the same field (`reqId` vs `requestId`)
-
-## Good vs Bad Examples
-
-Good:
-
-```text
-[2026-02-13T21:25:43.232Z] [ERROR] [SYNC] Request failed | jobId=sync-adjustment-123 | requestId=req_516c2008d9054dc2 | status=404
-```
-
-Bad:
-
-```text
-something failed maybe 404 id 123 retrying ??? {"huge":"payload", ...}
-```
+Long messages are truncated for display; use **Expand log line** to see the full body. Copy includes
+the full raw text of the currently loaded, filtered lines. Keep large payloads and stack traces
+out of individual log lines to make them easier to scan.
 
 ## Worker Helper Pattern (TypeScript)
 

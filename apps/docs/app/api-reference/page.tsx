@@ -18,12 +18,12 @@ export default function ApiReferencePage() {
         badge="Developer APIs"
         title="API Reference"
         subtitle="Automate queue operations and observability with Durabull's REST endpoints."
-        primaryCta={{ label: 'Get API Access', to: '/signup' }}
-        secondaryCta={{ label: 'Browse Docs', to: '/docs' }}
+        primaryCta={{ label: 'HTTP API Reference', to: '/documentation/reference/http-api' }}
+        secondaryCta={{ label: 'Browse Docs', to: '/documentation' }}
         sections={[
           {
             title: 'Queues',
-            description: 'Inspect queue health, pause/resume workers, and review throughput.',
+            description: 'Inspect queue health, pause/resume queues, and review throughput.',
             items: ['List queues', 'Toggle pause', 'Fetch metrics'],
           },
           {
@@ -33,11 +33,11 @@ export default function ApiReferencePage() {
           },
           {
             title: 'Signals',
-            description: 'Stream operational events to your tooling.',
+            description: 'Send alert notifications to your tooling.',
             items: ['Webhook subscriptions', 'Alert thresholds', 'Status checks'],
           },
         ]}
-        footerNote="API access is available during beta upon request."
+        footerNote="The REST API ships with every deployment and uses session authentication. See the reference for authless mode and scoped MCP access."
       />
     </LandingLayout>
   )

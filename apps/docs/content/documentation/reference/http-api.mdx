@@ -104,16 +104,18 @@ existing cloud API at `POST /api/telemetry/collect`.
 `POSTHOG_KEY` configures a PostHog destination for the cloud product or instance owner. It does not
 disable Durabull anonymous telemetry, and Durabull does not provide a product-level telemetry
 opt-out. When a self-hosted owner provides `POSTHOG_KEY`, they receive the full PostHog browser
-stream for their project while Durabull still receives independently sanitized anonymous telemetry.
+stream for their project. Sanitized forwarding to Durabull requires a configured signing secret
+and is best-effort; see [Environment Variables](/documentation/getting-started/environment-variables#anonymous-usage-telemetry).
 
 Durabull telemetry includes feature and route usage, safe runtime context, booleans, enums, and
 aggregate buckets. It does not include Redis URLs, queue names, Redis key names, job data, logs,
 emails, names, organizations, hostnames, raw URLs, search patterns, stack traces, or raw error
 messages.
 
-Telemetry endpoints return `202` after a sanitized event or batch is accepted into the bounded
-background queue. If the queue is full, the endpoint returns `503` and the API emits a stdout
-`telemetry_queue` signal with `signal: "queue_dropped"` and the operational queue name. That signal
+When telemetry is enabled, endpoints return `202` after accepting a sanitized event or batch
+into the bounded background queue. When disabled, `/events` returns `202` with `accepted: false`
+and `enabled: false`, without enqueueing. If the queue is full, the endpoint returns `503` and
+the API emits a stdout `telemetry_queue` signal with `signal: "queue_dropped"` and the operational queue name. That signal
 contains only queue depth counters and does not include product event properties.
 
 ## Connection Management
@@ -203,8 +205,11 @@ starts a scan and returns `202`; add `wait=true` to wait for completion and rece
 - `POST /queues/:queueName/jobs/:jobId/logs/clear`
 - `POST /queues/:queueName/jobs/:jobId/stacktraces/clear`
 
-Job listing accepts `status`, `name`, exact `jobId`, `data` search, `page`, `cursor`, and `pageSize`
-(maximum `100`). The cursor is an index into the selected job listing, not a Redis SCAN cursor.
+Job listing accepts `status`, `name`, `jobId`, and `data` search. Without search filters, `page`,
+index `cursor` (not Redis SCAN), and `pageSize` paginate results with a maximum page size of `100`.
+Name and payload searches return all matches for client-side pagination. `jobId` tries an exact
+lookup first; if absent, it returns all matching ID substrings. These searches scan the selected
+job states and can be expensive on large queues.
 
 Data edits require `{ "data": ... }` and return `409` while a job is active. Single-job retry accepts
 `{}` or `{ "data": ... }` and requires a failed job. Bulk retry accepts either `jobIds` (maximum `100`)
@@ -347,7 +352,7 @@ Common status patterns:
 
 ## Queue Purge API (Destructive)
 
-Use this endpoint to remove jobs from a queue by selected statuses, or purge all statuses in one operation.
+Use this endpoint to remove jobs from a queue by selected statuses, or purge all supported statuses in one operation.
 
 Route:
 
@@ -369,7 +374,7 @@ This route is intentionally destructive and always requires exact queue-name con
 }
 ```
 
-For full purge across all statuses:
+For all supported statuses (excluding `waiting-children` and schedulers):
 
 ```json
 {

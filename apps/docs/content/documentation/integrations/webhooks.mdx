@@ -16,15 +16,19 @@ You can configure webhooks in two ways:
 
 For reusable destinations:
 
-1. Open **Settings → Integrations**.
-2. Add a **Webhook alert destination** with a name and endpoint URL.
-3. Optionally add a signing secret (minimum 16 characters).
+1. Open **Settings → Alert destinations**.
+2. Choose **Add destination → Webhook** and enter a name and endpoint URL.
+3. Optionally add a signing secret (minimum 16 characters). Self-hosted instances need
+   `DURABULL_SECRET_ENCRYPTION_KEY` to store it; see [Environment Variables](/documentation/getting-started/environment-variables).
 4. Use **Test** to verify delivery.
-5. Open a connection's alert rule builder and choose the saved destination from a **Webhook route**.
+5. In the connection's alert rule builder, select it under **Saved destinations**.
 
-For one-off endpoints, open a connection's alert rule builder, add a **Webhook route**, switch it to **Custom URL**, and enter the endpoint URL and optional signing secret.
+For a one-off endpoint, choose **Webhook** in the rule builder and enter its URL and optional
+signing secret. Routes can include email and Linear destinations too.
 
-Webhook routes are configured per alert rule, alongside email and Linear destinations. Saved destination edits apply to future alert deliveries only; deliveries already queued use the URL and signing secret snapshot captured when the alert was enqueued.
+Saved destinations are resolved at dispatch time: edits affect pending deliveries and retries
+as well as future alerts. Legacy webhook references can retain enqueue-time URL and secret
+snapshots; migrate them to the current saved-destination picker to use the latest settings.
 
 ## Payload format
 

@@ -21,6 +21,14 @@ For GA documentation (release gates, compliance, security closure, validation ev
 
 **Self-hosted:** publish a single app port (default `3000`). Do not expose a second port for MCP.
 
+### TLS and reverse proxy
+
+- Terminate TLS at your edge; forward to Durabull on the app port.
+- Path-based routing: `/mcp` must reach the Durabull API process (same upstream as `/api/*`).
+- Present the public hostname as `Host` to the upstream.
+- No second hostname is required for MCP.
+- WebSocket upgrades are not required for Streamable HTTP MCP.
+
 ## Required environment
 
 | Variable | Required | Purpose |
@@ -64,6 +72,8 @@ curl -fsS "$APP_BASE_URL/api/health" | jq .
 curl -fsS "$APP_BASE_URL/.well-known/oauth-protected-resource" | jq .resource
 ```
 
+For the shipped Docker setup, use `APP_BASE_URL=http://localhost:3000` (or your configured port).
+
 Expect `resource` to equal `"${APP_BASE_URL}/mcp"` (no trailing slash unless your client requires it everywhere).
 
 ### 2. Unauthenticated challenge
@@ -94,16 +104,6 @@ APP_BASE_URL="$APP_BASE_URL" bun run mcp:e2e
 
 Better Auth mode expects `DATABASE_URL` on a **staging** database. Authless mode (Docker/production image): `DURABULL_AUTHLESS=true MCP_AUTHLESS_BEARER_TOKEN=... APP_BASE_URL=... bun run mcp:e2e`.
 
-### 4. Self-host Docker quick check
-
-After `docker compose up`:
-
-```bash
-export APP_BASE_URL=http://localhost:3000
-curl -fsS "$APP_BASE_URL/api/health"
-curl -fsS "$APP_BASE_URL/.well-known/oauth-protected-resource" | jq .resource
-```
-
 ## Observability
 
 ### Structured logs (`mcp_telemetry`)
@@ -113,7 +113,7 @@ Stdout JSON lines with `"type":"mcp_telemetry"`. Emitted signals today:
 | Signal | Meaning | Operator action |
 | --- | --- | --- |
 | `policy_denied` | Org/connection boundary or missing binding | Review principal org membership and `mcp_policy_binding` rows |
-| `rate_limited_ingress` | `/mcp` burst exceeded (120 req/min per key) | Fix client retry storms; add edge rate limiting — scaling replicas **increases** effective quota (per-process counters) |
+| `rate_limited_ingress` | `/mcp` burst exceeded (120 req/min per key) | Reduce retry storms; see limits below |
 | `rate_limited_tool` | Per-tool cap hit | Reduce parallelism; see heavy-tool list below |
 | `tool_success` / `tool_error` | Tool outcome | Correlate with `mcp_audit_event` |
 | `redaction_applied` | Sanitizer redacted fields | Expected for sensitive payloads |
@@ -198,7 +198,7 @@ Full checklist: see [mcp-oauth-operator.md](./mcp-oauth-operator.md). Common cau
 
 ### `429` on diagnostic tools
 
-**Cause:** Ingress **120 req/min** per bearer (or IP), or per-tool limits — **60/min** default, **30/min** for heavy tools listed above.
+**Cause:** Ingress or per-tool quotas exceeded; see [Per-tool rate limits](#per-tool-rate-limits-60min-default-30min-heavy-tools).
 
 **Fix:** Reduce client parallelism. Do not set `DISABLE_RATE_LIMIT` in production unless you enforce limits at the edge (it disables **all** API rate limiting, not only MCP).
 
@@ -218,14 +218,6 @@ Ingress and per-tool limits are **in-memory per process**. Each replica enforces
 | `MCP_AUTHLESS_BEARER_TOKEN` | Lab-only; rotate if authless is used; update all MCP clients |
 
 After rotation, run `mcp:e2e` on **staging/local** before closing the change.
-
-## TLS and reverse proxy
-
-- Terminate TLS at your edge; forward to Durabull on the app port.
-- Path-based routing: `/mcp` must reach the Durabull API process (same upstream as `/api/*`).
-- Present the public hostname as `Host` to the upstream.
-- No second hostname is required for MCP.
-- WebSocket upgrades are not required for Streamable HTTP MCP.
 
 ## Related documentation
 

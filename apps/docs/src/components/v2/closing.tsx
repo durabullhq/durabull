@@ -26,8 +26,8 @@ export function V2FinalCta() {
             Know what they&apos;re doing — before 3 a.m. does.
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-[var(--v2-muted)] sm:text-base">
-            Connect your Redis and see every queue, worker, and failure in under two minutes. Free
-            during beta. Zero code changes.
+            Connect Redis to inspect your queues, workers, and failed jobs. The hosted app is free
+            during beta.
           </p>
         </Reveal>
 
@@ -74,7 +74,7 @@ export function V2Footer() {
           <DurabullWordmark className="h-[13px] text-[var(--v2-fg)]" />
           <span className="v2-mono ml-3 flex items-center gap-1.5 text-[var(--v2-ok)]">
             <span className="v2-pulse-dot inline-block size-1.5 rounded-full bg-[var(--v2-ok)]" />
-            all systems operational
+            BullMQ operations
           </span>
         </div>
 

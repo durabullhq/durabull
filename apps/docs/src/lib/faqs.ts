@@ -1,49 +1,46 @@
-// FAQ data - exported separately from client components for use in server-side SEO scripts
-
+// Shared by the FAQ page, landing page, and FAQ structured data.
 export const faqs = [
   {
     question: 'What is Durabull?',
     answer:
-      'Durabull is a modern, powerful dashboard for managing BullMQ queues. It provides real-time monitoring, job debugging, worker tracking, and team collaboration features — all in a beautiful, developer-focused interface.',
+      'Durabull is a dashboard for BullMQ queue operations: inspect jobs, debug failures, manage schedulers, track workers, and configure alerts.',
   },
   {
     question: 'Do I need to modify my existing BullMQ code?',
     answer:
-      "No! Durabull connects directly to your Redis instance and reads BullMQ data structures. Your existing queues, workers, and jobs work without any code changes. Just point us to your Redis and you're ready to go.",
+      'Queue and job inspection connects directly to Redis without a worker SDK. Throughput charts require BullMQ metrics enabled on your workers.',
   },
   {
-    question: 'Is my data secure?',
+    question: 'How does Durabull handle my data?',
     answer:
-      'Absolutely. Durabull uses encrypted connections to your Redis instance and never stores your job data. We only read queue metadata for display purposes. Your job payloads and results stay in your Redis.',
+      'The API and browser read job payloads, results, and logs for inspection. Redis transport uses TLS when you configure a rediss:// URL. Self-host if this processing must stay within your deployment. Built-in usage telemetry excludes job data, logs, and Redis URLs; optional PostHog analytics is separate.',
   },
   {
-    question: 'Can I use Durabull with multiple Redis instances?',
+    question: 'Can I use multiple Redis instances?',
     answer:
-      'Yes! Durabull supports multiple connections, making it easy to switch between production, staging, and development environments. Manage all your Redis instances from a single dashboard.',
+      'Yes. Each organization can manage multiple Redis connections for production, staging, and development.',
   },
   {
     question: 'How does pricing work?',
-    answer:
-      "Durabull is completely free while in beta. When we introduce pricing, it will be kept as low as possible — just enough to cover our cloud compute costs. We're a group of dedicated engineers running this as a break-even venture to create a better BullMQ experience for the community, not to maximize profits.",
+    answer: 'The hosted app is free during beta. See the pricing page for current terms.',
   },
   {
     question: 'How can I install Durabull?',
     answer:
-      'You can start in the hosted web app, install the native desktop app on Apple Silicon macOS or Windows, or self-host Durabull with Docker or from source. Apple Silicon Macs can also be rolled out with Homebrew using `brew install --cask durabullhq/tap/durabull`, and the documentation includes a dedicated desktop installation guide with direct download links.',
+      'Use the hosted app, install the desktop app on Apple Silicon macOS or Windows, or self-host with Docker or from source. The desktop guide includes downloads, Homebrew installation, and macOS checksum verification.',
   },
   {
     question: 'Can I run Durabull in authless mode?',
     answer:
-      'Yes. Durabull supports authless mode, and you can choose stateful (Postgres) or stateless (PGlite) persistence based on your environment and durability needs. For production, keep authless mode behind private network controls.',
+      'Yes, on a trusted private network. Authless mode removes web and REST API login checks. Both PostgreSQL and PGlite persist data; PGlite uses local disk and needs a persistent volume in containers. MCP still requires a bearer token.',
   },
   {
-    question: 'What versions of BullMQ are supported?',
+    question: 'How do I check BullMQ compatibility?',
     answer:
-      'Durabull supports BullMQ v4 and above. We stay up-to-date with the latest BullMQ releases and data structures to ensure compatibility.',
+      "Test with your application's BullMQ version and Redis key prefix before production use. Check queue discovery, jobs, schedulers, and metrics in your deployment.",
   },
   {
-    question: 'Do you offer support?',
-    answer:
-      'Free tier users have access to our documentation and community Discord. Pro users get priority email support, and Enterprise customers receive dedicated support with SLAs.',
+    question: 'Where can I get help?',
+    answer: 'Start with the documentation and troubleshooting guide, or contact hello@durabull.io.',
   },
 ]

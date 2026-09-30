@@ -17,7 +17,7 @@ const capabilities = [
     eyebrow: 'Real-Time Ops',
     title: 'Unified Queue Command Center',
     description:
-      'Track waiting, active, delayed, completed, and failed jobs from one live surface without polling or context switching.',
+      'Track waiting, active, delayed, completed, and failed jobs from one automatically refreshed dashboard.',
     spanClass: 'md:col-span-7',
   },
   {
@@ -32,8 +32,7 @@ const capabilities = [
     icon: Calendar,
     eyebrow: 'Scheduling',
     title: 'Cron Visibility That Scales',
-    description:
-      'Review next runs, pause schedules safely, and understand scheduler drift before it becomes an outage.',
+    description: 'Review next runs and create, edit, or remove cron and interval schedulers.',
     spanClass: 'md:col-span-3',
   },
   {
@@ -57,7 +56,7 @@ const capabilities = [
     eyebrow: 'Fleet Analytics',
     title: 'Throughput Trends Across Queues',
     description:
-      'Visualize fleet-level processing velocity and workload pressure so teams can react before latency spikes.',
+      'Visualize throughput and backlog across queues. Throughput charts require BullMQ worker metrics.',
     spanClass: 'md:col-span-3',
   },
   {

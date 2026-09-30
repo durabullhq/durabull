@@ -25,14 +25,14 @@ export default function PrivacyPage() {
             description: 'We only collect what is needed to operate the product.',
             items: [
               'Account details and authentication',
-              'Queue metadata and metrics',
+              'Queue metadata, metrics, and job payloads, results, logs, and stack traces processed for inspection',
               'Anonymous/pseudonymous usage telemetry',
             ],
           },
           {
             title: 'Anonymous Telemetry',
             description:
-              'Production and self-hosted Durabull usage automatically sends product telemetry that helps us improve the product.',
+              'Production enables sanitized usage telemetry. Forwarding requires a signing secret and is best-effort; optional operator-configured PostHog receives a separate browser analytics stream.',
             items: [
               'Feature and route usage',
               'Safe runtime context and aggregate counts',
@@ -50,11 +50,16 @@ export default function PrivacyPage() {
           },
           {
             title: 'Your Choices',
-            description: 'You control your data and can request changes anytime.',
-            items: ['Export or delete data', 'Update permissions', 'Opt out of marketing'],
+            description:
+              'Self-host when job-data processing must stay in your deployment. Contact us with privacy or account-data requests.',
+            items: [
+              'Choose your deployment',
+              'Review organization access',
+              'Contact hello@durabull.io',
+            ],
           },
         ]}
-        footerNote="This summary is for convenience and will be expanded into a full policy."
+        footerNote="See the documentation for telemetry configuration and security guidance."
       />
     </LandingLayout>
   )

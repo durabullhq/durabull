@@ -16,8 +16,11 @@ Job listing supports:
 
 - status filter
 - job name filter
-- exact job ID and payload search
-- pagination (`page`, `pageSize`, or index `cursor`)
+- job ID lookup and payload search
+- pagination (`page`, `pageSize`, or index `cursor`) for unfiltered API listings
+
+Name and payload searches return all matches for client-side pagination. ID search tries an exact
+match first, then falls back to substring matches. Searches can be expensive on large queues.
 
 API route:
 

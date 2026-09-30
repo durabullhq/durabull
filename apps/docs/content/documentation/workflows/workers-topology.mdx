@@ -27,11 +27,6 @@ Durabull classifies workers as active/idle using the idle time reported by Redis
 This is a connectivity heuristic, not proof that a worker is executing a job. Check the queue's
 active-job count and individual jobs to confirm processing.
 
-Current UI rule:
-
-- `idle <= 5000ms`: active
-- `idle > 5000ms`: idle
-
 ## API Endpoint
 
 - `GET /api/c/:connectionId/workers`

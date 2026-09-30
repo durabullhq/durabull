@@ -1,63 +1,50 @@
 ---
 title: Desktop Apps
-description: Install Durabull on Apple Silicon macOS or Windows, or roll out the macOS app with Homebrew.
+description: Install Durabull on Apple Silicon macOS or Windows.
 ---
 
-Durabull is available as a native desktop app for Apple Silicon macOS and Windows, and Apple
-Silicon Mac teams can also standardize installs with Homebrew.
+The desktop app bundles the web UI and a local API. Settings persist in its user-data directory;
+you do not need a separately hosted Durabull API.
 
-If you want to self-host Durabull instead, start with
-[Self Hosting Setup](/documentation/self-hosting/setup).
+## Downloads
 
-## Installation Paths
+Choose an asset from the [GitHub releases](https://github.com/durabullhq/durabull/releases/latest):
 
-| Platform | Recommended path | Notes |
-| --- | --- | --- |
-| Apple Silicon macOS | [Download the macOS app](https://github.com/durabullhq/durabull/releases/latest) | Latest GitHub release for the current arm64 macOS build. Verify the download with the SHA-256 step below before opening. |
-| Windows | [Download the Windows installer](https://github.com/durabullhq/durabull/releases/latest) | Select `Durabull.Setup.<version>.exe` from the latest release assets. |
-| Windows (portable) | [Download the Windows zip](https://github.com/durabullhq/durabull/releases/latest) | Select `Durabull-<version>-win.zip` from the latest release assets. |
-| Homebrew (Apple Silicon macOS) | `brew install --cask durabullhq/tap/durabull` | Good for repeatable rollout on managed Apple Silicon Mac fleets. |
+| Platform | Asset |
+| --- | --- |
+| Apple Silicon macOS | `Durabull-<version>-arm64.dmg` |
+| Windows installer | `Durabull.Setup.<version>.exe` |
+| Windows portable | `Durabull-<version>-win.zip` |
 
-## Verify the macOS Download
+### Verify the macOS download
 
-After downloading the Apple Silicon `.dmg`, download the published SHA-256 file into the
-same folder and verify it before opening the app:
+Download the DMG and `durabull-macos-arm64.sha256` **from the same release**, then run this in
+the folder containing both files:
 
 ```bash
-curl -fsSLO https://github.com/durabullhq/durabull/releases/latest/download/durabull-macos-arm64.sha256
 shasum -a 256 -c durabull-macos-arm64.sha256
 ```
 
-The command should print `OK` for the downloaded `Durabull-*-arm64.dmg`. If it does not,
-delete the file and download it again from the latest release.
+The command should print `OK` for the DMG. If verification fails, discard it and download both
+files again from the same release.
 
-## Homebrew Install
+### Homebrew (Apple Silicon macOS)
 
 ```bash
 brew install --cask durabullhq/tap/durabull
 ```
 
-Homebrew is the cleanest option when you want a scripted or repeatable Apple Silicon macOS install
-path across a team. Homebrew verifies the same DMG checksum through the Durabull cask before
-installing.
+Homebrew verifies the checksum declared by the cask. If macOS blocks launch, follow the steps below.
 
-## First Launch Checklist
+## First launch
 
-1. On Apple Silicon macOS, mount the verified `.dmg` and drag Durabull to Applications.
-   The current macOS app is unsigned. If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway**, or, after verifying the download, run `xattr -dr com.apple.quarantine /Applications/Durabull.app`.
-2. Launch Durabull from your Applications folder on Apple Silicon macOS or from the Start menu on Windows.
-3. Add or select the Redis connection you want to inspect. The desktop app runs its own local API
-   and stores settings in its user-data directory; it does not require a separately hosted Durabull API.
-4. Open **Queues Dashboard** and confirm queues load successfully.
-5. Open a queue detail or failed job view to verify the desktop app can inspect live data.
+1. On macOS, mount the verified DMG and drag Durabull to Applications. The current app is unsigned.
+   If macOS blocks it, use **System Settings → Privacy & Security → Open Anyway**, or, for a verified
+   download you trust, run `xattr -dr com.apple.quarantine /Applications/Durabull.app`.
+2. Launch Durabull from Applications on macOS or the Start menu on Windows. For the portable ZIP,
+   extract it and launch the executable.
+3. Add your Redis connection and open **Queues Dashboard** to confirm queues load.
 
-## Need the Full Release Notes?
-
-For additional assets and future release notes, see the
-[latest Durabull release](https://github.com/durabullhq/durabull/releases/latest).
-
-## Next Steps
-
-1. Review [How to Use Durabull](/documentation/getting-started/how-to-use-durabull).
-2. Set up [Connection Management](/documentation/getting-started/connection-management).
-3. If you need infrastructure ownership, continue to [Installation](/documentation/self-hosting/installation).
+Continue with [How to Use Durabull](/documentation/getting-started/how-to-use-durabull) or
+[Connection Management](/documentation/getting-started/connection-management). For server
+hosting, see [Self Hosting Setup](/documentation/self-hosting/setup).

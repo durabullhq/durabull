@@ -7,36 +7,11 @@ anonymous/pseudonymous usage telemetry is collected to understand feature usage 
 product. Durabull does not collect Redis URLs, queue names, Redis key names, job data, logs, emails,
 names, organizations, or raw error messages.
 
-## Installing on macOS
+## Installation
 
 Use the [desktop installation guide](https://durabull.io/documentation/getting-started/desktop-apps)
-for downloads and SHA-256 verification. Verify the DMG and checksum from the same release before
-opening the app or changing quarantine settings.
-
-Durabull is distributed outside the Mac App Store and is not signed with an Apple Developer ID certificate. macOS will block the app on first launch with a "cannot be verified" warning.
-
-After mounting the `.dmg` and dragging Durabull to Applications, run this once in Terminal:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/Durabull.app
-```
-
-Then open Durabull normally. The command removes the quarantine attribute on the app bundle. Use it only for a download you have verified and trust.
-
-**Alternative (no Terminal required):**
-
-1. Try to open Durabull — macOS will block it.
-2. Open **System Settings → Privacy & Security**.
-3. Scroll down to find *"Durabull" was blocked* and click **Open Anyway**.
-4. Confirm the dialog that follows.
-
-### Homebrew
-
-```bash
-brew install --cask durabullhq/tap/durabull
-```
-
-> Homebrew strips the quarantine flag automatically during install — no extra steps needed.
+for macOS and Windows downloads, checksum verification, and Homebrew installation. The current
+macOS app is unsigned; the guide includes first-launch steps if macOS blocks it.
 
 ## Why this structure
 

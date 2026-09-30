@@ -16,7 +16,7 @@ interface LandingLayoutProps {
  */
 export function LandingLayout({ children, showFooter = true }: LandingLayoutProps) {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="relative min-h-screen overflow-x-clip bg-background text-foreground">
       <div className="noise-overlay" />
       <a
         href="#main-content"

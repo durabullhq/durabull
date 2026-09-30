@@ -114,7 +114,7 @@ See the [MCP OAuth operator guide](https://github.com/durabullhq/durabull/blob/m
 | `mcp:queues:pause` | `pause_queue`, `resume_queue` |
 | `mcp:failures:write` | Resolve, acknowledge, and snooze alerts |
 
-Authorize requests that omit `mcp:*` scopes are expanded to the five read scopes only. Write scopes must be requested explicitly and appear on the consent screen marked "can make changes". Delegated users receive scopes from OAuth consent. Service accounts additionally require explicit policy bindings per tool/scope.
+Authorization requests for the canonical MCP resource always include the five read scopes. Write scopes must be requested explicitly and appear on the consent screen marked "can make changes". Delegated users receive scopes from OAuth consent. Service accounts additionally require explicit policy bindings per tool/scope.
 
 **Upgrading from the initial diagnostic release:** `resolve_alert_event` now requires `mcp:failures:write`. Re-authorize the client with that scope to keep using it; all read tools continue to work with existing tokens.
 
@@ -122,7 +122,7 @@ Authorize requests that omit `mcp:*` scopes are expanded to the five read scopes
 
 Authenticated callers still receive:
 
-- **Output redaction** — sensitive keys and inline secrets stripped; `_mcpSafety.redactionCount` when redactions occur
+- **Output redaction** — known sensitive keys and URL/token patterns redacted; `_mcpSafety.redactionCount` when redactions occur
 - **Rate limits** (when `NODE_ENV=production`) — 120 HTTP requests/min on `/mcp` ingress (initialize, session, and tool RPCs); **60 calls/min per tool** per bearer (30/min for heavy tools: `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `get_failure_events`, `get_queue_metrics`, `find_job`, `get_connection_overview`, `list_scheduled_jobs`, `get_redis_health`, `get_alert_summary`)
 - **Typed errors** — tool failures return `{ error: { code, message } }` with `code` in `not_found`, `validation_error`, `conflict`, `forbidden`, `internal_error`; messages are redacted before they leave the server
 - **Audit** — best-effort `mcp_audit_event` rows for tool calls (may drop under backpressure; see runbook)
