@@ -25,10 +25,7 @@ export async function getQueueMetricsHandler(
 
   const requestedWindowMinutes =
     typeof input.windowMinutes === 'number' && Number.isFinite(input.windowMinutes)
-      ? Math.min(
-          Math.max(Math.floor(input.windowMinutes), 1),
-          MCP_MAX_METRICS_WINDOW_MINUTES
-        )
+      ? Math.min(Math.max(Math.floor(input.windowMinutes), 1), MCP_MAX_METRICS_WINDOW_MINUTES)
       : DEFAULT_METRICS_WINDOW_MINUTES
 
   const queue = await getQueue(

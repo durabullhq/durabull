@@ -37,7 +37,9 @@ function addHostFromUrl(hosts: Set<string>, rawUrl: string): void {
   }
 }
 
-export function getDefaultAllowedHosts(options: GetDefaultAllowedHostsOptions): ReadonlySet<string> {
+export function getDefaultAllowedHosts(
+  options: GetDefaultAllowedHostsOptions
+): ReadonlySet<string> {
   const { appBaseUrl, includeDevHosts = true } = options
 
   const hosts = new Set<string>()

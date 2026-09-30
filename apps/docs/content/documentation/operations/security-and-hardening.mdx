@@ -1,71 +1,89 @@
 ---
 title: Security and Hardening
-description: Security checklist and operational hardening guidance for production Durabull deployments.
+description: Set up authentication, network boundaries, persistent secrets, and production API protections.
 ---
 
-## Critical Baseline
+Durabull can change live queue data. Secure access to the dashboard, API, and connected Redis
+instances before using it with production workloads.
 
-- Run authenticated mode for internet-facing deployments.
-- Use strong `BETTER_AUTH_SECRET`.
-- Set `DURABULL_REDIS_URL_ENCRYPTION_KEY` to a 32-byte random value (`openssl rand -hex 32`).
-- Enforce HTTPS at edge/load balancer.
-- Keep `APP_BASE_URL` and `VITE_PUBLIC_APP_URL` accurate and consistent.
+## Before exposing the app
 
-## Authless Mode Safety
+- Set `DURABULL_AUTHLESS=false` and a strong `BETTER_AUTH_SECRET`.
+- Terminate HTTPS at your reverse proxy or load balancer.
+- Set `APP_BASE_URL` and `VITE_PUBLIC_APP_URL` to the public app origin.
+- Generate and preserve `DURABULL_REDIS_URL_ENCRYPTION_KEY` using `openssl rand -hex 32`.
+- Set a separate `DURABULL_SECRET_ENCRYPTION_KEY` for Linear tokens or webhook signing secrets.
+- Keep Redis and PostgreSQL reachable only from trusted services and networks.
+- Back up configuration data and encryption keys, and test recovery before relying on it.
 
-Authless mode should be treated as trusted-admin mode.
+Email/password sign-up is enabled and email verification is not required in the current auth
+configuration, including production. There is no environment toggle that enables email verification;
+restrict ingress or customize the authentication implementation if your deployment requires it.
 
-If authless is enabled:
+## Authless mode
 
-- restrict access by private network controls
-- avoid direct public ingress
-- add external auth/VPN/IP allow-listing at perimeter
+Authless mode grants owner access to everyone who can reach the app. Use it for localhost or
+isolated private deployments with external authentication, VPN, or equivalent controls.
 
-## Connection URL Safety
+`MCP_AUTHLESS_BEARER_TOKEN` protects **only `/mcp`**. It does not protect the dashboard or REST API.
+Production authless deployments require that token, and Durabull Cloud rejects authless mode.
 
-Durabull validates Redis URLs and restricts unsafe patterns during connection create/test workflows.
+## Redis URLs and network access
 
-Operational guidance:
+Durabull validates URL format and allows only `redis://` or `rediss://`. It intentionally permits
+private and internal hosts to support self-hosted infrastructure. URL validation does not prevent
+an authorized connection manager from reaching internal Redis services; enforce that boundary
+with network policy and app access controls.
 
-- grant connection management permissions sparingly
-- separate staging and production Redis credentials
-- run `bun tooling/scripts/encrypt-redis-connection-urls.ts` before rollout if any legacy plaintext rows exist
-- startup fails fast if encrypted rows cannot be decrypted with the configured key
+Use separate credentials for staging and production. Prefer TLS (`rediss://`) where supported.
+Keep self-signed-certificate overrides disabled unless required by the provider.
 
-## API Protection
+Saved connection URLs are encrypted at rest. For legacy plaintext rows, use
+`bun run db:encrypt-redis-urls` with the correct database and encryption key before rollout.
+Do not replace encryption keys without a data re-encryption plan; preserve them with backups.
 
-Built-in controls include:
+Webhook targets have a separate policy that blocks private and localhost addresses. See
+[Webhook Notifications](/documentation/integrations/webhooks#security-notes).
 
-- secure headers
-- CORS policy
-- request body size limit (`1MB`)
-- in-memory rate limiting when `NODE_ENV=production`
-- set `TRUST_PROXY=true` when the API sits behind a reverse proxy that sets forwarding headers; Durabull Cloud enables this automatically via `DURABULL_CLOUD`
+## API protections
 
-### MCP (`/mcp`)
+The app applies secure headers, a CORS policy, a `1 MiB` request-body limit, and in-memory rate
+limits in production. General API requests allow `600/minute`, authentication `50/10 seconds`,
+and connection tests `10/minute` per limiter key. Limits are skipped in development, test, and CI
+or when `DISABLE_RATE_LIMIT=true`.
 
-Durabull's hosted MCP endpoint adds layered read protections (enforced when `NODE_ENV=production`):
+Enable `TRUST_PROXY=true` only if a trusted proxy replaces forwarding headers and direct access
+to the upstream is restricted. Without trusted forwarding headers, anonymous callers can share
+a fallback rate-limit key. Durabull Cloud enables proxy trust automatically.
 
-- **Ingress rate limit:** 120 HTTP requests/minute per bearer token, or per trusted `cf-connecting-ip` / `x-real-ip` / `x-forwarded-for` when unauthenticated on all `/mcp` traffic (`TRUST_PROXY` / `DURABULL_CLOUD` required for forwarding headers)
-- **Per-tool rate limit:** 60 calls/minute per tool name by default; 30/minute for `get_job_logs`, `get_job_stacktraces`, `get_failure_events`, `get_queue_metrics`, `explain_job_failure`
-- **Output redaction:** central sanitizer removes Redis URLs, credential-like keys, and bearer tokens from tool payloads
-- **Audit events:** every MCP tool call records principal, tool, input hash, and outcome in `mcp_audit_event`
-- **Structured telemetry:** JSON `mcp_telemetry` logs for policy denies, rate limits, and tool outcomes (auth failures: use HTTP access logs until auth telemetry is wired)
+### MCP
 
-See [MCP Server](/documentation/integrations/mcp-server) for scopes, tools, and client setup. Operators: [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md).
+MCP adds OAuth bearer validation, resource binding, per-operation scopes, and organization checks.
+Service accounts also require policy bindings. Read scopes are the default consent bundle;
+write scopes must be requested explicitly.
 
-If running multiple API replicas, consider moving rate limits to a shared backend.
+- **Ingress limit:** `120/minute` per bearer or trusted client-IP key across `/mcp` traffic.
+- **Operation limits:** `60/minute` per tool or resource name; heavy tools use `30/minute`.
+  The [MCP guide](/documentation/integrations/mcp-server#safety-controls) lists the heavy tools.
+- **Output redaction:** sensitive keys, Redis URLs, and token patterns are sanitized.
+- **Audit:** tool and resource calls write `mcp_audit_event` rows on a best-effort basis. Records
+  can be dropped under backpressure; transport auth failures are not included.
+- **Logs:** `mcp_telemetry` JSON records policy denies, rate limits, and tool outcomes. Monitor
+  HTTP access logs for transport auth failures.
 
-## Secrets Handling
+Dynamic OAuth client registration at `POST /api/auth/mcp/register` is unauthenticated and
+rate-limited to `20/minute`. Monitor it at the edge. Use the
+[MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md)
+for deployment checks and incident response.
 
-- never commit `.env` with real secrets
-- rotate OAuth and auth secrets periodically
-- use platform secret stores (Render/Railway/Kubernetes secrets)
+All in-memory limits are per process. Multiple replicas increase the effective allowance; apply
+shared edge limits when you need a global quota.
 
-## Data Plane and Network
+## Secrets and operational checks
 
-- prefer private Redis/Postgres connectivity
-- limit Redis exposure to trusted subnets
-- monitor unusual connection test or auth bursts
+Keep real `.env` files out of version control and use your deployment platform's secret store.
+Plan authentication and integration credential rotation, while keeping encryption-key rotation
+separate from ordinary password changes.
 
-Screenshot placeholder: security checklist screenshot for runbooks.
+Monitor auth bursts, connection-test failures, alert delivery failures, and Redis health. Verify
+that backup and restore includes the Durabull database, necessary Redis data, and encryption keys.

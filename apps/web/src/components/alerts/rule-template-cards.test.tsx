@@ -18,9 +18,7 @@ describe('RuleTemplateCards', () => {
     )
 
     await user.click(screen.getByTestId('rule-template-failure-spike'))
-    expect(onSelectTemplate).toHaveBeenCalledWith(
-      expect.objectContaining({ key: 'failure-spike' })
-    )
+    expect(onSelectTemplate).toHaveBeenCalledWith(expect.objectContaining({ key: 'failure-spike' }))
 
     await user.click(screen.getByTestId('rule-template-scratch'))
     expect(onStartFromScratch).toHaveBeenCalledTimes(1)

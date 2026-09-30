@@ -159,13 +159,7 @@ export async function startQueueDiscovery(
 
   discoveryStateByConnection.set(connectionId, runtime)
 
-  const runPromise = runQueueDiscovery(
-    connectionId,
-    connectionUrl,
-    scanCount,
-    prefix,
-    redisOptions
-  )
+  const runPromise = runQueueDiscovery(connectionId, connectionUrl, scanCount, prefix, redisOptions)
     .catch((error) => {
       if (discoveryStateByConnection.get(connectionId) === runtime) {
         runtime.lastError = error instanceof Error ? error.message : String(error)

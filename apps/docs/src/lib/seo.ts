@@ -5,6 +5,7 @@
 
 import type { Metadata } from 'next'
 import { GITHUB_RELEASE_URL, MAC_DOWNLOAD_URL, SITE_URL } from '@/lib/config'
+
 const SITE_NAME = 'Durabull'
 const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`
 
@@ -92,11 +93,6 @@ export function createSoftwareApplicationSchema() {
       priceCurrency: 'USD',
       description: 'Free during beta',
     },
-    aggregateRating: {
-      '@type': 'AggregateRating',
-      ratingValue: '5',
-      ratingCount: '1',
-    },
   }
 }
 
@@ -167,7 +163,6 @@ export function createProductSchema() {
       price: '0',
       priceCurrency: 'USD',
       availability: 'https://schema.org/InStock',
-      priceValidUntil: '2026-12-31',
       description: 'Free during beta period',
     },
   }

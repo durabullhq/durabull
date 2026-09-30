@@ -21,8 +21,8 @@ When an alert rule routes to Linear, Durabull can create Linear issues for:
 - Redis health threshold alerts
 
 For job-failed alerts, Durabull records a durable mapping between the failed BullMQ job and
-the Linear issue. That keeps repeated alert processing from creating a new Linear issue for
-the same failed job.
+the Linear issue. Later deliveries reuse an existing mapping, reducing duplicates. Concurrent
+first deliveries can still create multiple issues; this is not exactly-once issue creation.
 
 ## How It Works
 
@@ -174,7 +174,7 @@ For job-failed Linear alerts, Durabull uses three persistence layers to avoid du
 | --- | --- |
 | Alert event dedupe | Keeps one alert event per rule and failed job subject. |
 | Delivery outbox dedupe | Keeps one delivery row per event, channel, and target. |
-| Linear job issue mapping | Keeps one Linear issue per organization, connection, queue, and job id. |
+| Linear job issue mapping | Stores one mapping per organization, connection, queue, and job id for later deliveries to reuse. |
 
 Linear issue creation does not use a provider-side idempotency key. Durabull compensates by
 checking its local job-to-issue mapping before calling Linear, then recording the Linear issue
@@ -183,6 +183,17 @@ after a successful create.
 If a Linear issue may have been created but Durabull cannot prove it persisted the local
 mapping, Durabull stops automatic retry for that delivery. That protects teams from duplicate
 Linear issues and leaves a clear manual reconciliation error for operators.
+
+## Incident resolution
+
+When an incident resolves manually or after recovery, Durabull attempts to close the linked Linear
+issue and add a resolution comment. Job incidents recover when the job is found completed;
+threshold incidents recover when a later valid sample clears the condition. An issue shared by
+several job incidents stays open while another linked incident is firing.
+
+Issue closure is best-effort in this release. Failed sync is logged, without a durable closure
+retry queue. Reconcile missed closures in Linear. Deleting a rule returns `200` and removes its
+event and delivery history; it does not guarantee external issues were closed.
 
 ## What Gets Stored
 
@@ -212,7 +223,8 @@ If alert rules save but no Linear issue appears:
 - confirm Linear is connected for the organization
 - confirm a Linear team is configured on the channel or as the organization default
 - check the alert event delivery status and last error in Durabull
-- fix any non-retryable integration error, then trigger a new alert or retry the failed job
+- fix configuration errors, then use **Retry** on the failed delivery in alert event details
+- reconcile ambiguous issue-creation errors in Linear before retrying, to avoid duplicate issues
 
 If duplicate BullMQ failures appear:
 

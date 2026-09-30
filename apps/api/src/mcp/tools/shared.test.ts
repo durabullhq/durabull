@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import type { McpResolvedConnection } from '@durabull/mcp'
 
 const canDelegatedUserAccessConnection = mock(async () => true)
 const findById = mock(async () => null)
-const findByIdUnsafe = mock(async () => null)
+const findByIdUnsafe = mock(async (): Promise<McpResolvedConnection | null> => null)
 
 mock.module('@durabull/dal', () => ({
   mcpPolicyRepository: {
@@ -25,6 +26,8 @@ describe('resolveConnectionForPrincipal', () => {
     findByIdUnsafe.mockImplementation(async () => ({
       id: 'conn-1',
       organizationId: 'org-1',
+      name: 'Test connection',
+      environment: null,
       url: 'https://redis.example.com',
       prefix: 'queues',
       allowSelfSignedCerts: false,

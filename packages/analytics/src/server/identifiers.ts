@@ -12,6 +12,9 @@ export function hashIdentifiedUserDistinctId(userId: string, secret: string): st
   return hashTelemetryIdentifier(`user:${userId}`, secret)
 }
 
-export function hashIdentifiedOrganizationDistinctId(organizationId: string, secret: string): string {
+export function hashIdentifiedOrganizationDistinctId(
+  organizationId: string,
+  secret: string
+): string {
   return hashTelemetryIdentifier(`org:${organizationId}`, secret)
 }

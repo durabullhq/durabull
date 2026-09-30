@@ -54,9 +54,7 @@ describe('ensureMcpAuthorizeScopes', () => {
   it('expands minimal mcp:discover-only requests to full phase-1 scopes', () => {
     const rewritten = ensureMcpAuthorizeScopes(authorizeUrl('openid mcp:discover'), APP_BASE_URL)
     const scopes = rewritten.searchParams.get('scope')?.split(/\s+/) ?? []
-    expect(scopes).toEqual(
-      expect.arrayContaining(['openid', ...MCP_PHASE1_SCOPES])
-    )
+    expect(scopes).toEqual(expect.arrayContaining(['openid', ...MCP_PHASE1_SCOPES]))
     expect(rewritten.searchParams.get('prompt')).toBe('consent')
   })
 

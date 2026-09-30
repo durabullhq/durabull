@@ -1,3 +1,8 @@
+/* Let long endpoints and environment variable names wrap inside prose. */
+.prose {
+  overflow-wrap: anywhere;
+}
+
 /*
  * Keep inline-code chips for prose text, but do not apply those styles
  * to fenced code blocks rendered as <pre><code>...</code></pre>.

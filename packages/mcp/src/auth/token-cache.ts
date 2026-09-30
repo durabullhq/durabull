@@ -12,10 +12,7 @@ const DEFAULT_TTL_MS = 60_000
  * In-process LRU-ish cache for validated MCP bearer tokens (per API instance).
  * Reduces repeated DB lookups on hot MCP RPC paths.
  */
-export function createMcpTokenValidationCache(options?: {
-  maxEntries?: number
-  ttlMs?: number
-}) {
+export function createMcpTokenValidationCache(options?: { maxEntries?: number; ttlMs?: number }) {
   const maxEntries = options?.maxEntries ?? DEFAULT_MAX_ENTRIES
   const ttlMs = options?.ttlMs ?? DEFAULT_TTL_MS
   const store = new Map<string, CacheEntry>()

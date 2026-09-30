@@ -21,6 +21,13 @@ Typical roles surfaced in the UI:
 
 Use least privilege by default and reserve owner/admin for operational and governance responsibilities.
 
+## Invitation email setup
+
+Self-hosted deployments need `RESEND_API_KEY` and an `EMAIL_FROM` address on a verified sender
+domain to deliver invitation emails. Creating an invitation does not guarantee email delivery
+when an email provider is unconfigured. See
+[Environment Variables](/documentation/getting-started/environment-variables#email-and-linear).
+
 ## Invitation Lifecycle
 
 Core operations:
@@ -51,7 +58,3 @@ Available actions include:
 - Keep at least two admins/owners for continuity.
 - Periodically clean stale pending invites.
 - Rotate roles when personnel changes happen.
-
-Screenshot placeholder: team page with member list and pending invitations.
-
-Video placeholder: owner invites admin, admin signs in, role validation walkthrough.

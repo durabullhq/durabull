@@ -27,7 +27,7 @@ export function V2Hero() {
         <motion.div {...fadeUp(0)}>
           <span className="v2-chip v2-mono inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[var(--v2-muted)]">
             <span className="v2-pulse-dot inline-block size-1.5 rounded-full bg-[var(--v2-accent)] text-[var(--v2-accent)]" />
-            Open source · Free during beta
+            Source-available · Free during beta
           </span>
         </motion.div>
 
@@ -44,8 +44,8 @@ export function V2Hero() {
           {...fadeUp(0.2)}
           className="mx-auto mt-6 max-w-2xl text-pretty text-base leading-relaxed text-[var(--v2-muted)] sm:text-lg"
         >
-          Monitor queues, debug failures, manage schedulers, and watch your whole fleet — with zero
-          changes to your worker code. Point Durabull at Redis and go.
+          Connect Redis to monitor queues, debug failures, and manage schedulers. Enable BullMQ
+          metrics on your workers for throughput charts.
         </motion.p>
 
         <motion.div
@@ -69,7 +69,7 @@ export function V2Hero() {
         </motion.div>
 
         <motion.p {...fadeUp(0.4)} className="v2-mono mt-7 text-[var(--v2-faint)]">
-          No credit card · BullMQ v4+ · Cloud, desktop, or self-hosted
+          Cloud, desktop, or self-hosted
         </motion.p>
       </div>
 

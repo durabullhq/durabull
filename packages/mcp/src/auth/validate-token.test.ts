@@ -32,14 +32,11 @@ describe('extractBearerToken', () => {
 
 describe('validateMcpAccessTokenClaims', () => {
   it('accepts valid scoped tokens for the canonical resource', () => {
-    const result = validateMcpAccessTokenClaims(
-      baseClaims({ resource: canonicalResourceUri }),
-      {
-        canonicalResourceUri,
-        requiredScopes: [MCP_SCOPE_DISCOVER],
-        requireResourceIndicator: true,
-      }
-    )
+    const result = validateMcpAccessTokenClaims(baseClaims({ resource: canonicalResourceUri }), {
+      canonicalResourceUri,
+      requiredScopes: [MCP_SCOPE_DISCOVER],
+      requireResourceIndicator: true,
+    })
 
     expect(result.ok).toBe(true)
   })

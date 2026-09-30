@@ -25,7 +25,7 @@ export default function ContactPage() {
           {
             title: 'Support',
             description: 'Get help with setup, troubleshooting, or account questions.',
-            items: ['hello@durabull.io', 'Response within 1 business day'],
+            items: ['hello@durabull.io'],
           },
           {
             title: 'Partnerships',

@@ -18,90 +18,87 @@
   </p>
 </div>
 
-## Project
+Durabull connects to the Redis instances used by your BullMQ applications. Monitor queue health,
+inspect jobs and logs, retry failures, manage schedulers, and understand worker connectivity
+across environments. The source is available under [Elastic License 2.0](LICENSE).
 
-Durabull is an open-source BullMQ operations platform built for teams that need visibility and control over background jobs.
+## Get started
 
-- Queue and job visibility across multiple Redis connections
-- Worker and scheduler diagnostics
-- Redis key exploration tailored for BullMQ patterns
-- Local-first development with Bun + TypeScript in a monorepo
+| Goal | Guide |
+| --- | --- |
+| Use the hosted app | [Durabull Cloud](https://app.durabull.io) |
+| Install on macOS or Windows | [Desktop apps](https://durabull.io/documentation/getting-started/desktop-apps) |
+| Run a self-hosted instance | [Installation](https://durabull.io/documentation/self-hosting/installation) and [Docker Compose](https://durabull.io/documentation/deployment/docker) |
+| Connect an AI assistant | [MCP server](https://durabull.io/documentation/integrations/mcp-server) |
+| Contribute to the project | [Contributing](CONTRIBUTING.md) |
 
-## Run locally
+## Run from source
 
-### Prerequisites
-
-- Bun `1.3+`
-- Node.js `20.19+` or `22.12+` for the Vite web app
-- Redis (local or remote)
-
-### Fastest path (authless)
+You need Bun `1.3.5`, Node.js `20.19+` or `22.12+`, and a reachable Redis instance.
 
 ```bash
-bun install
+git clone https://github.com/durabullhq/durabull.git
+cd durabull
+bun install --frozen-lockfile
+```
+
+For a minimal localhost run, start Redis if you do not already have it:
+
+```bash
+docker run -d --name durabull-dev-redis -p 127.0.0.1:6379:6379 redis:8-alpine
 bun run dev:authless
 ```
 
-Open:
+Open **http://localhost:5173**. The API runs at **http://localhost:3001/api**.
+The launcher supplies development-only auth and encryption secrets; it does not start Redis.
+An empty Redis instance has no queues until a BullMQ application creates them.
 
-- Web: `http://localhost:5173`
-- API: `http://localhost:3001/api`
+Authless mode grants owner access to every visitor. Keep it on a trusted machine or behind access
+controls. If a repository `.env` sets `DATABASE_URL`, the launcher still uses that PostgreSQL
+instance; run `DATABASE_URL= bun run dev:authless` to use local PGlite instead.
 
-> `dev:authless` is for local/private environments. Do not expose authless mode directly to the public internet.
+For a seeded PostgreSQL + Redis stack, follow the complete
+[local development guide](https://durabull.io/documentation/getting-started/local-development).
+It covers `.env` setup, secret generation, Docker ports, sample login credentials, and demo traffic.
 
-### Full local stack (Postgres + Redis + seeded data)
+## Documentation
 
-```bash
-bun docker
-bun docker:seed
-bun run dev
-```
+- [Product workflows](https://durabull.io/documentation/getting-started/how-to-use-durabull)
+- [Authentication, connections, and persistence modes](https://durabull.io/documentation/getting-started/architecture-and-modes)
+- [Environment variable reference](https://durabull.io/documentation/getting-started/environment-variables)
+- [HTTP API reference](https://durabull.io/documentation/reference/http-api)
+- [Troubleshooting](https://durabull.io/documentation/operations/troubleshooting)
 
-Optional demo traffic generator:
+To preview documentation changes, run `bun run dev:docs` and open
+**http://localhost:3002/documentation**.
 
-```bash
-bun run workload:dev
-```
+## Usage telemetry
 
-If you want API + web + workload in one terminal, use:
+Production Durabull, including desktop and self-hosted builds, collects anonymous/pseudonymous
+usage telemetry to understand feature usage and improve the product. There is no product-level
+telemetry opt-out. Configuring `POSTHOG_KEY` sends the full PostHog browser stream to your project
+and does not disable Durabull's separately sanitized stream.
 
-```bash
-bun run dev:demo
-```
+The sanitized Durabull stream excludes Redis URLs, queue names, Redis key names, job data, logs,
+emails, names, organizations, hostnames, raw URLs, search patterns, stack traces, and raw error
+messages. See the [telemetry disclosure](https://durabull.io/documentation/getting-started/environment-variables#anonymous-usage-telemetry)
+for details.
 
-## Helpful links
+## Repository map
 
-- Docs home: [`https://durabull.io/documentation`](https://durabull.io/documentation)
-- Local development: [`/documentation/getting-started/local-development`](https://durabull.io/documentation/getting-started/local-development)
-- Installation: [`/documentation/self-hosting/installation`](https://durabull.io/documentation/self-hosting/installation)
-- Environment variables: [`/documentation/getting-started/environment-variables`](https://durabull.io/documentation/getting-started/environment-variables)
-- HTTP API reference: [`/documentation/reference/http-api`](https://durabull.io/documentation/reference/http-api)
-
-## Anonymous usage telemetry
-
-Production and self-hosted Durabull collects anonymous/pseudonymous usage telemetry to understand
-feature usage and improve the product. Configuring `POSTHOG_KEY` for your own PostHog project does
-not disable Durabull telemetry, and Durabull does not provide a product-level telemetry opt-out.
-When `POSTHOG_KEY` is set, the configured PostHog project still receives the full PostHog browser
-analytics stream.
-
-Durabull does not collect Redis URLs, queue names, Redis key names, job data, logs, emails, names,
-organizations, hostnames, raw URLs, search patterns, stack traces, or raw error messages.
-
-## Useful repo guides
-
-- Desktop build and release guide: [`apps/desktop/README.md`](apps/desktop/README.md)
-- Authentication package: [`packages/auth/README.md`](packages/auth/README.md)
-- Fleet demo workload: [`packages/fleet-demo-workload/README.md`](packages/fleet-demo-workload/README.md)
-- Example environment config: [`.env.example`](.env.example)
-
-## Monorepo at a glance
-
-- `apps/api` - Bun + Hono API
-- `apps/web` - React dashboard app
-- `apps/docs` - Next.js documentation site
-- `packages/*` - shared auth, DAL, analytics, utilities, and demo workload packages
+| Path | Purpose |
+| --- | --- |
+| `apps/api` | Bun + Hono API, BullMQ operations, and MCP ingress |
+| `apps/web` | React dashboard |
+| `apps/docs` | Next.js documentation and marketing site |
+| [apps/desktop](apps/desktop/README.md) | Electron shell and desktop build guide |
+| [packages/auth](packages/auth/README.md) | Better Auth configuration and client helpers |
+| `packages/dal` | Database schema, persistence, and repositories |
+| `packages/mcp` | MCP transport, tool/resource catalogs, and output safety |
+| [packages/fleet-demo-workload](packages/fleet-demo-workload/README.md) | Continuous demo workload |
+| `tooling` | Environment configuration, scripts, and Docker files |
 
 ## License
 
-Elastic License 2.0 (ELv2). See [`LICENSE`](LICENSE).
+[Elastic License 2.0 (ELv2)](LICENSE). Review the license terms before redistributing Durabull or
+providing it as a hosted service.

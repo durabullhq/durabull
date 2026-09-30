@@ -2,6 +2,7 @@
 
 import { motion, useInView, useReducedMotion } from 'framer-motion'
 import { Check, Copy, Terminal } from 'lucide-react'
+import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { HOMEBREW_INSTALL_COMMAND } from '@/lib/config'
 import { CornerMarks, Eyebrow, Reveal } from './reveal'
@@ -39,7 +40,7 @@ function CommandTokens({ command, upTo }: { command: string; upTo: number }) {
     parts.push(
       <span key={i} className={className}>
         {visible}
-      </span>,
+      </span>
     )
   }
 
@@ -112,19 +113,23 @@ export function V2GettingStarted() {
             <h2 className="v2-h mt-4 text-3xl sm:text-4xl">Run Durabull anywhere</h2>
             <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[var(--v2-muted)]">
               Start in the hosted cloud, self-host with Docker on your own network, or install the
-              native desktop app. Your existing workers need{' '}
-              <span className="font-medium text-[var(--v2-fg)]">zero code changes</span>.
+              native desktop app. Inspection needs no worker SDK; throughput charts require worker
+              metrics. For Docker, follow the{' '}
+              <Link href="/documentation/deployment/docker" className="underline">
+                setup guide
+              </Link>{' '}
+              before running Compose.
             </p>
             <p className="mt-3 flex items-center gap-2 text-[13px] text-[var(--v2-faint)]">
               <Terminal className="size-3.5" />
-              BullMQ v4+ · Apple Silicon macOS · Windows · Docker
+              Apple Silicon macOS · Windows · Docker
             </p>
           </Reveal>
           <Reveal delay={0.12} className="space-y-3">
             <CommandBlock label="macOS (Homebrew)" command={HOMEBREW_INSTALL_COMMAND} />
             <CommandBlock
               label="Self-hosted (Docker)"
-              command="docker run -p 3000:3000 durabullhq/durabull"
+              command="docker compose --env-file .env.self-hosted -f tooling/docker/docker-compose.self-hosted.yaml up -d"
             />
           </Reveal>
         </div>
@@ -138,12 +143,12 @@ export function V2GettingStarted() {
 const cells = [
   {
     title: 'Zero integration tax',
-    body: 'Durabull connects directly to Redis and reads BullMQ data structures. No SDK, no agent, no redeploy — your workers never know it exists.',
+    body: 'Inspect queues and jobs directly through Redis without a worker SDK. Enable BullMQ worker metrics to populate throughput charts.',
     meta: 'connect redis → see queues → fix failures',
   },
   {
     title: 'Built for on-call speed',
-    body: 'Failed job → stack trace → logs → retry in one flow. Destructive operations are guarded with explicit queue-name confirmation.',
+    body: 'Failed job → stack trace → logs → retry in one flow. Purge and delete require queue-name confirmation; obliterate is a separate unguarded action.',
     meta: 'incident-first ux',
   },
   {
@@ -163,7 +168,7 @@ const cells = [
   },
   {
     title: 'Your data stays yours',
-    body: 'Encrypted connections. Job payloads stay in your Redis — Durabull reads queue metadata for display, never warehouses your data.',
+    body: 'The API and browser read job data for inspection. Use rediss:// for Redis TLS, and self-host when processing must stay within your deployment.',
     meta: 'privacy-conscious by design',
   },
 ]
@@ -208,7 +213,7 @@ const beforeRows = [
 ]
 
 const afterRows = [
-  ['03:12', 'Failure-rate alert fires → signed webhook → PagerDuty.'],
+  ['03:12', 'Failure-rate alert → signed webhook → PagerDuty middleware.'],
   ['03:14', 'On-call opens the failed job: stack trace, payload, attempts.'],
   ['03:19', 'Root cause found in logs. Bulk retry from the same screen.'],
   ['03:21', 'Linear issue auto-filed. Backlog drains. Back to bed.'],
@@ -290,7 +295,10 @@ function TimelineColumn({
                   variants={{
                     hidden: { opacity: 0 },
                     // terminal-style flicker as the timestamp lands
-                    show: { opacity: [0, 1, 0.25, 1], transition: { duration: 0.4, times: [0, 0.3, 0.6, 1] } },
+                    show: {
+                      opacity: [0, 1, 0.25, 1],
+                      transition: { duration: 0.4, times: [0, 0.3, 0.6, 1] },
+                    },
                   }}
                 >
                   {time}
@@ -330,7 +338,7 @@ export function V2Problem() {
     <section className="relative border-y border-[var(--v2-line)] bg-[var(--v2-bg-2)] py-24">
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
         <Reveal>
-          <Eyebrow>The 3 a.m. problem</Eyebrow>
+          <Eyebrow>Illustrative incident workflow</Eyebrow>
           <h2 className="v2-h mt-4 max-w-2xl text-balance text-3xl leading-tight sm:text-4xl">
             Background jobs are invisible — until they take you down.
           </h2>
@@ -342,7 +350,7 @@ export function V2Problem() {
               label="Without Durabull"
               rows={beforeRows}
               tone="var(--v2-bad)"
-              footer="Time to resolution: 5+ hours. Tools: ssh, redis-cli, grep."
+              footer="Example tools: ssh, redis-cli, log search."
               startDelay={0.3}
             />
           </Reveal>
@@ -351,7 +359,7 @@ export function V2Problem() {
               label="With Durabull"
               rows={afterRows}
               tone="var(--v2-ok)"
-              footer="Time to resolution: 9 minutes. Tools: one browser tab."
+              footer="Example tools: Durabull and your notification middleware."
               resolved
               startDelay={0.5}
             />

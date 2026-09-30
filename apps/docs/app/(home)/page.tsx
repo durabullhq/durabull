@@ -18,7 +18,7 @@ export const metadata: Metadata = createMetadata(
   {
     title: 'Durabull — See every job. Fix every failure.',
     description:
-      'The BullMQ operations platform built for on-call speed. Zero code changes: point Durabull at Redis and get fleet analytics, failure debugging, scheduler control, and proactive alerts.',
+      'Connect Durabull to Redis to inspect BullMQ jobs, debug failures, manage schedulers, and configure alerts. Enable worker metrics for throughput charts.',
     keywords: [
       'BullMQ',
       'Redis',

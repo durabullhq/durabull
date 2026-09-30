@@ -36,18 +36,18 @@ export default function AboutPage() {
         secondaryCta={{ label: 'View Product', to: '/product' }}
         sections={[
           {
-            title: 'Built for Builders',
+            title: 'Queue Operations',
             description:
-              'We are engineers who run job queues daily and wanted a dashboard we could trust.',
+              'Inspect BullMQ jobs, debug failures, and manage queues and schedulers from one dashboard.',
           },
           {
             title: 'Community-Driven',
             description: 'Durabull evolves with feedback from teams shipping BullMQ in production.',
           },
           {
-            title: 'Long-Term Vision',
+            title: 'Deployment Options',
             description:
-              'We are committed to open sourcing core components and supporting authless mode with stateful or stateless persistence options.',
+              'Durabull is source-available under ELv2. Self-host with PostgreSQL or persistent PGlite storage, or use the desktop app.',
           },
         ]}
         footerNote="Questions about Durabull? Email us at hello@durabull.io."

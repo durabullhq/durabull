@@ -4,7 +4,7 @@ const TERMS = [
   'cron schedulers',
   'fleet health score',
   'signed webhooks',
-  'zero code changes',
+  'job inspection',
   'stack traces',
   'queue discovery',
   'backlog pressure',

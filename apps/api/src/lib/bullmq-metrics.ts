@@ -442,13 +442,9 @@ export async function collectQueueMcpMetricsSummary(
       oldestPointTimestamp: series.length > 0 ? series[0].timestamp : null,
       newestPointTimestamp: series.length > 0 ? series[series.length - 1].timestamp : null,
       latestPointAgeMs:
-        series.length > 0
-          ? Math.max(Date.now() - series[series.length - 1].timestamp, 0)
-          : null,
+        series.length > 0 ? Math.max(Date.now() - series[series.length - 1].timestamp, 0) : null,
       requestedWindowCoverage:
-        requestedWindowMinutes > 0
-          ? Math.min(series.length / requestedWindowMinutes, 1)
-          : null,
+        requestedWindowMinutes > 0 ? Math.min(series.length / requestedWindowMinutes, 1) : null,
     },
     totals: {
       completedInWindow,
@@ -456,8 +452,7 @@ export async function collectQueueMcpMetricsSummary(
       finishedInWindow,
       successRateInWindow: finishedInWindow > 0 ? completedInWindow / finishedInWindow : 1,
       failureRateInWindow: finishedInWindow > 0 ? failedInWindow / finishedInWindow : 0,
-      avgCompletedPerMinuteInWindow:
-        minutesInWindow > 0 ? completedInWindow / minutesInWindow : 0,
+      avgCompletedPerMinuteInWindow: minutesInWindow > 0 ? completedInWindow / minutesInWindow : 0,
       avgFailedPerMinuteInWindow: minutesInWindow > 0 ? failedInWindow / minutesInWindow : 0,
       longestFailureStreakMinutesInWindow,
       longestCompletionStreakMinutesInWindow,

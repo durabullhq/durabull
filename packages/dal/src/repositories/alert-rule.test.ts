@@ -123,8 +123,6 @@ describe('alertRuleRepository', () => {
     const cleared = await alertRuleRepository.setMutedUntil(rule.id, TEST_ORG_ID, null)
     expect(cleared?.mutedUntil).toBeNull()
 
-    await expect(
-      alertRuleRepository.setMutedUntil(rule.id, 'other-org', until)
-    ).resolves.toBeNull()
+    await expect(alertRuleRepository.setMutedUntil(rule.id, 'other-org', until)).resolves.toBeNull()
   })
 })

@@ -42,7 +42,11 @@ function redactString(value: string, maxLength: number): { text: string; redacti
   return { text, redactions }
 }
 
-function sanitizeValue(value: unknown, depth: number, maxTextLength: number): SanitizeMcpOutputResult {
+function sanitizeValue(
+  value: unknown,
+  depth: number,
+  maxTextLength: number
+): SanitizeMcpOutputResult {
   if (value == null || depth > MAX_DEPTH) {
     return { value, redactionCount: 0 }
   }

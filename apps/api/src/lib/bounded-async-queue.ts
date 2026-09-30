@@ -1,6 +1,4 @@
-export type BoundedAsyncQueueProcessor<TInput, TResult = void> = (
-  input: TInput
-) => Promise<TResult>
+export type BoundedAsyncQueueProcessor<TInput, TResult = void> = (input: TInput) => Promise<TResult>
 
 export interface BoundedAsyncQueueState {
   dropped: number
@@ -107,10 +105,7 @@ export function createBoundedAsyncQueue<TInput, TResult = void>({
     }
   }
 
-  function enqueue(
-    input: TInput,
-    process: BoundedAsyncQueueProcessor<TInput, TResult>
-  ): boolean {
+  function enqueue(input: TInput, process: BoundedAsyncQueueProcessor<TInput, TResult>): boolean {
     if (inFlight < maxInFlight && pending.length === 0) {
       dispatch({ input, process })
       return true

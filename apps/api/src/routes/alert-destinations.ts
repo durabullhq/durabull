@@ -169,7 +169,10 @@ const app = new Hono()
     }
     if (body.config !== undefined) {
       if (existing.type === 'email') {
-        const parsed = z.object({ target: z.string().trim().email() }).strict().safeParse(body.config)
+        const parsed = z
+          .object({ target: z.string().trim().email() })
+          .strict()
+          .safeParse(body.config)
         if (!parsed.success) {
           return c.json({ error: 'Email destinations require a valid target email address.' }, 400)
         }

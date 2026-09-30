@@ -1,5 +1,10 @@
 # MCP Server Execution Playbook (Sequential PR Stack)
 
+> Historical planning and handoff record. Implementation and test results below describe the
+> work at the time they were recorded. For current behavior and release gates, use the
+> [MCP documentation index](../docs/mcp-ga-index.md) and the
+> [user guide](../apps/docs/content/documentation/integrations/mcp-server.mdx).
+
 ## Goal
 
 Ship a production-safe, hosted MCP server for Durabull that supports read-only diagnostics for jobs, failures, logs, and root-cause context, with:

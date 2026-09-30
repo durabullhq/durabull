@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const docsRoot = resolve(import.meta.dir, '../content/documentation')
@@ -36,7 +36,8 @@ const MARKETING_LINKS: MarketingLink[] = [
   {
     path: '/features',
     title: 'Features',
-    description: 'Queue monitoring, job debugging, scheduling, workers topology, and team workflows.',
+    description:
+      'Queue monitoring, job debugging, scheduling, workers topology, and team workflows.',
   },
   {
     path: '/pricing',
@@ -108,15 +109,18 @@ const OPTIONAL_LINKS: MarketingLink[] = [
   },
 ]
 
+/** Resolve a site path against the configured public origin. */
 function absoluteUrl(path: string): string {
   if (path === '/') return `${SITE_URL}/`
   return `${SITE_URL}${path}`
 }
 
+/** Map a source slug to its public route, treating index as the overview. */
 function slugToDocPath(slug: string): string {
   return slug === 'index' ? '/documentation' : `/documentation/${slug}`
 }
 
+/** Build a readable fallback title from a hyphenated slug. */
 function toTitleCase(segment: string): string {
   return segment
     .split('-')
@@ -124,6 +128,7 @@ function toTitleCase(segment: string): string {
     .join(' ')
 }
 
+/** Separate simple string frontmatter from the trimmed MDX body. */
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?/)
   if (!match) return { frontmatter: {}, body: content }
@@ -141,6 +146,7 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
   }
 }
 
+/** Remove code blocks and markup for the generated plain-text document export. */
 function stripMdxForPlainText(content: string): string {
   return content
     .replace(/```[\s\S]*?```/g, '\n')
@@ -155,6 +161,7 @@ function stripMdxForPlainText(content: string): string {
     .trim()
 }
 
+/** Recursively discover MDX sources beneath the documentation directory. */
 async function collectMdxFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true })
   const files: string[] = []
@@ -173,6 +180,7 @@ async function collectMdxFiles(dir: string): Promise<string[]> {
   return files
 }
 
+/** Load document metadata and bodies, keyed by source slug. */
 async function loadDocPages(): Promise<Map<string, DocPageMeta>> {
   const files = await collectMdxFiles(docsRoot)
   const pages = new Map<string, DocPageMeta>()
@@ -197,10 +205,12 @@ async function loadDocPages(): Promise<Map<string, DocPageMeta>> {
   return pages
 }
 
+/** Format one public link and description for the curated index. */
 function formatLink(path: string, title: string, description: string): string {
   return `- [${title}](${absoluteUrl(path)}): ${description}`
 }
 
+/** Format a document's metadata as a curated index entry. */
 function formatDocLink(page: DocPageMeta): string {
   return formatLink(slugToDocPath(page.slug), page.title, page.description)
 }
@@ -210,6 +220,7 @@ interface MetaSection {
   slugs: string[]
 }
 
+/** Group navigation slugs under the section markers in meta.json. */
 function parseMetaSections(pages: string[]): MetaSection[] {
   const sections: MetaSection[] = []
   let current: MetaSection | null = null
@@ -230,11 +241,12 @@ function parseMetaSections(pages: string[]): MetaSection[] {
   return sections
 }
 
+/** Build the curated llms.txt link index in documentation navigation order. */
 function buildLlmsTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSection[]): string {
   const lines: string[] = [
     '# Durabull',
     '',
-    '> Durabull is an open-source BullMQ management platform for monitoring queues, inspecting and retrying jobs, managing schedulers, and debugging background work in browser, desktop, and self-hosted environments.',
+    '> Durabull is a BullMQ management platform for monitoring queues, inspecting and retrying jobs, managing schedulers, and debugging background work in browser, desktop, and self-hosted environments.',
     '',
     'Use this file to find authoritative product and documentation URLs on durabull.io.',
     'Prefer linked documentation pages over marketing summaries when answering setup, operations, or API questions.',
@@ -294,6 +306,7 @@ function buildLlmsTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSect
   return lines.join('\n')
 }
 
+/** Export document bodies as plain text, appending pages absent from navigation. */
 function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSection[]): string {
   const orderedSlugs: string[] = []
 
@@ -338,6 +351,7 @@ function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: Meta
   return chunks.join('\n').trimEnd() + '\n'
 }
 
+/** Generate the curated link index and full plain-text export in public/. */
 async function main() {
   const meta = JSON.parse(await readFile(metaPath, 'utf8')) as { pages: string[] }
   const docPages = await loadDocPages()

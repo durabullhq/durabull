@@ -1,18 +1,18 @@
 # ADR-0001: MCP Security Architecture
 
-**Status:** Accepted  
-**Date:** 2026-05-28 (phase 1); amended 2026-09-09 (phase 2 capability surface)  
+**Status:** Accepted
+**Date:** 2026-05-28 (phase 1); amended 2026-09-09 (phase 2 capability surface)
 **Supersedes:** N/A (initial ADR; deployable placement amended from early drafts that referenced standalone `apps/mcp`)
 
 ## Context
 
 Durabull exposes a hosted, remote MCP server so AI clients can perform queue diagnostics (jobs, failures, logs, metrics, scheduled jobs, Redis health, alerts) and a small set of **non-destructive operations** (retry, promote, pause/resume, alert acknowledge/resolve/snooze) without direct Redis access. Remote MCP transport requires OAuth 2.1 bearer tokens, tenant isolation, and output safety because tool responses may contain customer job payloads and logs.
 
-Phase 1 (GA 2026-05) shipped read-only tools. Phase 2 (2026-09) added descriptions, annotations, structured output, resources, prompts, more read tools, and explicitly scoped write tools. Phase 2 also corrected a phase-1 defect: `resolve_alert_event` mutated state but was gated by the read scope `mcp:failures:read`.
+Phase 1 (2026-05) introduced diagnostic tools and a `resolve_alert_event` action under a read scope; production approval was tracked separately in the release checklist. Phase 2 (2026-09) added descriptions, annotations, structured output, resources, prompts, more read tools, and explicitly scoped write tools. Phase 2 also corrected a phase-1 defect: `resolve_alert_event` mutated state but was gated by the read scope `mcp:failures:read`.
 
 ## Decision
 
-### 1. Deployable placement (phase 1)
+### 1. Deployable placement
 
 MCP runs on the **same origin, same process, and same public port** as the unified Durabull API + web app.
 
@@ -24,7 +24,7 @@ MCP runs on the **same origin, same process, and same public port** as the unifi
 
 Canonical resource URI: `{APP_BASE_URL}/mcp` (no trailing slash unless client libraries require consistency everywhere).
 
-**Not in phase 1:** standalone `apps/mcp` deployable, second public MCP port (`3020`), dual-process Docker supervisors.
+**Not part of the current deployment:** standalone `apps/mcp` deployable, second public MCP port (`3020`), dual-process Docker supervisors.
 
 ### 2. Module boundaries
 
@@ -124,7 +124,7 @@ The five read scopes form the bundle injected into authorize requests that omit 
 - Single deployment simplifies TLS, OAuth resource URI, and operator docs.
 - Clear security boundary in code despite unified process.
 - Read tools remain the default grant; write capability is opt-in per scope and visible on consent.
-- One catalog drives registration, policy, rate limiting, and docs, so they cannot drift.
+- One catalog drives registration, policy, and rate limiting. Consistency tests check documented tool/scope coverage; descriptions and examples still need review against the implementation.
 
 **Negative / accepted debt**
 

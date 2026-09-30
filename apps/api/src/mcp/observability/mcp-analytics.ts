@@ -60,7 +60,9 @@ async function processMcpAnalytics(input: McpAnalyticsInput): Promise<void> {
   const shouldSkipAnonymous = shouldDedupeIdentifiedPosthogEvents() && hasIdentifiedIdentity
 
   const includeAnonymous = !shouldSkipAnonymous
-  const anonymousInstanceId = includeAnonymous ? await options.resolveAnonymousInstanceId() : undefined
+  const anonymousInstanceId = includeAnonymous
+    ? await options.resolveAnonymousInstanceId()
+    : undefined
   const secret = options.hmacSecret
   const sessionId =
     input.sessionKey ??

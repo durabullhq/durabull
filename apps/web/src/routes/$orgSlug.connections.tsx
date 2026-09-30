@@ -21,11 +21,6 @@ function LegacyConnectionsRedirect() {
   const search = create ? { create: true as const } : undefined
 
   return (
-    <Navigate
-      to="/$orgSlug/settings/connections"
-      params={{ orgSlug }}
-      search={search}
-      replace
-    />
+    <Navigate to="/$orgSlug/settings/connections" params={{ orgSlug }} search={search} replace />
   )
 }

@@ -23,7 +23,12 @@ const app = new Hono()
       MAX_PAGE_SIZE
     )
 
-    const allQueueNames = await discoverQueues(connectionId, connectionUrl, connectionPrefix, redisOptions)
+    const allQueueNames = await discoverQueues(
+      connectionId,
+      connectionUrl,
+      connectionPrefix,
+      redisOptions
+    )
     const totalQueues = allQueueNames.length
 
     // Paginate the queue names BEFORE fetching worker details
@@ -48,7 +53,13 @@ const app = new Hono()
 
     await Promise.all(
       paginatedQueueNames.map(async (queueName) => {
-        const queue = await getQueue(connectionId, connectionUrl, queueName, connectionPrefix, redisOptions)
+        const queue = await getQueue(
+          connectionId,
+          connectionUrl,
+          queueName,
+          connectionPrefix,
+          redisOptions
+        )
         const [workers, isPaused, counts] = await Promise.all([
           safeGetWorkers(queue),
           queue.isPaused(),

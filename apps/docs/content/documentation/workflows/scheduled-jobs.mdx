@@ -3,6 +3,10 @@ title: Scheduled Jobs
 description: Create, inspect, and remove BullMQ scheduled jobs across queues with cron or interval-based schedules.
 ---
 
+A scheduler is a recurring job template: BullMQ produces jobs from its cron or interval schedule,
+and your existing workers process those jobs. Durabull manages the schedule and template; it does
+not execute your application code. Make sure a worker listens to the same queue and Redis prefix.
+
 ## Global Scheduled Jobs View
 
 Route:
@@ -13,7 +17,7 @@ This page aggregates scheduled jobs across discovered queues for the active conn
 
 ## Create a Scheduled Job from a Queue
 
-Queue detail now includes a first-class scheduler workspace.
+Use queue detail to create a recurring job or edit its schedule and payload.
 
 Route:
 
@@ -53,6 +57,9 @@ to its own edit page:
 - Timezone, start/end window, and limit (when configured)
 - Recent failed count
 - Last failed timestamp
+
+Failure indicators sample the queue’s most recent failed jobs and match by job name. They are not
+a complete history or proof that a particular scheduler created each matching job.
 
 ## API Endpoints
 
@@ -105,6 +112,8 @@ Rules:
 - cron schedules can include `timezone` and `immediately`
 - interval schedules use `everyMs`
 - `startDate`, `endDate`, and `limit` are optional for either mode
+- dates accept Unix milliseconds or parseable date strings; use ISO 8601 with a timezone
+- removing a scheduler stops future repetitions; it does not cancel jobs that are already active
 
 ## Recommended Workflow
 
@@ -122,7 +131,3 @@ When a scheduled job has recent failures:
 2. Inspect failed jobs by matching job name.
 3. Review logs and stacktraces.
 4. Decide whether to keep scheduler, fix worker logic, or remove scheduler.
-
-Screenshot placeholder: grouped scheduled jobs page with failure indicators.
-
-Video placeholder: remove scheduler workflow and failure triage.

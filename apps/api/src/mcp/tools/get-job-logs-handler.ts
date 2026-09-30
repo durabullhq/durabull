@@ -25,7 +25,10 @@ export function createGetJobLogsHandler(
     )
     const job = await queue.getJob(input.jobId)
     if (!job) {
-      throw new McpToolError('not_found', `Job ${input.jobId} not found in queue ${input.queueName}.`)
+      throw new McpToolError(
+        'not_found',
+        `Job ${input.jobId} not found in queue ${input.queueName}.`
+      )
     }
 
     const pageSize = Math.min(100, Math.max(1, input.pageSize))

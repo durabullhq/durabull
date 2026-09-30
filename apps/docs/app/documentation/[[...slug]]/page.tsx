@@ -1,6 +1,8 @@
+import mdxComponents from 'fumadocs-ui/mdx'
+import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page'
+import type { MDXComponents } from 'mdx/types'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page'
 import type { ComponentType } from 'react'
 import { source } from '../../../source'
 
@@ -17,10 +19,11 @@ interface RenderableDocPage {
     description?: string
     toc?: Array<{ title: string; url: string; depth: number }>
     full?: boolean
-    body: ComponentType
+    body: ComponentType<{ components?: MDXComponents }>
   }
 }
 
+/** Render MDX with Fumadocs controls for code blocks, tables, and heading links. */
 export default async function DocumentationPage({ params }: DocumentationPageProps) {
   const { slug } = await params
   const page = source.getPage(slug) as RenderableDocPage | undefined
@@ -36,16 +39,18 @@ export default async function DocumentationPage({ params }: DocumentationPagePro
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
-        <MDX />
+        <MDX components={mdxComponents} />
       </DocsBody>
     </DocsPage>
   )
 }
 
+/** Enumerate documentation slugs for static generation. */
 export function generateStaticParams() {
   return source.generateParams()
 }
 
+/** Derive page metadata and its canonical URL from the documentation source. */
 export async function generateMetadata({ params }: DocumentationPageProps): Promise<Metadata> {
   const { slug } = await params
   const page = source.getPage(slug) as RenderableDocPage | undefined

@@ -1,126 +1,167 @@
 ---
 title: Docker Image and Compose
-description: Run Durabull with the official Docker image, then scale to a production-friendly Compose deployment.
+description: Run the official image, preserve data, configure Compose, and upgrade a self-hosted deployment.
 ---
 
-Docker is the fastest way to get a self-hosted Durabull instance running.
+The official image serves the web app, HTTP API, and MCP on one port. For a disposable localhost
+trial, follow [Installation](/documentation/self-hosting/installation). This guide covers a
+persistent setup.
 
-Production Docker images collect anonymous/pseudonymous usage telemetry to understand feature usage
-and improve Durabull. Configuring `POSTHOG_KEY` for your own PostHog project does not disable
-Durabull telemetry; your project still receives the full PostHog browser analytics stream. Durabull
-does not collect Redis URLs, queue names, Redis key names, job data, logs, emails, names,
-organizations, or raw error messages.
+## Choose an image
 
-## 1) Choose an Image Tag
+Images are published as `ghcr.io/durabullhq/durabull:<version>`. Use `latest` for evaluation; pin
+a published version tag or image digest for production. Find version tags in the
+[container registry](https://github.com/durabullhq/durabull/pkgs/container/durabull).
 
-Use the published image from GHCR:
+## Start the maintained Compose stack
 
-- `ghcr.io/durabullhq/durabull:<version>`
+The repository includes `tooling/docker/docker-compose.self-hosted.yaml`. It starts Durabull and
+Redis, enables authentication, and stores both services' data in named volumes. Redis is accessible
+only on the internal Docker network. The default database is PGlite.
 
-For local evaluation, `latest` is fine. For production, pin an explicit version tag.
-
-## 2) Quick Run with `docker run`
-
-This starts Redis and Durabull on a shared Docker network:
+From the repository root, generate two **separate** secrets:
 
 ```bash
-docker network create durabull
-
-docker run -d --name durabull-redis --network durabull redis:8-alpine
-
-docker run --rm -p 127.0.0.1:3000:3000 --network durabull \
-  -e DURABULL_AUTHLESS=true \
-  -e MCP_AUTHLESS_BEARER_TOKEN="$(openssl rand -hex 32)" \
-  -e DURABULL_ENV_CONNECTIONS=true \
-  -e DURABULL_REDIS_URL_ENCRYPTION_KEY=$(openssl rand -hex 32) \
-  -e DURABULL_REDIS_URL_MAIN=redis://durabull-redis:6379 \
-  -e DURABULL_REDIS_URL_MAIN_ENVIRONMENT=development \
-  -e DURABULL_REDIS_URL_DEFAULT=MAIN \
-  -e APP_BASE_URL=http://localhost:3000 \
-  -e VITE_PUBLIC_APP_URL=http://localhost:3000 \
-  ghcr.io/durabullhq/durabull:latest
+openssl rand -hex 32
+openssl rand -hex 32
 ```
 
-This quick-start uses **authless mode for local evaluation only** on **localhost** (`127.0.0.1:3000`). Authless grants owner-level access to the **entire** web UI and API, not only `/mcp`. `MCP_AUTHLESS_BEARER_TOKEN` protects MCP only. Never expose authless on LAN/WAN without perimeter controls.
+Create a private `.env.self-hosted` file and paste the generated values:
 
-Production images use `NODE_ENV=production` and require `MCP_AUTHLESS_BEARER_TOKEN` when authless is enabled. For internet-facing deploys, use Compose with `DURABULL_AUTHLESS=false` and `BETTER_AUTH_SECRET`.
+```dotenv
+BETTER_AUTH_SECRET=<first-generated-value>
+DURABULL_REDIS_URL_ENCRYPTION_KEY=<second-generated-value>
+APP_BASE_URL=http://localhost:3000
+VITE_PUBLIC_APP_URL=http://localhost:3000
+DURABULL_APP_PORT=127.0.0.1:3000
+DURABULL_AUTHLESS=false
+```
 
-Open `http://localhost:3000`, then confirm:
-
-- `GET /api/health` returns `status: ok`
-- `GET /api/app/config` returns JSON instead of `500`
-- the queue dashboard loads for your default connection
-- MCP discovery: `GET /.well-known/oauth-protected-resource` returns `resource` = `http://localhost:3000/mcp`
-
-MCP uses the **same port** as the app (`3000`). Do not publish a separate MCP port.
-
-## 3) Docker Compose (Durabull + Redis)
-
-Use the maintained Compose file at `tooling/docker/docker-compose.self-hosted.yaml`:
-
-- Single app port (`3000` by default) serves API, web, and MCP at `{APP_BASE_URL}/mcp`
-- Defaults `DURABULL_AUTHLESS` to `false` (OAuth production path)
-- For local authless evaluation only, set `DURABULL_AUTHLESS=true` and a strong `MCP_AUTHLESS_BEARER_TOKEN` when `NODE_ENV=production`
-- Redis is **not** published to the host in the shipped Compose file (internal network only). Do not add `6379:6379` in production
-
-Start it with:
+The placeholders must be replaced; dotenv files do not execute shell expressions. Keep this file
+outside version control, preserve the secrets across restarts, and back them up securely.
+`DURABULL_APP_PORT=127.0.0.1:3000` binds the shipped port mapping to localhost for initial setup.
 
 ```bash
-export DURABULL_REDIS_URL_ENCRYPTION_KEY="$(openssl rand -hex 32)"
-export BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
-# Optional for production: export APP_BASE_URL=https://your-domain.example
-docker compose -f tooling/docker/docker-compose.self-hosted.yaml up -d
+docker compose --env-file .env.self-hosted \
+  -f tooling/docker/docker-compose.self-hosted.yaml up -d
 ```
 
-Then validate:
+Open **http://localhost:3000**, create an account, and set up an organization. The default `MAIN`
+connection points at the empty Redis service in this stack. Connect your BullMQ application to
+that Redis instance, or set `DURABULL_REDIS_URL_MAIN` to an existing Redis URL reachable from the
+container and recreate the app service.
 
-- `GET /api/health`
-- `GET /api/app/config`
-- `GET /api/auth/get-session` (authless mode) or OAuth sign-in (default Compose)
-- `GET /.well-known/oauth-protected-resource` (MCP resource URI)
-- Full MCP smoke (staging/local only): see [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md)
+Environment-managed connections are the Compose default. To manage them in the UI, set
+`DURABULL_ENV_CONNECTIONS=false`. Redis URLs are encrypted in either mode, so keep the encryption key.
 
-## 4) Persistence Notes
+## Configure a public deployment
 
-When `DATABASE_URL` is unset, PGlite data is file-backed inside the container.
+Set `APP_BASE_URL` and `VITE_PUBLIC_APP_URL` to the public HTTPS origin. Keep
+`DURABULL_AUTHLESS=false`, put Durabull behind a reverse proxy, and review
+[Security and Hardening](/documentation/operations/security-and-hardening).
 
-- Default location: `/app/data/pglite`
-- For persistence, mount `/app/data` or set `DURABULL_PGLITE_DIR` to a mounted path.
-- Named Docker volumes are the simplest option for local deployments.
-- If you bind-mount a host directory, ensure it is writable by container UID/GID `1000:1000` (`bun`).
+The reverse proxy must route `/`, `/api/*`, `/mcp`, and `/.well-known/*` to the same app and preserve
+the public `Host`. Set `TRUST_PROXY=true` in the container only when the proxy controls and replaces
+forwarding headers. The shipped Compose file does not forward this variable automatically.
 
-### Older Image Workaround
+### Add settings not included in the Compose file
 
-If you are pinned to an older image that fails with `EACCES: permission denied, mkdir '/app/data'` or returns `500` for `/api/app/config`, use one of these temporary workarounds:
+Compose's `--env-file` supplies values for `${...}` substitutions. It does **not** pass every variable
+in the file into the container. The maintained stack forwards only the variables listed in its
+`environment` block.
 
-- upgrade to an image that includes the writable `/app/data` fix
-- set `DURABULL_PGLITE_DIR` to a writable path inside the container for ephemeral evaluation
-- switch to PostgreSQL mode with `DATABASE_URL`
+For PostgreSQL, email, Linear, custom queue prefixes, or other additional settings, add them to
+that block or create an override file. For example, `compose.override.yaml` at the repository root:
 
-## 5) Production Notes
+```yaml
+services:
+  durabull:
+    environment:
+      DATABASE_URL: "${DATABASE_URL:?set the PostgreSQL connection URL}"
+      TRUST_PROXY: "${TRUST_PROXY:-false}"
+      DURABULL_REDIS_URL_MAIN_PREFIX: "${DURABULL_REDIS_URL_MAIN_PREFIX:-bull}"
+```
 
-For internet-facing deployments:
+Add the corresponding values to `.env.self-hosted`, then include both files:
 
-- set `DURABULL_AUTHLESS=false`
-- configure `BETTER_AUTH_SECRET`
-- configure `DURABULL_REDIS_URL_ENCRYPTION_KEY`
-- set correct `APP_BASE_URL` and `VITE_PUBLIC_APP_URL` (required for MCP OAuth resource `{APP_BASE_URL}/mcp`)
-- review [Security and Hardening](/documentation/operations/security-and-hardening)
-- use PostgreSQL (`DATABASE_URL`) for stateful team environments
-- after deploy, follow [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md) (use staging for `mcp:e2e`)
+```bash
+docker compose --env-file .env.self-hosted \
+  -f tooling/docker/docker-compose.self-hosted.yaml \
+  -f compose.override.yaml up -d
+```
 
-### MCP on self-hosted Docker
+Changing `DATABASE_URL` selects a different database; it does not migrate existing PGlite data to
+PostgreSQL. Plan any data migration separately.
 
-- Endpoint: `{APP_BASE_URL}/mcp` on port `3000` (or `DURABULL_APP_PORT`)
-- **Production (internet-facing):** `DURABULL_AUTHLESS=false`, OAuth, required `APP_BASE_URL`
-- Authless is for isolated lab networks only — not a substitute for OAuth on production ingress
-- Details: [MCP Server](/documentation/integrations/mcp-server)
+## Preserve data
 
-## 6) Build Image from Source
+The shipped stack mounts `durabull_data` at `/app/data` and `redis_data` at `/data`.
 
-Source Dockerfile path:
+- PGlite data lives at `/app/data/pglite` by default.
+- If using `docker run`, mount a named volume at `/app/data`, or set `DURABULL_PGLITE_DIR` to a
+  writable mounted directory.
+- Host bind mounts must be writable by UID/GID `1000:1000` (`bun`).
+- `docker compose down` preserves named volumes. `docker compose down -v` deletes them.
+- Back up the Durabull database, Redis data as needed, and encryption keys. A different encryption
+  key cannot decrypt previously saved connection URLs or integration secrets.
 
-- `tooling/docker/Dockerfile`
-- `tooling/docker/docker-compose.self-hosted.yaml`
+For multiple API replicas, use a shared PostgreSQL database rather than sharing a PGlite directory.
 
-It uses `turbo prune` and multi-stage builds for optimized production images.
+## Verify the deployment
+
+```bash
+curl -fsS http://localhost:3000/api/health
+curl -fsS http://localhost:3000/api/app/config
+curl -fsS http://localhost:3000/.well-known/oauth-protected-resource
+```
+
+Use your public origin for remote checks. Confirm the MCP `resource` equals `{APP_BASE_URL}/mcp`,
+then sign in and verify the selected Redis connection in the dashboard. Health alone does not
+validate Redis connectivity.
+
+MCP uses the same app port; no additional port is needed. For OAuth smoke tests and incident
+triage, see the [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md).
+Run its automated `mcp:e2e` checks only against disposable local or staging databases.
+
+## Upgrade and roll back
+
+1. Back up the database, encryption keys, and relevant Redis data.
+2. Set `DURABULL_IMAGE` in `.env.self-hosted` to the target published image tag.
+3. Pull and recreate the app with the **same Compose files used for deployment**. For the
+   PostgreSQL override above:
+
+   ```bash
+   docker compose --env-file .env.self-hosted \
+     -f tooling/docker/docker-compose.self-hosted.yaml \
+     -f compose.override.yaml pull durabull
+   docker compose --env-file .env.self-hosted \
+     -f tooling/docker/docker-compose.self-hosted.yaml \
+     -f compose.override.yaml up -d durabull
+   ```
+
+   If you use only the base stack, omit `-f compose.override.yaml` from both commands. Include
+   any other override files in their original order. Omitting an override can change the database
+   or other settings; Compose does not remember files from previous invocations.
+
+4. Repeat the health, login, and queue checks.
+
+Database migrations run during initialization. Rolling back the image does not undo migrations;
+confirm schema compatibility or restore a compatible backup before downgrading.
+
+## Build an image from source
+
+From the repository root:
+
+```bash
+docker build -f tooling/docker/Dockerfile -t durabull:local .
+```
+
+Set `DURABULL_IMAGE=durabull:local` to use it with Compose. The Dockerfile prunes the monorepo and
+uses separate dependency, build, and runtime stages.
+
+## Usage telemetry
+
+Production images collect anonymous/pseudonymous usage telemetry. Configuring your own PostHog
+project does not disable Durabull telemetry. Read the
+[telemetry disclosure](/documentation/getting-started/environment-variables#anonymous-usage-telemetry)
+for the collected fields and configuration.

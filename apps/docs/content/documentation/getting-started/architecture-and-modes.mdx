@@ -1,60 +1,60 @@
 ---
 title: Architecture and Modes
-description: Understand Durabull architecture, persistence behavior, and the two deployment toggles.
+description: Understand how authentication, Redis connection management, and database persistence work together.
 ---
 
-## Runtime Architecture
+Durabull has an API (`apps/api`), a React dashboard (`apps/web`), a documentation site (`apps/docs`),
+and an Electron desktop shell (`apps/desktop`). The API performs BullMQ operations against your
+Redis instances and stores Durabull configuration in PostgreSQL or PGlite.
 
-Durabull is a monorepo with three runtime surfaces:
+Production containers and desktop builds serve the dashboard from the API process. MCP runs
+in that same process at `/mcp`. In local development, Vite serves the dashboard and proxies
+requests to the API.
 
-- `apps/api`: Hono API server, auth/session middleware, BullMQ-backed operations
-- `apps/web`: TanStack Router SPA for operational queue management
-- `apps/docs`: Next.js documentation and marketing site
+## Choose authentication and connection management
 
-In production container mode, the API server can also serve the built web assets.
+The two settings are independent:
 
-## The Two Core Toggles
+| Setting | `true` | `false` or unset |
+| --- | --- | --- |
+| `DURABULL_AUTHLESS` | Bypass login and initialize a local user with owner access | Authenticate users through Better Auth |
+| `DURABULL_ENV_CONNECTIONS` | Define Redis connections with `DURABULL_REDIS_URL_*`; disable connection create/edit/delete | Manage Redis connections through the UI and API |
 
-Durabull uses two independent environment toggles:
+Environment-managed connections are still synchronized into the Durabull database for each
+organization. The toggle changes who manages the connection definitions; it does not eliminate
+the database or make queue/job actions read-only.
 
-1. `DURABULL_AUTHLESS`
-2. `DURABULL_ENV_CONNECTIONS`
+## Choose persistence
 
-These toggles can be mixed to get different operational behavior.
+| Configuration | Database | What to preserve |
+| --- | --- | --- |
+| `DATABASE_URL` set | PostgreSQL | Database backups and encryption keys |
+| `DATABASE_URL` empty or unset | File-backed PGlite | PGlite data directory and encryption keys |
 
-### `DURABULL_AUTHLESS`
+PGlite defaults to `data/pglite` **relative to the API process's working directory**. With
+`bun run dev`, that is normally `apps/api/data/pglite`; in the production container it is
+`/app/data/pglite`. Set `DURABULL_PGLITE_DIR` for an explicit location.
 
-- `true`: bypasses login and auto-creates an owner context for a local authless organization
-- `false` or unset: Better Auth is active and users authenticate normally
+The API reports `stateless: true` for PGlite mode. That field means an external PostgreSQL server
+is unnecessary; PGlite still stores users, settings, and alert state on disk. Mount persistent
+storage for containers and use PostgreSQL when multiple API replicas need to share state.
 
-### `DURABULL_ENV_CONNECTIONS`
+BullMQ jobs, logs, schedulers, and queue metrics remain in Redis. Backing up the Durabull database
+does not back up those jobs.
 
-- `true`: Redis connections are sourced from `DURABULL_REDIS_URL_*` env vars and connection CRUD is read-only
-- `false` or unset: connections are managed in the database and editable in the UI/API
+## Common configurations
 
-## Persistence Mode
-
-Persistence mode is determined by `DATABASE_URL`:
-
-- `DATABASE_URL` set: PostgreSQL mode
-- `DATABASE_URL` unset: local PGlite mode (`./data/pglite` by default)
-
-## Common Combinations
-
-| Use Case | Authless | Connections | Persistence |
+| Use case | Authentication | Connections | Persistence |
 | --- | --- | --- | --- |
-| Fast local admin | `true` | Env | PGlite |
-| Authenticated without Postgres | `false` | Env | PGlite |
-| Full team deployment | `false` | DB | PostgreSQL |
-| Stateful with env-only connections | `false` | Env | PostgreSQL |
+| Local evaluation | Authless | Environment-managed | PGlite |
+| Desktop app defaults | Authless | UI-managed | PGlite in Electron's user-data directory |
+| Small authenticated instance | Better Auth | Either source | PGlite with persistent storage |
+| Team deployment | Better Auth | Either source | PostgreSQL |
 
-## How This Affects Product Behavior
+Authless mode gives everyone who can reach the app owner access. Use authenticated mode for
+internet-facing deployments. Team invitations require authenticated users.
 
-- Team and invitation workflows require authenticated mode.
-- Connection create/edit/delete requires DB-managed connections.
-- Authless mode should only be used in trusted/private networks.
-- Env-driven connections are deterministic and reproducible across deploys.
-
-Screenshot placeholder: architecture diagram (API, Web, Redis, DB, auth components).
-
-Video placeholder: mode matrix walkthrough and recommended selection flow.
+Check the active configuration with `GET /api/mode`. Continue with
+[Authentication and Organizations](/documentation/getting-started/authentication-and-organizations),
+[Connection Management](/documentation/getting-started/connection-management), or
+[Environment Variables](/documentation/getting-started/environment-variables).
