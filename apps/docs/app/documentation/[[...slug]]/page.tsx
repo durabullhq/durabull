@@ -1,6 +1,8 @@
+import mdxComponents from 'fumadocs-ui/mdx'
+import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page'
+import type { MDXComponents } from 'mdx/types'
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
-import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/page'
 import type { ComponentType } from 'react'
 import { source } from '../../../source'
 
@@ -17,7 +19,7 @@ interface RenderableDocPage {
     description?: string
     toc?: Array<{ title: string; url: string; depth: number }>
     full?: boolean
-    body: ComponentType
+    body: ComponentType<{ components?: MDXComponents }>
   }
 }
 
@@ -36,7 +38,7 @@ export default async function DocumentationPage({ params }: DocumentationPagePro
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
-        <MDX />
+        <MDX components={mdxComponents} />
       </DocsBody>
     </DocsPage>
   )
