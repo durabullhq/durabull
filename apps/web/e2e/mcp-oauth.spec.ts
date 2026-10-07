@@ -148,15 +148,24 @@ async function mcpPingWithToken(accessToken: string) {
       jsonrpc: MCP_JSON_RPC_VERSION,
       id: 0,
       method: 'tools/call',
-      params: { name: 'ping', arguments: {} },
+      params: {
+        name: 'ping',
+        arguments: {},
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': MCP_CURRENT_PROTOCOL_VERSION,
+          'io.modelcontextprotocol/clientCapabilities': {},
+          'io.modelcontextprotocol/clientInfo': { name: 'playwright-mcp-oauth', version: '1.0.0' },
+        },
+      },
     }),
   })
-  expect(directPing.status).toBe(200)
+  const directText = await directPing.text()
+  expect(directPing.status, `direct ping failed: ${directPing.status} ${directText}`).toBe(200)
   expect(directPing.headers.get('mcp-session-id')).toBeNull()
-  expect(directPing.headers.get('Mcp-Protocol-Version')).toBe(MCP_CURRENT_PROTOCOL_VERSION)
-  const directBody = parseSseJson(await directPing.text()) as {
-    result?: { content?: Array<{ text?: string }> }
+  const directBody = parseSseJson(directText) as {
+    result?: { resultType?: string; content?: Array<{ text?: string }> }
   }
+  expect(directBody.result?.resultType).toBe('complete')
   expect(directBody.result?.content?.[0]?.text).toContain('pong')
 
   const initResponse = await fetch(CANONICAL_MCP_RESOURCE, {
