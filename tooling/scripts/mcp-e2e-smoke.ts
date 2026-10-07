@@ -186,7 +186,7 @@ async function main() {
   }
   record(
     'Legacy initialize (stateless)',
-    initRes.ok && initBody.result?.serverInfo?.name === 'durabull-mcp',
+    initRes.ok && sessionId === undefined && initBody.result?.serverInfo?.name === 'durabull-mcp',
     `HTTP ${initRes.status}, session=${sessionId ?? 'none'}`
   )
 

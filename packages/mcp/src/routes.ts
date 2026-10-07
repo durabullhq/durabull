@@ -30,6 +30,7 @@ export interface CreateMcpRoutesOptions {
   allowHostnameWithoutPort?: boolean
 }
 
+/** Serve stateless MCP requests after Host, Origin, body-size, and optional bearer validation. */
 export function createMcpRoutes(options: CreateMcpRoutesOptions): Hono {
   // A fresh server per request supports the 2026 protocol and stateless legacy clients.
   // No bearer token, principal or domain data is retained in a transport session.

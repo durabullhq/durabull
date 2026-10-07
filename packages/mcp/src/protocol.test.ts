@@ -172,7 +172,7 @@ describe('MCP protocol interoperability', () => {
         expect(html.mimeType).toBe(MCP_APP_MIME_TYPE)
         expect(html._meta?.['openai/widgetDomain']).toBe(origin)
         expect(html._meta?.ui).toMatchObject({ csp: { connectDomains: [], resourceDomains: [] } })
-        expect((html._meta?.ui as { domain?: string }).domain).toBeUndefined()
+        expect((html._meta?.ui as { domain?: string } | undefined)?.domain).toBeUndefined()
         expect('text' in html && html.text).toContain('<!doctype html>')
         const prompts = await client.listPrompts()
         expect(prompts.prompts.length).toBe(4)

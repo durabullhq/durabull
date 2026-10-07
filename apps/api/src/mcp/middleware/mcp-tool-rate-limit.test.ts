@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import { mcpPolicyRepository } from '@durabull/dal'
 import { Hono } from 'hono'
 
 import {
@@ -9,11 +10,25 @@ import {
 
 describe('createMcpToolRateLimitMiddleware', () => {
   beforeEach(() => {
+    // Rate limiting must not need a database or inherit another suite's repository mocks.
+    spyOn(mcpPolicyRepository, 'createAuditEvent').mockImplementation(async (input) => ({
+      ...input,
+      id: 'audit-test',
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      organizationId: input.organizationId ?? null,
+      connectionId: input.connectionId ?? null,
+      denialReason: input.denialReason ?? null,
+      inputHash: input.inputHash ?? null,
+      responseClass: input.responseClass ?? null,
+      requiredScopes: input.requiredScopes.join(' '),
+    }))
     resetMcpToolRateLimitStoreForTests()
     setMcpToolRateLimitBypassForTests(true)
   })
 
   afterEach(() => {
+    mock.restore()
     resetMcpToolRateLimitStoreForTests()
     setMcpToolRateLimitBypassForTests(false)
   })
@@ -52,5 +67,8 @@ describe('createMcpToolRateLimitMiddleware', () => {
     }
 
     expect(lastStatus).toBe(429)
+    expect(mcpPolicyRepository.createAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ responseClass: 'rate_limited', toolName: 'get_job_logs' })
+    )
   })
 })

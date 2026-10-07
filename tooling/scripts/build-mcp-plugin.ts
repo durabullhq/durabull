@@ -4,11 +4,13 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 const repo = resolve(import.meta.dir, '../..')
 const canonical = resolve(repo, 'plugins/durabull')
 
+/** Check resolved path containment before allowing plugin output to be copied. */
 function contains(parent: string, child: string): boolean {
   const path = relative(parent, child)
   return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path))
 }
 
+/** Accept credential-free /mcp HTTPS endpoints, with HTTP permitted only on loopback. */
 export function validateEndpoint(input: string): string {
   const url = new URL(input)
   if (
@@ -25,6 +27,7 @@ export function validateEndpoint(input: string): string {
   return url.href
 }
 
+/** Generate host overlays from the canonical manifest, or verify their exact freshness in check mode. */
 export async function buildPlugin(
   options: { endpoint?: string; out?: string; check?: boolean } = {}
 ) {

@@ -395,7 +395,7 @@ async function main() {
   const delegatedInit = await initialize(baseUrl, delegatedFullToken)
   add(
     'Delegated initialize',
-    delegatedInit.res.ok && delegatedInit.body.result?.serverInfo?.name === 'durabull-mcp',
+    delegatedInit.res.ok && delegatedInit.sessionId === undefined && delegatedInit.body.result?.serverInfo?.name === 'durabull-mcp',
     `status=${delegatedInit.res.status}, session=${delegatedInit.sessionId ?? 'none'}`
   )
   if (!delegatedInit.res.ok) throw new Error('Delegated init failed')
@@ -403,7 +403,7 @@ async function main() {
   const serviceInit = await initialize(baseUrl, serviceToken)
   add(
     'Service initialize',
-    serviceInit.res.ok && serviceInit.body.result?.serverInfo?.name === 'durabull-mcp',
+    serviceInit.res.ok && serviceInit.sessionId === undefined && serviceInit.body.result?.serverInfo?.name === 'durabull-mcp',
     `status=${serviceInit.res.status}, session=${serviceInit.sessionId ?? 'none'}`
   )
   if (!serviceInit.res.ok) throw new Error('Service init failed')
@@ -411,7 +411,7 @@ async function main() {
   const deniedServiceInit = await initialize(baseUrl, deniedServiceToken)
   add(
     'Denied-service initialize',
-    deniedServiceInit.res.ok && deniedServiceInit.body.result?.serverInfo?.name === 'durabull-mcp',
+    deniedServiceInit.res.ok && deniedServiceInit.sessionId === undefined && deniedServiceInit.body.result?.serverInfo?.name === 'durabull-mcp',
     `status=${deniedServiceInit.res.status}, session=${deniedServiceInit.sessionId ?? 'none'}`
   )
   if (!deniedServiceInit.res.ok) throw new Error('Denied service init failed')
@@ -419,7 +419,7 @@ async function main() {
   const lowScopeInit = await initialize(baseUrl, delegatedLowScopeToken)
   add(
     'Low-scope initialize',
-    lowScopeInit.res.ok && lowScopeInit.body.result?.serverInfo?.name === 'durabull-mcp',
+    lowScopeInit.res.ok && lowScopeInit.sessionId === undefined && lowScopeInit.body.result?.serverInfo?.name === 'durabull-mcp',
     `status=${lowScopeInit.res.status}, session=${lowScopeInit.sessionId ?? 'none'}`
   )
   if (!lowScopeInit.res.ok) throw new Error('Low-scope init failed')

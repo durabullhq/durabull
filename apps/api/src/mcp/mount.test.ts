@@ -26,12 +26,13 @@ import { mountMcpIngress } from './mount'
 const mutableEnv = env as {
   APP_BASE_URL?: string
   DURABULL_AUTHLESS?: boolean
+  DURABULL_REDIS_URL_ENCRYPTION_KEY?: string
 }
 
 const originalAppBaseUrl = mutableEnv.APP_BASE_URL
 const originalAuthless = mutableEnv.DURABULL_AUTHLESS
 const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
-const originalRedisUrlEncryptionKey = process.env.DURABULL_REDIS_URL_ENCRYPTION_KEY
+const originalRedisUrlEncryptionKey = mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY
 
 const authlessAuthorization = `Bearer ${DEFAULT_AUTHLESS_MCP_BEARER_TOKEN}`
 const mcpResource = 'http://localhost:3000/mcp'
@@ -48,7 +49,8 @@ describe('api MCP ingress', () => {
     process.env.DURABULL_PGLITE_DIR = tempPgliteDir
     mutableEnv.APP_BASE_URL = 'http://localhost:3000'
     mutableEnv.DURABULL_AUTHLESS = true
-    process.env.DURABULL_REDIS_URL_ENCRYPTION_KEY = TEST_REDIS_ENCRYPTION_KEY
+    // The validated env object is a snapshot; changing process.env cannot update it.
+    mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY = TEST_REDIS_ENCRYPTION_KEY
     await closeDb()
     ;({ app } = await createApiApp({ enableLogging: false }))
   })
@@ -64,11 +66,7 @@ describe('api MCP ingress', () => {
       delete process.env.DURABULL_PGLITE_DIR
     }
 
-    if (originalRedisUrlEncryptionKey) {
-      process.env.DURABULL_REDIS_URL_ENCRYPTION_KEY = originalRedisUrlEncryptionKey
-    } else {
-      delete process.env.DURABULL_REDIS_URL_ENCRYPTION_KEY
-    }
+    mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY = originalRedisUrlEncryptionKey
 
     if (tempPgliteDir) {
       await rm(tempPgliteDir, { recursive: true, force: true })

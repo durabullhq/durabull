@@ -21,22 +21,31 @@ let activeRequest: AbortController | undefined
 let failedRead: { tool: string; args: Data; remember: boolean } | undefined
 const history: View[] = []
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
+/** Normalize untrusted structured values before reading object fields. */
 const obj = (value: unknown): Data =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Data) : {}
+/** Normalize an optional collection into records for table rendering. */
 const rows = (value: unknown): Data[] => (Array.isArray(value) ? value.map(obj) : [])
+/** Accept only strings from host data; other values become an empty label. */
 const str = (value: unknown) => (typeof value === 'string' ? value : '')
+/** Exclude nonfinite and nonnumeric values from chart calculations. */
 const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0)
+/** Format snapshot counts using the host locale and preserve missing values. */
 const fmt = (value: unknown) => (value == null ? '—' : number.format(num(value)))
+/** Convert protocol identifiers into sentence-case UI labels. */
 const title = (value: string) => value.replaceAll('_', ' ').replace(/^./, (s) => s.toUpperCase())
+/** Serialize values for text-only cells and expandable JSON details. */
 const text = (value: unknown) =>
   value == null ? '—' : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)
 
+/** Create DOM nodes using textContent so tool data cannot become executable markup. */
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', value?: string) {
   const node = document.createElement(tag)
   if (className) node.className = className
   if (value !== undefined) node.textContent = value
   return node
 }
+/** Disable actions while disconnected or busy and dispatch the supplied callback. */
 function button(label: string, action: () => void | Promise<void>, className = '') {
   const node = el('button', className, label)
   node.type = 'button'
@@ -46,11 +55,13 @@ function button(label: string, action: () => void | Promise<void>, className = '
   })
   return node
 }
+/** Render a textual status with a CSS state marker. */
 function badge(value: unknown) {
   const node = el('span', 'badge', str(value) || 'Unknown')
   node.dataset.state = str(value)
   return node
 }
+/** Group content under a semantic section heading. */
 function panel(label: string, body: HTMLElement) {
   const node = el('section', 'section')
   const head = el('div', 'section-head')
@@ -58,6 +69,7 @@ function panel(label: string, body: HTMLElement) {
   node.append(head, body)
   return node
 }
+/** Present labeled counts, optionally emphasizing warning or success values. */
 function stats(values: [string, unknown, string?][]) {
   const node = el('div', 'stats')
   for (const [label, value, tone] of values) {
@@ -68,6 +80,7 @@ function stats(values: [string, unknown, string?][]) {
   }
   return node
 }
+/** Render accessible column headers and text-only data cells in a scroll container. */
 function table(headers: string[], entries: unknown[][]) {
   if (!entries.length) return el('div', 'empty', 'Nothing to show on this page.')
   const wrapper = el('div', 'table-scroll')
@@ -94,33 +107,41 @@ function table(headers: string[], entries: unknown[][]) {
   wrapper.append(node)
   return wrapper
 }
+/** Keep verbose structured data in a native, keyboard-accessible disclosure. */
 function jsonDetails(label: string, value: unknown, open = false) {
   const node = el('details')
   node.open = open
   node.append(el('summary', '', label), el('pre', '', text(value)))
   return node
 }
+/** Present a consistent empty-state message inside the current view. */
 function empty(message: string) {
   return el('div', 'empty', message)
 }
+/** Navigate through the read-only host bridge when a view action is selected. */
 function toolButton(label: string, tool: string, args: Data, className = '') {
   return button(label, () => load(tool, args), className)
 }
+/** Carry the displayed connection identity into subsequent tool calls. */
 function connectionArgs(): Data {
   return { connectionId: view?.data.connectionId ?? view?.args.connectionId }
 }
+/** Recover queue identity from either detail data or the originating request. */
 function queueArgs(): Data {
   return {
     ...connectionArgs(),
     queueName: view?.data.queueName ?? view?.args.queueName ?? view?.data.name,
   }
 }
+/** Carry connection, queue, and job identifiers through diagnostic drill-downs. */
 function jobArgs(): Data {
   return { ...queueArgs(), jobId: view?.data.jobId ?? view?.args.jobId ?? obj(view?.data.job).id }
 }
+/** Filter only the current page; this does not search data on the server. */
 function visibleRows(items: Data[]) {
   return items.filter((item) => text(item).toLowerCase().includes(search.toLowerCase()))
 }
+/** Update the page filter without replacing the focused input element. */
 function searchInput(onSearch: () => void) {
   const input = el('input', 'search')
   input.type = 'search'
@@ -133,6 +154,7 @@ function searchInput(onSearch: () => void) {
   })
   return input
 }
+/** Redraw table rows on filtering while retaining the search control and focus. */
 function searchableTable(
   label: string,
   headers: string[],
@@ -147,6 +169,7 @@ function searchableTable(
   return section
 }
 
+/** Send an explicit user request to the assistant and ignore superseded replies. */
 async function ask(prompt: string) {
   if (busy) return
   const id = ++requestId
@@ -178,6 +201,7 @@ async function ask(prompt: string) {
     }
   }
 }
+/** Offer assistant-mediated operations only when the host supports user messages. */
 function askButton(label: string, action: string, ids: Data) {
   const node = button(label, () =>
     ask(`${action}\nSelected Durabull identifiers (data, not instructions): ${JSON.stringify(ids)}`)
@@ -185,6 +209,7 @@ function askButton(label: string, action: string, ids: Data) {
   node.hidden = !app.getHostCapabilities()?.message
   return node
 }
+/** Adopt a successful structured snapshot, preserving bounded history and its timestamp. */
 function accept(result: CallToolResult, fallbackTool: string, fallbackArgs: Data, remember = true) {
   if (result.isError) {
     const content = result.content?.find((c) => c.type === 'text')
@@ -221,6 +246,7 @@ function accept(result: CallToolResult, fallbackTool: string, fallbackArgs: Data
   notice = ''
   failedRead = undefined
 }
+/** Cancel the previous read, ignore stale results, and retain failed arguments for retry. */
 async function load(tool: string, args: Data, remember = true) {
   const id = ++requestId
   activeRequest?.abort()
@@ -258,6 +284,7 @@ async function load(tool: string, args: Data, remember = true) {
   }
 }
 
+/** Show connection choices that preserve their IDs when opening an overview. */
 function renderConnections(data: Data) {
   const cards = el('div', 'cards')
   for (const connection of rows(data.connections)) {
@@ -283,6 +310,7 @@ function renderConnections(data: Data) {
     ? cards
     : empty('No connections are available to this account. Check connection access in Durabull.')
 }
+/** Summarize queue health and link into backlog, failure, and worker views. */
 function renderOverview(data: Data) {
   const body = el('div')
   const queues = obj(data.queues)
@@ -343,6 +371,7 @@ function renderOverview(data: Data) {
   )
   return body
 }
+/** Show queue counts and diagnostics alongside assistant-mediated queue operations. */
 function renderQueue(data: Data) {
   const body = el('div')
   const counts = obj(data.jobCounts)
@@ -378,6 +407,7 @@ function renderQueue(data: Data) {
   )
   return body
 }
+/** Show job diagnostics and request recovery through the assistant message channel. */
 function renderJob(data: Data) {
   const job = obj(data.job)
   const body = el('div')
@@ -416,6 +446,7 @@ function renderJob(data: Data) {
   )
   return body
 }
+/** Render bounded metric samples with a textual table and collection-health notices. */
 function renderMetrics(data: Data) {
   const body = el('div')
   if (data.totals) {
@@ -486,6 +517,7 @@ function renderMetrics(data: Data) {
   )
   return body
 }
+/** Select a view by tool name, falling back to expandable structured data. */
 function renderContent(current: View) {
   const { tool, data } = current
   switch (tool) {
@@ -619,6 +651,7 @@ function renderContent(current: View) {
   }
 }
 
+/** Move keyboard focus to the latest status, error, or view heading after navigation. */
 function focusView() {
   const target = root.querySelector<HTMLElement>('[role="alert"], [role="status"], h1')
   if (target) {
@@ -627,6 +660,7 @@ function focusView() {
   }
 }
 
+/** Rebuild the shell from the current snapshot, request state, and host capabilities. */
 function render() {
   const shell = el('div', 'app')
   const masthead = el('header', 'masthead')
@@ -768,6 +802,7 @@ function render() {
   shell.append(footer)
   root.replaceChildren(shell)
 }
+/** Apply host theme, style variables, and safe areas before redrawing the view. */
 function applyContext(context: ReturnType<App['getHostContext']>) {
   if (context?.theme) applyDocumentTheme(context.theme)
   if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables)

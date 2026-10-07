@@ -13,6 +13,7 @@ export interface CreateMcpServerOptions {
   toolHandlers?: RegisterToolsOptions
 }
 
+/** Create one request-scoped server with the shared tool, resource, prompt, and app catalogs. */
 export function createMcpServer({
   version,
   toolHandlers,

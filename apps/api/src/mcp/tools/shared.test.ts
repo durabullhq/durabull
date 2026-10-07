@@ -1,24 +1,20 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import type { McpResolvedConnection } from '@durabull/mcp'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import { mcpPolicyRepository, redisConnectionRepository } from '@durabull/dal'
+import { resolveConnectionForPrincipal } from '../connections/resolve-connection'
 
 const canDelegatedUserAccessConnection = mock(async () => true)
 const findById = mock(async () => null)
-const findByIdUnsafe = mock(async (): Promise<McpResolvedConnection | null> => null)
-
-mock.module('@durabull/dal', () => ({
-  mcpPolicyRepository: {
-    canDelegatedUserAccessConnection,
-  },
-  redisConnectionRepository: {
-    findById,
-    findByIdUnsafe,
-  },
-}))
-
-const { resolveConnectionForPrincipal } = await import('../connections/resolve-connection')
+const findByIdUnsafe = mock(redisConnectionRepository.findByIdUnsafe)
 
 describe('resolveConnectionForPrincipal', () => {
+  afterEach(() => mock.restore())
+
   beforeEach(() => {
+    spyOn(mcpPolicyRepository, 'canDelegatedUserAccessConnection').mockImplementation(
+      canDelegatedUserAccessConnection
+    )
+    spyOn(redisConnectionRepository, 'findById').mockImplementation(findById)
+    spyOn(redisConnectionRepository, 'findByIdUnsafe').mockImplementation(findByIdUnsafe)
     canDelegatedUserAccessConnection.mockReset()
     canDelegatedUserAccessConnection.mockImplementation(async () => true)
     findById.mockReset()
@@ -31,6 +27,9 @@ describe('resolveConnectionForPrincipal', () => {
       url: 'https://redis.example.com',
       prefix: 'queues',
       allowSelfSignedCerts: false,
+      isDefault: false,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
     }))
   })
 

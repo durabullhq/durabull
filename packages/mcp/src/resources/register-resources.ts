@@ -25,6 +25,7 @@ export interface RegisterResourcesOptions {
 
 const RESOURCE_PAGE_SIZE = 100
 
+/** Fail during registration if a resource lacks its shared policy and metadata definition. */
 function requireResource(name: string): McpResourceDefinition {
   const definition = getMcpResourceDefinition(name)
   if (!definition) {
@@ -33,6 +34,7 @@ function requireResource(name: string): McpResourceDefinition {
   return definition
 }
 
+/** Extract one required URI-template value or report invalid protocol parameters. */
 function variable(value: string | string[] | undefined): string {
   const single = Array.isArray(value) ? value[0] : value
   if (!single) {
@@ -44,6 +46,7 @@ function variable(value: string | string[] | undefined): string {
   return single
 }
 
+/** Redact resource snapshots and report redaction counts before serializing content. */
 function jsonContents(uri: URL, definition: McpResourceDefinition, value: unknown) {
   const { value: sanitized, redactionCount } = sanitizeMcpOutput(value)
   const payload: Record<string, unknown> =
@@ -65,6 +68,7 @@ function jsonContents(uri: URL, definition: McpResourceDefinition, value: unknow
   }
 }
 
+/** Audit resource reads and translate handler failures into safe protocol errors. */
 async function readResource(
   definition: McpResourceDefinition,
   uri: URL,
@@ -99,6 +103,7 @@ async function readResource(
   }
 }
 
+/** Report a resource whose backing handler is not installed on this server. */
 function unavailable(name: string): never {
   throw new ProtocolError(
     ProtocolErrorCode.MethodNotFound,
@@ -106,6 +111,7 @@ function unavailable(name: string): never {
   )
 }
 
+/** Describe the catalogs and effective scopes visible in the current request context. */
 export function buildServerInfo(version: string) {
   const context = getMcpRequestContext()
   return {
@@ -138,6 +144,7 @@ export function buildServerInfo(version: string) {
   }
 }
 
+/** Register addressable snapshots backed by the same handlers as tool reads. */
 export function registerResources(server: McpServer, options: RegisterResourcesOptions): void {
   const handlers = options.toolHandlers
 
