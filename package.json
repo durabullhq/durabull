@@ -49,7 +49,10 @@
     "release": "release-it",
     "test:e2e": "cd apps/web && bun run test:e2e",
     "test:e2e:ui": "cd apps/web && bun run test:e2e:ui",
-    "test:e2e:debug": "cd apps/web && bun run test:e2e:debug"
+    "test:e2e:debug": "cd apps/web && bun run test:e2e:debug",
+    "mcp:app": "bun run --cwd packages/mcp build:app",
+    "mcp:plugin": "bun tooling/scripts/build-mcp-plugin.ts",
+    "mcp:check": "bun run --cwd packages/mcp check:app && bun tooling/scripts/build-mcp-plugin.ts --check && bun test packages/mcp tooling/scripts/build-mcp-plugin.test.ts && bun test apps/api/src/mcp"
   },
   "engines": {
     "node": ">=20.19.0 || >=22.12.0"

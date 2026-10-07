@@ -1,15 +1,18 @@
+import { createMcpHandler } from '@modelcontextprotocol/server'
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
 import { createHostValidationMiddleware } from './middleware/host-validation'
-import type { McpRequestContext } from './request-context'
+import { type McpRequestContext, runWithMcpRequestContext } from './request-context'
+import { createMcpServer } from './server/create-mcp-server'
 import type { RegisterToolsOptions } from './tools/register-tools'
-import { createMcpSessionRegistry } from './transport/session-registry'
 
 export interface CreateMcpRoutesOptions {
   /** App version reported in MCP server metadata. */
   version: string
+  /** Dedicated OpenAI widget origin. Standard ui.domain stays host-managed for Claude. */
+  widgetDomain?: string
   /** Host allowlist (required — set at API ingress from APP_BASE_URL). */
   allowedHosts: ReadonlySet<string>
   /** CORS origins for /mcp. */
@@ -28,13 +31,35 @@ export interface CreateMcpRoutesOptions {
 }
 
 export function createMcpRoutes(options: CreateMcpRoutesOptions): Hono {
-  const registry = createMcpSessionRegistry({
-    version: options.version,
-    allowedHosts: options.allowedHosts,
-    serverOptions: { toolHandlers: options.toolHandlers },
-  })
+  // A fresh server per request supports the 2026 protocol and stateless legacy clients.
+  // No bearer token, principal or domain data is retained in a transport session.
+  const handler = createMcpHandler(
+    () =>
+      createMcpServer({
+        version: options.version,
+        toolHandlers: options.toolHandlers,
+        widgetDomain: options.widgetDomain,
+      }),
+    { legacy: 'stateless', maxRequestBodySize: 1024 * 1024, maxSubscriptions: 0 }
+  )
 
   const routes = new Hono()
+
+  // CORS controls browser access to responses; it does not reject hostile origins.
+  routes.use('*', async (c, next) => {
+    const origin = c.req.header('origin')
+    if (origin && !options.corsOrigins.includes(origin)) {
+      return c.json({ error: 'Forbidden', message: 'Origin is not allowed' }, 403)
+    }
+    await next()
+  })
+
+  routes.use(
+    '*',
+    createHostValidationMiddleware(options.allowedHosts, {
+      allowHostnameWithoutPort: options.allowHostnameWithoutPort,
+    })
+  )
 
   routes.use(
     '*',
@@ -47,16 +72,12 @@ export function createMcpRoutes(options: CreateMcpRoutesOptions): Hono {
         'Accept',
         'mcp-session-id',
         'Mcp-Protocol-Version',
+        'Mcp-Method',
+        'Mcp-Name',
+        'Mcp-Param-Uri',
         'Last-Event-ID',
       ],
-      exposeHeaders: ['mcp-session-id', 'WWW-Authenticate'],
-    })
-  )
-
-  routes.use(
-    '*',
-    createHostValidationMiddleware(options.allowedHosts, {
-      allowHostnameWithoutPort: options.allowHostnameWithoutPort,
+      exposeHeaders: ['Mcp-Protocol-Version', 'WWW-Authenticate', 'Retry-After'],
     })
   )
 
@@ -73,8 +94,16 @@ export function createMcpRoutes(options: CreateMcpRoutesOptions): Hono {
     routes.use('*', middleware)
   }
 
-  // GET / POST / DELETE delegated to Streamable HTTP transport (@hono/mcp).
-  routes.all('/', async (c) => registry.handleRequest(c, options.requestContextResolver?.(c)))
+  routes.all('/', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    c.header('X-Accel-Buffering', 'no')
+    // The policy cache uses null for failed JSON parsing. Let the SDK reparse the
+    // untouched raw request in that case so syntax errors keep JSON-RPC -32700.
+    const parsedBody = c.get('mcpRequestJsonBody' as never) ?? undefined
+    return runWithMcpRequestContext(options.requestContextResolver?.(c), () =>
+      handler.fetch(c.req.raw, { parsedBody })
+    )
+  })
 
   return routes
 }

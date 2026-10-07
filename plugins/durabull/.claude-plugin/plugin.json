@@ -1,0 +1,19 @@
+{
+  "name": "durabull",
+  "version": "1.0.0",
+  "description": "Inspect BullMQ queues, diagnose failed jobs, and perform explicitly scoped recovery operations with Durabull.",
+  "author": {
+    "name": "Durabull",
+    "url": "https://durabull.io"
+  },
+  "homepage": "https://durabull.io/documentation/integrations/mcp-server",
+  "repository": "https://github.com/durabullhq/durabull",
+  "license": "Elastic-2.0",
+  "keywords": [
+    "bullmq",
+    "redis",
+    "queues",
+    "observability",
+    "mcp"
+  ]
+}

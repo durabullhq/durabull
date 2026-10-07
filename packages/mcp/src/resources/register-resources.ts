@@ -1,5 +1,9 @@
-import { type McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
+import {
+  type McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
+  ResourceTemplate,
+} from '@modelcontextprotocol/server'
 
 import { MCP_SERVER_NAME } from '../constants'
 import { MCP_PROMPT_CATALOG } from '../prompts/prompt-catalog'
@@ -32,7 +36,10 @@ function requireResource(name: string): McpResourceDefinition {
 function variable(value: string | string[] | undefined): string {
   const single = Array.isArray(value) ? value[0] : value
   if (!single) {
-    throw new McpError(ErrorCode.InvalidParams, 'Resource URI is missing a required segment.')
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
+      'Resource URI is missing a required segment.'
+    )
   }
   return single
 }
@@ -81,17 +88,22 @@ async function readResource(
       connectionId,
       responseClass: 'tool_error',
     })
-    if (error instanceof McpError) throw error
+    if (error instanceof ProtocolError) throw error
     const toolError = toToolError(error)
-    throw new McpError(
-      toolError.code === 'internal_error' ? ErrorCode.InternalError : ErrorCode.InvalidParams,
+    throw new ProtocolError(
+      toolError.code === 'internal_error'
+        ? ProtocolErrorCode.InternalError
+        : ProtocolErrorCode.InvalidParams,
       `${toolError.code}: ${toolError.message}`
     )
   }
 }
 
 function unavailable(name: string): never {
-  throw new McpError(ErrorCode.MethodNotFound, `Resource ${name} is not available on this server.`)
+  throw new ProtocolError(
+    ProtocolErrorCode.MethodNotFound,
+    `Resource ${name} is not available on this server.`
+  )
 }
 
 export function buildServerInfo(version: string) {

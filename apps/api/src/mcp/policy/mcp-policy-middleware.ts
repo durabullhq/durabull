@@ -1,6 +1,8 @@
+import { buildWwwAuthenticateChallenge } from '@durabull/mcp/auth'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { hashMcpToolInput, writeMcpAuditEventNonBlocking } from '../audit/mcp-audit'
+import { getMcpAuthConfig } from '../auth/mcp-auth-config'
 import type { McpSession } from '../auth/mcp-session-middleware'
 import { resolveConnectionForPrincipal } from '../connections/resolve-connection'
 import {
@@ -89,7 +91,7 @@ function principalToAnalyticsIdentity(principal: McpPrincipal): McpAnalyticsIden
       }
 }
 
-export function createMcpPolicyMiddleware() {
+export function createMcpPolicyMiddleware(appBaseUrl?: string) {
   return createMiddleware(async (c, next) => {
     if (c.req.method !== 'POST') {
       return next()
@@ -185,6 +187,17 @@ export function createMcpPolicyMiddleware() {
     })
 
     if (!decision.granted) {
+      if (appBaseUrl && decision.denialReason?.startsWith('missing_scopes')) {
+        c.header(
+          'WWW-Authenticate',
+          buildWwwAuthenticateChallenge({
+            resourceMetadataUrl: getMcpAuthConfig(appBaseUrl).resourceMetadataUrl,
+            error: 'insufficient_scope',
+            errorDescription: 'Reconnect Durabull with the required scopes for this operation.',
+            scope: [...new Set(['mcp:discover', ...decision.requiredScopes])].join(' '),
+          })
+        )
+      }
       writeMcpAuditEventNonBlocking({
         correlationId: decision.correlationId,
         principalType: decision.principalType,

@@ -12,7 +12,7 @@ import '@durabull/env'
  */
 
 import { getDb, oauthAccessToken, user } from '@durabull/dal'
-import { MCP_PROTOCOL_VERSION } from '@durabull/mcp'
+import { MCP_LEGACY_PROTOCOL_VERSION as MCP_PROTOCOL_VERSION } from '@durabull/mcp'
 import { MCP_JSON_RPC_VERSION, parseSseJson } from '@durabull/mcp/testing'
 
 const baseUrl = process.env.APP_BASE_URL ?? 'http://localhost:3001'
@@ -180,17 +180,17 @@ async function main() {
     },
     { token: validToken }
   )
-  const sessionId = initRes.headers.get('mcp-session-id')
+  const sessionId = initRes.headers.get('mcp-session-id') ?? undefined
   const initBody = parseSseJson(await initRes.text()) as {
     result?: { serverInfo?: { name?: string } }
   }
   record(
-    'Initialize + session',
-    initRes.ok && !!sessionId && initBody.result?.serverInfo?.name === 'durabull-mcp',
+    'Legacy initialize (stateless)',
+    initRes.ok && initBody.result?.serverInfo?.name === 'durabull-mcp',
     `HTTP ${initRes.status}, session=${sessionId ?? 'none'}`
   )
 
-  if (sessionId) {
+  if (initRes.ok) {
     await mcpPost(
       { jsonrpc: MCP_JSON_RPC_VERSION, method: 'notifications/initialized' },
       { token: validToken, sessionId }
@@ -228,7 +228,7 @@ async function main() {
       { jsonrpc: MCP_JSON_RPC_VERSION, id: 4, method: 'tools/list', params: {} },
       { token: validToken }
     )
-    record('Session required', noSessionRes.status === 400, `HTTP ${noSessionRes.status}`)
+    record('Stateless tools/list', noSessionRes.status === 200, `HTTP ${noSessionRes.status}`)
   }
 
   const badHost = await fetch(`${baseUrl}/mcp`, {

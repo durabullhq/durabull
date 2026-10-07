@@ -11,7 +11,7 @@ Durabull exposes a [Model Context Protocol (MCP)](https://modelcontextprotocol.i
 
 Example: `https://app.durabull.io/mcp`
 
-MCP runs inside the unified Durabull API process. There is no separate MCP port or container.
+MCP runs inside the unified Durabull API process. The server implements protocol **2026-07-28** with the stable TypeScript SDK **v2**, and supports older Streamable HTTP clients through a stateless `initialize` handshake. No transport session ID is required. Clients should reconnect after upgrading; session GET/DELETE return `405`.
 
 ## Connect your assistant
 
@@ -24,6 +24,20 @@ MCP runs inside the unified Durabull API process. There is no separate MCP port 
 In Durabull Cloud, use `https://app.durabull.io/mcp`. For a self-hosted instance, use its public
 app origin. Clients that support remote OAuth can handle discovery and registration; the
 [authentication section](#authentication) describes the protocol for custom clients.
+
+## Claude, ChatGPT, and Codex
+
+Connect the HTTPS endpoint above through Claude's connector settings or ChatGPT's **Plugins → Add custom MCP server**, then complete OAuth. Start with “Show my Durabull connections.” In MCP Apps hosts, `list_connections` opens the queue explorer with connection health, queues, jobs, logs, alerts and metrics. It supports light/dark themes, pagination, refresh and fullscreen when the host allows it. ChatGPT Work also exposes sidebar and conversation-panel entrypoints on supported surfaces. **Claude Code is text-only**; the tools and bundled skills work there without the embedded UI.
+
+The portable plugin and Claude compatibility package live together at `plugins/durabull`. Install locally in Claude Code with `claude --plugin-dir ./plugins/durabull`. For Codex/ChatGPT desktop, use the repository marketplace at `.agents/plugins/marketplace.json`. These files are source packages, not claims of public-directory approval.
+
+For self-hosting, generate both platform configurations from the same endpoint:
+
+```sh
+bun run mcp:plugin --endpoint https://queues.example.com/mcp --out /tmp/durabull-plugin
+```
+
+The shared skills cover setup, queue triage, and user-requested recovery. UI buttons labeled “Ask to…” send a request to the assistant; data-changing tools retain their dedicated scopes and host approval flow. No browser credentials or direct Redis access are used.
 
 ## What MCP provides
 
@@ -77,6 +91,8 @@ Write tools are annotated as non-destructive. State-sensitive actions refuse the
 
 Resources use `durabull://` URIs and are authorized with the same scopes as tools: `durabull://server` (catalog and granted scopes), `durabull://connections`, `durabull://connections/{connectionId}/queues`, `durabull://connections/{connectionId}/queues/{queueName}`, `durabull://connections/{connectionId}/alerts`.
 
+`ui://durabull/queue-explorer-v1.html` is the static MCP App resource (`text/html;profile=mcp-app`). It requires authenticated discovery access and contains no customer data. Every data request from the app passes the normal tool authorization, redaction, rate limits and audit path.
+
 Prompts package common workflows: `triage_failed_jobs`, `investigate_queue_backlog`, `alert_activity_review`, `connection_health_check`.
 
 ## Authentication
@@ -96,7 +112,7 @@ Canonical resource URI:
 {APP_BASE_URL}/mcp
 ```
 
-`APP_BASE_URL` must match the public origin clients use to reach `/mcp` (including port in local dev).
+`APP_BASE_URL` must match the public origin clients use to reach `/mcp` (including port in local dev). Missing operation scopes return `403` with a `WWW-Authenticate: Bearer` insufficient-scope challenge. Reconnect with the required scopes; tenant and service-account policy denials cannot be fixed by adding scopes alone.
 
 See the [MCP OAuth operator guide](https://github.com/durabullhq/durabull/blob/main/docs/mcp-oauth-operator.md) for HTTP status semantics and discovery endpoints.
 
@@ -123,7 +139,7 @@ Authorization requests for the canonical MCP resource always include the five re
 Authenticated callers still receive:
 
 - **Output redaction** — known sensitive keys and URL/token patterns redacted; `_mcpSafety.redactionCount` when redactions occur
-- **Rate limits** (when `NODE_ENV=production`) — 120 HTTP requests/min on `/mcp` ingress (initialize, session, and tool RPCs); **60 calls/min per tool** per bearer (30/min for heavy tools: `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `get_failure_events`, `get_queue_metrics`, `find_job`, `get_connection_overview`, `list_scheduled_jobs`, `get_redis_health`, `get_alert_summary`)
+- **Rate limits** (when `NODE_ENV=production`) — 120 HTTP requests/min on `/mcp` ingress (discovery and tool RPCs); **60 calls/min per tool** per bearer (30/min for heavy tools: `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `get_failure_events`, `get_queue_metrics`, `find_job`, `get_connection_overview`, `list_scheduled_jobs`, `get_redis_health`, `get_alert_summary`)
 - **Typed errors** — tool failures return `{ error: { code, message } }` with `code` in `not_found`, `validation_error`, `conflict`, `forbidden`, `internal_error`; messages are redacted before they leave the server
 - **Audit** — best-effort `mcp_audit_event` rows for tool calls (may drop under backpressure; see runbook)
 

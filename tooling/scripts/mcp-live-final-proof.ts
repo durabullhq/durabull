@@ -15,7 +15,7 @@ import {
   redisDiscoveredQueueRepository,
   user,
 } from '@durabull/dal'
-import { MCP_PROTOCOL_VERSION } from '@durabull/mcp'
+import { MCP_LEGACY_PROTOCOL_VERSION as MCP_PROTOCOL_VERSION } from '@durabull/mcp'
 import { MCP_JSON_RPC_VERSION, parseSseJson } from '@durabull/mcp/testing'
 import { QueueEvents, Worker } from 'bullmq'
 
@@ -82,7 +82,7 @@ async function initialize(baseUrl: string, token: string) {
 async function callTool(
   baseUrl: string,
   token: string,
-  sessionId: string,
+  sessionId: string | undefined,
   name: string,
   args: Record<string, unknown>
 ) {
@@ -395,34 +395,34 @@ async function main() {
   const delegatedInit = await initialize(baseUrl, delegatedFullToken)
   add(
     'Delegated initialize',
-    delegatedInit.res.ok && !!delegatedInit.sessionId,
+    delegatedInit.res.ok && delegatedInit.body.result?.serverInfo?.name === 'durabull-mcp',
     `status=${delegatedInit.res.status}, session=${delegatedInit.sessionId ?? 'none'}`
   )
-  if (!delegatedInit.sessionId) throw new Error('Delegated init failed')
+  if (!delegatedInit.res.ok) throw new Error('Delegated init failed')
 
   const serviceInit = await initialize(baseUrl, serviceToken)
   add(
     'Service initialize',
-    serviceInit.res.ok && !!serviceInit.sessionId,
+    serviceInit.res.ok && serviceInit.body.result?.serverInfo?.name === 'durabull-mcp',
     `status=${serviceInit.res.status}, session=${serviceInit.sessionId ?? 'none'}`
   )
-  if (!serviceInit.sessionId) throw new Error('Service init failed')
+  if (!serviceInit.res.ok) throw new Error('Service init failed')
 
   const deniedServiceInit = await initialize(baseUrl, deniedServiceToken)
   add(
     'Denied-service initialize',
-    deniedServiceInit.res.ok && !!deniedServiceInit.sessionId,
+    deniedServiceInit.res.ok && deniedServiceInit.body.result?.serverInfo?.name === 'durabull-mcp',
     `status=${deniedServiceInit.res.status}, session=${deniedServiceInit.sessionId ?? 'none'}`
   )
-  if (!deniedServiceInit.sessionId) throw new Error('Denied service init failed')
+  if (!deniedServiceInit.res.ok) throw new Error('Denied service init failed')
 
   const lowScopeInit = await initialize(baseUrl, delegatedLowScopeToken)
   add(
     'Low-scope initialize',
-    lowScopeInit.res.ok && !!lowScopeInit.sessionId,
+    lowScopeInit.res.ok && lowScopeInit.body.result?.serverInfo?.name === 'durabull-mcp',
     `status=${lowScopeInit.res.status}, session=${lowScopeInit.sessionId ?? 'none'}`
   )
-  if (!lowScopeInit.sessionId) throw new Error('Low-scope init failed')
+  if (!lowScopeInit.res.ok) throw new Error('Low-scope init failed')
 
   const toolsList = await mcpPost(
     baseUrl,

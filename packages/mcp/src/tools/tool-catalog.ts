@@ -631,7 +631,7 @@ export const MCP_TOOL_CATALOG: readonly McpToolDefinition[] = [
   // -- Connections & queues -------------------------------------------------
   defineTool({
     name: 'list_connections',
-    title: 'List connections',
+    title: 'Queue explorer',
     description:
       'List the Redis connections the caller may access, with name, environment, BullMQ key prefix, and organization. Start here: every other tool needs a connectionId from this list.',
     requiredScopes: [MCP_SCOPE_JOBS_READ],

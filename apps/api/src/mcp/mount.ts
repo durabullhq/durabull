@@ -49,17 +49,19 @@ export async function mountMcpIngress() {
   assertMcpAuthConfiguration()
 
   const appBaseUrl = env.APP_BASE_URL ?? 'http://localhost:5173'
+  const appOrigin = new URL(appBaseUrl).origin
   const isProduction = env.NODE_ENV === 'production'
   const authMiddleware = await createMcpSessionMiddleware(appBaseUrl)
-  const policyMiddleware = createMcpPolicyMiddleware()
+  const policyMiddleware = createMcpPolicyMiddleware(appBaseUrl)
   const toolRateLimitMiddleware = createMcpToolRateLimitMiddleware()
 
   return createMcpRoutes({
     version: APP_VERSION,
+    widgetDomain: appOrigin,
     allowedHosts: isProduction
       ? getProductionAllowedHosts(appBaseUrl)
       : getDefaultAllowedHosts({ appBaseUrl, includeDevHosts: true }),
-    corsOrigins: [appBaseUrl],
+    corsOrigins: [appOrigin],
     allowHostnameWithoutPort: !isProduction,
     toolHandlers: {
       // Connections & queues

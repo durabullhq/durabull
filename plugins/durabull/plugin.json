@@ -1,0 +1,28 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "durabull",
+  "version": "1.0.0",
+  "description": "Inspect BullMQ queues, diagnose failed jobs, and perform explicitly scoped recovery operations with Durabull.",
+  "author": { "name": "Durabull", "url": "https://durabull.io" },
+  "homepage": "https://durabull.io/documentation/integrations/mcp-server",
+  "repository": "https://github.com/durabullhq/durabull",
+  "license": "Elastic-2.0",
+  "keywords": ["bullmq", "redis", "queues", "observability", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "interface": {
+        "displayName": "Durabull",
+        "shortDescription": "BullMQ diagnostics and scoped job recovery",
+        "longDescription": "Explore queues, workers, job failures, logs, schedules, alerts and Redis health. Use the queue explorer in compatible hosts and diagnostic workflows in agentic clients.",
+        "developerName": "Durabull",
+        "category": "Developer Tools",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://durabull.io",
+        "brandColor": "#1B6C4E",
+        "logo": "./assets/icon.svg",
+        "defaultPrompt": ["Check the health of my queues.", "Investigate why this job failed.", "Show queues with a growing backlog."]
+      }
+    }
+  }
+}
