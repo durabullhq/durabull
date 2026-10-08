@@ -508,3 +508,12 @@ summary {
     min-height: 44px;
   }
 }
+
+.job-search { margin: 0 0 20px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.job-search input { flex: 1; min-width: 0; }
+.job-search button { flex-shrink: 0; }
+.detail-grid { margin: 0; }
+.badge[data-state="snoozed"], .badge[data-state="suppressed"] { color: var(--warning); }
+.badge[data-state="disabled"] { color: var(--muted); }
+
+select { margin-left: 10px; padding: 8px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-height: 44px; }

@@ -20,7 +20,7 @@ export interface ParsedMcpResourceRead {
 
 /**
  * A policy-relevant JSON-RPC operation: either a `tools/call` or a `resources/read`.
- * Both are authorized by the same policy engine and rate-limited per operation name.
+ * Both are authorized by the same policy engine and rate-limited by authenticated work class.
  */
 export type ParsedMcpPolicyOperation =
   | {

@@ -445,7 +445,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
   app.route('/', mountMcpWellKnownRoutes(appBaseUrl))
 
   // MCP Streamable HTTP ingress (before SPA/static fallbacks in index.ts)
-  app.use('/mcp', mcpRateLimiter)
+  // Hono's wildcard also matches /mcp; register once to avoid double charging.
   app.use('/mcp/*', mcpRateLimiter)
   app.route('/mcp', await mountMcpIngress())
 

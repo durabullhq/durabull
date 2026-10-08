@@ -127,6 +127,7 @@ export function buildServerInfo(version: string) {
     tools: MCP_TOOL_CATALOG.map((tool) => ({
       name: tool.name,
       title: tool.title,
+      description: tool.description,
       readOnly: tool.annotations.readOnlyHint,
       requiredScopes: [...tool.requiredScopes],
       optionalScopes: [...tool.optionalScopes],
@@ -134,11 +135,13 @@ export function buildServerInfo(version: string) {
     resources: MCP_RESOURCE_CATALOG.map((resource) => ({
       name: resource.name,
       uriTemplate: resource.uriTemplate,
+      description: resource.description,
       requiredScopes: [...resource.requiredScopes],
     })),
     prompts: MCP_PROMPT_CATALOG.map((prompt) => ({
       name: prompt.name,
       title: prompt.title,
+      description: prompt.description,
       arguments: prompt.arguments.map((argument) => argument.name),
     })),
   }

@@ -42,7 +42,7 @@ Optional MCP-related toggles:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DISABLE_RATE_LIMIT` | unset | When `true`, disables **all** in-memory API + MCP ingress + per-tool limits (not recommended in production) |
+| `DISABLE_RATE_LIMIT` | unset | When `true`, disables **all** in-memory API + MCP ingress + work-class limits (not recommended in production) |
 | `MCP_TELEMETRY_LOG` | enabled | Set `false` to suppress stdout `mcp_telemetry` JSON lines |
 | `MCP_AUTHLESS_BEARER_TOKEN` | dev-only default in non-prod | Strong secret required when `DURABULL_AUTHLESS=true` and `NODE_ENV=production` on isolated lab networks only |
 
@@ -113,7 +113,7 @@ Stdout JSON lines with `"type":"mcp_telemetry"`. Emitted signals today:
 | Signal | Meaning | Operator action |
 | --- | --- | --- |
 | `policy_denied` | Org/connection boundary or missing binding | Review principal org membership and `mcp_policy_binding` rows |
-| `rate_limited_ingress` | `/mcp` burst exceeded (120 req/min per key) | Reduce retry storms; see limits below |
+| `rate_limited_ingress` | `/mcp` transport burst exhausted (600 capacity, 20 requests/sec refill) | Reduce retry storms; see limits below |
 | `rate_limited_tool` | Per-tool cap hit | Reduce parallelism; see heavy-tool list below |
 | `tool_success` / `tool_error` | Tool outcome | Correlate with `mcp_audit_event` |
 | `redaction_applied` | Sanitizer redacted fields | Expected for sensitive payloads |
@@ -139,15 +139,25 @@ Example log shape:
 {"type":"telemetry_queue","signal":"queue_dropped","queueName":"mcp_analytics","count":1,"dropped":3,"inFlight":8,"queued":512}
 ```
 
-### Per-tool rate limits (60/min default, 30/min heavy tools)
+### Agent workflow rate limits
 
 Enforced when `NODE_ENV=production` (skipped in local `development` / `test` unless you run with production `NODE_ENV`).
 
-Heavy tools (**30/min**, flagged `heavy` in the catalog): `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `get_failure_events`, `get_queue_metrics`, `find_job`, `get_connection_overview`, `list_scheduled_jobs`, `get_redis_health`, `get_alert_summary`. All other tools default to **60/min per tool name**. `resources/read` is limited at **60/min per resource name** (`resource:<name>`).
+Authenticated requests share budgets by validated user plus OAuth client (or service-account client), so token refresh does not reset them. Different users and OAuth clients are isolated. Each budget refills continuously; rejected requests do not add debt. The capacity permits a burst, while refill controls sustained throughput.
 
-Draft SLO targets: [release checklist — Draft SLO candidates](./mcp-ga-release-checklist.md#draft-slo-candidates-not-validated).
+| Budget | Burst capacity | Refill per second | Applies to |
+| --- | --- | --- | --- |
+| Discovery/setup | 120 | 10 | Protocol discovery, prompts, ping, connections, server metadata and static App shell |
+| Reads | 180 | 6 | Ordinary queue/job/worker/rule reads |
+| Diagnostics | 90 | 3 | Catalog `heavy` tools and connection queue/alert resources |
+| Writes | 30 | 1 | All mutations together |
+| Transport | 600 | 20 | HTTP ingress per bearer hash or trusted IP for anonymous requests; OPTIONS excluded |
 
-Ingress limit (**120/min**) applies to all `/mcp` HTTP methods (discovery, legacy initialize, and `tools/call`), not only tool calls.
+The wildcard `/mcp/*` covers the root `/mcp` too. Register once; a per-request guard also prevents double charging. Setup has its own budget and remains available when diagnostics are exhausted. All four authenticated budgets remain subject to the transport ceiling.
+
+On exhaustion, HTTP 429 includes the computed `Retry-After` for the next token (normally one second with these defaults). JSON-RPC errors preserve the request ID and include `data.retryAfter` and `data.bucket`. The transport response uses `retryAfter` and `bucket`. `X-RateLimit-Reset` is seconds until that bucket fills, not the required retry delay. Use Retry-After for scheduling retries, and never replay an uncertain mutation without first reading its state.
+
+Policies live in `apps/api/src/mcp/middleware/rate-limit-policy.ts`. Storage is bounded to 4096 buckets per limiter, expires full idle entries and evicts least recently used entries when necessary. This is process-local abuse protection, not a cross-replica billing quota. OAuth registration retains its separate 20/minute limit.
 
 ### Audit table (`mcp_audit_event`)
 
@@ -198,13 +208,13 @@ Full checklist: see [mcp-oauth-operator.md](./mcp-oauth-operator.md). Common cau
 
 ### `429` on diagnostic tools
 
-**Cause:** Ingress or per-tool quotas exceeded; see [Per-tool rate limits](#per-tool-rate-limits-60min-default-30min-heavy-tools).
+**Cause:** A transport or work-class burst budget was exhausted; see [Agent workflow rate limits](#agent-workflow-rate-limits).
 
-**Fix:** Reduce client parallelism. Do not set `DISABLE_RATE_LIMIT` in production unless you enforce limits at the edge (it disables **all** API rate limiting, not only MCP).
+**Fix:** Honor Retry-After, use bounded concurrency and retain pagination cursors. Inspect the reported bucket; reconnecting does not increase an authenticated work budget. Do not set `DISABLE_RATE_LIMIT` in production unless you enforce limits at the edge (it disables **all** API rate limiting, not only MCP).
 
 ### Multi-replica rate limit drift
 
-Ingress and per-tool limits are **in-memory per process**. Each replica enforces its own window; adding replicas multiplies effective quota.
+Ingress and work-class limits are **in-memory per process**. Each replica enforces its own window; adding replicas multiplies effective quota.
 
 **Mitigation:** Terminate TLS at a shared edge limiter with global limits, or plan Redis-backed limits (not currently shipped).
 

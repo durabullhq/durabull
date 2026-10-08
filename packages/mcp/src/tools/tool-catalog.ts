@@ -570,7 +570,7 @@ export interface McpToolDefinition {
   /** Scopes that unlock additional evidence in the response when present; never required. */
   optionalScopes: readonly string[]
   annotations: McpToolAnnotations
-  /** Heavy tools get the lower per-tool rate limit. */
+  /** Heavy tools share the diagnostic work budget; ordinary reads and writes have separate budgets. */
   heavy: boolean
   inputSchema: Record<string, z.ZodType>
   outputSchema: z.ZodObject | null
@@ -633,7 +633,7 @@ export const MCP_TOOL_CATALOG: readonly McpToolDefinition[] = [
     name: 'list_connections',
     title: 'Queue explorer',
     description:
-      'List the Redis connections the caller may access, with name, environment, BullMQ key prefix, and organization. Start here: every other tool needs a connectionId from this list.',
+      'List the Redis connections the caller may access, with name, environment, BullMQ key prefix, and organization. Start here to open the interactive queue explorer in MCP Apps hosts, or get a text inventory in other clients. Data tools need a connectionId from this list. Follow nextCursor for all visible connections.',
     requiredScopes: [MCP_SCOPE_JOBS_READ],
     annotations: READ_ANNOTATIONS,
     inputSchema: { cursor: cursorArg, pageSize: pageSizeArg },
@@ -1021,7 +1021,7 @@ export const MCP_TOOL_CATALOG: readonly McpToolDefinition[] = [
     name: 'promote_job',
     title: 'Promote job',
     description:
-      'Move a delayed job to the waiting list so a worker picks it up immediately. Only jobs in the delayed state can be promoted; other states return conflict.',
+      'Make a delayed BullMQ job eligible for processing now. Workers, queue pause state and processing limits still determine when it runs. Only jobs in the delayed state can be promoted; other states return conflict.',
     requiredScopes: [MCP_SCOPE_JOBS_PROMOTE],
     annotations: WRITE_NON_IDEMPOTENT_ANNOTATIONS,
     inputSchema: { connectionId: connectionIdArg, queueName: queueNameArg, jobId: jobIdArg },

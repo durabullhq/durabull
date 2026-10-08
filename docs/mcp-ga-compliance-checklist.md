@@ -61,7 +61,7 @@ Tool names and scopes: [ADR-0001 §3](./adr/0001-mcp-security-architecture.md) a
 | Requirement | Status | Evidence |
 | --- | --- | --- |
 | Output sanitization | Done | `sanitize-output.test.ts` |
-| Per-tool rate limits (heavy set from catalog; resources limited per name) | Done | `mcp-tool-rate-limit.test.ts` |
+| Agent workflow rate budgets (discovery/read/heavy/write; resources share work classes) | Done | `mcp-tool-rate-limit.test.ts` |
 | Alert delivery targets and channel secrets omitted from MCP output | Done | `read-handlers.test.ts`, `write-handlers.test.ts` |
 | Audit `input_hash` + `response_class` | Done | `mcp-audit.test.ts` |
 | `mcp_telemetry` signals | Done | `mount.test.ts` |
