@@ -128,6 +128,28 @@ describe('api app config', () => {
     })
   })
 
+  it('serves the exact public OpenAI challenge before the SPA fallback', async () => {
+    mutableEnv.DURABULL_AUTHLESS = false
+    const { app } = await createApiApp({ enableLogging: false })
+    app.get('*', (c) => c.html('<!doctype html><title>SPA fallback</title>'))
+
+    const response = await app.request('/.well-known/openai-apps-challenge')
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=UTF-8')
+    expect(response.headers.get('Cache-Control')).toBe(
+      'no-store, no-cache, must-revalidate, max-age=0'
+    )
+    expect(await response.text()).toBe('7BAVDPjAMMASK3UBJ4mApVuOpmUawUdFn_dJ42qwtlY')
+
+    const headResponse = await app.request('/.well-known/openai-apps-challenge', {
+      method: 'HEAD',
+    })
+    expect(headResponse.status).toBe(200)
+    expect(headResponse.headers.get('Content-Type')).toBe('text/plain; charset=UTF-8')
+    expect(await headResponse.text()).toBe('')
+  })
+
   it('exposes no-store app version checks without session state', async () => {
     const { app } = await createApiApp({ enableLogging: false })
 

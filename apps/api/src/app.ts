@@ -439,6 +439,12 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
   // Mount API under /api prefix
   app.route('/api', api)
 
+  // Public domain verification for the OpenAI plugin directory.
+  app.get('/.well-known/openai-apps-challenge', (c) => {
+    c.header('Cache-Control', NO_STORE_CACHE_CONTROL)
+    return c.text('7BAVDPjAMMASK3UBJ4mApVuOpmUawUdFn_dJ42qwtlY')
+  })
+
   const appBaseUrl = env.APP_BASE_URL ?? 'http://localhost:5173'
 
   // OAuth Protected Resource Metadata (RFC 9728) on app origin
