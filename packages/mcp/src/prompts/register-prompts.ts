@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 
 import { MCP_PROMPT_CATALOG } from './prompt-catalog'
@@ -20,7 +20,7 @@ export function registerPrompts(server: McpServer): void {
       {
         title: prompt.title,
         description: prompt.description,
-        argsSchema,
+        argsSchema: z.object(argsSchema),
       },
       (args) => ({
         description: prompt.title,

@@ -19,6 +19,13 @@ git switch -c docs/describe-your-change
 Choose a branch name that describes your work. Keep real credentials, generated files, screenshots
 used only for debugging, and personal notes out of commits.
 
+The MCP distribution has a narrow generated-file exception: commit its self-contained app bundle
+(`packages/mcp/src/apps/dashboard.generated.txt`) and Claude compatibility manifests under
+`plugins/durabull`. Source-mode deployments and plugin installation consume these files directly.
+Edit their source files, regenerate with `bun run mcp:app` / `bun run mcp:plugin`, and run
+`bun run mcp:check` to prove that committed distribution assets are current. Do not commit local
+preview screenshots or browser logs.
+
 ## Edit the documentation
 
 Public guides live in `apps/docs/content/documentation/` as MDX. Every page needs `title` and

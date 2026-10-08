@@ -1,5 +1,7 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { registerAppTool } from '@modelcontextprotocol/ext-apps/server'
+import type { McpServer, RegisteredTool, Tool } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import { MCP_APP_ICON, toolAppMetadata } from '../apps/app-metadata'
 import type { McpToolInvocationAuditInput } from '../request-context'
 import { getMcpRequestContext } from '../request-context'
 import { sanitizeMcpOutput, sanitizeMcpText } from '../safety/sanitize-output'
@@ -310,6 +312,7 @@ function auditConnectionId(args: RawArgs): string | null {
   return typeof args.connectionId === 'string' ? args.connectionId : null
 }
 
+/** Redact tool output, audit success, and attach sanitized view identity for the app. */
 function finalizeToolSuccess(toolName: string, args: RawArgs, result: Record<string, unknown>) {
   const { value, redactionCount } = sanitizeMcpOutput(result)
   const sanitizedResult =
@@ -333,6 +336,7 @@ function finalizeToolSuccess(toolName: string, args: RawArgs, result: Record<str
   return {
     content: [{ type: 'text' as const, text: JSON.stringify(sanitizedResult) }],
     structuredContent: sanitizedResult,
+    _meta: { 'durabull/view': { toolName, arguments: sanitizeMcpOutput(args).value } },
   }
 }
 
@@ -363,8 +367,14 @@ export async function runTool(
 // Registration
 // ---------------------------------------------------------------------------
 
+interface ToolRegistry {
+  server: McpServer
+  tools: Array<{ definition: McpToolDefinition; registered: RegisteredTool }>
+}
+
+/** Install an available handler with the shared schemas, app metadata, and audited execution boundary. */
 function registerFromCatalog<Input, Output extends Record<string, unknown>>(
-  server: McpServer,
+  registry: ToolRegistry,
   name: string,
   handler: Handler<Input, Output> | undefined,
   toInput: (args: RawArgs) => Input
@@ -375,17 +385,19 @@ function registerFromCatalog<Input, Output extends Record<string, unknown>>(
     throw new Error(`MCP tool ${name} must declare an output schema.`)
   }
 
-  server.registerTool(
-    name,
-    {
-      title: definition.title,
-      description: buildDescription(definition),
-      inputSchema: definition.inputSchema,
-      outputSchema: withSafetyMetadata(definition.outputSchema),
-      annotations: definition.annotations,
-    },
-    async (args) => runTool(name, args as RawArgs, () => handler(toInput(args as RawArgs)))
+  const config = {
+    title: definition.title,
+    description: buildDescription(definition),
+    inputSchema: z.object(definition.inputSchema),
+    outputSchema: withSafetyMetadata(definition.outputSchema),
+    annotations: definition.annotations,
+    _meta: toolAppMetadata(definition),
+    icons: [MCP_APP_ICON],
+  }
+  const registered = registerAppTool(registry.server, name, config, async (args) =>
+    runTool(name, args as RawArgs, () => handler(toInput(args as RawArgs)))
   )
+  registry.tools.push({ definition, registered })
 }
 
 function requireDefinition(name: string): McpToolDefinition {
@@ -405,21 +417,26 @@ function buildDescription(definition: McpToolDefinition): string {
   return `${definition.description} ${scopes}${optional}`
 }
 
-function registerPing(server: McpServer): void {
+/** Expose a data-free connectivity tool, including its discovery-only OAuth metadata. */
+function registerPing(registry: ToolRegistry): void {
   const definition = requireDefinition('ping')
-  server.registerTool(
+  const registered = registry.server.registerTool(
     'ping',
     {
       title: definition.title,
       description: buildDescription(definition),
       annotations: definition.annotations,
+      _meta: toolAppMetadata(definition),
     },
     async () => ({ content: [{ type: 'text' as const, text: 'pong' }] })
   )
+  registry.tools.push({ definition, registered })
 }
 
+/** Register available domain handlers and derive host-compatible discovery from their registration records. */
 export function registerTools(server: McpServer, options: RegisterToolsOptions): void {
-  registerPing(server)
+  const registry: ToolRegistry = { server, tools: [] }
+  registerPing(registry)
 
   const principal = getPrincipalFromContext
   const connection = (args: RawArgs) => ({
@@ -431,23 +448,28 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions):
     pageSize: parsePageSize(args.pageSize),
   })
 
-  registerFromCatalog(server, 'list_connections', options.listConnections, (args) => ({
+  registerFromCatalog(registry, 'list_connections', options.listConnections, (args) => ({
     principal: principal(),
     ...paged(args),
   }))
-  registerFromCatalog(server, 'list_queues', options.listQueues, (args) => ({
+  registerFromCatalog(registry, 'list_queues', options.listQueues, (args) => ({
     ...connection(args),
     ...paged(args),
   }))
-  registerFromCatalog(server, 'get_queue', options.getQueue, (args) => ({
+  registerFromCatalog(registry, 'get_queue', options.getQueue, (args) => ({
     ...connection(args),
     queueName: str(args.queueName),
   }))
-  registerFromCatalog(server, 'get_connection_overview', options.getConnectionOverview, (args) => ({
-    ...connection(args),
-    grantedScopes: getGrantedScopesFromContext(),
-  }))
-  registerFromCatalog(server, 'list_jobs', options.listJobs, (args) => ({
+  registerFromCatalog(
+    registry,
+    'get_connection_overview',
+    options.getConnectionOverview,
+    (args) => ({
+      ...connection(args),
+      grantedScopes: getGrantedScopesFromContext(),
+    })
+  )
+  registerFromCatalog(registry, 'list_jobs', options.listJobs, (args) => ({
     ...connection(args),
     ...paged(args),
     queueName: str(args.queueName),
@@ -455,59 +477,59 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions):
     name: optStr(args.name),
     jobId: optStr(args.jobId),
   }))
-  registerFromCatalog(server, 'find_job', options.findJob, (args) => ({
+  registerFromCatalog(registry, 'find_job', options.findJob, (args) => ({
     ...connection(args),
     jobId: str(args.jobId),
   }))
-  registerFromCatalog(server, 'get_job', options.getJob, (args) => ({
+  registerFromCatalog(registry, 'get_job', options.getJob, (args) => ({
     ...connection(args),
     queueName: str(args.queueName),
     jobId: str(args.jobId),
   }))
-  registerFromCatalog(server, 'get_job_logs', options.getJobLogs, (args) => ({
+  registerFromCatalog(registry, 'get_job_logs', options.getJobLogs, (args) => ({
     ...connection(args),
     ...paged(args),
     queueName: str(args.queueName),
     jobId: str(args.jobId),
   }))
-  registerFromCatalog(server, 'get_job_stacktraces', options.getJobStacktraces, (args) => ({
+  registerFromCatalog(registry, 'get_job_stacktraces', options.getJobStacktraces, (args) => ({
     ...connection(args),
     ...paged(args),
     queueName: str(args.queueName),
     jobId: str(args.jobId),
   }))
-  registerFromCatalog(server, 'explain_job_failure', options.explainJobFailure, (args) => ({
+  registerFromCatalog(registry, 'explain_job_failure', options.explainJobFailure, (args) => ({
     ...connection(args),
     queueName: str(args.queueName),
     jobId: str(args.jobId),
     grantedScopes: getGrantedScopesFromContext(),
   }))
-  registerFromCatalog(server, 'list_scheduled_jobs', options.listScheduledJobs, (args) => ({
+  registerFromCatalog(registry, 'list_scheduled_jobs', options.listScheduledJobs, (args) => ({
     ...connection(args),
     ...paged(args),
     queueName: optStr(args.queueName),
   }))
-  registerFromCatalog(server, 'get_scheduled_job', options.getScheduledJob, (args) => ({
+  registerFromCatalog(registry, 'get_scheduled_job', options.getScheduledJob, (args) => ({
     ...connection(args),
     queueName: str(args.queueName),
     schedulerId: str(args.schedulerId),
   }))
-  registerFromCatalog(server, 'get_workers', options.getWorkers, (args) => ({
+  registerFromCatalog(registry, 'get_workers', options.getWorkers, (args) => ({
     ...connection(args),
     ...paged(args),
     queueName: optStr(args.queueName),
   }))
-  registerFromCatalog(server, 'get_queue_metrics', options.getQueueMetrics, (args) => ({
+  registerFromCatalog(registry, 'get_queue_metrics', options.getQueueMetrics, (args) => ({
     ...connection(args),
     queueName: str(args.queueName),
     windowMinutes: optNum(args.windowMinutes),
   }))
-  registerFromCatalog(server, 'get_redis_health', options.getRedisHealth, (args) => ({
+  registerFromCatalog(registry, 'get_redis_health', options.getRedisHealth, (args) => ({
     ...connection(args),
     windowMinutes: optNum(args.windowMinutes),
     targetPoints: optNum(args.targetPoints),
   }))
-  registerFromCatalog(server, 'get_failure_events', options.getFailureEvents, (args) => ({
+  registerFromCatalog(registry, 'get_failure_events', options.getFailureEvents, (args) => ({
     ...connection(args),
     ...paged(args),
     queueName: optStr(args.queueName),
@@ -516,18 +538,18 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions):
     acknowledged: optBool(args.acknowledged),
     alertRuleId: optStr(args.alertRuleId),
   }))
-  registerFromCatalog(server, 'get_alert_event', options.getAlertEvent, (args) => ({
+  registerFromCatalog(registry, 'get_alert_event', options.getAlertEvent, (args) => ({
     ...connection(args),
     eventId: str(args.eventId),
   }))
-  registerFromCatalog(server, 'get_alert_summary', options.getAlertSummary, (args) =>
+  registerFromCatalog(registry, 'get_alert_summary', options.getAlertSummary, (args) =>
     connection(args)
   )
-  registerFromCatalog(server, 'list_alert_rules', options.listAlertRules, (args) => ({
+  registerFromCatalog(registry, 'list_alert_rules', options.listAlertRules, (args) => ({
     ...connection(args),
     ...paged(args),
   }))
-  registerFromCatalog(server, 'get_alert_rule', options.getAlertRule, (args) => ({
+  registerFromCatalog(registry, 'get_alert_rule', options.getAlertRule, (args) => ({
     ...connection(args),
     ruleId: str(args.ruleId),
   }))
@@ -536,25 +558,25 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions):
     ...connection(args),
     eventId: str(args.eventId),
   })
-  registerFromCatalog(server, 'resolve_alert_event', options.resolveAlertEvent, eventMutation)
+  registerFromCatalog(registry, 'resolve_alert_event', options.resolveAlertEvent, eventMutation)
   registerFromCatalog(
-    server,
+    registry,
     'acknowledge_alert_event',
     options.acknowledgeAlertEvent,
     eventMutation
   )
   registerFromCatalog(
-    server,
+    registry,
     'unacknowledge_alert_event',
     options.unacknowledgeAlertEvent,
     eventMutation
   )
-  registerFromCatalog(server, 'snooze_alert_rule', options.snoozeAlertRule, (args) => ({
+  registerFromCatalog(registry, 'snooze_alert_rule', options.snoozeAlertRule, (args) => ({
     ...connection(args),
     ruleId: str(args.ruleId),
     minutes: optNum(args.minutes) ?? 60,
   }))
-  registerFromCatalog(server, 'unsnooze_alert_rule', options.unsnoozeAlertRule, (args) => ({
+  registerFromCatalog(registry, 'unsnooze_alert_rule', options.unsnoozeAlertRule, (args) => ({
     ...connection(args),
     ruleId: str(args.ruleId),
   }))
@@ -564,13 +586,37 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions):
     queueName: str(args.queueName),
     jobId: str(args.jobId),
   })
-  registerFromCatalog(server, 'retry_job', options.retryJob, jobMutation)
-  registerFromCatalog(server, 'promote_job', options.promoteJob, jobMutation)
+  registerFromCatalog(registry, 'retry_job', options.retryJob, jobMutation)
+  registerFromCatalog(registry, 'promote_job', options.promoteJob, jobMutation)
 
   const queueMutation = (args: RawArgs) => ({
     ...connection(args),
     queueName: str(args.queueName),
   })
-  registerFromCatalog(server, 'pause_queue', options.pauseQueue, queueMutation)
-  registerFromCatalog(server, 'resume_queue', options.resumeQueue, queueMutation)
+  registerFromCatalog(registry, 'pause_queue', options.pauseQueue, queueMutation)
+  registerFromCatalog(registry, 'resume_queue', options.resumeQueue, queueMutation)
+
+  // SDK v2 intentionally emits standard MCP Tool fields only. OpenAI requires its
+  // securitySchemes extension at the top level as well as the compatibility _meta mirror.
+  // Use the public handler API and the actual registration refs, never SDK internals.
+  server.server.setRequestHandler('tools/list', () => ({
+    tools: registry.tools
+      .filter(({ registered }) => registered.enabled)
+      .map(
+        ({ definition, registered }) =>
+          ({
+            name: definition.name,
+            title: registered.title,
+            description: registered.description,
+            inputSchema: z.toJSONSchema(z.object(definition.inputSchema)),
+            ...(definition.outputSchema
+              ? { outputSchema: z.toJSONSchema(withSafetyMetadata(definition.outputSchema)) }
+              : {}),
+            annotations: registered.annotations,
+            icons: registered.icons,
+            securitySchemes: registered._meta?.securitySchemes,
+            _meta: registered._meta,
+          }) as Tool
+      ),
+  }))
 }

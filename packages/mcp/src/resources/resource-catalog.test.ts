@@ -6,7 +6,7 @@ import { buildMcpResourceUri, MCP_RESOURCE_CATALOG, parseMcpResourceUri } from '
 describe('MCP resource catalog', () => {
   it('declares known scopes and durabull:// templates', () => {
     for (const resource of MCP_RESOURCE_CATALOG) {
-      expect(resource.uriTemplate.startsWith('durabull://')).toBe(true)
+      expect(/^(durabull|ui):\/\//.test(resource.uriTemplate)).toBe(true)
       expect(resource.requiredScopes.length).toBeGreaterThan(0)
       for (const scope of resource.requiredScopes) {
         expect(isKnownMcpScope(scope)).toBe(true)
@@ -15,6 +15,10 @@ describe('MCP resource catalog', () => {
   })
 
   it('parses every template shape', () => {
+    expect(parseMcpResourceUri('ui://durabull/queue-explorer-v1.html')?.definition.name).toBe(
+      'queue_explorer'
+    )
+    expect(parseMcpResourceUri('ui://durabull/arbitrary.html')).toBeNull()
     expect(parseMcpResourceUri('durabull://server')?.definition.name).toBe('server')
     expect(parseMcpResourceUri('durabull://connections')?.definition.name).toBe('connections')
     expect(parseMcpResourceUri('durabull://connections/')?.definition.name).toBe('connections')

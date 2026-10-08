@@ -1,3 +1,4 @@
+import { MCP_APP_MIME_TYPE, MCP_APP_URI } from '../apps/app-metadata'
 import { MCP_SCOPE_DISCOVER, MCP_SCOPE_FAILURES_READ, MCP_SCOPE_JOBS_READ } from '../auth/scopes'
 
 /**
@@ -15,10 +16,18 @@ export interface McpResourceDefinition {
   /** RFC 6570 URI template. Variables: `connectionId`, `queueName`. */
   uriTemplate: string
   requiredScopes: readonly string[]
-  mimeType: 'application/json'
+  mimeType: 'application/json' | typeof MCP_APP_MIME_TYPE
 }
 
 export const MCP_RESOURCE_CATALOG: readonly McpResourceDefinition[] = [
+  {
+    name: 'queue_explorer',
+    title: 'Durabull queue explorer',
+    description: 'Static MCP App shell. Customer data is loaded through authorized tools.',
+    uriTemplate: MCP_APP_URI,
+    requiredScopes: [MCP_SCOPE_DISCOVER],
+    mimeType: MCP_APP_MIME_TYPE,
+  },
   {
     name: 'server',
     title: 'Durabull MCP server',
@@ -93,6 +102,9 @@ function decodeSegment(segment: string): string | null {
 export function parseMcpResourceUri(rawUri: unknown): ParsedMcpResourceUri | null {
   if (typeof rawUri !== 'string') return null
   const uri = rawUri.trim()
+  if (uri === MCP_APP_URI) {
+    return { definition: RESOURCES_BY_NAME.get('queue_explorer')!, uri, variables: {} }
+  }
   const prefix = `${MCP_RESOURCE_URI_SCHEME}://`
   if (!uri.startsWith(prefix)) return null
 

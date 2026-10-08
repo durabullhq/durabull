@@ -1,0 +1,16 @@
+{
+  "name": "durabull",
+  "owner": {
+    "name": "Durabull"
+  },
+  "plugins": [
+    {
+      "name": "durabull",
+      "source": "./plugins/durabull",
+      "description": "BullMQ queue diagnostics and scoped recovery operations."
+    }
+  ],
+  "metadata": {
+    "description": "Durabull plugins for BullMQ queue diagnostics and recovery."
+  }
+}

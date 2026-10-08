@@ -45,6 +45,12 @@ The catalog in `packages/mcp/src/tools/tool-catalog.ts` is the single source of 
 
 **Not exposed, by design:** job removal, queue clean/purge/obliterate/delete, job data edits, scheduler create/update/delete, arbitrary Redis key access, connection or alert-rule CRUD. These have no MCP scope and cannot be granted.
 
+**2026-10 protocol and UI upgrade:** SDK v2 serves protocol 2026-07-28 through `createMcpHandler`, with stateless legacy compatibility. No principal or domain data is retained in transport sessions. Present Origin headers are validated before CORS/auth; absent Origin is accepted for server clients. Authenticated data remains `Cache-Control: no-store`. Dynamic list-change subscriptions are not advertised; the UI refreshes explicitly.
+
+**MCP App:** `ui://durabull/queue-explorer-v1.html` is a bundled, data-free HTML/JS/CSS resource. It requires a resolved authenticated principal and `mcp:discover`; service accounts need no separate policy binding for this exact shell. All other resource and tool policies remain enforced. The browser uses the host bridge exclusively, with empty network/frame CSP allowlists, no stored credentials, and text-only rendering of untrusted values. UI mutation buttons send a user request to the host agent. The browser also enforces the catalog's read-only allowlist; refreshing a mutation result reads the affected entity. Write tools advertise model-only UI visibility; this is a host presentation restriction, not an authorization boundary.
+
+**Platform metadata:** standard MCP Apps resource metadata is shared. OpenAI-only global/thread entrypoints and security-scheme mirrors are additive. The top-level `securitySchemes` field is emitted via the SDK's public tools/list handler because SDK v2 registration drops unknown fields. `openai/widgetDomain` uses the deployment origin; standard `ui.domain` is omitted so Claude chooses its own sandbox. Public OpenAI submission must verify that origin is unique to this plugin.
+
 **Resources** (`durabull://` URIs, authorized like tools): `server`, `connections`, `connections/{id}/queues`, `connections/{id}/queues/{queueName}`, `connections/{id}/alerts`. Unknown URIs are rejected before reaching the MCP server.
 
 **Prompts** (no data access, transport scope only): `triage_failed_jobs`, `investigate_queue_backlog`, `alert_activity_review`, `connection_health_check`.

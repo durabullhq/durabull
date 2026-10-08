@@ -83,7 +83,7 @@ HOST="${APP_BASE_URL#*://}"; HOST="${HOST%%/*}"
 curl -si -X POST "$APP_BASE_URL/mcp" \
   -H "Host: $HOST" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"1.0"}}}' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"smoke","version":"1.0"}}}' \
   | head -20
 ```
 
@@ -147,7 +147,7 @@ Heavy tools (**30/min**, flagged `heavy` in the catalog): `get_job_logs`, `get_j
 
 Draft SLO targets: [release checklist — Draft SLO candidates](./mcp-ga-release-checklist.md#draft-slo-candidates-not-validated).
 
-Ingress limit (**120/min**) applies to all `/mcp` HTTP methods (initialize, session traffic, and `tools/call`), not only tool calls.
+Ingress limit (**120/min**) applies to all `/mcp` HTTP methods (discovery, legacy initialize, and `tools/call`), not only tool calls.
 
 ### Audit table (`mcp_audit_event`)
 

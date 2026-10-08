@@ -1,7 +1,8 @@
 export const MCP_SERVER_NAME = 'durabull-mcp'
 
-/** Client `initialize` protocol version used in tests; server negotiates supported versions. */
-export const MCP_PROTOCOL_VERSION = '2024-11-05'
+/** Current per-request protocol, served alongside the stateless legacy handshake. */
+export const MCP_PROTOCOL_VERSION = '2026-07-28'
+export const MCP_LEGACY_PROTOCOL_VERSION = '2025-11-25'
 
 export const MCP_JSON_RPC_VERSION = '2.0'
 

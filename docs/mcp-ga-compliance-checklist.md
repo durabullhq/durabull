@@ -13,7 +13,7 @@
 | Requirement | Status | Evidence |
 | --- | --- | --- |
 | `GET` / `POST` / `DELETE` on `/mcp` | Done | [validation evidence](./mcp-ga-validation-evidence.md) |
-| MCP `initialize` + session handling | Done | `apps/api/src/mcp/mount.test.ts` |
+| MCP modern discovery + stateless legacy `initialize` | Done | `apps/api/src/mcp/mount.test.ts` |
 | Host header validation | Done | `packages/mcp` allowed-hosts tests + `mount.test.ts` |
 | `/mcp` not captured by SPA static fallback | Done | `apps/api/src/mcp/mount.test.ts` |
 | Request size limits (API app) | Done | `apps/api/src/app.ts` — 1 MiB body limit |
