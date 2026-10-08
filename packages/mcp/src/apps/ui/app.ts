@@ -1,11 +1,12 @@
 import type { CallToolResult } from '@modelcontextprotocol/client'
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps'
+import { MCP_JOB_STATES } from '../../tools/tool-catalog'
 import { healthSeries } from './health-series'
 import { readErrorMessage } from './read-errors'
 import { callReadTool, refreshToolCall } from './read-tools'
 
 // The host is the only network boundary. No tokens, fetch(), remote fonts or localStorage.
-const app = new App({ name: 'Durabull queue explorer', version: '1.0.0' }, {}, { autoResize: true })
+const app = new App({ name: 'Durabull queue explorer', version: '1.1.0' }, {}, { autoResize: true })
 type Data = Record<string, unknown>
 type View = { tool: string; args: Data; data: Data; updatedAt: string }
 const root = document.getElementById('app')!
@@ -35,6 +36,38 @@ const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(va
 const fmt = (value: unknown) => (value == null ? '—' : number.format(num(value)))
 /** Convert protocol identifiers into sentence-case UI labels. */
 const title = (value: string) => value.replaceAll('_', ' ').replace(/^./, (s) => s.toUpperCase())
+const VIEW_TITLES: Record<string, string> = {
+  list_connections: 'Connections',
+  get_connection_overview: 'Connection health',
+  list_queues: 'Queues',
+  get_queue: 'Queue inspection',
+  list_jobs: 'Jobs',
+  find_job: 'Job search',
+  get_job: 'Job inspection',
+  get_job_logs: 'Job logs',
+  get_job_stacktraces: 'Attempt stacktraces',
+  explain_job_failure: 'Failure investigation',
+  get_workers: 'Workers',
+  list_scheduled_jobs: 'Recurring schedules',
+  get_scheduled_job: 'Schedule inspection',
+  get_failure_events: 'Alert activity',
+  get_alert_event: 'Incident inspection',
+  list_alert_rules: 'Alert rules',
+  get_alert_rule: 'Rule inspection',
+  get_alert_summary: 'Incidents',
+  get_queue_metrics: 'Queue performance',
+  get_redis_health: 'Redis health',
+  retry_job: 'Retry requested',
+  promote_job: 'Promotion requested',
+  pause_queue: 'Queue paused',
+  resume_queue: 'Queue resumed',
+  acknowledge_alert_event: 'Alert acknowledged',
+  unacknowledge_alert_event: 'Acknowledgement cleared',
+  resolve_alert_event: 'Alert resolved',
+  snooze_alert_rule: 'Rule snoozed',
+  unsnooze_alert_rule: 'Snooze cleared',
+}
+const viewTitle = (tool: string) => VIEW_TITLES[tool] ?? title(tool)
 /** Serialize values for text-only cells and expandable JSON details. */
 const text = (value: unknown) =>
   value == null ? '—' : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)
@@ -370,6 +403,35 @@ function renderOverview(data: Data) {
       )
     )
   )
+  for (const [label, key] of [
+    ['Waiting without workers', 'withoutWorkers'],
+    ['Paused queues', 'paused'],
+  ] as const) {
+    const names = Array.isArray(queues[key]) ? (queues[key] as unknown[]) : []
+    if (names.length)
+      body.append(
+        panel(
+          label,
+          table(
+            ['Queue'],
+            names.map((name) => [
+              toolButton(str(name), 'get_queue', { ...connectionArgs(), queueName: name }, 'link'),
+            ])
+          )
+        )
+      )
+  }
+  body.append(
+    panel(
+      'Discovery coverage',
+      facts([
+        ['Queues scanned', queues.scanned],
+        ['Discovered queues', obj(data.discovery).totalQueues],
+        ['Pending discovery', obj(data.discovery).pending],
+        ['Last discovered', obj(data.discovery).lastDiscoveredAt],
+      ])
+    )
+  )
   return body
 }
 /** Show queue counts and diagnostics alongside assistant-mediated queue operations. */
@@ -463,8 +525,33 @@ function renderMetrics(data: Data) {
     for (const warning of Array.isArray(data.warnings) ? data.warnings : [])
       body.append(el('p', 'notice', text(warning)))
     body.append(
-      jsonDetails('Window & coverage', data.range, true),
-      jsonDetails('Queue capacity', data.queue, true)
+      panel(
+        'Window & coverage',
+        facts([
+          ['Requested minutes', obj(data.range).requestedWindowMinutes],
+          ['Returned points', obj(data.range).returnedPoints],
+          ['Window coverage', obj(data.range).requestedWindowCoverage],
+          ['Latest point age (ms)', obj(data.range).latestPointAgeMs],
+        ])
+      ),
+      panel(
+        'Processing capacity',
+        facts([
+          ['Paused', obj(data.queue).isPaused],
+          ['At capacity', obj(data.queue).isMaxed],
+          ['Waiting to process', obj(data.queue).waitingToProcess],
+          ['Workers', obj(data.queue).workersCount],
+          ['Success rate (%)', totals.successRateInWindow],
+          ['Failure rate (%)', totals.failureRateInWindow],
+          ['Longest failure streak (minutes)', totals.longestFailureStreakMinutesInWindow],
+          ['Schedulers', obj(data.queue).schedulersCount],
+        ])
+      ),
+      el(
+        'p',
+        'notice',
+        'Drain time estimates use the observed completion rate. Incoming work and changes in capacity can alter the result.'
+      )
     )
     return body
   }
@@ -474,6 +561,62 @@ function renderMetrics(data: Data) {
     )
   if (data.collectionEnabled === false)
     body.append(el('p', 'notice', 'Redis health collection is disabled for this connection.'))
+  const latest = obj(data.latest)
+  body.append(
+    stats([
+      ['Memory (%)', latest.memoryUsagePercent],
+      ['CPU (%)', latest.cpuUsagePercent],
+      ['Connected clients', latest.connectedClients],
+      ['Evictions / minute', latest.evictedKeysPerMinute, 'danger'],
+    ]),
+    panel(
+      'Collection & coverage',
+      facts([
+        ['Latest sample', latest.capturedAt],
+        ['Coverage (%)', obj(data.range).coveragePercent],
+        ['From', obj(data.range).from],
+        ['To', obj(data.range).to],
+        ['Bucket (minutes)', obj(data.range).bucketMinutes],
+        ['Aggregation', 'Maximum per bucket'],
+      ])
+    ),
+    panel(
+      'Redis capacity',
+      facts([
+        ['Used memory (bytes)', latest.usedMemoryBytes],
+        ['Resident memory (bytes)', latest.residentMemoryBytes],
+        ['Capacity (bytes)', latest.memoryCapacityBytes],
+        ['Capacity source', latest.memoryCapacitySource],
+        ['Fragmentation ratio', latest.memoryFragmentationRatio],
+        ['Fragmentation (bytes)', latest.memoryFragmentationBytes],
+        ['Max clients', latest.maxClients],
+        ['Client utilization (%)', latest.connectedClientsPercent],
+        ['Blocked clients', latest.blockedClients],
+        ['Rejected connections / minute', latest.rejectedConnectionsPerMinute],
+      ])
+    ),
+    el(
+      'p',
+      'notice',
+      'BullMQ workers use blocking Redis connections. Blocked clients alone do not indicate an incident.'
+    ),
+    panel(
+      'Configured thresholds',
+      table(
+        ['Rule', 'Metric', 'Threshold'],
+        rows(data.thresholds).map((rule) => [
+          toolButton(
+            str(rule.name),
+            'get_alert_rule',
+            { ...connectionArgs(), ruleId: rule.ruleId },
+            'link'
+          ),
+          title(str(rule.metric)),
+          fmt(rule.threshold),
+        ])
+      )
+    )
+  )
   const history = healthSeries(data.series)
   const coverage = `${history.measured} of ${history.total} returned time buckets have memory measurements.`
   body.append(el('p', 'legend', coverage))
@@ -515,6 +658,291 @@ function renderMetrics(data: Data) {
   )
   return body
 }
+/** Present structured facts without exposing protocol-shaped JSON as the main interface. */
+function facts(values: [string, unknown][]) {
+  const list = el('dl', 'detail-grid details')
+  for (const [label, value] of values) {
+    const item = el('div')
+    item.append(el('dt', '', label), el('dd', '', text(value)))
+    list.append(item)
+  }
+  return list
+}
+
+/** Search an exact job ID across this connection, independently of page filtering. */
+function jobSearch() {
+  const group = el('div', 'actions job-search')
+  group.setAttribute('role', 'search')
+  const input = el('input', 'search')
+  input.name = 'jobId'
+  input.placeholder = 'Exact job ID…'
+  input.setAttribute('aria-label', 'Find job by exact ID across queues')
+  input.disabled = busy || !connected
+  const find = () => {
+    if (!input.value.trim() || busy) return
+    void load('find_job', { ...connectionArgs(), jobId: input.value.trim() })
+  }
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      find()
+    }
+  })
+  group.append(input, button('Find job', find))
+  return group
+}
+
+function renderSchedule(data: Data) {
+  const schedule = obj(data.scheduledJob)
+  const body = el('div')
+  body.append(
+    panel(
+      str(schedule.jobName) || 'Recurring job',
+      facts([
+        ['Scheduler ID', schedule.schedulerId],
+        ['Queue', schedule.queueName],
+        ['Cron pattern', schedule.pattern],
+        ['Interval (ms)', schedule.everyMs],
+        ['Timezone', schedule.timezone ?? 'Unspecified'],
+        ['Next run', schedule.nextRunAt],
+        ['Starts', schedule.startDate],
+        ['Ends', schedule.endDate],
+        ['Iterations', schedule.iterationCount],
+        ['Run limit', schedule.limit],
+        ['Recent failures', schedule.recentFailedCount],
+        ['Last failure', schedule.lastFailedAt],
+      ])
+    ),
+    el(
+      'p',
+      'notice',
+      'Next run is a scheduled time, not proof of execution. Workers and queue state determine processing.'
+    ),
+    toolButton('Inspect queue', 'get_queue', {
+      ...connectionArgs(),
+      queueName: schedule.queueName,
+    }),
+    jsonDetails('Job template · redacted', schedule.data),
+    jsonDetails('Template options', schedule.templateOptions)
+  )
+  return body
+}
+
+function renderAlert(data: Data) {
+  const event = obj(data.event)
+  const body = el('div')
+  body.append(
+    panel(
+      str(event.summary) || 'Alert detail',
+      facts([
+        ['Status', event.status],
+        ['Queue', event.queueName],
+        ['Type', title(str(event.type))],
+        ['Fired', event.firedAt],
+        ['Acknowledged', event.acknowledgedAt ?? 'Not acknowledged'],
+        ['Resolved', event.resolvedAt],
+        ['Notification sent', event.notificationSentAt],
+      ])
+    )
+  )
+  const actions = el('div', 'actions details')
+  actions.append(
+    toolButton('Inspect rule', 'get_alert_rule', { ...connectionArgs(), ruleId: event.alertRuleId })
+  )
+  if (event.status === 'firing') {
+    const ids = { ...connectionArgs(), eventId: event.id }
+    actions.append(
+      askButton(
+        event.acknowledgedAt ? 'Ask to unacknowledge' : 'Ask to acknowledge',
+        event.acknowledgedAt
+          ? 'Unacknowledge this firing alert.'
+          : 'Acknowledge this firing alert.',
+        ids
+      ),
+      askButton(
+        'Ask to resolve',
+        'Resolve this firing alert. Linked external issues may close asynchronously.',
+        ids
+      )
+    )
+  }
+  body.append(
+    actions,
+    panel(
+      'Notification delivery',
+      Array.isArray(event.deliveries)
+        ? table(
+            ['Channel', 'Status', 'Attempts', 'Last error', 'Next retry'],
+            rows(event.deliveries).map((delivery) => [
+              delivery.channelType,
+              badge(delivery.status),
+              fmt(delivery.attemptCount),
+              delivery.lastError,
+              delivery.nextRetryAt,
+            ])
+          )
+        : toolButton('Inspect delivery status', 'get_alert_event', {
+            ...connectionArgs(),
+            eventId: event.id,
+          })
+    ),
+    jsonDetails('Alert context · redacted', event.context)
+  )
+  return body
+}
+
+function renderRule(data: Data) {
+  const rule = obj(data.rule)
+  const body = el('div')
+  body.append(
+    panel(
+      str(rule.name) || 'Alert rule',
+      facts([
+        ['State', rule.state],
+        ['Type', title(str(rule.type))],
+        ['Queue', rule.queueName ?? 'Multiple queues'],
+        ['Cooldown (minutes)', rule.cooldownMinutes],
+        ['Snoozed until', rule.mutedUntil],
+        ['Open events', rule.openEventCount],
+        ['Queue filter', rule.queueFilterMode],
+        [
+          'Filtered queues',
+          Array.isArray(rule.filterQueueNames) ? rule.filterQueueNames.join(', ') : null,
+        ],
+      ])
+    )
+  )
+  const ids = { ...connectionArgs(), ruleId: rule.id }
+  const actions = el('div', 'actions details')
+  if (rule.state === 'snoozed')
+    actions.append(askButton('Ask to unsnooze', 'Unsnooze this alert rule.', ids))
+  else if (rule.enabled)
+    actions.append(
+      askButton('Ask to snooze for 1 hour', 'Snooze this alert rule for 60 minutes.', ids)
+    )
+  body.append(
+    actions,
+    panel(
+      'Recent events',
+      table(
+        ['Alert', 'State', 'Fired'],
+        rows(data.recentEvents).map((event) => [
+          toolButton(
+            str(event.summary) || str(event.id),
+            'get_alert_event',
+            { ...connectionArgs(), eventId: event.id },
+            'link'
+          ),
+          badge(event.status),
+          event.firedAt,
+        ])
+      )
+    ),
+    jsonDetails('Rule configuration', rule.config),
+    jsonDetails('Notification channels · redacted', rule.notificationChannels)
+  )
+  return body
+}
+
+function renderAlertSummary(data: Data) {
+  const body = el('div')
+  body.append(
+    stats([
+      ['Open', data.open, 'danger'],
+      ['Unacknowledged', data.firing],
+      ['Acknowledged', data.acknowledged],
+      ['Rules', obj(data.rules).total],
+    ])
+  )
+  if (data.truncated)
+    body.append(
+      el('p', 'notice', 'More than 500 open events. These breakdowns cover a partial sample.')
+    )
+  body.append(
+    panel(
+      'Open incidents by queue',
+      table(
+        ['Queue', 'Open'],
+        rows(data.byQueue).map((row) => [
+          toolButton(
+            str(row.queueName) || 'Connection-wide',
+            'get_failure_events',
+            {
+              ...connectionArgs(),
+              ...(row.queueName ? { queueName: row.queueName } : {}),
+              status: 'firing',
+            },
+            'link'
+          ),
+          fmt(row.open),
+        ])
+      )
+    ),
+    panel(
+      'Open incidents by rule',
+      table(
+        ['Rule', 'Open'],
+        rows(data.byRule).map((row) => [
+          toolButton(
+            str(row.ruleName) || str(row.alertRuleId),
+            'get_alert_rule',
+            { ...connectionArgs(), ruleId: row.alertRuleId },
+            'link'
+          ),
+          fmt(row.open),
+        ])
+      )
+    ),
+    panel(
+      'Rule coverage',
+      facts([
+        ['Active', obj(data.rules).active],
+        ['Snoozed', obj(data.rules).snoozed],
+        ['Disabled', obj(data.rules).disabled],
+      ])
+    )
+  )
+  return body
+}
+
+/** Show an operation receipt and offer a read of the current state, never a replay. */
+function renderOperation(current: View) {
+  const body = el('div')
+  const read = refreshToolCall(current.tool, current.args)
+  body.append(
+    panel(
+      'Operation result',
+      facts([
+        ['Operation', title(current.tool)],
+        ['Connection', current.data.connectionId],
+        ...('jobId' in current.data
+          ? ([
+              ['Queue', current.data.queueName],
+              ['Job ID', current.data.jobId],
+              ['Previous state', current.data.previousState],
+              ['Observed state', current.data.state],
+            ] as [string, unknown][])
+          : ([
+              ['Queue', current.data.queueName],
+              ['Paused', current.data.isPaused],
+              ['Changed', current.data.changed],
+            ] as [string, unknown][])),
+      ])
+    )
+  )
+  if ('jobId' in current.data)
+    body.append(
+      el(
+        'p',
+        'notice',
+        'Queued work is not proof of successful completion. Inspect the job for its current state.'
+      )
+    )
+  if (read)
+    body.append(toolButton('Inspect current state', read.name, read.arguments ?? {}, 'primary'))
+  return body
+}
+
 /** Select a view by tool name, falling back to expandable structured data. */
 function renderContent(current: View) {
   const { tool, data } = current
@@ -543,20 +971,101 @@ function renderContent(current: View) {
       )
     case 'get_queue':
       return renderQueue(data)
-    case 'list_jobs':
-      return searchableTable(
-        'Jobs',
-        ['Job', 'State', 'Attempts', 'Failure'],
-        rows(data.jobs),
-        (row) => [
+    case 'list_jobs': {
+      const body = el('div')
+      const filters = el('div', 'actions details')
+      const label = el('label', '', 'Job state')
+      const select = el('select')
+      select.setAttribute('aria-label', 'Job state')
+      select.disabled = busy || !connected
+      for (const state of ['', ...MCP_JOB_STATES]) {
+        const option = el('option', '', state ? title(state) : 'All states')
+        option.value = state
+        option.selected = state === (current.args.status ?? '')
+        select.append(option)
+      }
+      select.addEventListener('change', () => {
+        const { cursor: _cursor, status: _status, ...args } = current.args
+        void load('list_jobs', { ...args, ...(select.value ? { status: select.value } : {}) })
+      })
+      label.append(select)
+      filters.append(label, el('span', 'subtle', `${fmt(data.total)} jobs match this query`))
+      body.append(
+        filters,
+        searchableTable('Jobs', ['Job', 'State', 'Attempts', 'Failure'], rows(data.jobs), (row) => [
           toolButton(str(row.id), 'get_job', { ...queueArgs(), jobId: row.id }, 'link'),
           badge(row.status),
           `${fmt(row.attemptsMade)} / ${fmt(row.maxAttempts)}`,
           str(row.failedReason) || '—',
-        ]
+        ])
       )
+      return body
+    }
+    case 'find_job': {
+      const body = el('div')
+      body.append(
+        el(
+          'p',
+          'notice',
+          `Scanned ${fmt(data.queuesScanned)} of ${fmt(data.totalQueues)} queues. ${data.truncated ? 'Partial search: narrow the queue to check remaining jobs.' : 'Job IDs may occur in multiple queues.'}`
+        )
+      )
+      body.append(
+        searchableTable(
+          'Matching jobs',
+          ['Queue', 'Job', 'State', 'Name'],
+          rows(data.matches),
+          (match) => [
+            match.queueName,
+            toolButton(
+              str(obj(match.job).id),
+              'get_job',
+              { ...connectionArgs(), queueName: match.queueName, jobId: obj(match.job).id },
+              'link'
+            ),
+            badge(obj(match.job).status),
+            obj(match.job).name,
+          ]
+        )
+      )
+      return body
+    }
     case 'get_job':
       return renderJob(data)
+    case 'get_scheduled_job':
+      return renderSchedule(data)
+    case 'get_alert_event':
+    case 'resolve_alert_event':
+    case 'acknowledge_alert_event':
+    case 'unacknowledge_alert_event':
+      return renderAlert(data)
+    case 'get_alert_rule':
+    case 'snooze_alert_rule':
+    case 'unsnooze_alert_rule':
+      return renderRule(data)
+    case 'list_alert_rules':
+      return searchableTable(
+        'Alert rules',
+        ['Rule', 'Type', 'State', 'Open', 'Snoozed until'],
+        rows(data.rules),
+        (rule) => [
+          toolButton(
+            str(rule.name),
+            'get_alert_rule',
+            { ...connectionArgs(), ruleId: rule.id },
+            'link'
+          ),
+          title(str(rule.type)),
+          badge(rule.state),
+          fmt(rule.openEventCount),
+          rule.mutedUntil,
+        ]
+      )
+    case 'retry_job':
+    case 'promote_job':
+    case 'pause_queue':
+    case 'resume_queue':
+      return renderOperation(current)
     case 'get_job_logs':
       return panel(
         'Job logs · redacted',
@@ -632,18 +1141,38 @@ function renderContent(current: View) {
       )
       body.append(
         panel('Failure evidence', details),
-        jsonDetails('Strongest signal', data.topSignal, true),
-        jsonDetails('Sources not available', data.skippedSources)
+        panel(
+          'Attempt timeline',
+          facts([
+            ['State', data.status],
+            ['Attempts made', obj(data.attemptTimeline).attemptsMade],
+            ['Max attempts', obj(data.attemptTimeline).maxAttempts],
+            ['Signal source', title(str(obj(data.topSignal).source))],
+          ])
+        ),
+        panel('Strongest signal', el('pre', '', str(obj(data.topSignal).excerpt))),
+        panel(
+          'Recent logs · redacted',
+          el(
+            'pre',
+            '',
+            Array.isArray(data.recentLogLines)
+              ? data.recentLogLines.join('\n')
+              : 'No logs available.'
+          )
+        ),
+        panel(
+          'Evidence gaps',
+          table(
+            ['Source', 'Reason'],
+            rows(data.skippedSources).map((source) => [source.source, source.reason])
+          )
+        )
       )
       return body
     }
     case 'get_alert_summary':
-      return stats([
-        ['Open', data.open, 'danger'],
-        ['Firing', data.firing],
-        ['Acknowledged', data.acknowledged],
-        ['Rules', obj(data.rules).total],
-      ])
+      return renderAlertSummary(data)
     default:
       return jsonDetails(title(tool), data, true)
   }
@@ -717,10 +1246,10 @@ function render() {
       ? 'Your queues, in focus.'
       : str(view.data.queueName) ||
         (['get_queue', 'get_connection_overview'].includes(view.tool) ? str(view.data.name) : '') ||
-        title(view.tool)
+        viewTitle(view.tool)
     : 'Your queues, in focus.'
   heading.append(
-    el('p', 'eyebrow', view ? title(view.tool) : 'Operations workspace'),
+    el('p', 'eyebrow', view ? viewTitle(view.tool) : 'Operations workspace'),
     el('h1', '', name),
     el(
       'p',
@@ -738,14 +1267,17 @@ function render() {
     for (const [label, tool] of [
       ['Queues', 'list_queues'],
       ['Workers', 'get_workers'],
+      ['Schedules', 'list_scheduled_jobs'],
+      ['Incidents', 'get_alert_summary'],
       ['Alerts', 'get_failure_events'],
+      ['Rules', 'list_alert_rules'],
       ['Redis health', 'get_redis_health'],
     ]) {
       const tab = toolButton(label, tool, connectionArgs())
       if (tool === view.tool) tab.setAttribute('aria-current', 'page')
       tabs.append(tab)
     }
-    shell.append(tabs)
+    shell.append(tabs, jobSearch())
   }
   if (error) {
     const node = el('div', 'notice error', error)

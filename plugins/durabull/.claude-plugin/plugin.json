@@ -1,7 +1,7 @@
 {
   "name": "durabull",
-  "version": "1.0.0",
-  "description": "Inspect BullMQ queues, diagnose failed jobs, and perform explicitly scoped recovery operations with Durabull.",
+  "version": "1.1.0",
+  "description": "BullMQ queue management and Redis monitoring with Durabull. Explore background jobs, diagnose failures and backlogs, inspect workers and repeatable schedules, review alerts, and retry, promote, pause or resume on request.",
   "author": {
     "name": "Durabull",
     "url": "https://durabull.io"
@@ -12,7 +12,15 @@
   "keywords": [
     "bullmq",
     "redis",
-    "queues",
+    "queue-management",
+    "background-jobs",
+    "job-queues",
+    "queue-monitoring",
+    "failed-jobs",
+    "job-retry",
+    "workers",
+    "cron",
+    "scheduled-jobs",
     "observability",
     "mcp"
   ]

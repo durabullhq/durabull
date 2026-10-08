@@ -72,3 +72,12 @@ test('scheduled job detail renders the editable production form', async ({ page 
   await page.goto('/iframe.html?id=web-screens-connection-scheduler-detail--default&viewMode=story')
   await expect(page.getByLabel('Job Name', { exact: true })).toHaveValue('send-summary')
 })
+
+test('MCP operation receipts refresh state through read tools', async ({ page }) => {
+  await page.goto('/iframe.html?id=mcp-apps-queue-explorer--job-retried&viewMode=story')
+  const app = page.frameLocator('iframe[title="Durabull MCP app"]')
+  await expect(app.getByText('Operation result', { exact: true })).toBeVisible()
+  await app.getByRole('button', { name: 'Inspect current state', exact: true }).click()
+  await page.getByText(/Host activity/).click()
+  await expect(page.locator('details pre')).toHaveText('get_job')
+})

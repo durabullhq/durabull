@@ -1,13 +1,27 @@
 ---
 name: setup
-description: Connect Durabull and verify which BullMQ connections and diagnostic permissions are available. Use for initial setup or reconnecting after an access error.
+description: Connect Durabull to inspect BullMQ queues and Redis. Use for first-time setup, available capabilities, choosing an environment, or reconnecting after an access error.
+metadata:
+  short-description: Connect BullMQ and Redis to your assistant
 ---
 
-Use the Durabull MCP server bundled with this plugin. The default endpoint is Durabull Cloud; a self-hosted installation uses its own public HTTPS origin followed by `/mcp`.
+# Connect Durabull
 
-1. Use the host's MCP connection and OAuth flow. Never request pasted access tokens, passwords, Redis URLs or client secrets in chat.
-2. Call `list_connections`; if no connection is visible, explain that the user needs organization membership and connection access in Durabull. Do not guess connection IDs.
-3. Read `durabull://server` when the host supports resources to inspect granted scopes. Discovery describes available operations; it does not grant them.
-4. Summarize the connected environment and what can be read. The initial grant is read-only. For an explicitly requested operation that returns `insufficient_scope`, use the host's reauthorization flow for the required scope. A policy/tenant denial needs an administrator, not repeated OAuth attempts.
+1. Use the bundled MCP connection and the host's browser OAuth flow. Cloud uses `https://app.durabull.io/mcp`; self-hosted installations use their own public HTTPS origin plus `/mcp`. Keep tokens, Redis URLs, passwords, and client secrets out of chat.
+2. Call `ping` to verify transport, then `list_connections`. Follow `nextCursor` to find the requested environment. Preserve returned IDs; a connection name is not an ID. If multiple connections match, ask which environment the user means. An empty list means no visible connections, not an empty Redis database: check organization membership and connection access in Durabull.
+3. Read `durabull://server` when resources are supported to inspect granted scopes and the live catalog. Tool availability alone does not grant permission. On `insufficient_scope`, use host OAuth reauthorization; tenant or service-account policy denials need the connection administrator. If the host cannot elevate scopes, explain the required grant and stop the affected operation.
+4. On a rate-limit response, honor the returned `retryAfter`/`Retry-After` delay. Keep the same target and pagination cursor; reconnecting does not reset the work budget. Avoid parallel retry loops.
+5. Finish with the selected connection and environment, verified access, and a useful next task. `list_connections` opens the visual explorer in MCP Apps hosts; text tools work without it. Never mutate data as a connection test.
 
-In MCP Apps hosts, `list_connections` opens the queue explorer. Claude Code uses text results. The same connection and tools support both. Stop after verifying access; do not mutate queues as a connection test.
+## Choose the next workflow
+
+- Fleet health: overall queue, worker, alert and Redis status across selected connections.
+- Queue triage: a backlog, stuck jobs, poor throughput, or worker shortage.
+- Inspect job: locate an ID, inspect payload/progress/results, or diagnose a failure.
+- Schedules: inspect repeatable jobs, cron, intervals, timezones and next runs.
+- Redis health: memory, CPU, client pressure, evictions and collection coverage.
+- Alert triage: incident evidence, delivery failures, acknowledgements and snoozes.
+- Job recovery: retry a failed job or promote a delayed job on request.
+- Queue control: pause or resume a named queue on request.
+
+Durabull manages BullMQ background jobs on Redis. This MCP does not run arbitrary Redis commands, edit keys or job payloads, delete jobs, purge queues, scale workers, create schedules, or configure alert rules. For those requests, explain the boundary and point to the relevant Durabull or application controls without claiming to have performed the change.

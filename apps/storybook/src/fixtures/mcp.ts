@@ -39,6 +39,49 @@ export function mcpFixture(name: string, args: Record<string, unknown>): Record<
   const queueName = args.queueName ?? 'email:receipts'
   let data: Record<string, unknown>
   switch (name) {
+    // Operation receipts are invented snapshots, never calls to mutation tools.
+    case 'retry_job':
+    case 'promote_job':
+      data = {
+        connectionId,
+        queueName,
+        jobId: args.jobId ?? 'job-1042',
+        previousState: name === 'retry_job' ? 'failed' : 'delayed',
+        state: 'waiting',
+      }
+      break
+    case 'pause_queue':
+    case 'resume_queue':
+      data = { connectionId, queueName, isPaused: name === 'pause_queue', changed: true }
+      break
+    case 'resolve_alert_event':
+    case 'acknowledge_alert_event':
+    case 'unacknowledge_alert_event': {
+      const event = baseFixture('get_alert_event', args).event as Record<string, unknown>
+      data = {
+        connectionId,
+        event: {
+          ...event,
+          status: name === 'resolve_alert_event' ? 'resolved' : 'firing',
+          resolvedAt: name === 'resolve_alert_event' ? time : null,
+          acknowledgedAt: name === 'acknowledge_alert_event' ? time : null,
+        },
+      }
+      break
+    }
+    case 'snooze_alert_rule':
+    case 'unsnooze_alert_rule': {
+      const rule = baseFixture('get_alert_rule', args).rule as Record<string, unknown>
+      data = {
+        connectionId,
+        rule: {
+          ...rule,
+          state: name === 'snooze_alert_rule' ? 'snoozed' : 'active',
+          mutedUntil: name === 'snooze_alert_rule' ? '2026-10-08T13:00:00Z' : null,
+        },
+      }
+      break
+    }
     case 'list_scheduled_jobs':
       data = {
         connectionId,

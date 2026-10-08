@@ -33,6 +33,7 @@ const bridge = new AppBridge(
 )
 bridge.oncalltool = async ({ name, arguments: args }) => {
   calls.push(name)
+  if (params.get('deny') === name) throw new Error('Preview: access denied for this view')
   const definition = getMcpToolDefinition(name)
   if (!definition?.annotations.readOnlyHint)
     throw new Error('The UI must never invoke a mutation directly')

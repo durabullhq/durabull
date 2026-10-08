@@ -25,6 +25,9 @@ export function McpPreview({ tool, theme = 'light', state = 'ready', width }: Mc
             queueName: 'email:receipts',
             jobId: 'job-1042',
             schedulerId: 'daily-summary',
+            ruleId: 'rule-1',
+            eventId: 'evt-1',
+            minutes: 60,
           }
     let disposed = false
     const result = (name: string, input: Record<string, unknown>) => {

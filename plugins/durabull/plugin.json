@@ -1,27 +1,59 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "durabull",
-  "version": "1.0.0",
-  "description": "Inspect BullMQ queues, diagnose failed jobs, and perform explicitly scoped recovery operations with Durabull.",
-  "author": { "name": "Durabull", "url": "https://durabull.io" },
+  "version": "1.1.0",
+  "description": "BullMQ queue management and Redis monitoring with Durabull. Explore background jobs, diagnose failures and backlogs, inspect workers and repeatable schedules, review alerts, and retry, promote, pause or resume on request.",
+  "author": {
+    "name": "Durabull",
+    "url": "https://durabull.io"
+  },
   "homepage": "https://durabull.io/documentation/integrations/mcp-server",
   "repository": "https://github.com/durabullhq/durabull",
   "license": "Elastic-2.0",
-  "keywords": ["bullmq", "redis", "queues", "observability", "mcp"],
+  "keywords": [
+    "bullmq",
+    "redis",
+    "queue-management",
+    "background-jobs",
+    "job-queues",
+    "queue-monitoring",
+    "failed-jobs",
+    "job-retry",
+    "workers",
+    "cron",
+    "scheduled-jobs",
+    "observability",
+    "mcp"
+  ],
   "extensions": {
     "com.openai": {
       "onboardingSkill": "./skills/setup/SKILL.md",
       "interface": {
-        "displayName": "Durabull",
-        "shortDescription": "BullMQ diagnostics and scoped job recovery",
-        "longDescription": "Explore queues, workers, job failures, logs, schedules, alerts and Redis health. Use the queue explorer in compatible hosts and diagnostic workflows in agentic clients.",
+        "displayName": "Durabull \u2014 BullMQ & Redis",
+        "shortDescription": "BullMQ queues & Redis health",
+        "longDescription": "Inspect your BullMQ queues and Redis health without leaving the conversation. Find jobs across queues, investigate failures with redacted payloads, logs and stacktraces, measure throughput, inspect workers and recurring schedules, and review incidents and notification delivery. Explore interactive queue, job, schedule, alert and health views in MCP Apps hosts. Retry failed jobs, promote delayed jobs, pause or resume queues, and manage alert acknowledgements and snoozes when requested. Connect Durabull Cloud or a self-hosted installation with scoped OAuth access.",
         "developerName": "Durabull",
         "category": "Developer Tools",
-        "capabilities": ["Read", "Write"],
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
         "websiteURL": "https://durabull.io",
+        "supportURL": "https://durabull.io/contact",
         "brandColor": "#1B6C4E",
         "logo": "./assets/icon.svg",
-        "defaultPrompt": ["Check the health of my queues.", "Investigate why this job failed.", "Show queues with a growing backlog."]
+        "composerIcon": "./assets/icon.svg",
+        "defaultPrompt": [
+          "Check my BullMQ queues for backlogs, failures and missing workers.",
+          "Find a job by ID and explain why it failed.",
+          "Show my recurring jobs and their next scheduled runs."
+        ],
+        "privacyPolicyURL": "https://durabull.io/privacy",
+        "termsOfServiceURL": "https://durabull.io/terms",
+        "screenshots": [
+          "./assets/queue-overview.png",
+          "./assets/incidents-dark.png"
+        ]
       }
     }
   }

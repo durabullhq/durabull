@@ -1,40 +1,23 @@
 import { createHash } from 'node:crypto'
 import { env } from '@durabull/env'
-import { isMcpHeavyTool } from '@durabull/mcp'
+import { getMcpToolDefinition } from '@durabull/mcp'
 import { extractBearerToken } from '@durabull/mcp/auth'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 
+import { TokenBucketStore } from '../../middleware/token-bucket'
 import { hashMcpToolInput, writeMcpAuditEventNonBlocking } from '../audit/mcp-audit'
 import {
   isMcpResourcesReadMethod,
   isMcpToolsCallMethod,
+  parseMcpJsonRpcMethod,
   parseMcpJsonRpcPayloadId,
   parseMcpPolicyOperation,
 } from '../json-rpc-tool-call'
+import { MCP_RATE_LIMIT_POLICIES } from './rate-limit-policy'
 
-interface RateLimitEntry {
-  count: number
-  resetAt: number
-}
-
-const rateLimitStore = new Map<string, RateLimitEntry>()
-
-const DEFAULT_TOOL_WINDOW_MS = 60 * 1000
-const DEFAULT_TOOL_LIMIT = 60
-const HEAVY_TOOL_LIMIT = 30
-const MAX_RATE_LIMIT_ENTRIES = 4096
-
+const rateLimitStore = new TokenBucketStore()
 let forceToolRateLimitInTests = false
-
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of rateLimitStore.entries()) {
-    if (entry.resetAt < now) {
-      rateLimitStore.delete(key)
-    }
-  }
-}, 60 * 1000)
 
 function shouldSkipToolRateLimiting(): boolean {
   if (forceToolRateLimitInTests) return false
@@ -42,18 +25,6 @@ function shouldSkipToolRateLimiting(): boolean {
   if (env.NODE_ENV === 'test') return true
   if (env.NODE_ENV === 'development' || env.NODE_ENV === undefined) return true
   return false
-}
-
-function evictRateLimitEntriesIfNeeded(nextKey: string): void {
-  if (rateLimitStore.size < MAX_RATE_LIMIT_ENTRIES || rateLimitStore.has(nextKey)) {
-    return
-  }
-
-  const overflow = rateLimitStore.size - MAX_RATE_LIMIT_ENTRIES + 1
-  const keysToDelete = [...rateLimitStore.keys()].slice(0, overflow)
-  for (const key of keysToDelete) {
-    rateLimitStore.delete(key)
-  }
 }
 
 function resolveRateLimitAuditPrincipal(c: Context, principalKey: string) {
@@ -77,31 +48,62 @@ function resolveRateLimitAuditPrincipal(c: Context, principalKey: string) {
 }
 
 function principalRateLimitKey(c: Context): string {
-  const bearerToken = extractBearerToken(c.req.header('Authorization'))
-  if (bearerToken) {
-    return createHash('sha256').update(bearerToken).digest('hex').slice(0, 24)
-  }
-  return 'anonymous'
+  // The validated user+OAuth client survives refresh and isolates hosts and accounts.
+  const session = c.get('mcpSession')
+  const identity = session
+    ? JSON.stringify([session.userId ? 'user' : 'service', session.userId, session.clientId])
+    : (extractBearerToken(c.req.header('Authorization')) ?? 'anonymous')
+  return createHash('sha256').update(identity).digest('hex').slice(0, 24)
 }
 
-/** Heavy tools (per the catalog) get the lower limit; resources use the default. */
-function toolLimitForName(toolName: string): number {
-  return isMcpHeavyTool(toolName) ? HEAVY_TOOL_LIMIT : DEFAULT_TOOL_LIMIT
+type WorkBucket = Exclude<keyof typeof MCP_RATE_LIMIT_POLICIES, 'ingress'>
+const DISCOVERY_OPERATIONS = new Set([
+  'ping',
+  'list_connections',
+  'resource:server',
+  'resource:queue_explorer',
+  'resource:connections',
+])
+const DISCOVERY_METHODS = new Set([
+  'initialize',
+  'ping',
+  'tools/list',
+  'resources/list',
+  'resources/templates/list',
+  'prompts/list',
+  'prompts/get',
+])
+
+/** Charge aggregate work by cost, so switching tools cannot bypass a diagnostic budget. */
+function bucketForOperation(toolName: string): WorkBucket {
+  if (DISCOVERY_OPERATIONS.has(toolName) || toolName.startsWith('method:')) return 'discovery'
+  const tool = getMcpToolDefinition(toolName)
+  if (tool && !tool.annotations.readOnlyHint) return 'write'
+  if (
+    tool?.heavy ||
+    toolName === 'resource:connection_queues' ||
+    toolName === 'resource:connection_alerts'
+  )
+    return 'heavy'
+  return 'read'
 }
 
 function jsonRpcRateLimitResponse(
   c: Context,
   payloadId: string | number | null,
-  retryAfterSeconds: number
+  retryAfterSeconds: number,
+  bucket: WorkBucket
 ) {
   return c.json(
     {
       jsonrpc: '2.0',
       error: {
         code: -32_029,
-        message: 'Rate limit exceeded for this MCP tool. Please slow down.',
+        message:
+          'MCP work budget exhausted. Retry after the indicated delay; other work budgets remain available.',
         data: {
           retryAfter: retryAfterSeconds,
+          bucket,
         },
       },
       id: payloadId,
@@ -131,7 +133,9 @@ export function createMcpToolRateLimitMiddleware() {
     }
 
     const body = await readMcpRequestBody(c)
-    if (!isMcpToolsCallMethod(body) && !isMcpResourcesReadMethod(body)) {
+    const method = parseMcpJsonRpcMethod(body)
+    const discovery = method !== null && DISCOVERY_METHODS.has(method)
+    if (!isMcpToolsCallMethod(body) && !isMcpResourcesReadMethod(body) && !discovery) {
       return next()
     }
 
@@ -144,9 +148,11 @@ export function createMcpToolRateLimitMiddleware() {
           payloadId: operation.payloadId,
         }
       : {
-          toolName: isMcpToolsCallMethod(body)
-            ? '__invalid_tools_call__'
-            : '__invalid_resources_read__',
+          toolName: discovery
+            ? `method:${method}`
+            : isMcpToolsCallMethod(body)
+              ? '__invalid_tools_call__'
+              : '__invalid_resources_read__',
           arguments: {},
           connectionId: null,
           payloadId: parseMcpJsonRpcPayloadId(body),
@@ -157,30 +163,15 @@ export function createMcpToolRateLimitMiddleware() {
     }
 
     const principalKey = principalRateLimitKey(c)
-    const limit = toolLimitForName(toolCall.toolName)
-    const key = `mcp-tool:${principalKey}:${toolCall.toolName}`
-    const now = Date.now()
+    const bucket = bucketForOperation(toolCall.toolName)
+    const policy = MCP_RATE_LIMIT_POLICIES[bucket]
+    const result = rateLimitStore.take(`mcp:${principalKey}:${bucket}`, policy)
+    c.header('X-RateLimit-Limit', String(policy.capacity))
+    c.header('X-RateLimit-Remaining', String(result.remaining))
+    c.header('X-RateLimit-Reset', String(result.resetAfter))
 
-    if (rateLimitStore.size >= MAX_RATE_LIMIT_ENTRIES && !rateLimitStore.has(key)) {
-      evictRateLimitEntriesIfNeeded(key)
-    }
-
-    let entry = rateLimitStore.get(key)
-    if (!entry || entry.resetAt < now) {
-      entry = { count: 0, resetAt: now + DEFAULT_TOOL_WINDOW_MS }
-    }
-
-    entry.count += 1
-    rateLimitStore.set(key, entry)
-
-    const remaining = Math.max(0, limit - entry.count)
-    const retryAfterSeconds = Math.ceil((entry.resetAt - now) / 1000)
-    c.header('X-RateLimit-Limit', limit.toString())
-    c.header('X-RateLimit-Remaining', remaining.toString())
-    c.header('X-RateLimit-Reset', retryAfterSeconds.toString())
-
-    if (entry.count > limit) {
-      c.header('Retry-After', retryAfterSeconds.toString())
+    if (!result.allowed) {
+      c.header('Retry-After', String(result.retryAfter))
 
       const auditPrincipal = resolveRateLimitAuditPrincipal(c, principalKey)
       const correlationId = c.req.header('x-request-id') ?? crypto.randomUUID()
@@ -193,12 +184,12 @@ export function createMcpToolRateLimitMiddleware() {
         toolName: toolCall.toolName,
         requiredScopes: [],
         granted: false,
-        denialReason: 'tool_rate_limited',
+        denialReason: `work_budget_exhausted:${bucket}`,
         inputHash: hashMcpToolInput(toolCall.arguments),
         responseClass: 'rate_limited',
       })
 
-      return jsonRpcRateLimitResponse(c, toolCall.payloadId, retryAfterSeconds)
+      return jsonRpcRateLimitResponse(c, toolCall.payloadId, result.retryAfter, bucket)
     }
 
     return next()

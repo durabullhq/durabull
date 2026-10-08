@@ -106,7 +106,7 @@ The five read scopes form the bundle injected into authorize requests that omit 
 ### 8. Operational controls
 
 - Host header allowlist on `/mcp` (includes `APP_BASE_URL` host).
-- Ingress + per-operation in-memory rate limits (per-process; shared backend deferred for multi-replica). `resources/read` is limited under `resource:<name>`; heavy tools are flagged in the catalog.
+- Ingress plus authenticated work-class token buckets (per-process; shared backend deferred for multi-replica). Setup/discovery, ordinary reads, catalog-heavy diagnostics and mutations have independent burst/refill budgets keyed by validated user and OAuth client. Token refresh does not reset work budgets. Resource reads share the corresponding work class. The ingress wildcard covers the root route; requests are charged only once. See the operations runbook for capacities and retry semantics.
 - Structured `mcp_telemetry` JSON logs for policy denies, rate limits, tool outcomes.
 
 ## Threat model (summary)

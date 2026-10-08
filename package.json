@@ -52,7 +52,7 @@
     "test:e2e:debug": "cd apps/web && bun run test:e2e:debug",
     "mcp:app": "bun run --cwd packages/mcp build:app",
     "mcp:plugin": "bun tooling/scripts/build-mcp-plugin.ts",
-    "mcp:check": "bun run --cwd packages/mcp check:app && bun tooling/scripts/build-mcp-plugin.ts --check && bun test packages/mcp tooling/scripts/build-mcp-plugin.test.ts && bun test apps/api/src/mcp",
+    "mcp:check": "bun run --cwd packages/mcp check:app && bun tooling/scripts/build-mcp-plugin.ts --check && bun test packages/mcp tooling/scripts/build-mcp-plugin.test.ts && bun test apps/api/src/mcp apps/api/src/middleware/rate-limit.test.ts apps/api/src/middleware/token-bucket.test.ts",
     "storybook": "turbo dev --filter=@durabull/storybook",
     "build:storybook": "turbo build --filter=@durabull/storybook",
     "test:storybook": "bun run --cwd apps/storybook test && bun run --cwd apps/storybook test:browser"
