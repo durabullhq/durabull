@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run search:index && next dev --port 3002",
     "search:index": "bun x fumadocs-mdx && bun tooling/generate-search-index.ts && bun tooling/generate-llms-txt.ts",
-    "build": "bun run search:index && NEXT_OUTPUT=export next build",
+    "build": "bun run search:index && NEXT_OUTPUT=export next build && bun run build:ui",
+    "build:ui": "bun run --cwd ../storybook build:marketing && bun tooling/copy-ui-fonts.ts",
     "build:server": "bun run search:index && next build",
     "start": "bun x serve out",
     "start:server": "next start",

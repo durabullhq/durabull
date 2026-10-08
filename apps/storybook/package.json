@@ -1,0 +1,50 @@
+{
+  "name": "@durabull/storybook",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "storybook dev -p 6006 --no-open",
+    "build": "storybook build -o dist --disable-telemetry",
+    "build:marketing": "storybook build -o ../docs/out/ui --disable-telemetry",
+    "preview": "vite preview --port 6006 --outDir dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .storybook src scripts tests playwright*.config.ts",
+    "lint:fix": "biome lint --write .storybook src scripts tests playwright*.config.ts",
+    "format": "biome format --write .storybook src scripts tests playwright*.config.ts",
+    "format:check": "biome format .storybook src scripts tests playwright*.config.ts",
+    "test": "bun scripts/check-coverage.ts",
+    "test:browser": "playwright test",
+    "test:hosting": "playwright test --config playwright.hosting.config.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@durabull/web": "workspace:*",
+    "@durabull/docs": "workspace:*",
+    "@durabull/mcp": "workspace:*",
+    "@tanstack/react-query": "^5.90.0",
+    "@tanstack/react-router": "^1.146.0",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "lucide-react": "^0.468.0",
+    "recharts": "^3.7.0",
+    "sonner": "^2.0.7",
+    "@durabull/email": "workspace:*"
+  },
+  "devDependencies": {
+    "storybook": "10.6.1",
+    "@storybook/react-vite": "10.6.1",
+    "@storybook/addon-docs": "10.6.1",
+    "@storybook/addon-a11y": "10.6.1",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@types/node": "^22.5.4",
+    "@playwright/test": "^1.58.1",
+    "msw": "^2.12.0",
+    "typescript": "^5.7.2",
+    "vite": "^7.1.7",
+    "esbuild": "^0.25.0"
+  }
+}

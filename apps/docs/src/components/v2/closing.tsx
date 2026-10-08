@@ -59,6 +59,7 @@ export function V2FinalCta() {
 
 const footerLinks = [
   { label: 'Documentation', href: '/documentation' },
+  { label: 'UI catalog', href: '/ui/' },
   { label: 'Desktop apps', href: GITHUB_RELEASE_URL },
   { label: 'GitHub', href: 'https://github.com/durabullhq/durabull' },
   { label: 'Pricing', href: '#pricing' },
@@ -80,13 +81,13 @@ export function V2Footer() {
 
         <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
           {footerLinks.map((link) => (
-            <Link
+            <a
               key={link.label}
               href={link.href}
               className="text-[12.5px] text-[var(--v2-faint)] transition-colors hover:text-[var(--v2-fg)]"
             >
               {link.label}
-            </Link>
+            </a>
           ))}
         </nav>
 
