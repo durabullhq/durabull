@@ -47,7 +47,25 @@ export const redisHealthSampleRepository = {
       .values({ ...data, capturedAt })
       .onConflictDoUpdate({
         target: [redisHealthSample.connectionId, redisHealthSample.capturedAt],
-        set: { ...data, capturedAt, updatedAt: new Date() },
+        set: {
+          ...data,
+          capturedAt,
+          // Polling can run more than once per minute. Keep alert-triggering
+          // peaks for the minute while advancing raw counters and capacity
+          // metadata with the latest observation.
+          memoryUsagePercent: sql`greatest(${redisHealthSample.memoryUsagePercent}, excluded.memory_usage_percent)`,
+          usedMemoryBytes: sql`greatest(${redisHealthSample.usedMemoryBytes}, excluded.used_memory_bytes)`,
+          residentMemoryBytes: sql`greatest(${redisHealthSample.residentMemoryBytes}, excluded.resident_memory_bytes)`,
+          cpuUsagePercent: sql`greatest(${redisHealthSample.cpuUsagePercent}, excluded.cpu_usage_percent)`,
+          memoryFragmentationRatio: sql`greatest(${redisHealthSample.memoryFragmentationRatio}, excluded.memory_fragmentation_ratio)`,
+          memoryFragmentationBytes: sql`greatest(${redisHealthSample.memoryFragmentationBytes}, excluded.memory_fragmentation_bytes)`,
+          connectedClientsPercent: sql`greatest(${redisHealthSample.connectedClientsPercent}, excluded.connected_clients_percent)`,
+          connectedClients: sql`greatest(${redisHealthSample.connectedClients}, excluded.connected_clients)`,
+          blockedClients: sql`greatest(${redisHealthSample.blockedClients}, excluded.blocked_clients)`,
+          evictedKeysPerMinute: sql`greatest(${redisHealthSample.evictedKeysPerMinute}, excluded.evicted_keys_per_minute)`,
+          rejectedConnectionsPerMinute: sql`greatest(${redisHealthSample.rejectedConnectionsPerMinute}, excluded.rejected_connections_per_minute)`,
+          updatedAt: new Date(),
+        },
       })
       .returning()
 

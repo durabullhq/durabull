@@ -160,6 +160,53 @@ describe('Redis health history', () => {
     expect(history.series[0]?.memoryUsagePercent).toBeCloseTo(87.891, 3)
   })
 
+  it('preserves intra-minute peaks while advancing the latest raw counters', async () => {
+    const baseline = buildRedisHealthSnapshot(
+      redisInfo(200, 10),
+      'Primary Redis',
+      new Date('2026-09-02T18:00:00.000Z')
+    )
+    const spike = buildRedisHealthSnapshot(
+      redisInfo(900, 11),
+      'Primary Redis',
+      new Date('2026-09-02T18:00:10.000Z'),
+      baseline
+    )
+    const settled = buildRedisHealthSnapshot(
+      redisInfo(300, 11.4),
+      'Primary Redis',
+      new Date('2026-09-02T18:00:50.000Z'),
+      spike
+    )
+
+    await recordRedisHealthSnapshot(connectionId, baseline)
+    await recordRedisHealthSnapshot(connectionId, spike)
+    const latestRow = await recordRedisHealthSnapshot(connectionId, settled)
+
+    const history = await getRedisHealthHistory(connectionId, {
+      from: new Date('2026-09-02T18:00:00.000Z'),
+      to: new Date('2026-09-02T18:00:59.000Z'),
+      targetPoints: 1,
+    })
+
+    expect(history.series).toHaveLength(1)
+    expect(history.series[0]?.usedMemoryBytes).toBe(900 * 1024 * 1024)
+    expect(history.series[0]?.cpuUsagePercent).toBeCloseTo(10, 5)
+    expect(latestRow.cpuSeconds).toBeCloseTo(11.4, 5)
+  })
+
+  it('never exceeds the requested point budget after epoch alignment', async () => {
+    const history = await getRedisHealthHistory(connectionId, {
+      from: new Date(3 * 60_000),
+      to: new Date(363 * 60_000),
+      targetPoints: 33,
+    })
+
+    expect(history.range.bucketMinutes).toBe(12)
+    expect(history.series.length).toBeLessThanOrEqual(33)
+    expect(history.range.totalBuckets).toBe(history.series.length)
+  })
+
   it('calculates coverage at the configured collection cadence', async () => {
     const start = new Date('2026-09-02T18:00:00.000Z')
     let previous: RedisHealthSnapshot | null = null
@@ -190,20 +237,18 @@ describe('Redis health history', () => {
   })
 
   it('does not count a not-yet-due sampling bucket as a gap', async () => {
+    const observedAt = new Date('2026-09-02T18:02:59.000Z')
     await recordRedisHealthSnapshot(
       connectionId,
-      buildRedisHealthSnapshot(
-        redisInfo(256, 10),
-        'Primary Redis',
-        new Date('2026-09-02T18:02:00.000Z')
-      )
+      buildRedisHealthSnapshot(redisInfo(256, 10), 'Primary Redis', observedAt)
     )
 
     const history = await getRedisHealthHistory(connectionId, {
       from: new Date('2026-09-02T18:00:00.000Z'),
-      to: new Date('2026-09-02T18:06:00.000Z'),
+      to: new Date('2026-09-02T18:07:30.000Z'),
       targetPoints: 480,
       expectedSampleIntervalMinutes: 5,
+      latestObservedAt: observedAt,
     })
 
     expect(history.range).toMatchObject({

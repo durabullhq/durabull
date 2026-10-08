@@ -84,6 +84,7 @@ const redisHealthSnapshotSchema = z.object({
   kind: z.literal('redis_health'),
   connectionName: z.string(),
   capturedAt: z.string().datetime(),
+  historyPersisted: z.boolean().optional(),
   memoryCapacitySource: z.enum(['maxmemory', 'system_memory', 'unknown']),
   metrics: z.object({
     memoryUsagePercent: nullableFiniteNumber,
@@ -199,6 +200,7 @@ export function buildRedisHealthSnapshot(
     kind: 'redis_health',
     connectionName,
     capturedAt: capturedAtIso,
+    historyPersisted: false,
     memoryCapacitySource,
     metrics: {
       memoryUsagePercent: roundMetric(percentage(usedMemoryBytes, memoryCapacityBytes)),

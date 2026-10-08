@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -216,7 +216,6 @@ describe('global alerts routes', () => {
       config: { count: 5, windowMinutes: 5 },
       cooldownMinutes: 30,
     })
-
     await alertEventRepository.create({
       alertRuleId: firstRule.id,
       organizationId: TEST_ORG_ID,
@@ -331,13 +330,22 @@ describe('global alerts routes', () => {
       config: { count: 5, windowMinutes: 5 },
       cooldownMinutes: 30,
     })
-
-    await alertEventRepository.create({
-      alertRuleId: firstRule.id,
+    const anotherFirstRule = await alertRuleRepository.create({
       organizationId: TEST_ORG_ID,
       connectionId: FIRST_CONNECTION_ID,
       queueName: 'email-send',
-      type: firstRule.type,
+      name: 'Email failure rate',
+      type: 'failure_rate',
+      config: { rate: 20, windowMinutes: 5, minSamples: 5 },
+      cooldownMinutes: 30,
+    })
+
+    await alertEventRepository.create({
+      alertRuleId: anotherFirstRule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: anotherFirstRule.type,
       status: 'firing',
       summary: 'Primary incident',
       context: {},
@@ -394,6 +402,15 @@ describe('global alerts routes', () => {
       config: { count: 5, windowMinutes: 5 },
       cooldownMinutes: 30,
     })
+    const secondRule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Email failure rate',
+      type: 'failure_rate',
+      config: { rate: 20, windowMinutes: 5, minSamples: 5 },
+      cooldownMinutes: 30,
+    })
 
     const first = await alertEventRepository.create({
       alertRuleId: rule.id,
@@ -407,11 +424,11 @@ describe('global alerts routes', () => {
       firedAt: new Date(),
     })
     await alertEventRepository.create({
-      alertRuleId: rule.id,
+      alertRuleId: secondRule.id,
       organizationId: TEST_ORG_ID,
       connectionId: FIRST_CONNECTION_ID,
       queueName: 'email-send',
-      type: rule.type,
+      type: secondRule.type,
       status: 'firing',
       summary: 'Incident B',
       context: {},
@@ -451,6 +468,50 @@ describe('global alerts routes', () => {
 
     const resolveResponse = await app.request(`/events/${first.id}/resolve`, { method: 'POST' })
     expect(resolveResponse.status).toBe(200)
+
+    const resolved = await alertEventRepository.findById(first.id, TEST_ORG_ID)
+    const repeated = await app.request(`/events/${first.id}/resolve`, { method: 'POST' })
+    expect(repeated.status).toBe(409)
+    expect(await repeated.json()).toEqual({ error: 'This alert event is already resolved.' })
+    // A repeat request must not reset the durable cleanup lease or retry state.
+    expect(await alertEventRepository.findById(first.id, TEST_ORG_ID)).toEqual(resolved)
+  })
+
+  it('returns a conflict when a concurrent request wins event resolution', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Concurrent resolution',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      summary: 'Concurrent incident',
+      firedAt: new Date(),
+    })
+    const originalResolve = alertEventRepository.resolve.bind(alertEventRepository)
+    const resolveSpy = spyOn(alertEventRepository, 'resolve').mockImplementationOnce(
+      async (...args) => {
+        await originalResolve(...args)
+        return null
+      }
+    )
+    try {
+      const app = await createGlobalAlertsRouteApp()
+      const response = await app.request(`/events/${event.id}/resolve`, { method: 'POST' })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toEqual({
+        error: 'The alert event changed before it could be resolved.',
+      })
+    } finally {
+      resolveSpy.mockRestore()
+    }
   })
 
   it('stores Linear OAuth tokens encrypted and returns only connection metadata', async () => {

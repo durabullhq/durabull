@@ -1,29 +1,97 @@
+import { randomUUID } from 'node:crypto'
 import {
   type AlertEvent,
+  type AlertRule,
   alertDeliveryRepository,
+  alertEventRepository,
+  alertRuleRepository,
   eq,
   getDb,
+  type LinearIntegration,
   linearIntegrationRepository,
+  linearIssueResolutionRepository,
   linearJobIssueRepository,
   organization,
   redisConnectionRepository,
-  type LinearIntegration,
+  type AlertResolutionReason as StoredAlertResolutionReason,
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { buildAlertAppUrls } from './alert-app-urls'
 import {
   createLinearComment,
   fetchLinearIssueStatus,
+  LinearApiError,
   updateLinearIssueState,
 } from './linear-client'
 import { getValidLinearAccessToken } from './linear-oauth'
 
 const MAX_CONCURRENT_LINEAR_SYNCS = 3
+const LINEAR_SYNC_RETRY_BASE_MS = 30_000
+const LINEAR_SYNC_RETRY_MAX_MS = 15 * 60_000
+// About one day of provider retries. Persist exhausted cleanup so rule deletion
+// can finish without repeatedly calling a permanently unavailable integration.
+const LINEAR_SYNC_MAX_ATTEMPTS = 100
 
-export type AlertResolutionReason =
-  | { kind: 'manual' }
-  | { kind: 'auto_job_completed' }
-  | { kind: 'auto_condition_cleared' }
+class LinearIntegrationUnavailableError extends Error {}
+const RULE_DELETION_SYNC_BATCH_SIZE = 25
+const RULE_DELETION_CONTINUE_DELAY_MS = 1_000
+const RULE_DELETION_FAILURE_RETRY_MS = 30_000
+
+export type AlertResolutionReason = { kind: StoredAlertResolutionReason }
+
+/**
+ * Drain one bounded batch before finalizing a requested rule deletion. Alert
+ * events retain the delivery/link metadata needed for external cleanup until
+ * this succeeds; repeated worker sweeps make progress without blocking APIs.
+ */
+export async function finalizePendingAlertRuleDeletion(
+  rule: Pick<AlertRule, 'id'>,
+  claimToken: string
+): Promise<boolean> {
+  try {
+    const pending = await alertEventRepository.findPendingLinearResolutionSyncForRule(
+      rule.id,
+      RULE_DELETION_SYNC_BATCH_SIZE
+    )
+    if (pending.length > 0) {
+      const result = await syncLinearIssuesForResolvedEvents(pending)
+      if (result.failedEventIds.length > 0) {
+        await alertRuleRepository.releaseDeletionClaim(
+          rule.id,
+          claimToken,
+          new Date(Date.now() + RULE_DELETION_FAILURE_RETRY_MS)
+        )
+        return false
+      }
+    }
+
+    const remaining = await alertEventRepository.findPendingLinearResolutionSyncForRule(rule.id, 1)
+    if (remaining.length > 0) {
+      await alertRuleRepository.releaseDeletionClaim(
+        rule.id,
+        claimToken,
+        new Date(Date.now() + RULE_DELETION_CONTINUE_DELAY_MS)
+      )
+      return false
+    }
+    const deleted = await alertRuleRepository.deleteIfDeletionRequested(rule.id, claimToken)
+    if (!deleted) {
+      await alertRuleRepository.releaseDeletionClaim(
+        rule.id,
+        claimToken,
+        new Date(Date.now() + RULE_DELETION_FAILURE_RETRY_MS)
+      )
+    }
+    return deleted
+  } catch (error) {
+    await alertRuleRepository.releaseDeletionClaim(
+      rule.id,
+      claimToken,
+      new Date(Date.now() + RULE_DELETION_FAILURE_RETRY_MS)
+    )
+    throw error
+  }
+}
 
 interface LinearIssueRef {
   issueId: string
@@ -34,14 +102,15 @@ interface LinearIssueRef {
 /**
  * Close the Linear issues associated with alert events that were just resolved
  * in Durabull: move each issue to its team's "completed" workflow state and add
- * a comment explaining why. Best-effort — failures are logged, never thrown, so
- * resolution in Durabull (the source of truth) always wins.
+ * a comment explaining why. Provider failures leave the durable outbox pending
+ * for retry; resolution in Durabull remains the source of truth.
  */
 export async function syncLinearIssuesForResolvedEvents(
   events: AlertEvent[],
-  reason: AlertResolutionReason
-): Promise<void> {
-  if (events.length === 0) return
+  reason?: AlertResolutionReason
+): Promise<{ failedEventIds: string[] }> {
+  if (events.length === 0) return { failedEventIds: [] }
+  const claimToken = randomUUID()
 
   const integrationCache = new Map<
     string,
@@ -49,54 +118,193 @@ export async function syncLinearIssuesForResolvedEvents(
   >()
   const connectionNameCache = new Map<string, string>()
   const organizationSlugCache = new Map<string, string | null>()
-  const completedIssueIds = new Set<string>()
+  const issueSyncs = new Map<string, Promise<void>>()
+  const failedEventIds = new Set<string>()
 
   await processWithConcurrency(events, MAX_CONCURRENT_LINEAR_SYNCS, async (event) => {
+    const claimedEvent = await alertEventRepository.claimLinearResolutionSync(event.id, claimToken)
+    if (!claimedEvent) {
+      failedEventIds.add(event.id)
+      return
+    }
+
     try {
-      const issueRefs = await collectLinearIssueRefs(event)
-      if (issueRefs.length === 0) return
+      const issueRefs = await collectLinearIssueRefs(claimedEvent)
+      if (issueRefs.length === 0) {
+        await alertEventRepository.clearLinearResolutionSyncPending([event.id], claimToken)
+        return
+      }
 
-      const auth = await getCachedLinearAuth(event.organizationId, integrationCache)
-      if (!auth) return
+      const auth = await getCachedLinearAuth(claimedEvent.organizationId, integrationCache)
+      if (!auth) {
+        throw new LinearIntegrationUnavailableError(
+          'Linear integration is unavailable for a linked incident.'
+        )
+      }
 
+      const issueFailures: unknown[] = []
       for (const ref of issueRefs) {
-        if (completedIssueIds.has(ref.issueId)) continue
-
-        // A single Linear issue can be linked to several incidents for the same
-        // job. Don't close it while any of those incidents is still firing.
-        if (ref.linearJobIssueId) {
-          const stillFiring = await linearJobIssueRepository.hasOtherFiringEvents(
-            ref.linearJobIssueId,
-            events.map((resolved) => resolved.id)
-          )
-          if (stillFiring) continue
+        const syncKey = `${claimedEvent.organizationId}:${ref.issueId}`
+        const existingSync = issueSyncs.get(syncKey)
+        if (existingSync) {
+          try {
+            await existingSync
+          } catch (error) {
+            issueFailures.push(error)
+          }
+          continue
         }
 
-        completedIssueIds.add(ref.issueId)
-        await completeLinearIssue({
-          accessToken: auth.accessToken,
-          issueId: ref.issueId,
-          event,
-          reason,
-          connectionName: await getConnectionName(event.connectionId, connectionNameCache),
-          organizationSlug: await getCachedOrganizationSlug(
-            event.organizationId,
-            organizationSlugCache
-          ),
-        })
+        const issueSync = (async () => {
+          const issueClaimToken = `${claimToken}:${ref.issueId}`
+          const issueClaim = await linearIssueResolutionRepository.claim(
+            claimedEvent.organizationId,
+            ref.issueId,
+            issueClaimToken
+          )
+          if (issueClaim === 'completed') return
+          if (issueClaim === 'busy') {
+            throw new Error(`Linear issue ${ref.issueId} is already being synchronized.`)
+          }
+
+          let completed = false
+          try {
+            // A single Linear issue can be linked to several incidents for the same
+            // job. Don't close it while any of those incidents is still firing.
+            if (ref.linearJobIssueId) {
+              const stillFiring = await linearJobIssueRepository.hasOtherFiringEvents(
+                ref.linearJobIssueId,
+                events.map((resolved) => resolved.id)
+              )
+              if (stillFiring) return
+            }
+
+            await completeLinearIssue({
+              accessToken: auth.accessToken,
+              issueId: ref.issueId,
+              issueClaimToken,
+              event: claimedEvent,
+              reason: reason ?? {
+                kind: claimedEvent.linearResolutionReason ?? 'legacy',
+              },
+              connectionName: await getConnectionName(
+                claimedEvent.connectionId,
+                connectionNameCache
+              ),
+              organizationSlug: await getCachedOrganizationSlug(
+                claimedEvent.organizationId,
+                organizationSlugCache
+              ),
+            })
+            completed = await linearIssueResolutionRepository.markCompleted(
+              ref.issueId,
+              issueClaimToken
+            )
+            if (!completed) throw new Error(`Lost the Linear issue lease for ${ref.issueId}.`)
+          } finally {
+            if (!completed) {
+              await linearIssueResolutionRepository.release(ref.issueId, issueClaimToken)
+            }
+          }
+        })()
+        issueSyncs.set(syncKey, issueSync)
+        try {
+          await issueSync
+        } catch (error) {
+          if (issueSyncs.get(syncKey) === issueSync) issueSyncs.delete(syncKey)
+          issueFailures.push(error)
+        }
       }
+      if (issueFailures.length > 0) {
+        // Try every linked issue before finishing the event. One deleted issue
+        // must not discard cleanup metadata for other healthy destinations.
+        // Keep the event retryable while any independent cleanup can recover.
+        throw issueFailures.find((error) => !isPermanentLinearFailure(error)) ?? issueFailures[0]
+      }
+      await alertEventRepository.clearLinearResolutionSyncPending([event.id], claimToken)
     } catch (error) {
+      const exhausted = claimedEvent.linearResolutionAttempts + 1 >= LINEAR_SYNC_MAX_ATTEMPTS
+      const permanent =
+        error instanceof LinearIntegrationUnavailableError || isPermanentLinearFailure(error)
+      if (exhausted || permanent) {
+        // Persist a safe category rather than provider text, which can include
+        // credentials or customer data. A late successful delivery may re-arm it.
+        await alertEventRepository.abandonLinearResolutionSync(
+          [event.id],
+          claimToken,
+          error instanceof LinearIntegrationUnavailableError
+            ? 'Linear integration disconnected.'
+            : exhausted
+              ? 'Linear cleanup retry limit reached.'
+              : 'Linear rejected incident cleanup permanently.'
+        )
+        console.error('[alert-resolution] Linear cleanup abandoned:', { alertEventId: event.id })
+        return
+      }
+      failedEventIds.add(event.id)
+      const retryDelayMs = Math.min(
+        LINEAR_SYNC_RETRY_MAX_MS,
+        LINEAR_SYNC_RETRY_BASE_MS * 2 ** Math.min(claimedEvent.linearResolutionAttempts, 10)
+      )
+      await alertEventRepository.releaseLinearResolutionSyncClaims(
+        [event.id],
+        claimToken,
+        new Date(
+          Math.max(
+            Date.now() + retryDelayMs,
+            error instanceof LinearApiError ? (error.rateLimitResetAt?.getTime() ?? 0) : 0
+          )
+        )
+      )
       console.error('[alert-resolution] Linear sync failed for event:', {
         alertEventId: event.id,
         error,
       })
     }
   })
+
+  return { failedEventIds: Array.from(failedEventIds) }
+}
+
+function isPermanentLinearFailure(error: unknown): boolean {
+  return (
+    error instanceof LinearApiError &&
+    !error.retryable &&
+    error.status !== 401 &&
+    error.status !== 403
+  )
 }
 
 async function collectLinearIssueRefs(event: AlertEvent): Promise<LinearIssueRef[]> {
   const refs = new Map<string, LinearIssueRef>()
+  // Resolved incidents no longer need notifications. Reclaim only due work
+  // using the normal delivery lease policy, so crashed delivery workers cannot
+  // hold cleanup forever when notification dispatch is disabled.
+  const obsoleteDeliveries = await alertDeliveryRepository.claimDueForEvent(event.id)
+  for (const delivery of obsoleteDeliveries) {
+    if (!delivery.claimedAt) throw new Error('Alert delivery claim is missing its lease timestamp.')
+    await alertDeliveryRepository.markFailed(delivery.id, {
+      error: 'Alert incident resolved before delivery.',
+      retryable: false,
+      expectedClaimedAt: delivery.claimedAt,
+    })
+  }
 
+  const deliveries = await alertDeliveryRepository.listByEvent(event.id)
+  for (const delivery of deliveries) {
+    // A provider request can finish after the incident is resolved. Until it
+    // records its issue ID, treating this event as synchronized would lose the
+    // cleanup work and could allow rule deletion to cascade its delivery row.
+    if (
+      delivery.status === 'claimed' &&
+      (delivery.channelType === 'linear' || delivery.channelType === 'destination')
+    ) {
+      throw new Error('A notification delivery is still in flight for this incident.')
+    }
+  }
+
+  // Read mappings after delivery state: a completed job delivery must have
+  // persisted its mapping, including the link needed to check firing peers.
   const jobIssues = await linearJobIssueRepository.findByEvent(event.id)
   for (const issue of jobIssues) {
     refs.set(issue.linearIssueId, {
@@ -107,9 +315,15 @@ async function collectLinearIssueRefs(event: AlertEvent): Promise<LinearIssueRef
 
   // Rule-level events (no jobId) record their Linear issue on the delivery row
   // instead of the job→issue mapping table.
-  const deliveries = await alertDeliveryRepository.listByEvent(event.id)
   for (const delivery of deliveries) {
-    if (delivery.channelType !== 'linear' || delivery.status !== 'delivered') continue
+    const metadata =
+      delivery.providerMetadata && typeof delivery.providerMetadata === 'object'
+        ? delivery.providerMetadata
+        : {}
+    const isLinearDelivery =
+      delivery.channelType === 'linear' ||
+      (delivery.channelType === 'destination' && metadata.resolvedType === 'linear')
+    if (!isLinearDelivery || delivery.status !== 'delivered') continue
     if (typeof delivery.externalId !== 'string' || delivery.externalId.length === 0) continue
     if (refs.has(delivery.externalId)) continue
     refs.set(delivery.externalId, { issueId: delivery.externalId })
@@ -121,6 +335,7 @@ async function collectLinearIssueRefs(event: AlertEvent): Promise<LinearIssueRef
 async function completeLinearIssue({
   accessToken,
   issueId,
+  issueClaimToken,
   event,
   reason,
   connectionName,
@@ -128,32 +343,44 @@ async function completeLinearIssue({
 }: {
   accessToken: string
   issueId: string
+  issueClaimToken?: string
   event: AlertEvent
   reason: AlertResolutionReason
   connectionName: string
   organizationSlug: string | null
 }): Promise<void> {
   const status = await fetchLinearIssueStatus(accessToken, issueId)
-  if (status.state.type === 'completed' || status.state.type === 'canceled') {
-    return
+  if (status.state.type === 'canceled') return
+
+  let commentId = issueClaimToken
+    ? await linearIssueResolutionRepository.findCommentId(issueId, issueClaimToken)
+    : null
+  // An operator may have completed the issue independently. Only finish a
+  // comment when our durable ledger shows that we started its resolution.
+  if (status.state.type === 'completed' && !commentId) return
+
+  if (status.state.type !== 'completed') {
+    const completedState = status.teamStates
+      .filter((state) => state.type === 'completed')
+      .sort((a, b) => a.position - b.position)[0]
+    if (!completedState) {
+      throw new Error(`Linear issue ${issueId} has no completed workflow state available.`)
+    }
+
+    // Save comment progress before changing external state. A retry must still
+    // post the comment when the issue state changed but its request failed.
+    commentId = issueClaimToken
+      ? await linearIssueResolutionRepository.prepareComment(issueId, issueClaimToken)
+      : randomUUID()
+    if (!commentId) throw new Error(`Lost the Linear issue lease for ${issueId}.`)
+    await updateLinearIssueState(accessToken, issueId, completedState.id)
   }
 
-  const completedState = status.teamStates
-    .filter((state) => state.type === 'completed')
-    .sort((a, b) => a.position - b.position)[0]
-  if (!completedState) {
-    console.warn('[alert-resolution] Linear team has no completed workflow state:', {
-      issueId,
-      alertEventId: event.id,
-    })
-    return
-  }
-
-  await updateLinearIssueState(accessToken, issueId, completedState.id)
   await createLinearComment(
     accessToken,
     issueId,
-    buildResolutionComment({ event, reason, connectionName, organizationSlug })
+    buildResolutionComment({ event, reason, connectionName, organizationSlug }),
+    commentId ?? undefined
   )
   console.log(
     `[alert-resolution] Completed Linear issue ${status.identifier} for alert event ${event.id}`
@@ -187,7 +414,11 @@ function buildResolutionComment({
       ? `Durabull auto-resolved this incident because job \`${safeLinearMarkdown(jobId ?? 'unknown', 100)}\` completed successfully.`
       : reason.kind === 'auto_condition_cleared'
         ? 'Durabull auto-resolved this incident because the alert condition is no longer met.'
-        : 'This incident was marked resolved by an operator in Durabull.'
+        : reason.kind === 'rule_changed'
+          ? 'Durabull resolved this incident because its alert rule was disabled, edited, or deleted.'
+          : reason.kind === 'legacy'
+            ? 'This incident was previously resolved in Durabull; its original resolution reason was not recorded.'
+            : 'This incident was marked resolved by an operator in Durabull.'
 
   const lines = [
     '✅ **Incident resolved in Durabull**',
@@ -234,8 +465,7 @@ async function getCachedLinearAuth(
       organizationId,
       error,
     })
-    cache.set(organizationId, null)
-    return null
+    throw error
   }
 }
 
@@ -296,7 +526,9 @@ async function processWithConcurrency<T>(
     }
   })
 
-  await Promise.all(workers)
+  const results = await Promise.allSettled(workers)
+  const failure = results.find((result) => result.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
 }
 
 export const __alertResolutionTestUtils = {

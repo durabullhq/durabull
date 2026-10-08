@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,6 +14,7 @@ import {
   type RedisConnection,
   redisConnectionRepository,
   redisDiscoveredQueue,
+  redisHealthSampleRepository,
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import type { CursorState, QueueSnapshot } from './alert-evaluator'
@@ -37,6 +38,7 @@ const mutableEnv = env as {
   RESEND_API_KEY?: string
   APP_BASE_URL?: string
   DURABULL_ALERT_ENABLED?: boolean
+  DURABULL_ENV_CONNECTIONS?: boolean
   DURABULL_REDIS_HEALTH_HISTORY_ENABLED?: boolean
   DURABULL_REDIS_HEALTH_RETENTION_DAYS?: number
 }
@@ -45,6 +47,7 @@ const originalDatabaseUrl = mutableEnv.DATABASE_URL
 const originalResendKey = mutableEnv.RESEND_API_KEY
 const originalAppBaseUrl = mutableEnv.APP_BASE_URL
 const originalAlertEnabled = mutableEnv.DURABULL_ALERT_ENABLED
+const originalEnvConnections = mutableEnv.DURABULL_ENV_CONNECTIONS
 const originalRedisHealthHistoryEnabled = mutableEnv.DURABULL_REDIS_HEALTH_HISTORY_ENABLED
 const originalRedisHealthRetentionDays = mutableEnv.DURABULL_REDIS_HEALTH_RETENTION_DAYS
 const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
@@ -69,6 +72,10 @@ function createRule(overrides: Partial<AlertRule> = {}): AlertRule {
     notificationChannels: [],
     cooldownMinutes: 30,
     mutedUntil: null,
+    deletionRequestedAt: null,
+    deletionRetryAt: null,
+    deletionClaimToken: null,
+    deletionClaimedAt: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -173,6 +180,7 @@ describe('alert monitor', () => {
     mutableEnv.RESEND_API_KEY = undefined
     mutableEnv.APP_BASE_URL = 'https://app.durabull.io'
     mutableEnv.DURABULL_ALERT_ENABLED = true
+    mutableEnv.DURABULL_ENV_CONNECTIONS = false
     mutableEnv.DURABULL_REDIS_HEALTH_HISTORY_ENABLED = true
     mutableEnv.DURABULL_REDIS_HEALTH_RETENTION_DAYS = 30
     await closeDb()
@@ -188,6 +196,7 @@ describe('alert monitor', () => {
     mutableEnv.RESEND_API_KEY = originalResendKey
     mutableEnv.APP_BASE_URL = originalAppBaseUrl
     mutableEnv.DURABULL_ALERT_ENABLED = originalAlertEnabled
+    mutableEnv.DURABULL_ENV_CONNECTIONS = originalEnvConnections
     mutableEnv.DURABULL_REDIS_HEALTH_HISTORY_ENABLED = originalRedisHealthHistoryEnabled
     mutableEnv.DURABULL_REDIS_HEALTH_RETENTION_DAYS = originalRedisHealthRetentionDays
 
@@ -201,6 +210,56 @@ describe('alert monitor', () => {
       await rm(tempPgliteDir, { recursive: true, force: true })
       tempPgliteDir = ''
     }
+  })
+
+  it('deduplicates overdue connection work while continuing to poll peers', async () => {
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const stalledWorker = mock(async () => pending)
+    const peerWorker = mock(async () => {})
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await __alertMonitorTestUtils.runConnectionPollOnce('overdue', stalledWorker, 1)
+      await __alertMonitorTestUtils.runConnectionPollOnce('overdue', stalledWorker, 1)
+      await __alertMonitorTestUtils.runConnectionPollOnce('healthy-peer', peerWorker, 1)
+      expect(stalledWorker).toHaveBeenCalledTimes(1)
+      expect(peerWorker).toHaveBeenCalledTimes(1)
+      finish()
+      await pending
+      // Drain the worker/finally continuations before starting a later cycle.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      await __alertMonitorTestUtils.runConnectionPollOnce('overdue', peerWorker, 1)
+      expect(peerWorker).toHaveBeenCalledTimes(2)
+    } finally {
+      finish()
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('waits for sibling workers after a concurrent worker fails', async () => {
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    let cycleSettled = false
+    const cycle = __alertMonitorTestUtils
+      .processWithConcurrency([1, 2], 2, async (item) => {
+        if (item === 1) throw new Error('One worker failed')
+        await pending
+      })
+      .catch((error) => {
+        cycleSettled = true
+        return error
+      })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(cycleSettled).toBe(false)
+    finish()
+    expect((await cycle).message).toBe('One worker failed')
+    expect(cycleSettled).toBe(true)
   })
 
   it('collects unique queue names from explicit, include, and discovered rules', async () => {
@@ -367,6 +426,45 @@ describe('alert monitor', () => {
     )
 
     expect(await listRuleEvents(rule.id)).toHaveLength(1)
+  })
+
+  it('repairs a crash between event creation and delivery enqueue on the next evaluation', async () => {
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'Failure threshold',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      notificationChannels: [{ type: 'email', target: 'alerts@example.test' }],
+      cooldownMinutes: 30,
+    })
+    const cursor = {
+      lastCheckedAt: new Date(Date.now() - 5 * 60_000),
+      lastFailedCount: 0,
+      lastCompletedCount: 100,
+    }
+    spyOn(alertDeliveryRepository, 'enqueueMany').mockRejectedValueOnce(new Error('Interrupted'))
+
+    await __alertMonitorTestUtils.evaluateAndMaybeAlert(
+      rule,
+      createSnapshot(),
+      cursor,
+      createConnection()
+    )
+    const [event] = await listRuleEvents(rule.id)
+    expect(event).toBeDefined()
+    expect(await alertDeliveryRepository.listByEvent(event!.id)).toHaveLength(0)
+
+    await __alertMonitorTestUtils.evaluateAndMaybeAlert(
+      rule,
+      createSnapshot(),
+      cursor,
+      createConnection()
+    )
+    expect(await listRuleEvents(rule.id)).toHaveLength(1)
+    expect(await alertDeliveryRepository.listByEvent(event!.id)).toHaveLength(1)
   })
 
   it('retries due deliveries when an aggregate rule is still firing', async () => {
@@ -597,6 +695,47 @@ describe('alert monitor', () => {
     expect(firing).toHaveLength(1)
   })
 
+  it('does not carry cooldown across different Redis health metrics', async () => {
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: null,
+      name: 'Redis CPU pressure',
+      type: 'redis_health',
+      config: { metric: 'cpu_usage_percent', threshold: 80 },
+      cooldownMinutes: 30,
+    })
+    await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'Redis server',
+      type: rule.type,
+      status: 'resolved',
+      summary: 'Previous memory incident',
+      context: { metric: 'memory_usage_percent' },
+      firedAt: new Date(Date.now() - 5 * 60_000),
+      resolvedAt: new Date(),
+    })
+
+    await __alertMonitorTestUtils.processAlertEvaluation(
+      rule,
+      'Redis server',
+      {
+        triggered: true,
+        available: true,
+        summary: 'CPU usage is 95% on Primary Redis (threshold: ≥ 80%)',
+        context: { metric: 'cpu_usage_percent', value: 95, threshold: 80 },
+      },
+      createConnection()
+    )
+
+    const events = await listRuleEvents(rule.id)
+    expect(events.filter((event) => event.status === 'firing')).toHaveLength(1)
+    expect(events.filter((event) => event.status === 'suppressed')).toHaveLength(0)
+  })
+
   it('marks notifications as sent when dispatch succeeds', async () => {
     const dispatchAlertNotificationMock = mock(async () => {})
     mock.module('./alert-notifier', () => ({
@@ -717,7 +856,117 @@ describe('alert monitor', () => {
     expect(events[0]?.queueName).toBe('email-send')
   })
 
+  it('replays a pending queue observation using capture time after prolonged downtime', async () => {
+    const baselineAt = new Date(Date.now() - 11 * 60_000)
+    const pendingAt = new Date(Date.now() - 10 * 60_000)
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'Email queue failures',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    await alertCheckCursorRepository.upsert({
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      lastCheckedAt: pendingAt,
+      observationToken: 'pending-queue-observation',
+      lastFailedCount: 8,
+      lastCompletedCount: 100,
+      lastMetricsSnapshot: {
+        kind: 'queue',
+        queueName: 'email-send',
+        connectionName: 'Primary Redis',
+        capturedAt: pendingAt.toISOString(),
+        jobCounts: { failed: 8, waiting: 0, active: 0, completed: 100 },
+        failedMetrics: { count: 8, dataPoints: [8] },
+        completedMetrics: { count: 100, dataPoints: [100] },
+        evaluationApplied: false,
+        evaluationBaseline: {
+          lastCheckedAt: baselineAt.toISOString(),
+          lastFailedCount: 0,
+          lastCompletedCount: 100,
+        },
+        applicableRuleRevisions: [{ id: rule.id, updatedAt: rule.updatedAt.toISOString() }],
+      },
+    })
+    mock.module('./redis', () => ({
+      getQueue: mock(async () => ({
+        getJobCounts: mock(async () => ({ failed: 8, waiting: 0, active: 0, completed: 100 })),
+        getMetrics: mock(async (metric: string) => ({
+          meta: { count: metric === 'failed' ? 8 : 100 },
+          data: metric === 'failed' ? [8] : [100],
+        })),
+      })),
+    }))
+
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    await __alertMonitorTestUtils.processConnection(testConnectionId, [rule])
+
+    const events = await listRuleEvents(rule.id)
+    expect(events).toHaveLength(1)
+    expect(events[0]?.summary).toContain('8 jobs failed')
+    expect(events[0]?.status).toBe('resolved')
+    const [cursor] = await alertCheckCursorRepository.findByConnection(testConnectionId)
+    expect(cursor?.lastMetricsSnapshot).toMatchObject({ evaluationApplied: true })
+  })
+
+  it('does not replay a pre-existing queue observation into a newly created rule', async () => {
+    const baselineAt = new Date(Date.now() - 2 * 60_000)
+    const pendingAt = new Date(Date.now() - 60_000)
+    await alertCheckCursorRepository.upsert({
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      lastCheckedAt: pendingAt,
+      observationToken: 'observation-before-rule',
+      lastFailedCount: 8,
+      lastCompletedCount: 100,
+      lastMetricsSnapshot: {
+        kind: 'queue',
+        queueName: 'email-send',
+        connectionName: 'Primary Redis',
+        capturedAt: pendingAt.toISOString(),
+        jobCounts: { failed: 8, waiting: 0, active: 0, completed: 100 },
+        failedMetrics: { count: 8, dataPoints: [8] },
+        completedMetrics: { count: 100, dataPoints: [100] },
+        evaluationApplied: false,
+        evaluationBaseline: {
+          lastCheckedAt: baselineAt.toISOString(),
+          lastFailedCount: 0,
+          lastCompletedCount: 100,
+        },
+        applicableRuleRevisions: [],
+      },
+    })
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'New rule',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    mock.module('./redis', () => ({
+      getQueue: mock(async () => ({
+        getJobCounts: mock(async () => ({ failed: 0, waiting: 0, active: 0, completed: 100 })),
+        getMetrics: mock(async (metric: string) => ({
+          meta: { count: metric === 'failed' ? 0 : 100 },
+          data: metric === 'failed' ? [0] : [100],
+        })),
+      })),
+    }))
+
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    await __alertMonitorTestUtils.processConnection(testConnectionId, [rule])
+
+    expect(await listRuleEvents(rule.id)).toEqual([])
+  })
+
   it('evaluates Redis health rules once per connection without requiring a discovered queue', async () => {
+    const disconnectMock = mock(() => {})
     const infoMock = mock(async () =>
       [
         '# Memory',
@@ -739,9 +988,18 @@ describe('alert monitor', () => {
     const getQueueMock = mock(async () => {
       throw new Error('queue polling should not run for a Redis health rule')
     })
+    const getRedisMock = mock(
+      async (
+        _connectionId: string,
+        _connectionUrl: string,
+        _connectionName?: string,
+        _options?: unknown,
+        _lifecycle?: unknown
+      ) => ({ info: infoMock, disconnect: disconnectMock })
+    )
     mock.module('./redis', () => ({
       ...realRedisModule,
-      getRedis: mock(async () => ({ info: infoMock })),
+      getRedis: getRedisMock,
       getQueue: getQueueMock,
     }))
 
@@ -761,6 +1019,8 @@ describe('alert monitor', () => {
     await __alertMonitorTestUtils.processConnection(testConnectionId, [rule])
 
     expect(infoMock).toHaveBeenCalledTimes(1)
+    expect(getRedisMock.mock.calls[0]?.[4]).toEqual({ cache: false })
+    expect(disconnectMock).toHaveBeenCalledTimes(1)
     expect(getQueueMock).not.toHaveBeenCalled()
 
     const cursors = await alertCheckCursorRepository.findByConnection(testConnectionId)
@@ -775,6 +1035,72 @@ describe('alert monitor', () => {
       type: 'redis_health',
       status: 'firing',
     })
+  })
+
+  it.each([
+    false,
+    true,
+  ])('replays a pending Redis observation even when history writes fail: %s', async (historyWriteFails) => {
+    const baselineAt = new Date(Date.now() - 2 * 60_000)
+    const pendingAt = new Date(Date.now() - 60_000)
+    const baseline = buildRedisHealthSnapshot(
+      ['used_memory:10', 'maxmemory:100', 'evicted_keys:0'].join('\r\n'),
+      'Primary Redis',
+      baselineAt
+    )
+    const pending = buildRedisHealthSnapshot(
+      ['used_memory:10', 'maxmemory:100', 'evicted_keys:10'].join('\r\n'),
+      'Primary Redis',
+      pendingAt,
+      baseline
+    )
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: null,
+      name: 'Redis eviction spike',
+      type: 'redis_health',
+      config: { metric: 'evicted_keys_per_minute', threshold: 5 },
+      cooldownMinutes: 30,
+    })
+    await alertCheckCursorRepository.upsert({
+      connectionId: testConnectionId,
+      queueName: '__durabull_internal__:redis_health',
+      lastCheckedAt: pendingAt,
+      observationToken: 'pending-observation',
+      lastFailedCount: 0,
+      lastCompletedCount: 0,
+      lastMetricsSnapshot: {
+        ...pending,
+        evaluationApplied: false,
+        evaluationBaseline: baseline,
+        applicableRuleRevisions: [{ id: rule.id, updatedAt: rule.updatedAt.toISOString() }],
+      },
+    })
+    mock.module('./redis', () => ({
+      ...realRedisModule,
+      getRedis: mock(async () => ({
+        info: mock(async () => ['used_memory:10', 'maxmemory:100', 'evicted_keys:10'].join('\r\n')),
+        disconnect: mock(() => {}),
+      })),
+    }))
+
+    if (historyWriteFails) {
+      spyOn(redisHealthSampleRepository, 'record').mockRejectedValue(
+        new Error('History unavailable')
+      )
+    }
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    await __alertMonitorTestUtils.processConnection(testConnectionId, [rule], {
+      collectRedisHealth: true,
+    })
+
+    const events = await listRuleEvents(rule.id)
+    expect(events).toHaveLength(1)
+    expect(events[0]?.summary).toContain('Key evictions')
+    expect(events[0]?.status).toBe('resolved')
+    const [cursor] = await alertCheckCursorRepository.findByConnection(testConnectionId)
+    expect(cursor?.lastMetricsSnapshot).toMatchObject({ evaluationApplied: true })
   })
 
   it('records Redis health history without requiring a Redis health alert rule', async () => {
@@ -838,6 +1164,48 @@ describe('alert monitor', () => {
     })
     expect(infoMock).toHaveBeenCalledTimes(1)
     expect(history.latest?.memoryUsagePercent).toBe(40)
+  })
+
+  it('skips rules whose connections are excluded from the active background set', async () => {
+    const staleConnection = await redisConnectionRepository.create({
+      name: 'Removed environment connection',
+      url: 'redis://localhost:6380/0',
+      environment: 'development',
+      isDefault: false,
+      organizationId: TEST_ORG_ID,
+    })
+    await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: staleConnection.id,
+      queueName: null,
+      name: 'Stale Redis memory pressure',
+      type: 'redis_health',
+      config: { metric: 'memory_usage_percent', threshold: 80 },
+      cooldownMinutes: 30,
+    })
+
+    const visitedConnectionIds: string[] = []
+    mock.module('./redis', () => ({
+      ...realRedisModule,
+      getRedis: mock(async (connectionId: string) => {
+        visitedConnectionIds.push(connectionId)
+        return {
+          info: mock(async () => ['used_memory:41943040', 'maxmemory:104857600'].join('\r\n')),
+        }
+      }),
+    }))
+
+    const originalFindAllIdsUnsafe = redisConnectionRepository.findAllIdsUnsafe
+    redisConnectionRepository.findAllIdsUnsafe = mock(async () => [testConnectionId])
+    mutableEnv.DURABULL_ENV_CONNECTIONS = true
+    try {
+      const { __alertMonitorTestUtils } = await loadMonitorModule()
+      await __alertMonitorTestUtils.runPollCycle()
+    } finally {
+      redisConnectionRepository.findAllIdsUnsafe = originalFindAllIdsUnsafe
+    }
+
+    expect(visitedConnectionIds).toEqual([testConnectionId])
   })
 
   it('prunes expired Redis health history during cleanup in bounded batches', async () => {
@@ -923,6 +1291,46 @@ describe('alert monitor', () => {
     expect(events).toHaveLength(1)
     expect(events[0]?.id).toBe(event.id)
     expect(events[0]?.status).toBe('firing')
+  })
+
+  it.each([
+    'disabled',
+    'edited',
+    'deleting',
+  ])('does not create failed-job incidents after the captured rule is %s during the scan', async (change) => {
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'Failed jobs',
+      type: 'job_failed',
+      config: {},
+      notificationChannels: [],
+    })
+    const queue = {
+      getJobs: mock(async () => {
+        await alertRuleRepository.updateIfCurrent(
+          rule.id,
+          TEST_ORG_ID,
+          change === 'disabled'
+            ? { enabled: false }
+            : change === 'deleting'
+              ? { enabled: false, deletionRequestedAt: new Date() }
+              : { queueName: 'other-queue' },
+          rule,
+          { resolveActive: true }
+        )
+        return [{ id: 'job-racing-update', failedReason: 'Failed', finishedOn: Date.now() }]
+      }),
+    }
+    await __alertMonitorTestUtils.scanFailedJobsAndMaybeAlert(
+      rule,
+      queue,
+      createConnection(),
+      'email-send'
+    )
+    expect(await listRuleEvents(rule.id)).toHaveLength(0)
   })
 
   it('creates at most one job_failed event per failed job id', async () => {

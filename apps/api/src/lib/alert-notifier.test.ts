@@ -1,10 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  type AlertDelivery,
   type AlertEvent,
+  alertDeliveryRepository,
   alertDestinationRepository,
+  alertEventRepository,
   alertWebhookDestination,
   alertWebhookDestinationRepository,
   closeDb,
@@ -14,7 +17,7 @@ import {
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { buildAlertAppUrls } from './alert-app-urls'
-import { __alertNotifierTestUtils } from './alert-notifier'
+import { __alertNotifierTestUtils, processAlertDeliveries } from './alert-notifier'
 
 const TEST_ORG_ID = 'alert-notifier-org'
 const TEST_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -147,6 +150,42 @@ function makeAlertEvent(overrides: Partial<AlertEvent> = {}): AlertEvent {
     ...overrides,
   } as AlertEvent
 }
+
+describe('alert delivery incident state', () => {
+  afterEach(() => mock.restore())
+
+  it('cancels claimed notifications when the persisted incident has already resolved', async () => {
+    const event = makeAlertEvent()
+    const claimedAt = new Date()
+    const deliveries = ['linear', 'destination'].map((channelType) => ({
+      id: `${channelType}-delivery`,
+      channelType,
+      claimedAt,
+    })) as AlertDelivery[]
+    const lookup = spyOn(alertEventRepository, 'findById').mockResolvedValue({
+      ...event,
+      status: 'resolved',
+    })
+    const markFailed = spyOn(alertDeliveryRepository, 'markFailed').mockResolvedValue(true)
+    const integration = spyOn(alertDestinationRepository, 'findById')
+
+    await processAlertDeliveries(
+      event,
+      { id: event.connectionId, name: 'Primary Redis' },
+      'Job failures',
+      { claimedDeliveries: deliveries }
+    )
+
+    expect(lookup).toHaveBeenCalledWith(event.id, event.organizationId)
+    expect(markFailed).toHaveBeenCalledTimes(2)
+    expect(markFailed.mock.calls[0]?.[1]).toEqual({
+      error: 'Alert incident resolved before delivery.',
+      retryable: false,
+      expectedClaimedAt: claimedAt,
+    })
+    expect(integration).not.toHaveBeenCalled()
+  })
+})
 
 describe('linear issue formatting', () => {
   const connection = { id: 'conn_1', name: 'Marketplace (Production)' }

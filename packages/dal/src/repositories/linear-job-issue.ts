@@ -1,6 +1,7 @@
 import { and, eq, inArray, notInArray } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { alertEvent } from '../db/schemas/alert-event/schema'
+import { linearIssueResolution } from '../db/schemas/linear-issue-resolution/schema'
 import { linearJobIssue } from '../db/schemas/linear-job-issue/schema'
 import type { LinearJobIssue } from '../db/schemas/linear-job-issue/types'
 import { linearJobIssueEvent } from '../db/schemas/linear-job-issue-event/schema'
@@ -39,14 +40,38 @@ async function findLinearJobIssueByJob(input: {
   return rows[0] ?? null
 }
 
-async function linkIssueToEvent(linearJobIssueId: string, alertEventId: string): Promise<void> {
+async function linkIssueToEvent(issue: LinearJobIssue, alertEventId: string): Promise<void> {
   const db = await getDb()
-  await db
-    .insert(linearJobIssueEvent)
-    .values({ linearJobIssueId, alertEventId })
-    .onConflictDoNothing({
-      target: [linearJobIssueEvent.linearJobIssueId, linearJobIssueEvent.alertEventId],
-    })
+  await db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(linearJobIssueEvent)
+      .values({ linearJobIssueId: issue.id, alertEventId })
+      .onConflictDoNothing({
+        target: [linearJobIssueEvent.linearJobIssueId, linearJobIssueEvent.alertEventId],
+      })
+      .returning({ id: linearJobIssueEvent.id })
+    if (inserted.length === 0) return
+
+    // A later incident can reuse an issue that an operator reopened. Its
+    // resolution must check Linear again, while replaying an existing link
+    // must preserve the completed record's idempotency guarantee. Invalidate
+    // in-flight claims too: their peer check predates this new incident.
+    await tx
+      .update(linearIssueResolution)
+      .set({
+        claimToken: null,
+        claimedAt: null,
+        completedAt: null,
+        commentId: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(linearIssueResolution.issueId, issue.linearIssueId),
+          eq(linearIssueResolution.organizationId, issue.organizationId)
+        )
+      )
+  })
 }
 
 export const linearJobIssueRepository = {
@@ -83,7 +108,7 @@ export const linearJobIssueRepository = {
       .returning()
 
     if (inserted) {
-      await linkIssueToEvent(inserted.id, input.alertEventId)
+      await linkIssueToEvent(inserted, input.alertEventId)
       return inserted
     }
 
@@ -93,7 +118,7 @@ export const linearJobIssueRepository = {
       throw new Error('Linear job issue dedupe conflict could not be resolved.')
     }
 
-    await linkIssueToEvent(existing.id, input.alertEventId)
+    await linkIssueToEvent(existing, input.alertEventId)
     return existing
   },
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,8 +19,10 @@ import {
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { Hono } from 'hono'
+import * as alertResolutionModule from '../lib/alert-resolution'
 import * as redisModule from '../lib/redis'
 
+const realAlertResolutionModule = { ...alertResolutionModule }
 const realRedisModule = { ...redisModule }
 
 const TEST_ORG_ID = 'alert-routes-org'
@@ -28,9 +30,11 @@ const TEST_CONNECTION_ID = '55555555-5555-4555-8555-555555555555'
 
 const mutableEnv = env as {
   DATABASE_URL?: string
+  DURABULL_SECRET_ENCRYPTION_KEY?: string
 }
 
 const originalDatabaseUrl = mutableEnv.DATABASE_URL
+const originalSecretEncryptionKey = mutableEnv.DURABULL_SECRET_ENCRYPTION_KEY
 const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
 
 let tempPgliteDir = ''
@@ -119,15 +123,19 @@ describe('alerts routes', () => {
     process.env.DURABULL_PGLITE_DIR = tempPgliteDir
     delete process.env.DATABASE_URL
     mutableEnv.DATABASE_URL = undefined
+    mutableEnv.DURABULL_SECRET_ENCRYPTION_KEY =
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     await closeDb()
     await seedBaseConnection()
   })
 
   afterEach(async () => {
     mock.restore()
+    mock.module('../lib/alert-resolution', () => realAlertResolutionModule)
     mock.module('../lib/redis', () => realRedisModule)
     await closeDb()
     mutableEnv.DATABASE_URL = originalDatabaseUrl
+    mutableEnv.DURABULL_SECRET_ENCRYPTION_KEY = originalSecretEncryptionKey
 
     if (originalPgliteDir) {
       process.env.DURABULL_PGLITE_DIR = originalPgliteDir
@@ -480,9 +488,91 @@ describe('alerts routes', () => {
     expect(events).toHaveLength(1)
     expect(events[0]?.id).toBe(event.id)
     expect(events[0]?.status).toBe('resolved')
-
     const updatedRule = await alertRuleRepository.findById(rule.id, TEST_ORG_ID)
     expect(updatedRule?.enabled).toBe(false)
+  })
+
+  it('queues bounded external cleanup and hides a rule immediately when deletion is requested', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Delete me',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Incident is firing',
+      context: {},
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}`, { method: 'DELETE' })
+
+    expect(response.status).toBe(202)
+    expect(await response.json()).toEqual({ success: true, deletionPending: true })
+    expect(await alertRuleRepository.findById(rule.id, TEST_ORG_ID)).toBeNull()
+    expect(await alertRuleRepository.findDeletionRequested()).toEqual([
+      expect.objectContaining({
+        id: rule.id,
+        enabled: false,
+        deletionRequestedAt: expect.any(Date),
+      }),
+    ])
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toMatchObject({
+      status: 'resolved',
+      linearResolutionSyncPending: true,
+    })
+
+    const [claimedRule] = await alertRuleRepository.claimDeletionRequested(1, 'test-delete-worker')
+    expect(claimedRule?.id).toBe(rule.id)
+    await realAlertResolutionModule.finalizePendingAlertRuleDeletion(
+      claimedRule!,
+      'test-delete-worker'
+    )
+    expect(await alertRuleRepository.findDeletionRequested()).toEqual([])
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toBeNull()
+  })
+
+  it('does not block rule deletion requests on an unavailable external provider', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Keep until synchronized',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Incident is firing',
+      context: {},
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}`, { method: 'DELETE' })
+
+    expect(response.status).toBe(202)
+    expect(await alertRuleRepository.findById(rule.id, TEST_ORG_ID)).toBeNull()
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toMatchObject({
+      status: 'resolved',
+      linearResolutionSyncPending: true,
+    })
   })
 
   it('resolves active incidents when a rule changes between queue and Redis scope', async () => {
@@ -522,6 +612,78 @@ describe('alerts routes', () => {
     expect(events).toHaveLength(1)
     expect(events[0]?.id).toBe(event.id)
     expect(events[0]?.status).toBe('resolved')
+  })
+
+  it('resolves an active Redis incident when its metric changes', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: null,
+      name: 'Redis memory pressure',
+      type: 'redis_health',
+      config: { metric: 'memory_usage_percent', threshold: 80 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'Redis server',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Redis memory pressure is high',
+      context: { metric: 'memory_usage_percent', value: 90, threshold: 80 },
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ config: { metric: 'cpu_usage_percent', threshold: 75 } }),
+    })
+
+    expect(response.status).toBe(200)
+    const events = await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })
+    expect(events).toHaveLength(1)
+    expect(events[0]?.id).toBe(event.id)
+    expect(events[0]?.status).toBe('resolved')
+  })
+
+  it('keeps an active Redis incident open when only its threshold changes', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: null,
+      name: 'Redis memory pressure',
+      type: 'redis_health',
+      config: { metric: 'memory_usage_percent', threshold: 80 },
+      cooldownMinutes: 30,
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'Redis server',
+      type: rule.type,
+      status: 'firing',
+      summary: 'Redis memory pressure is high',
+      context: { metric: 'memory_usage_percent', value: 90, threshold: 80 },
+      firedAt: new Date(),
+    })
+
+    const app = await createAlertsRouteApp()
+    const response = await app.request(`/rules/${rule.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ config: { metric: 'memory_usage_percent', threshold: 85 } }),
+    })
+
+    expect(response.status).toBe(200)
+    const events = await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })
+    expect(events).toHaveLength(1)
+    expect(events[0]?.id).toBe(event.id)
+    expect(events[0]?.status).toBe('firing')
   })
 
   it('returns a 400 from the live test endpoint when no queue is available yet', async () => {
@@ -674,7 +836,7 @@ describe('alerts routes', () => {
       alertRuleId: rule.id,
       organizationId: TEST_ORG_ID,
       connectionId: TEST_CONNECTION_ID,
-      queueName: 'email-send',
+      queueName: 'reports',
       type: rule.type,
       status: 'firing',
       summary: 'Different job',
@@ -706,6 +868,50 @@ describe('alerts routes', () => {
     expect(await resolveResponse.json()).toMatchObject({
       event: expect.objectContaining({ id: event.id, status: 'resolved' }),
     })
+
+    const resolved = await alertEventRepository.findById(event.id, TEST_ORG_ID)
+    const repeated = await app.request(`/events/${event.id}/resolve`, { method: 'POST' })
+    expect(repeated.status).toBe(409)
+    expect(await repeated.json()).toEqual({ error: 'This alert event is already resolved.' })
+    // A repeat request must not reset the durable cleanup lease or retry state.
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toEqual(resolved)
+  })
+
+  it('returns a conflict when a concurrent request wins event resolution', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Concurrent resolution',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      summary: 'Concurrent incident',
+      firedAt: new Date(),
+    })
+    const originalResolve = alertEventRepository.resolve.bind(alertEventRepository)
+    const resolveSpy = spyOn(alertEventRepository, 'resolve').mockImplementationOnce(
+      async (...args) => {
+        await originalResolve(...args)
+        return null
+      }
+    )
+    try {
+      const app = await createAlertsRouteApp()
+      const response = await app.request(`/events/${event.id}/resolve`, { method: 'POST' })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toEqual({
+        error: 'The alert event changed before it could be resolved.',
+      })
+    } finally {
+      resolveSpy.mockRestore()
+    }
   })
 
   it('retries a failed delivery and re-attempts it through the API', async () => {
@@ -1150,7 +1356,7 @@ describe('alerts routes', () => {
       summary: 'Anchor incident',
       firedAt: new Date(),
     })
-    const { event: suppressed } = await alertEventRepository.upsertSuppressed({
+    const suppression = await alertEventRepository.upsertSuppressed({
       alertRuleId: rule.id,
       organizationId: TEST_ORG_ID,
       connectionId: TEST_CONNECTION_ID,
@@ -1160,12 +1366,14 @@ describe('alerts routes', () => {
       context: {},
       dedupeKey: `suppressed:${anchor.id}`,
     })
+    const suppressed = suppression?.event
+    expect(suppressed).toBeDefined()
 
-    const response = await app.request(`/events/${suppressed.id}/resolve`, { method: 'POST' })
+    const response = await app.request(`/events/${suppressed!.id}/resolve`, { method: 'POST' })
     expect(response.status).toBe(409)
 
     // Acknowledging suppressed events is rejected too (not firing).
-    const ack = await app.request(`/events/${suppressed.id}/acknowledge`, { method: 'POST' })
+    const ack = await app.request(`/events/${suppressed!.id}/acknowledge`, { method: 'POST' })
     expect(ack.status).toBe(409)
   })
 

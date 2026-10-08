@@ -184,16 +184,27 @@ If a Linear issue may have been created but Durabull cannot prove it persisted t
 mapping, Durabull stops automatic retry for that delivery. That protects teams from duplicate
 Linear issues and leaves a clear manual reconciliation error for operators.
 
-## Incident resolution
+## Incident Resolution and Rule Deletion
 
-When an incident resolves manually or after recovery, Durabull attempts to close the linked Linear
-issue and add a resolution comment. Job incidents recover when the job is found completed;
-threshold incidents recover when a later valid sample clears the condition. An issue shared by
-several job incidents stays open while another linked incident is firing.
+Resolving an incident saves its resolved status and queues Linear cleanup in the same database
+transaction. A background worker closes linked issues and adds a resolution comment. Cleanup
+survives application restarts and retries failures with backoff, even when automatic alert
+evaluation is disabled. An issue shared by several job incidents stays open while another
+linked incident is firing.
 
-Issue closure is best-effort in this release. Failed sync is logged, without a durable closure
-retry queue. Reconcile missed closures in Linear. Deleting a rule returns `200` and removes its
-event and delivery history; it does not guarantee external issues were closed.
+Disabling a rule or changing its scope resolves its active incidents. Deleting a rule hides it
+immediately, then retains its incident and delivery records until Linear cleanup finishes or
+reaches a recorded terminal failure.
+The delete API returns `202` with `deletionPending: true`. Connection deletion returns `409`
+while any alert rule, including one awaiting cleanup, remains on the connection.
+
+If cleanup is delayed, check that the organization's Linear integration is connected and the
+issue's team has a completed workflow state. In-flight notifications must finish or their
+worker claims must expire before cleanup can complete. The worker automatically retries
+transient failures, for up to 100 attempts. A disconnected integration or permanent provider
+rejection ends automatic cleanup immediately. Exhausted cleanup records its failure on the
+incident and allows pending rule deletion to finish; reconcile remaining issues in Linear
+manually. A successful late notification can queue cleanup again.
 
 ## What Gets Stored
 

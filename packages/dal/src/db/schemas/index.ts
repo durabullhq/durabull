@@ -29,7 +29,13 @@ export type {
   NewAlertWebhookDestination,
 } from './alert-destination/types'
 // Alert Event schema exports
-export { type AlertEventStatus, alertEvent, alertEventStatuses } from './alert-event/schema'
+export {
+  type AlertEventStatus,
+  type AlertResolutionReason,
+  alertEvent,
+  alertEventStatuses,
+  alertResolutionReasons,
+} from './alert-event/schema'
 export type { AlertEvent, NewAlertEvent } from './alert-event/types'
 // Alert Rule schema exports
 export { type AlertRuleType, alertRule, alertRuleTypes } from './alert-rule/schema'
@@ -54,6 +60,7 @@ export type {
   LinearIntegration,
   NewLinearIntegration,
 } from './linear-integration/types'
+export { linearIssueResolution } from './linear-issue-resolution/schema'
 export { linearJobIssue } from './linear-job-issue/schema'
 export type { LinearJobIssue, NewLinearJobIssue } from './linear-job-issue/types'
 export { linearJobIssueEvent } from './linear-job-issue-event/schema'

@@ -5,6 +5,7 @@ import {
   type AlertWebhookDestination,
   alertDeliveryRepository,
   alertDestinationRepository,
+  alertEventRepository,
   alertRuleRepository,
   alertWebhookDestinationRepository,
   decryptSecret,
@@ -157,6 +158,20 @@ export async function processAlertDeliveries(
       ? await alertDeliveryRepository.claimById(options.deliveryId, event.id)
       : await alertDeliveryRepository.claimDueForEvent(event.id))
   if (dueDeliveries.length === 0) return
+
+  const currentEvent = await alertEventRepository.findById(event.id, event.organizationId)
+  if (!currentEvent || currentEvent.status !== 'firing') {
+    await Promise.all(
+      dueDeliveries.map((delivery) =>
+        alertDeliveryRepository.markFailed(delivery.id, {
+          error: 'Alert incident resolved before delivery.',
+          retryable: false,
+          expectedClaimedAt: requireClaimedAt(delivery),
+        })
+      )
+    )
+    return
+  }
 
   const organizationSlug = await getOrganizationSlug(event.organizationId)
 

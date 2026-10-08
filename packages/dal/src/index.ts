@@ -58,8 +58,10 @@ export type {
 } from './db/schemas/alert-destination/types'
 export {
   type AlertEventStatus,
+  type AlertResolutionReason,
   alertEvent,
   alertEventStatuses,
+  alertResolutionReasons,
 } from './db/schemas/alert-event/schema'
 export type { AlertEvent, NewAlertEvent } from './db/schemas/alert-event/types'
 // Redis connection exports
@@ -190,6 +192,10 @@ export {
 } from './repositories/alert-event'
 export { alertRuleRepository } from './repositories/alert-rule'
 export { linearIntegrationRepository } from './repositories/linear-integration'
+export {
+  type LinearIssueResolutionClaim,
+  linearIssueResolutionRepository,
+} from './repositories/linear-issue-resolution'
 export { linearJobIssueRepository } from './repositories/linear-job-issue'
 export { linearOauthStateRepository } from './repositories/linear-oauth-state'
 export { mcpPolicyRepository } from './repositories/mcp-policy'

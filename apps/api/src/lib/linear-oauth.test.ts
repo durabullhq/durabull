@@ -76,6 +76,8 @@ describe('Linear OAuth helpers', () => {
   })
 
   it('can opt into Linear app actor authorization for service-account style installs', () => {
+    mutableEnv.LINEAR_OAUTH_CLIENT_ID = 'client-id'
+    mutableEnv.LINEAR_OAUTH_CLIENT_SECRET = 'client-secret'
     mutableEnv.LINEAR_OAUTH_ACTOR = 'app'
 
     expect(getLinearOauthConfig().actor).toBe('app')

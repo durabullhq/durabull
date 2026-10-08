@@ -185,7 +185,8 @@ function getMetricWindowCount(metrics: { count: number; dataPoints: number[] }):
 export function evaluateFailureThreshold(
   config: FailureThresholdConfig,
   snapshot: QueueSnapshot,
-  cursor: CursorState | null
+  cursor: CursorState | null,
+  capturedAt = new Date()
 ): AlertEvaluation {
   const currentFailed = snapshot.jobCounts.failed
   const failuresInWindow = getMetricWindowCount(snapshot.failedMetrics)
@@ -195,7 +196,9 @@ export function evaluateFailureThreshold(
   // Only count the delta if the cursor falls within the configured window.
   // If the monitor was down or the last check is older than the window, skip
   // to avoid counting a large backlog as a sudden spike.
-  const minutesSinceLastCheck = cursor ? (Date.now() - cursor.lastCheckedAt.getTime()) / 60_000 : 0
+  const minutesSinceLastCheck = cursor
+    ? (capturedAt.getTime() - cursor.lastCheckedAt.getTime()) / 60_000
+    : 0
 
   // Allow a 10% tolerance beyond the window to account for polling jitter and clock drift
   const windowWithTolerance = config.windowMinutes * 1.1
@@ -266,7 +269,8 @@ export function evaluateFailureRate(
 export function evaluateQueueStalled(
   config: QueueStalledConfig,
   snapshot: QueueSnapshot,
-  cursor: CursorState | null
+  cursor: CursorState | null,
+  capturedAt = new Date()
 ): AlertEvaluation {
   const hasWorkInQueue = snapshot.jobCounts.waiting > 0 || snapshot.jobCounts.active > 0
   const completedInWindow = getMetricWindowCount(snapshot.completedMetrics)
@@ -274,7 +278,7 @@ export function evaluateQueueStalled(
     ? Math.max(0, snapshot.jobCounts.completed - cursor.lastCompletedCount)
     : 0
   const minutesSinceLastCheck = cursor
-    ? (Date.now() - cursor.lastCheckedAt.getTime()) / 60_000
+    ? (capturedAt.getTime() - cursor.lastCheckedAt.getTime()) / 60_000
     : Number.POSITIVE_INFINITY
 
   const triggered =
@@ -302,7 +306,8 @@ export function evaluateQueueStalled(
 export function evaluateRule(
   rule: AlertRule,
   snapshot: QueueSnapshot,
-  cursor: CursorState | null
+  cursor: CursorState | null,
+  capturedAt = new Date()
 ): AlertEvaluation {
   const config = (rule.config ?? {}) as Record<string, unknown>
 
@@ -316,7 +321,7 @@ export function evaluateRule(
           context: {},
         }
       }
-      return evaluateFailureThreshold(parsed.data, snapshot, cursor)
+      return evaluateFailureThreshold(parsed.data, snapshot, cursor, capturedAt)
     }
     case 'failure_rate': {
       const parsed = failureRateConfigSchema.safeParse(config)
@@ -338,7 +343,7 @@ export function evaluateRule(
           context: {},
         }
       }
-      return evaluateQueueStalled(parsed.data, snapshot, cursor)
+      return evaluateQueueStalled(parsed.data, snapshot, cursor, capturedAt)
     }
     case 'job_failed':
       return {

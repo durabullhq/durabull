@@ -132,6 +132,116 @@ describe('alertDeliveryRepository', () => {
     expect(finalClaim).toHaveLength(0)
   })
 
+  it('re-arms resolution when a Linear delivery finishes after its incident resolves', async () => {
+    const event = await seedAlertEvent()
+    await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'destination',
+        target: 'linear-destination',
+      },
+    ])
+    const [delivery] = await alertDeliveryRepository.claimDueForEvent(event.id)
+    await alertEventRepository.resolve(event.id, TEST_ORG_ID)
+    await alertEventRepository.claimLinearResolutionSync(event.id, 'early-worker')
+    await alertEventRepository.abandonLinearResolutionSync(
+      [event.id],
+      'early-worker',
+      'Exhausted historical work'
+    )
+    expect(
+      (await alertEventRepository.findById(event.id, TEST_ORG_ID))?.linearResolutionSyncPending
+    ).toBe(false)
+
+    expect(
+      await alertDeliveryRepository.markDelivered(
+        delivery!.id,
+        {
+          externalId: 'late-linear-issue',
+          providerMetadata: { resolvedType: 'linear' },
+        },
+        delivery!.claimedAt!
+      )
+    ).toBe(true)
+    expect(
+      (await alertEventRepository.findById(event.id, TEST_ORG_ID))?.linearResolutionSyncPending
+    ).toBe(true)
+    expect(
+      (await alertEventRepository.findById(event.id, TEST_ORG_ID))?.linearResolutionReason
+    ).toBe('manual')
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toMatchObject({
+      linearResolutionFailedAt: null,
+      linearResolutionLastError: null,
+      linearResolutionAttempts: 0,
+    })
+  })
+
+  it('invalidates an old resolution claim when a new Linear issue reference arrives', async () => {
+    const event = await seedAlertEvent()
+    await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'linear',
+        target: 'team',
+      },
+    ])
+    const [delivery] = await alertDeliveryRepository.claimDueForEvent(event.id)
+    await alertEventRepository.resolve(event.id, TEST_ORG_ID)
+    await alertEventRepository.claimLinearResolutionSync(event.id, 'early-worker')
+    await alertDeliveryRepository.markDelivered(
+      delivery!.id,
+      { externalId: 'late-linear-issue' },
+      delivery!.claimedAt!
+    )
+    await alertEventRepository.clearLinearResolutionSyncPending([event.id], 'early-worker')
+    expect(
+      (await alertEventRepository.findById(event.id, TEST_ORG_ID))?.linearResolutionSyncPending
+    ).toBe(true)
+    expect(
+      await alertEventRepository.claimLinearResolutionSync(event.id, 'next-worker')
+    ).not.toBeNull()
+  })
+
+  it('retains a deleting rule while a delivery is in flight or resolution work remains', async () => {
+    const event = await seedAlertEvent()
+    await alertDeliveryRepository.enqueueMany([
+      {
+        alertEventId: event.id,
+        organizationId: TEST_ORG_ID,
+        channelType: 'linear',
+        target: 'team',
+      },
+    ])
+    const [delivery] = await alertDeliveryRepository.claimDueForEvent(event.id)
+    await alertRuleRepository.update(event.alertRuleId, TEST_ORG_ID, {
+      enabled: false,
+      deletionRequestedAt: new Date(),
+    })
+    await alertRuleRepository.claimDeletionRequested(1, 'deletion-worker')
+    await alertEventRepository.resolve(event.id, TEST_ORG_ID)
+    await alertEventRepository.claimLinearResolutionSync(event.id, 'early-worker')
+    await alertEventRepository.clearLinearResolutionSyncPending([event.id], 'early-worker')
+    expect(
+      await alertRuleRepository.deleteIfDeletionRequested(event.alertRuleId, 'deletion-worker')
+    ).toBe(false)
+
+    await alertDeliveryRepository.markDelivered(
+      delivery!.id,
+      { externalId: 'late-linear-issue' },
+      delivery!.claimedAt!
+    )
+    expect(
+      await alertRuleRepository.deleteIfDeletionRequested(event.alertRuleId, 'deletion-worker')
+    ).toBe(false)
+    await alertEventRepository.claimLinearResolutionSync(event.id, 'final-worker')
+    await alertEventRepository.clearLinearResolutionSyncPending([event.id], 'final-worker')
+    expect(
+      await alertRuleRepository.deleteIfDeletionRequested(event.alertRuleId, 'deletion-worker')
+    ).toBe(true)
+  })
+
   it('claims only the requested delivery by id', async () => {
     const event = await seedAlertEvent()
     const deliveries = await alertDeliveryRepository.enqueueMany([
