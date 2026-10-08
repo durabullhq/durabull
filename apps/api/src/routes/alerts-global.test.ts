@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -468,6 +468,50 @@ describe('global alerts routes', () => {
 
     const resolveResponse = await app.request(`/events/${first.id}/resolve`, { method: 'POST' })
     expect(resolveResponse.status).toBe(200)
+
+    const resolved = await alertEventRepository.findById(first.id, TEST_ORG_ID)
+    const repeated = await app.request(`/events/${first.id}/resolve`, { method: 'POST' })
+    expect(repeated.status).toBe(409)
+    expect(await repeated.json()).toEqual({ error: 'This alert event is already resolved.' })
+    // A repeat request must not reset the durable cleanup lease or retry state.
+    expect(await alertEventRepository.findById(first.id, TEST_ORG_ID)).toEqual(resolved)
+  })
+
+  it('returns a conflict when a concurrent request wins event resolution', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Concurrent resolution',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: FIRST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      summary: 'Concurrent incident',
+      firedAt: new Date(),
+    })
+    const originalResolve = alertEventRepository.resolve.bind(alertEventRepository)
+    const resolveSpy = spyOn(alertEventRepository, 'resolve').mockImplementationOnce(
+      async (...args) => {
+        await originalResolve(...args)
+        return null
+      }
+    )
+    try {
+      const app = await createGlobalAlertsRouteApp()
+      const response = await app.request(`/events/${event.id}/resolve`, { method: 'POST' })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toEqual({
+        error: 'The alert event changed before it could be resolved.',
+      })
+    } finally {
+      resolveSpy.mockRestore()
+    }
   })
 
   it('stores Linear OAuth tokens encrypted and returns only connection metadata', async () => {

@@ -58,7 +58,13 @@ async function linkIssueToEvent(issue: LinearJobIssue, alertEventId: string): Pr
     // in-flight claims too: their peer check predates this new incident.
     await tx
       .update(linearIssueResolution)
-      .set({ claimToken: null, claimedAt: null, completedAt: null, updatedAt: new Date() })
+      .set({
+        claimToken: null,
+        claimedAt: null,
+        completedAt: null,
+        commentId: null,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(linearIssueResolution.issueId, issue.linearIssueId),

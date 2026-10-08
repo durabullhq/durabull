@@ -34,6 +34,39 @@ function createSnapshot(overrides: Partial<QueueSnapshot> = {}): QueueSnapshot {
 }
 
 describe('alert evaluator', () => {
+  it('evaluates failure deltas against observation time when replay occurs later', () => {
+    const capturedAt = new Date(Date.now() - 60 * 60_000)
+    const cursor = {
+      lastCheckedAt: new Date(capturedAt.getTime() - 60_000),
+      lastFailedCount: 0,
+      lastCompletedCount: 200,
+    }
+    const evaluation = evaluateFailureThreshold(
+      { count: 5, windowMinutes: 5 },
+      createSnapshot(),
+      cursor,
+      capturedAt
+    )
+    expect(evaluation.triggered).toBe(true)
+    expect(evaluation.context.minutesSinceLastCheck).toBe(1)
+  })
+
+  it('does not count downtime after observation as a queue stall during replay', () => {
+    const capturedAt = new Date(Date.now() - 60 * 60_000)
+    const cursor = {
+      lastCheckedAt: new Date(capturedAt.getTime() - 60_000),
+      lastFailedCount: 0,
+      lastCompletedCount: 200,
+    }
+    const snapshot = createSnapshot({
+      jobCounts: { failed: 0, waiting: 10, active: 0, completed: 200 },
+      completedMetrics: { count: 0, dataPoints: [] },
+    })
+    const evaluation = evaluateQueueStalled({ stalledMinutes: 5 }, snapshot, cursor, capturedAt)
+    expect(evaluation.triggered).toBe(false)
+    expect(evaluation.context.minutesSinceLastCheck).toBe(1)
+  })
+
   it('fires a Redis health alert when a metric meets its threshold exactly', () => {
     const snapshot = {
       kind: 'redis_health',

@@ -12,20 +12,6 @@ WHERE event."status" = 'resolved'
 	AND (
 		event."context"->>'migrationLinearSyncPending' = 'true'
 		OR event."context"->>'linearResolutionSyncPending' = 'true'
-		OR EXISTS (
-			SELECT 1
-			FROM "alert_delivery" AS delivery
-			WHERE delivery."alert_event_id" = event."id"
-				AND (
-					delivery."channel_type" = 'linear'
-					OR (
-						delivery."channel_type" = 'destination'
-						AND delivery."provider_metadata"->>'resolvedType' = 'linear'
-					)
-				)
-				AND delivery."status" = 'delivered'
-				AND delivery."external_id" IS NOT NULL
-		)
 	);
 --> statement-breakpoint
 CREATE INDEX "alert_event_linear_resolution_pending_idx"

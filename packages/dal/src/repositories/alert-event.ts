@@ -67,9 +67,11 @@ async function promoteLegacyLinearResolutionSyncPending(
       .update(alertEvent)
       .set({
         linearResolutionSyncPending: true,
-        linearResolutionReason: 'rule_changed',
+        linearResolutionReason: 'legacy',
         linearResolutionRetryAt: new Date(),
         linearResolutionAttempts: 0,
+        linearResolutionFailedAt: null,
+        linearResolutionLastError: null,
       })
       .where(
         inArray(
@@ -154,39 +156,66 @@ export const alertEventRepository = {
   },
 
   async createOrGetByDedupeKey(
-    data: Omit<NewAlertEvent, 'id' | 'createdAt' | 'updatedAt'> & { dedupeKey: string }
-  ): Promise<{ event: AlertEvent; created: boolean }> {
+    data: Omit<NewAlertEvent, 'id' | 'createdAt' | 'updatedAt'> & { dedupeKey: string },
+    options: { expectedRule?: AlertRuleEvaluationState } = {}
+  ): Promise<{ event: AlertEvent; created: boolean } | null> {
     const db = await getDb()
-    const id = uuidv7()
+    return db.transaction(async (tx) => {
+      if (options.expectedRule) {
+        const [currentRule] = await tx
+          .select()
+          .from(alertRule)
+          .where(
+            and(
+              eq(alertRule.id, data.alertRuleId),
+              eq(alertRule.organizationId, data.organizationId)
+            )
+          )
+          .for('update')
+          .limit(1)
+        if (
+          !currentRule ||
+          !currentRule.enabled ||
+          currentRule.deletionRequestedAt !== null ||
+          (currentRule.mutedUntil !== null && currentRule.mutedUntil.getTime() > Date.now()) ||
+          !matchesRuleEvaluationState(currentRule, options.expectedRule)
+        )
+          return null
+      }
+      const id = uuidv7()
 
-    const [inserted] = await db
-      .insert(alertEvent)
-      .values({
-        id,
-        ...data,
-      })
-      .onConflictDoNothing({
-        target: [alertEvent.alertRuleId, alertEvent.dedupeKey],
-      })
-      .returning()
+      const [inserted] = await tx
+        .insert(alertEvent)
+        .values({
+          id,
+          ...data,
+        })
+        .onConflictDoNothing({
+          target: [alertEvent.alertRuleId, alertEvent.dedupeKey],
+        })
+        .returning()
 
-    if (inserted) {
-      return { event: inserted, created: true }
-    }
+      if (inserted) {
+        return { event: inserted, created: true }
+      }
 
-    const rows = await db
-      .select()
-      .from(alertEvent)
-      .where(
-        and(eq(alertEvent.alertRuleId, data.alertRuleId), eq(alertEvent.dedupeKey, data.dedupeKey))
-      )
-      .limit(1)
+      const rows = await tx
+        .select()
+        .from(alertEvent)
+        .where(
+          and(
+            eq(alertEvent.alertRuleId, data.alertRuleId),
+            eq(alertEvent.dedupeKey, data.dedupeKey)
+          )
+        )
+        .limit(1)
 
-    if (!rows[0]) {
-      throw new Error('Alert event dedupe conflict could not be resolved.')
-    }
+      if (!rows[0]) {
+        throw new Error('Alert event dedupe conflict could not be resolved.')
+      }
 
-    return { event: rows[0], created: false }
+      return { event: rows[0], created: false }
+    })
   },
 
   /**
@@ -216,7 +245,12 @@ export const alertEventRepository = {
         const [currentRule] = await tx
           .select()
           .from(alertRule)
-          .where(eq(alertRule.id, data.alertRuleId))
+          .where(
+            and(
+              eq(alertRule.id, data.alertRuleId),
+              eq(alertRule.organizationId, data.organizationId)
+            )
+          )
           .for('update')
           .limit(1)
 
@@ -376,6 +410,8 @@ export const alertEventRepository = {
           linearResolutionReason: 'auto_condition_cleared',
           linearResolutionRetryAt: now,
           linearResolutionAttempts: 0,
+          linearResolutionFailedAt: null,
+          linearResolutionLastError: null,
         })
         .where(
           and(
@@ -782,6 +818,8 @@ export const alertEventRepository = {
         linearResolutionReason: reason,
         linearResolutionRetryAt: new Date(),
         linearResolutionAttempts: 0,
+        linearResolutionFailedAt: null,
+        linearResolutionLastError: null,
       })
       .where(
         and(
@@ -822,6 +860,8 @@ export const alertEventRepository = {
         linearResolutionReason: options.reason ?? 'manual',
         linearResolutionRetryAt: now,
         linearResolutionAttempts: 0,
+        linearResolutionFailedAt: null,
+        linearResolutionLastError: null,
       })
       .where(
         and(
@@ -863,6 +903,8 @@ export const alertEventRepository = {
         linearResolutionReason: reason,
         linearResolutionRetryAt: now,
         linearResolutionAttempts: 0,
+        linearResolutionFailedAt: null,
+        linearResolutionLastError: null,
       })
       .where(and(eq(alertEvent.alertRuleId, alertRuleId), eq(alertEvent.status, 'firing')))
       .returning()
@@ -881,8 +923,36 @@ export const alertEventRepository = {
         // batch and re-arm external synchronization.
         linearResolutionRetryAt: null,
         linearResolutionAttempts: 0,
+        linearResolutionFailedAt: null,
+        linearResolutionLastError: null,
         context: sql`${alertEvent.context} - 'migrationLinearSyncPending' - 'linearResolutionSyncPending'`,
         updatedAt: new Date(),
+      })
+      .where(
+        and(inArray(alertEvent.id, ids), eq(alertEvent.linearResolutionSyncClaimToken, claimToken))
+      )
+  },
+
+  async abandonLinearResolutionSync(
+    ids: string[],
+    claimToken: string,
+    error: string
+  ): Promise<void> {
+    if (ids.length === 0) return
+    const db = await getDb()
+    const now = new Date()
+    await db
+      .update(alertEvent)
+      .set({
+        linearResolutionSyncPending: false,
+        linearResolutionSyncClaimToken: null,
+        linearResolutionSyncClaimedAt: null,
+        linearResolutionRetryAt: null,
+        linearResolutionAttempts: sql`${alertEvent.linearResolutionAttempts} + 1`,
+        linearResolutionFailedAt: now,
+        linearResolutionLastError: error.slice(0, 1000),
+        context: sql`${alertEvent.context} - 'migrationLinearSyncPending' - 'linearResolutionSyncPending'`,
+        updatedAt: now,
       })
       .where(
         and(inArray(alertEvent.id, ids), eq(alertEvent.linearResolutionSyncClaimToken, claimToken))
@@ -950,6 +1020,7 @@ export const alertEventRepository = {
           linearResolutionSyncClaimToken: claimToken,
           linearResolutionSyncClaimedAt: now,
           linearResolutionSyncPending: true,
+          linearResolutionReason: candidate.linearResolutionReason ?? 'legacy',
           updatedAt: now,
         })
         .where(eq(alertEvent.id, id))

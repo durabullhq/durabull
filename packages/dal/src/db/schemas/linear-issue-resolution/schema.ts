@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { index, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
+import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { timestampColumns } from '../common'
 import { organization } from '../organization/schema'
 
@@ -14,6 +14,8 @@ export const linearIssueResolution = pgTable(
     claimToken: text('claim_token'),
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    // Prepared before the state change; reused after interruption or comment failure.
+    commentId: uuid('comment_id'),
     ...timestampColumns,
   },
   (table) => ({

@@ -145,7 +145,11 @@ describe('alertDeliveryRepository', () => {
     const [delivery] = await alertDeliveryRepository.claimDueForEvent(event.id)
     await alertEventRepository.resolve(event.id, TEST_ORG_ID)
     await alertEventRepository.claimLinearResolutionSync(event.id, 'early-worker')
-    await alertEventRepository.clearLinearResolutionSyncPending([event.id], 'early-worker')
+    await alertEventRepository.abandonLinearResolutionSync(
+      [event.id],
+      'early-worker',
+      'Exhausted historical work'
+    )
     expect(
       (await alertEventRepository.findById(event.id, TEST_ORG_ID))?.linearResolutionSyncPending
     ).toBe(false)
@@ -166,6 +170,11 @@ describe('alertDeliveryRepository', () => {
     expect(
       (await alertEventRepository.findById(event.id, TEST_ORG_ID))?.linearResolutionReason
     ).toBe('manual')
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toMatchObject({
+      linearResolutionFailedAt: null,
+      linearResolutionLastError: null,
+      linearResolutionAttempts: 0,
+    })
   })
 
   it('invalidates an old resolution claim when a new Linear issue reference arrives', async () => {

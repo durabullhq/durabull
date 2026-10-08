@@ -430,7 +430,11 @@ describe('alertEventRepository', () => {
 
     const pending = await alertEventRepository.findPendingLinearResolutionSync(10)
     expect(pending).toEqual([
-      expect.objectContaining({ id: firing.id, linearResolutionSyncPending: true }),
+      expect.objectContaining({
+        id: firing.id,
+        linearResolutionSyncPending: true,
+        linearResolutionReason: 'legacy',
+      }),
     ])
     expect(
       await alertEventRepository.claimLinearResolutionSync(firing.id, 'rolling-upgrade-worker')
@@ -439,6 +443,138 @@ describe('alertEventRepository', () => {
       linearResolutionSyncPending: true,
       linearResolutionSyncClaimToken: 'rolling-upgrade-worker',
     })
+  })
+
+  it('claims a legacy marker directly with a neutral reason', async () => {
+    const { connectionId, rule } = await seedBase()
+    const event = await createFiringEvent(rule, connectionId)
+    const db = await getDb()
+    await db
+      .update(alertEvent)
+      .set({ status: 'resolved', context: { migrationLinearSyncPending: true } })
+      .where(eq(alertEvent.id, event.id))
+    expect(
+      await alertEventRepository.claimLinearResolutionSync(event.id, 'direct-legacy')
+    ).toMatchObject({ linearResolutionReason: 'legacy', linearResolutionSyncPending: true })
+  })
+
+  it('persists terminal failure and removes legacy markers only for the current claim', async () => {
+    const { connectionId, rule } = await seedBase()
+    const event = await createFiringEvent(rule, connectionId)
+    await alertEventRepository.resolve(event.id, TEST_ORG_ID)
+    const db = await getDb()
+    await db
+      .update(alertEvent)
+      .set({
+        context: {
+          linearResolutionSyncPending: true,
+          migrationLinearSyncPending: true,
+          evidence: 'retained',
+        },
+      })
+      .where(eq(alertEvent.id, event.id))
+    await alertEventRepository.claimLinearResolutionSync(event.id, 'terminal-worker')
+    await alertEventRepository.abandonLinearResolutionSync(
+      [event.id],
+      'stale-worker',
+      'Stale failure'
+    )
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toMatchObject({
+      linearResolutionSyncPending: true,
+      linearResolutionFailedAt: null,
+    })
+    await alertEventRepository.abandonLinearResolutionSync(
+      [event.id],
+      'terminal-worker',
+      'Integration disconnected'
+    )
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toMatchObject({
+      linearResolutionSyncPending: false,
+      linearResolutionFailedAt: expect.any(Date),
+      linearResolutionLastError: 'Integration disconnected',
+      linearResolutionAttempts: 1,
+      context: { evidence: 'retained' },
+    })
+    expect(await alertEventRepository.findPendingLinearResolutionSync()).toEqual([])
+    expect(await alertEventRepository.claimLinearResolutionSync(event.id, 'new-worker')).toBeNull()
+    await alertRuleRepository.update(rule.id, TEST_ORG_ID, {
+      enabled: false,
+      deletionRequestedAt: new Date(),
+    })
+    await alertRuleRepository.claimDeletionRequested(1, 'delete-worker')
+    expect(await alertRuleRepository.deleteIfDeletionRequested(rule.id, 'delete-worker')).toBe(true)
+    expect(await redisConnectionRepository.deleteIfNoAlertRules(connectionId, TEST_ORG_ID)).toBe(
+      'deleted'
+    )
+  })
+
+  it('persists a stable comment ID across a released issue lease and fences stale workers', async () => {
+    await seedBase()
+    await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'interrupted-issue', 'worker-a')
+    expect(
+      await linearIssueResolutionRepository.findCommentId('interrupted-issue', 'worker-a')
+    ).toBeNull()
+    const commentId = await linearIssueResolutionRepository.prepareComment(
+      'interrupted-issue',
+      'worker-a'
+    )
+    expect(commentId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(
+      await linearIssueResolutionRepository.prepareComment('interrupted-issue', 'worker-a')
+    ).toBe(commentId)
+    await linearIssueResolutionRepository.release('interrupted-issue', 'worker-a')
+    await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'interrupted-issue', 'worker-b')
+    expect(
+      await linearIssueResolutionRepository.prepareComment('interrupted-issue', 'worker-a')
+    ).toBeNull()
+    expect(
+      await linearIssueResolutionRepository.findCommentId('interrupted-issue', 'worker-b')
+    ).toBe(commentId)
+    expect(
+      await linearIssueResolutionRepository.markCompleted('interrupted-issue', 'worker-a')
+    ).toBe(false)
+    expect(
+      await linearIssueResolutionRepository.markCompleted('interrupted-issue', 'worker-b')
+    ).toBe(true)
+  })
+
+  it('refuses job-failure inserts from a stale rule evaluation after edits, disable, snooze, or tenant mismatch', async () => {
+    const { connectionId, rule } = await seedBase()
+    const input = {
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId,
+      queueName: 'jobs',
+      type: 'job_failed',
+      summary: 'Failed job',
+      firedAt: new Date(),
+      dedupeKey: 'job:1',
+    }
+    const first = await alertEventRepository.createOrGetByDedupeKey(input, { expectedRule: rule })
+    expect(first?.created).toBe(true)
+    expect(
+      await alertEventRepository.createOrGetByDedupeKey(input, { expectedRule: rule })
+    ).toMatchObject({ created: false, event: { id: first?.event.id } })
+    for (const patch of [
+      { enabled: false },
+      { enabled: true, queueName: 'different' },
+      { mutedUntil: new Date(Date.now() + 60_000) },
+    ]) {
+      await alertRuleRepository.update(rule.id, TEST_ORG_ID, patch)
+      expect(
+        await alertEventRepository.createOrGetByDedupeKey(
+          { ...input, dedupeKey: JSON.stringify(patch) },
+          { expectedRule: rule }
+        )
+      ).toBeNull()
+    }
+    expect(
+      await alertEventRepository.createOrGetByDedupeKey(
+        { ...input, organizationId: 'another-tenant' },
+        { expectedRule: rule }
+      )
+    ).toBeNull()
+    expect(await alertEventRepository.findByRule(rule.id, { offset: 0, limit: 10 })).toHaveLength(1)
   })
 
   it('backs off failed external sync work until its next retry time', async () => {
@@ -614,17 +750,20 @@ describe('alertEventRepository', () => {
     }
 
     const first = await alertEventRepository.upsertSuppressed(base)
-    expect(first?.created).toBe(true)
-    expect(first?.event.status).toBe('suppressed')
-    expect((first?.event.context as Record<string, unknown>).suppressedCount).toBe(1)
+    if (!first) throw new Error('Expected first suppression result')
+    expect(first.created).toBe(true)
+    expect(first.event.status).toBe('suppressed')
+    expect((first.event.context as Record<string, unknown>).suppressedCount).toBe(1)
 
     const second = await alertEventRepository.upsertSuppressed(base)
-    expect(second?.created).toBe(false)
-    expect(second?.event.id).toBe(first?.event.id)
-    expect((second?.event.context as Record<string, unknown>).suppressedCount).toBe(2)
+    if (!second) throw new Error('Expected second suppression result')
+    expect(second.created).toBe(false)
+    expect(second.event.id).toBe(first.event.id)
+    expect((second.event.context as Record<string, unknown>).suppressedCount).toBe(2)
 
     const third = await alertEventRepository.upsertSuppressed(base)
-    expect((third?.event.context as Record<string, unknown>).suppressedCount).toBe(3)
+    if (!third) throw new Error('Expected third suppression result')
+    expect((third.event.context as Record<string, unknown>).suppressedCount).toBe(3)
 
     const replayed = await alertEventRepository.upsertSuppressed({
       ...base,
@@ -634,8 +773,10 @@ describe('alertEventRepository', () => {
       ...base,
       observationToken: 'durable-observation',
     })
-    expect((replayed?.event.context as Record<string, unknown>).suppressedCount).toBe(4)
-    expect((duplicateReplay?.event.context as Record<string, unknown>).suppressedCount).toBe(4)
+    if (!replayed) throw new Error('Expected replayed suppression result')
+    expect((replayed.event.context as Record<string, unknown>).suppressedCount).toBe(4)
+    if (!duplicateReplay) throw new Error('Expected duplicateReplay suppression result')
+    expect((duplicateReplay.event.context as Record<string, unknown>).suppressedCount).toBe(4)
   })
 
   it('anchors cooldown lookups to non-suppressed events', async () => {

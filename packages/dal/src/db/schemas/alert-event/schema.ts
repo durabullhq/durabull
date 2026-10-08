@@ -23,6 +23,7 @@ export const alertResolutionReasons = [
   'auto_job_completed',
   'auto_condition_cleared',
   'rule_changed',
+  'legacy',
 ] as const
 export type AlertResolutionReason = (typeof alertResolutionReasons)[number]
 
@@ -60,6 +61,8 @@ export const alertEvent = pgTable(
     linearResolutionReason: text('linear_resolution_reason').$type<AlertResolutionReason>(),
     linearResolutionRetryAt: timestamp('linear_resolution_retry_at', { withTimezone: true }),
     linearResolutionAttempts: integer('linear_resolution_attempts').notNull().default(0),
+    linearResolutionFailedAt: timestamp('linear_resolution_failed_at', { withTimezone: true }),
+    linearResolutionLastError: text('linear_resolution_last_error'),
   },
   (table) => ({
     ruleStatusIdx: index('alert_event_rule_id_status_idx').on(table.alertRuleId, table.status),

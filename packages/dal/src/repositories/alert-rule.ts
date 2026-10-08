@@ -217,6 +217,8 @@ export const alertRuleRepository = {
               linearResolutionReason: 'rule_changed',
               linearResolutionRetryAt: now,
               linearResolutionAttempts: 0,
+              linearResolutionFailedAt: null,
+              linearResolutionLastError: null,
               context: sql`jsonb_set(
                 coalesce(${alertEvent.context}, '{}'::jsonb),
                 '{ruleRevisionInvalidated}',

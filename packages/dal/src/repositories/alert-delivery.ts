@@ -339,6 +339,8 @@ export const alertDeliveryRepository = {
             linearResolutionSyncClaimedAt: null,
             linearResolutionRetryAt: now,
             linearResolutionAttempts: 0,
+            linearResolutionFailedAt: null,
+            linearResolutionLastError: null,
             updatedAt: now,
           })
           .where(and(eq(alertEvent.id, delivered.alertEventId), eq(alertEvent.status, 'resolved')))

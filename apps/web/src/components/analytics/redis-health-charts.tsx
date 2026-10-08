@@ -328,7 +328,8 @@ function ThresholdLine({
     <ReferenceLine
       yAxisId={axis}
       y={threshold.threshold}
-      stroke="hsl(var(--destructive))"
+      ifOverflow="extendDomain"
+      stroke="var(--color-destructive)"
       strokeDasharray="4 4"
     />
   )

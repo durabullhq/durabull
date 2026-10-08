@@ -9,6 +9,7 @@ import { drizzle as drizzlePglite } from 'drizzle-orm/pglite'
 import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator'
 import pg from 'pg'
 import { shouldUseEnvConnections, syncEnvConnectionsForOrganization } from './env-redis-connections'
+import { withMigrationLock } from './migration-lock'
 import * as schema from './schemas'
 import { organization } from './schemas/organization/schema'
 import { relations } from './schemas/relations'
@@ -16,11 +17,6 @@ import { relations } from './schemas/relations'
 // Get the directory of this file to resolve paths relative to the dal package
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const migrationsDir = join(__dirname, './migrations')
-// Stable application-scoped PostgreSQL advisory lock. Every replica must hold
-// this session lock while the migrator reads and advances its journal.
-const MIGRATION_LOCK_NAMESPACE = 0x44555241
-const MIGRATION_LOCK_ID = 0x42554c4c
-
 export type Database = NodePgDatabase<typeof schema>
 
 export type DatabaseMode = 'postgres' | 'pglite'
@@ -80,25 +76,12 @@ export async function getDb(): Promise<Database> {
       try {
         console.log('🐘 Connecting to PostgreSQL...')
         const migrationLockClient = await pgPool.connect()
-        try {
-          await migrationLockClient.query('SELECT pg_advisory_lock($1, $2)', [
-            MIGRATION_LOCK_NAMESPACE,
-            MIGRATION_LOCK_ID,
-          ])
+        await withMigrationLock(migrationLockClient, async () => {
           // Run on the lock-owning session so connection loss cannot release
           // the lock while a different pool connection continues migrating.
           const migrationDb = drizzleNodePg({ client: migrationLockClient, schema, relations })
           await migrateNodePg(migrationDb, { migrationsFolder: migrationsDir })
-        } finally {
-          try {
-            await migrationLockClient.query('SELECT pg_advisory_unlock($1, $2)', [
-              MIGRATION_LOCK_NAMESPACE,
-              MIGRATION_LOCK_ID,
-            ])
-          } finally {
-            migrationLockClient.release()
-          }
-        }
+        })
 
         if (shouldUseEnvConnections()) {
           const orgs = await pgDb.select({ id: organization.id }).from(organization)

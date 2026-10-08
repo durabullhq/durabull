@@ -78,6 +78,32 @@ let pollInProgress = false
 let deliverySweepInProgress = false
 let resolutionRecoveryInProgress = false
 let jobAutoResolveInProgress = false
+// Timeouts bound a cycle's wait, but Redis/DB promises may remain alive. Keep
+// those connections registered until their work actually settles so later
+// cycles cannot start another worker against the same cursor.
+const inFlightConnectionPolls = new Map<string, Promise<void>>()
+
+async function runConnectionPollOnce(
+  connectionId: string,
+  worker: () => Promise<void>,
+  timeoutMs = CONNECTION_TIMEOUT_MS
+): Promise<void> {
+  if (inFlightConnectionPolls.has(connectionId)) return
+  const processing = Promise.resolve()
+    .then(worker)
+    .finally(() => {
+      if (inFlightConnectionPolls.get(connectionId) === processing) {
+        inFlightConnectionPolls.delete(connectionId)
+      }
+    })
+  inFlightConnectionPolls.set(connectionId, processing)
+  try {
+    await withTimeout(processing, timeoutMs, `Connection ${connectionId}`)
+  } catch (error) {
+    // One unavailable customer must not stop other connections in this cycle.
+    console.error(`[alert-monitor] Connection ${connectionId} poll failed:`, error)
+  }
+}
 
 interface MonitorCursorRow {
   lastMetricsSnapshot: unknown
@@ -373,10 +399,8 @@ async function runPollCycle(): Promise<void> {
       Array.from(rulesByConnection.entries()),
       MAX_CONCURRENT_CONNECTIONS,
       async ([connectionId, connectionRules]) => {
-        await withTimeout(
-          processConnection(connectionId, connectionRules, { collectRedisHealth }),
-          CONNECTION_TIMEOUT_MS,
-          `Connection ${connectionId}`
+        await runConnectionPollOnce(connectionId, () =>
+          processConnection(connectionId, connectionRules, { collectRedisHealth })
         )
       }
     )
@@ -882,7 +906,7 @@ async function evaluateAndMaybeAlert(
   cursorScope?: string,
   observationToken?: string
 ): Promise<void> {
-  const evaluation = evaluateRule(rule, snapshot, cursor)
+  const evaluation = evaluateRule(rule, snapshot, cursor, capturedAt)
 
   await processAlertEvaluation(
     rule,
@@ -1118,25 +1142,32 @@ async function scanFailedJobsAndMaybeAlert(
     if (!job.id) continue
 
     const dedupeKey = `job:${connection.id}:${queueName}:${job.id}`
-    const { event, created } = await alertEventRepository.createOrGetByDedupeKey({
-      alertRuleId: rule.id,
-      organizationId: rule.organizationId,
-      connectionId: rule.connectionId,
-      queueName,
-      type: rule.type,
-      status: 'firing',
-      summary: `Job ${job.id} failed in ${queueName}${job.failedReason ? `: ${job.failedReason}` : ''}`,
-      context: {
-        jobId: job.id,
-        jobName: job.name,
-        failedReason: job.failedReason,
-        attemptsMade: job.attemptsMade,
-        attempts: job.attempts,
-        failedAt: job.failedAt,
+    const result = await alertEventRepository.createOrGetByDedupeKey(
+      {
+        alertRuleId: rule.id,
+        organizationId: rule.organizationId,
+        connectionId: rule.connectionId,
+        queueName,
+        type: rule.type,
+        status: 'firing',
+        summary: `Job ${job.id} failed in ${queueName}${job.failedReason ? `: ${job.failedReason}` : ''}`,
+        context: {
+          jobId: job.id,
+          jobName: job.name,
+          failedReason: job.failedReason,
+          attemptsMade: job.attemptsMade,
+          attempts: job.attempts,
+          failedAt: job.failedAt,
+        },
+        firedAt: job.failedAt ? new Date(job.failedAt) : new Date(),
+        dedupeKey,
       },
-      firedAt: job.failedAt ? new Date(job.failedAt) : new Date(),
-      dedupeKey,
-    })
+      { expectedRule: rule }
+    )
+    // A rule may be disabled, edited, or deleted while the Redis scan runs.
+    // The repository checks its revision under the same lock as event creation.
+    if (!result) return
+    const { event, created } = result
 
     if (!created) {
       await resumeAlertNotification(event, rule, connection)
@@ -1344,7 +1375,11 @@ async function processWithConcurrency<T>(
     }
   })
 
-  await Promise.all(workers)
+  // Keep ownership of the cycle until every sibling worker settles, even if
+  // one fails; releasing it early can overlap a later cycle with live siblings.
+  const results = await Promise.allSettled(workers)
+  const failure = results.find((result) => result.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
 }
 
 export const __alertMonitorTestUtils = {
@@ -1359,6 +1394,7 @@ export const __alertMonitorTestUtils = {
   processDueAlertDeliveries,
   processWithConcurrency,
   runPollCycle,
+  runConnectionPollOnce,
   runJobAutoResolveCycle,
   autoResolveCompletedJobEvents,
   getEventJobId,

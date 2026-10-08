@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,9 +30,11 @@ const TEST_CONNECTION_ID = '55555555-5555-4555-8555-555555555555'
 
 const mutableEnv = env as {
   DATABASE_URL?: string
+  DURABULL_SECRET_ENCRYPTION_KEY?: string
 }
 
 const originalDatabaseUrl = mutableEnv.DATABASE_URL
+const originalSecretEncryptionKey = mutableEnv.DURABULL_SECRET_ENCRYPTION_KEY
 const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
 
 let tempPgliteDir = ''
@@ -121,6 +123,8 @@ describe('alerts routes', () => {
     process.env.DURABULL_PGLITE_DIR = tempPgliteDir
     delete process.env.DATABASE_URL
     mutableEnv.DATABASE_URL = undefined
+    mutableEnv.DURABULL_SECRET_ENCRYPTION_KEY =
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     await closeDb()
     await seedBaseConnection()
   })
@@ -131,6 +135,7 @@ describe('alerts routes', () => {
     mock.module('../lib/redis', () => realRedisModule)
     await closeDb()
     mutableEnv.DATABASE_URL = originalDatabaseUrl
+    mutableEnv.DURABULL_SECRET_ENCRYPTION_KEY = originalSecretEncryptionKey
 
     if (originalPgliteDir) {
       process.env.DURABULL_PGLITE_DIR = originalPgliteDir
@@ -863,6 +868,50 @@ describe('alerts routes', () => {
     expect(await resolveResponse.json()).toMatchObject({
       event: expect.objectContaining({ id: event.id, status: 'resolved' }),
     })
+
+    const resolved = await alertEventRepository.findById(event.id, TEST_ORG_ID)
+    const repeated = await app.request(`/events/${event.id}/resolve`, { method: 'POST' })
+    expect(repeated.status).toBe(409)
+    expect(await repeated.json()).toEqual({ error: 'This alert event is already resolved.' })
+    // A repeat request must not reset the durable cleanup lease or retry state.
+    expect(await alertEventRepository.findById(event.id, TEST_ORG_ID)).toEqual(resolved)
+  })
+
+  it('returns a conflict when a concurrent request wins event resolution', async () => {
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      name: 'Concurrent resolution',
+      type: 'failure_threshold',
+      config: { count: 5, windowMinutes: 5 },
+    })
+    const event = await alertEventRepository.create({
+      alertRuleId: rule.id,
+      organizationId: TEST_ORG_ID,
+      connectionId: TEST_CONNECTION_ID,
+      queueName: 'email-send',
+      type: rule.type,
+      summary: 'Concurrent incident',
+      firedAt: new Date(),
+    })
+    const originalResolve = alertEventRepository.resolve.bind(alertEventRepository)
+    const resolveSpy = spyOn(alertEventRepository, 'resolve').mockImplementationOnce(
+      async (...args) => {
+        await originalResolve(...args)
+        return null
+      }
+    )
+    try {
+      const app = await createAlertsRouteApp()
+      const response = await app.request(`/events/${event.id}/resolve`, { method: 'POST' })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toEqual({
+        error: 'The alert event changed before it could be resolved.',
+      })
+    } finally {
+      resolveSpy.mockRestore()
+    }
   })
 
   it('retries a failed delivery and re-attempts it through the API', async () => {

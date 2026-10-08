@@ -681,9 +681,12 @@ const app = new Hono()
     if (existing.status === 'suppressed') {
       return c.json({ error: 'Suppressed events are informational and cannot be resolved.' }, 409)
     }
+    if (existing.status === 'resolved') {
+      return c.json({ error: 'This alert event is already resolved.' }, 409)
+    }
     const event = await alertEventRepository.resolve(eventId, organizationId)
     if (!event) {
-      return c.json({ error: 'Event not found' }, 404)
+      return c.json({ error: 'The alert event changed before it could be resolved.' }, 409)
     }
 
     return c.json({ event })

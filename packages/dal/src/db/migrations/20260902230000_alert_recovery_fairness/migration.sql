@@ -11,7 +11,7 @@ SET "deletion_retry_at" = "deletion_requested_at"
 WHERE "deletion_requested_at" IS NOT NULL;
 --> statement-breakpoint
 UPDATE "alert_event"
-SET "linear_resolution_reason" = 'rule_changed'
+SET "linear_resolution_reason" = 'legacy'
 WHERE "linear_resolution_sync_pending" = true;
 --> statement-breakpoint
 DROP INDEX "alert_rule_deletion_requested_idx";

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { linearIssueResolution } from '../db/schemas/linear-issue-resolution/schema'
@@ -36,6 +37,39 @@ export const linearIssueResolutionRepository = {
         .where(eq(linearIssueResolution.issueId, issueId))
       return 'claimed'
     })
+  },
+
+  async prepareComment(issueId: string, claimToken: string): Promise<string | null> {
+    const db = await getDb()
+    const [row] = await db
+      .update(linearIssueResolution)
+      .set({
+        commentId: sql`coalesce(${linearIssueResolution.commentId}, ${randomUUID()}::uuid)`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(linearIssueResolution.issueId, issueId),
+          eq(linearIssueResolution.claimToken, claimToken)
+        )
+      )
+      .returning({ commentId: linearIssueResolution.commentId })
+    return row?.commentId ?? null
+  },
+
+  async findCommentId(issueId: string, claimToken: string): Promise<string | null> {
+    const db = await getDb()
+    const [row] = await db
+      .select({ commentId: linearIssueResolution.commentId })
+      .from(linearIssueResolution)
+      .where(
+        and(
+          eq(linearIssueResolution.issueId, issueId),
+          eq(linearIssueResolution.claimToken, claimToken)
+        )
+      )
+      .limit(1)
+    return row?.commentId ?? null
   },
 
   async markCompleted(issueId: string, claimToken: string): Promise<boolean> {

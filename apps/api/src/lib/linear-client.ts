@@ -83,7 +83,8 @@ function parseRateLimitReset(headers: Headers): Date | null {
   if (!reset) return null
   const numeric = Number(reset)
   if (!Number.isFinite(numeric)) return null
-  return new Date(numeric > 10_000_000_000 ? numeric : numeric * 1000)
+  const resetAt = new Date(numeric > 10_000_000_000 ? numeric : numeric * 1000)
+  return Number.isFinite(resetAt.getTime()) ? resetAt : null
 }
 
 function redactLinearError(message: string): string {
@@ -139,7 +140,7 @@ async function fetchLinear(
       aborted
         ? `${failureLabel} timed out after ${LINEAR_REQUEST_TIMEOUT_MS}ms`
         : error instanceof Error
-          ? error.message
+          ? redactLinearError(error.message)
           : failureLabel,
       { status: 0, retryable: true }
     )
@@ -426,7 +427,7 @@ export async function fetchLinearIssueStatus(
       identifier: string
       state: { id: string; name: string; type: string }
       team: { states: { nodes: LinearWorkflowState[] } }
-    }
+    } | null
   }>(
     accessToken,
     `query DurabullIssueStatus($issueId: String!) {
@@ -439,6 +440,10 @@ export async function fetchLinearIssueStatus(
     }`,
     { issueId }
   )
+
+  if (!data.issue) {
+    throw new LinearApiError('Linear issue is unavailable.', { status: 404, retryable: false })
+  }
 
   return {
     id: data.issue.id,
@@ -474,22 +479,45 @@ export async function updateLinearIssueState(
 export async function createLinearComment(
   accessToken: string,
   issueId: string,
-  body: string
+  body: string,
+  commentId?: string
 ): Promise<void> {
-  const data = await linearGraphql<{ commentCreate: { success: boolean } }>(
-    accessToken,
-    `mutation DurabullCommentOnIssue($issueId: String!, $body: String!) {
-      commentCreate(input: { issueId: $issueId, body: $body }) {
-        success
+  try {
+    const data = await linearGraphql<{ commentCreate: { success: boolean } }>(
+      accessToken,
+      `mutation DurabullCommentOnIssue($input: CommentCreateInput!) {
+        commentCreate(input: $input) { success }
+      }`,
+      { input: { issueId, body, ...(commentId ? { id: commentId } : {}) } }
+    )
+    if (!data.commentCreate.success) {
+      throw new LinearApiError('Linear did not create the comment.', {
+        status: 400,
+        retryable: false,
+      })
+    }
+  } catch (error) {
+    if (commentId) {
+      // Linear accepts client-assigned UUIDs. If the create response was lost,
+      // verify that exact comment before retrying rather than posting duplicates.
+      try {
+        const existing = await linearGraphql<{
+          comment: { id: string; issue: { id: string } | null } | null
+        }>(
+          accessToken,
+          `query DurabullResolutionComment($commentId: String!) {
+            comment(id: $commentId) { id issue { id } }
+          }`,
+          { commentId }
+        )
+        if (existing.comment?.id === commentId && existing.comment.issue?.id === issueId) return
+      } catch (lookupError) {
+        // A duplicate-ID rejection is inconclusive while verification is down.
+        // Retry the stable ID instead of abandoning an already-created comment.
+        if (lookupError instanceof LinearApiError && lookupError.retryable) throw lookupError
+        // Preserve the original failure for a definitive missing/inaccessible comment.
       }
-    }`,
-    { issueId, body }
-  )
-
-  if (!data.commentCreate.success) {
-    throw new LinearApiError('Linear did not create the comment.', {
-      status: 400,
-      retryable: false,
-    })
+    }
+    throw error
   }
 }

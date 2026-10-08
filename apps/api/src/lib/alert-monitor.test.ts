@@ -212,6 +212,56 @@ describe('alert monitor', () => {
     }
   })
 
+  it('deduplicates overdue connection work while continuing to poll peers', async () => {
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const stalledWorker = mock(async () => pending)
+    const peerWorker = mock(async () => {})
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await __alertMonitorTestUtils.runConnectionPollOnce('overdue', stalledWorker, 1)
+      await __alertMonitorTestUtils.runConnectionPollOnce('overdue', stalledWorker, 1)
+      await __alertMonitorTestUtils.runConnectionPollOnce('healthy-peer', peerWorker, 1)
+      expect(stalledWorker).toHaveBeenCalledTimes(1)
+      expect(peerWorker).toHaveBeenCalledTimes(1)
+      finish()
+      await pending
+      // Drain the worker/finally continuations before starting a later cycle.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      await __alertMonitorTestUtils.runConnectionPollOnce('overdue', peerWorker, 1)
+      expect(peerWorker).toHaveBeenCalledTimes(2)
+    } finally {
+      finish()
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('waits for sibling workers after a concurrent worker fails', async () => {
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    let cycleSettled = false
+    const cycle = __alertMonitorTestUtils
+      .processWithConcurrency([1, 2], 2, async (item) => {
+        if (item === 1) throw new Error('One worker failed')
+        await pending
+      })
+      .catch((error) => {
+        cycleSettled = true
+        return error
+      })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(cycleSettled).toBe(false)
+    finish()
+    expect((await cycle).message).toBe('One worker failed')
+    expect(cycleSettled).toBe(true)
+  })
+
   it('collects unique queue names from explicit, include, and discovered rules', async () => {
     const { __alertMonitorTestUtils } = await loadMonitorModule()
 
@@ -806,9 +856,9 @@ describe('alert monitor', () => {
     expect(events[0]?.queueName).toBe('email-send')
   })
 
-  it('replays a pending queue observation after a crash before advancing its baseline', async () => {
-    const baselineAt = new Date(Date.now() - 2 * 60_000)
-    const pendingAt = new Date(Date.now() - 60_000)
+  it('replays a pending queue observation using capture time after prolonged downtime', async () => {
+    const baselineAt = new Date(Date.now() - 11 * 60_000)
+    const pendingAt = new Date(Date.now() - 10 * 60_000)
     const rule = await alertRuleRepository.create({
       organizationId: TEST_ORG_ID,
       connectionId: testConnectionId,
@@ -1241,6 +1291,46 @@ describe('alert monitor', () => {
     expect(events).toHaveLength(1)
     expect(events[0]?.id).toBe(event.id)
     expect(events[0]?.status).toBe('firing')
+  })
+
+  it.each([
+    'disabled',
+    'edited',
+    'deleting',
+  ])('does not create failed-job incidents after the captured rule is %s during the scan', async (change) => {
+    const { __alertMonitorTestUtils } = await loadMonitorModule()
+    const rule = await alertRuleRepository.create({
+      organizationId: TEST_ORG_ID,
+      connectionId: testConnectionId,
+      queueName: 'email-send',
+      name: 'Failed jobs',
+      type: 'job_failed',
+      config: {},
+      notificationChannels: [],
+    })
+    const queue = {
+      getJobs: mock(async () => {
+        await alertRuleRepository.updateIfCurrent(
+          rule.id,
+          TEST_ORG_ID,
+          change === 'disabled'
+            ? { enabled: false }
+            : change === 'deleting'
+              ? { enabled: false, deletionRequestedAt: new Date() }
+              : { queueName: 'other-queue' },
+          rule,
+          { resolveActive: true }
+        )
+        return [{ id: 'job-racing-update', failedReason: 'Failed', finishedOn: Date.now() }]
+      }),
+    }
+    await __alertMonitorTestUtils.scanFailedJobsAndMaybeAlert(
+      rule,
+      queue,
+      createConnection(),
+      'email-send'
+    )
+    expect(await listRuleEvents(rule.id)).toHaveLength(0)
   })
 
   it('creates at most one job_failed event per failed job id', async () => {

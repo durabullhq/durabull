@@ -117,12 +117,19 @@ describe('linearJobIssueRepository', () => {
     expect(await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'issue-1', 'old-worker')).toBe(
       'claimed'
     )
+    const oldCommentId = await linearIssueResolutionRepository.prepareComment(
+      'issue-1',
+      'old-worker'
+    )
     // An idempotent link replay must leave an existing worker's lease intact.
     await linearJobIssueRepository.createOrGet(issueInput)
     expect(
       await linearIssueResolutionRepository.claim(TEST_ORG_ID, 'issue-1', 'other-worker')
     ).toBe('busy')
 
+    expect(await linearIssueResolutionRepository.findCommentId('issue-1', 'old-worker')).toBe(
+      oldCommentId
+    )
     const secondEvent = await alertEventRepository.create(eventInput)
     await linearJobIssueRepository.createOrGet({ ...issueInput, alertEventId: secondEvent.id })
     // A worker that checked peers before the new link cannot complete its ledger.
