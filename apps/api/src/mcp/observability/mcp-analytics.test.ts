@@ -41,6 +41,7 @@ mock.module('@durabull/analytics/server', () => ({
 }))
 
 const { recordMcpAnalytics, recordMcpTelemetryAnalytics } = await import('./mcp-analytics')
+const { mcpAnalyticsContext } = await import('./mcp-analytics-context')
 const { resetMcpAnalyticsQueueForTests } = await import('./mcp-analytics-queue')
 const { resetMcpTelemetryForTests } = await import('./mcp-telemetry')
 
@@ -150,6 +151,34 @@ describe('mcp analytics', () => {
         properties: expect.objectContaining({ telemetry_signal: 'redaction_applied' }),
       })
     )
+  })
+
+  it('preserves an explicit principal when request context has a client-ID fallback', async () => {
+    const identity = {
+      principalType: 'service_account' as const,
+      principalId: 'service-account-principal',
+      organizationId: 'explicit-org',
+    }
+    mcpAnalyticsContext.run(
+      {
+        properties: {},
+        clientId: () => 'oauth-client',
+        identity: () => ({
+          ...identity,
+          principalId: 'oauth-client',
+          organizationId: 'context-org',
+        }),
+      },
+      () => recordMcpAnalytics({ event: AnalyticsEvents.MCP_RPC_REQUESTED, identity })
+    )
+    await settleAnalytics()
+    const event = capturedEvents()[0]
+    const expectedPrincipal = createHmac('sha256', 'test-secret')
+      .update('mcp:principal:service-account-principal')
+      .digest('hex')
+    expect(event.identifiedDistinctId).toBe(expectedPrincipal)
+    expect(event.properties.mcp_principal_key).toBe(expectedPrincipal)
+    expect(event.organizationId).toBe('explicit-org')
   })
 })
 
@@ -295,6 +324,102 @@ describe('MCP lifecycle analytics coverage', () => {
     const event = capturedEvents().find((event) => event.event === E.Initialize)!
     expect(event.properties[P.ProtocolVersion]).toBe('2025-11-25')
     expect(event.properties[P.ClientVersion]).toBe('v1.2.3')
+  })
+
+  it('times out an incomplete pre-auth upload and cancels both body branches', async () => {
+    let authenticated = false
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{'))
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const app = createMcpRoutes({
+      version: 'test',
+      allowedHosts: new Set(['localhost']),
+      corsOrigins: [],
+      observabilityMiddleware: createMcpRequestAnalyticsMiddleware(),
+      middleware: [
+        createMcpRequestBodyAnalyticsMiddleware(),
+        async (c) => {
+          authenticated = true
+          return c.json({ error: 'Unauthorized' }, 401)
+        },
+      ],
+    })
+    const response = await app.request(
+      new Request('http://localhost/', {
+        method: 'POST',
+        headers: { host: 'localhost', 'content-type': 'application/json', 'content-length': '100' },
+        body,
+      })
+    )
+    expect(response.status).toBe(408)
+    expect(authenticated).toBe(false)
+    await settleAnalytics()
+    expect(cancelled).toBe(true)
+    expect(
+      capturedEvents().find((event) => event.event === AnalyticsEvents.MCP_REQUEST_COMPLETED)
+        ?.properties.http_status
+    ).toBe(408)
+  })
+
+  it('preserves malformed input for the downstream SDK syntax-error path', async () => {
+    const app = new Hono()
+    app.use('*', createMcpRequestBodyAnalyticsMiddleware())
+    app.post('/', async (c) => {
+      expect(c.get('mcpRequestJsonBody')).toBeNull()
+      return c.text(await c.req.raw.text())
+    })
+    const response = await app.request('/', { method: 'POST', body: '{invalid json' })
+    expect(await response.text()).toBe('{invalid json')
+  })
+
+  it('enforces the body byte limit even when a supplied content length is misleading', async () => {
+    let authenticated = false
+    const app = new Hono()
+    app.use('*', createMcpRequestBodyAnalyticsMiddleware())
+    app.post('/', (c) => {
+      authenticated = true
+      return c.body(null, 204)
+    })
+    const response = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-length': '1' },
+      body: 'x'.repeat(1024 * 1024 + 1),
+    })
+    expect(response.status).toBe(413)
+    expect(authenticated).toBe(false)
+  })
+
+  it('preserves native chunked body-limit rejection before authentication', async () => {
+    let authenticated = false
+    const app = createMcpRoutes({
+      version: 'test',
+      allowedHosts: new Set(['localhost']),
+      corsOrigins: [],
+      middleware: [
+        createMcpRequestBodyAnalyticsMiddleware(),
+        async (c) => {
+          authenticated = true
+          return c.body(null, 204)
+        },
+      ],
+    })
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024 + 1))
+        controller.close()
+      },
+    })
+    const response = await app.request(
+      new Request('http://localhost/', { method: 'POST', headers: { host: 'localhost' }, body })
+    )
+    expect(response.status).toBe(413)
+    expect(authenticated).toBe(false)
   })
 
   it('uses the exported PostHog contract for all supported canonical events', () => {
@@ -573,6 +698,109 @@ describe('MCP lifecycle analytics coverage', () => {
       'hashed-user:bob',
     ])
     expect(limits[0].properties.mcp_client_key).not.toBe(limits[1].properties.mcp_client_key)
+  })
+
+  it('starts OAuth authentication before a slow analytics body or identity lookup completes', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({
+      start(value) {
+        controller = value
+      },
+    })
+    let finishIdentity!: (user: string | null) => void
+    const identity = new Promise<string | null>((resolve) => {
+      finishIdentity = resolve
+    })
+    const app = new Hono()
+    app.use(
+      '*',
+      createMcpOAuthAnalyticsMiddleware({
+        userId: () => identity,
+        consentContext: async () => null,
+        tokenIdentity: async () => null,
+      })
+    )
+    app.post('/api/auth/mcp/register', (c) => c.json({ client_id: 'issued-client' }, 201))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const response = await Promise.race([
+        app.request(
+          new Request('http://localhost/api/auth/mcp/register', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body,
+          })
+        ),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Analytics delayed authentication')), 500)
+        }),
+      ])
+      expect(response.status).toBe(201)
+      controller.enqueue(
+        new TextEncoder().encode(
+          JSON.stringify({ client_name: 'Codex', scope: 'mcp:discover mcp:jobs:read' })
+        )
+      )
+      controller.close()
+      finishIdentity('register-user')
+      await settleAnalytics()
+      const event = capturedEvents().find(
+        (event) => event.event === AnalyticsEvents.MCP_CLIENT_REGISTERED
+      )!
+      expect(event.identifiedDistinctId).toBe('hashed-user:register-user')
+      expect(event.properties).toMatchObject({
+        mcp_client_family: 'codex',
+        scope_count: 2,
+        http_status: 201,
+      })
+      expect(event.properties.mcp_client_key).toBe(
+        createHmac('sha256', 'test-secret').update('mcp:client:issued-client').digest('hex')
+      )
+    } finally {
+      clearTimeout(timer)
+      finishIdentity(null)
+    }
+  })
+
+  it('keeps the OAuth handler body intact when the analytics tee branch cancels at its size limit', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      start(value) {
+        controller = value
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const app = new Hono()
+    app.use(
+      '*',
+      createMcpOAuthAnalyticsMiddleware({
+        userId: async () => null,
+        consentContext: async () => null,
+        tokenIdentity: async () => null,
+      })
+    )
+    app.post('/api/auth/mcp/register', async (c) => {
+      const input = (await c.req.raw.json()) as { padding: string }
+      return c.json({ size: input.padding.length }, 201)
+    })
+    const response = app.request(
+      new Request('http://localhost/api/auth/mcp/register', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      })
+    )
+    controller.enqueue(new TextEncoder().encode(`{"padding":"${'x'.repeat(20_000)}`))
+    await settleAnalytics()
+    expect(cancelled).toBe(false)
+    controller.enqueue(new TextEncoder().encode('"}'))
+    controller.close()
+    const result = await response
+    expect(result.status).toBe(201)
+    expect(await result.json()).toEqual({ size: 20_000 })
   })
 
   it('tracks OAuth registration, exchange, refresh, consent and failures without credentials', async () => {

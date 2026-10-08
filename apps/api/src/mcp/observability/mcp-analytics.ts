@@ -108,7 +108,7 @@ export function recordMcpAnalytics(input: McpAnalyticsInput): void {
   const identity = input.identity
     ? {
         ...input.identity,
-        principalId: contextIdentity?.principalId ?? input.identity.principalId,
+        principalId: input.identity.principalId,
         userId: input.identity.userId ?? contextIdentity?.userId,
         organizationId: input.identity.organizationId ?? contextIdentity?.organizationId,
       }

@@ -1,13 +1,13 @@
-import { authSchema, eq, getDb } from '@durabull/dal'
 import { AnalyticsEvents } from '@durabull/analytics/events'
 import { tryGetServerAnalyticsOptions } from '@durabull/analytics/server'
+import { authSchema, eq, getDb } from '@durabull/dal'
 import { extractBearerToken } from '@durabull/mcp/auth'
 import { getSignedCookie } from 'hono/cookie'
 import { createMiddleware } from 'hono/factory'
 import { getAuth } from '../../lib/auth'
 import { resolveMcpSessionFromAccessToken } from '../auth/resolve-mcp-session'
 import { resolveMcpPrincipal } from '../policy/principal-resolver'
-import { recordMcpAnalytics, type McpAnalyticsIdentity } from './mcp-analytics'
+import { type McpAnalyticsIdentity, recordMcpAnalytics } from './mcp-analytics'
 import { mcpAnalyticsContext, mcpAnalyticsKey, mcpClientFamily } from './mcp-analytics-context'
 
 const STAGES: Record<string, string> = {
@@ -30,7 +30,7 @@ async function readEnvelope(message: Request | Response): Promise<Record<string,
     (!type.includes('json') && !type.includes('application/x-www-form-urlencoded'))
   )
     return {}
-  const reader = message.clone().body!.getReader()
+  const reader = message.body.getReader()
   let size = 0
   let text = ''
   const decoder = new TextDecoder()
@@ -123,63 +123,101 @@ export function createMcpOAuthAnalyticsMiddleware(
     if (!stage) return next()
     const started = performance.now()
     const requestedAt = new Date().toISOString()
-    const input = await readEnvelope(c.req.raw)
-    let clientId = typeof input.client_id === 'string' ? input.client_id : c.req.query('client_id')
-    let userId: string | null = null
-    const scope = input.scope ?? c.req.query('scope')
-    let scopeCount =
-      typeof scope === 'string' ? scope.split(/\s+/).filter(Boolean).length : undefined
-    if (stage === 'authorize' || stage === 'consent' || stage === 'register') {
-      try {
-        userId = await resolvers.userId(c.req.raw.headers)
-        if (stage === 'consent' && userId) {
-          const code =
-            typeof input.consent_code === 'string'
-              ? input.consent_code
-              : c.req.header('cookie') && resolvers.cookieSecret
-                ? await getSignedCookie(c, await resolvers.cookieSecret(), 'oidc_consent_prompt')
-                : undefined
-          if (code) {
-            const pending = await resolvers.consentContext(code, userId)
-            clientId = pending?.clientId
-            scopeCount = pending?.scopeCount
-          }
-        }
-      } catch {
-        /* Analytics lookup must never change authentication behavior. */
-      }
+    // Explicit tee branches isolate analytics cancellation from Bun's downstream Request body.
+    // Authentication starts immediately and retains its own complete, untouched body branch.
+    let inputRead = Promise.resolve<Record<string, unknown>>({})
+    const contentType = c.req.header('content-type') ?? ''
+    if (
+      c.req.raw.body &&
+      (contentType.includes('json') || contentType.includes('application/x-www-form-urlencoded'))
+    ) {
+      const [handlerBody, analyticsBody] = c.req.raw.body.tee()
+      const analyticsRequest = new Request(c.req.raw, { body: analyticsBody })
+      c.req.raw = new Request(c.req.raw, { body: handlerBody })
+      inputRead = readEnvelope(analyticsRequest)
     }
+    let clientId = c.req.query('client_id')
+    let userId: string | null = null
     const context = {
       properties: {
         mcp_transport: 'oauth',
-        mcp_client_family: mcpClientFamily(input.client_name ?? c.req.header('user-agent')),
+        mcp_client_family: mcpClientFamily(c.req.header('user-agent')),
         mcp_request_key: mcpAnalyticsKey('request', crypto.randomUUID()),
       },
       clientId: () => clientId,
       identity: () =>
         userId ? { principalType: 'delegated_user' as const, principalId: userId, userId } : null,
     }
-    const properties = {
+    const properties: Record<string, unknown> = {
       oauth_stage: stage,
-      scope_count: scopeCount,
       http_method: c.req.method,
-      oauth_grant_type: ['authorization_code', 'refresh_token', 'client_credentials'].includes(
-        String(input.grant_type)
-      )
-        ? String(input.grant_type)
-        : undefined,
     }
     return mcpAnalyticsContext.run(context, async () => {
-      recordMcpAnalytics({
-        event: AnalyticsEvents.MCP_OAUTH_REQUESTED,
-        timestamp: requestedAt,
-        properties,
-      })
+      const metadata = (async () => {
+        const input = await inputRead
+        if (typeof input.client_id === 'string') clientId = input.client_id
+        context.properties.mcp_client_family = mcpClientFamily(
+          input.client_name ?? c.req.header('user-agent')
+        )
+        const scope = input.scope ?? c.req.query('scope')
+        properties.scope_count =
+          typeof scope === 'string' ? scope.split(/\s+/).filter(Boolean).length : undefined
+        properties.oauth_grant_type = [
+          'authorization_code',
+          'refresh_token',
+          'client_credentials',
+        ].includes(String(input.grant_type))
+          ? String(input.grant_type)
+          : undefined
+        if (stage === 'authorize' || stage === 'consent' || stage === 'register') {
+          try {
+            userId = await resolvers.userId(c.req.raw.headers)
+            if (stage === 'consent' && userId) {
+              const code =
+                typeof input.consent_code === 'string'
+                  ? input.consent_code
+                  : c.req.header('cookie') && resolvers.cookieSecret
+                    ? await getSignedCookie(
+                        c,
+                        await resolvers.cookieSecret(),
+                        'oidc_consent_prompt'
+                      )
+                    : undefined
+              if (code) {
+                const pending = await resolvers.consentContext(code, userId)
+                clientId = pending?.clientId
+                properties.scope_count = pending?.scopeCount
+              }
+            }
+          } catch {
+            /* Analytics lookup must never change authentication behavior. */
+          }
+        }
+        recordMcpAnalytics({
+          event: AnalyticsEvents.MCP_OAUTH_REQUESTED,
+          timestamp: requestedAt,
+          properties,
+        })
+        return input
+      })()
       await next()
       const status = c.error ? 500 : c.res.status
+      const duration = Math.round(performance.now() - started)
+      if (!c.req.raw.bodyUsed) void c.req.raw.body?.cancel().catch(() => {})
+      let outputRead = Promise.resolve<Record<string, unknown>>({})
+      const responseType = c.res.headers.get('content-type') ?? ''
+      if (
+        c.res.body &&
+        (responseType.includes('json') ||
+          responseType.includes('application/x-www-form-urlencoded'))
+      ) {
+        const [handlerBody, analyticsBody] = c.res.body.tee()
+        outputRead = readEnvelope(new Response(analyticsBody, c.res))
+        c.res = new Response(handlerBody, c.res)
+      }
       // Inspection runs outside the response path, including token identity lookup.
-      void readEnvelope(c.res)
-        .then(async (output) => {
+      void Promise.all([metadata, outputRead])
+        .then(async ([input, output]) => {
           if (stage === 'register' && typeof output.client_id === 'string')
             clientId = output.client_id
           let identity: McpAnalyticsIdentity | null = context.identity()
@@ -220,7 +258,7 @@ export function createMcpOAuthAnalyticsMiddleware(
             ...properties,
             http_status: status,
             success: Boolean(success),
-            duration_ms: Math.round(performance.now() - started),
+            duration_ms: duration,
           }
           recordMcpAnalytics({
             event: AnalyticsEvents.MCP_OAUTH_COMPLETED,

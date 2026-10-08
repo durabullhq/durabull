@@ -316,13 +316,57 @@ export function createMcpRequestAnalyticsMiddleware() {
 export function createMcpRequestBodyAnalyticsMiddleware() {
   return createMiddleware(async (c, next) => {
     if (tryGetServerAnalyticsOptions()?.enabled && c.req.method === 'POST') {
-      c.set(
-        'mcpRequestJsonBody',
-        await c.req.raw
-          .clone()
-          .json()
-          .catch(() => null)
-      )
+      if (!c.req.raw.body) {
+        c.set('mcpRequestJsonBody', null)
+        return next()
+      }
+      const [handlerBody, analyticsBody] = c.req.raw.body.tee()
+      c.req.raw = new Request(c.req.raw, { body: handlerBody })
+      const reader = analyticsBody.getReader()
+      const timedOut = Symbol('mcp-request-body-timeout')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const timeout = new Promise<typeof timedOut>((resolve) => {
+        timer = setTimeout(() => resolve(timedOut), 1000)
+      })
+      let rejected = false
+      try {
+        const decoder = new TextDecoder()
+        let bytes = 0
+        let text = ''
+        while (true) {
+          const chunk = await Promise.race([reader.read(), timeout])
+          if (chunk === timedOut) {
+            rejected = true
+            return c.json({ error: 'Request Timeout', message: 'Request body read timed out' }, 408)
+          }
+          if (chunk.done) break
+          bytes += chunk.value.byteLength
+          if (bytes > 1024 * 1024) {
+            rejected = true
+            return c.json(
+              { error: 'Payload Too Large', message: 'Request body exceeds 1MB limit' },
+              413
+            )
+          }
+          text += decoder.decode(chunk.value, { stream: true })
+        }
+        c.set('mcpRequestJsonBody', JSON.parse(text + decoder.decode()))
+      } catch (error) {
+        if (error instanceof Error && error.name === 'BodyLimitError') {
+          rejected = true
+          return c.json(
+            { error: 'Payload Too Large', message: 'Request body exceeds 1MB limit' },
+            413
+          )
+        }
+        // The untouched handler branch preserves SDK syntax-error handling.
+        c.set('mcpRequestJsonBody', null)
+      } finally {
+        clearTimeout(timer)
+        void reader.cancel().catch(() => {})
+        // Cancelling both explicit tee branches releases a rejected upload's source.
+        if (rejected) void handlerBody.cancel().catch(() => {})
+      }
     }
     await next()
   })
