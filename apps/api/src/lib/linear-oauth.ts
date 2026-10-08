@@ -3,7 +3,8 @@ import { env } from '@durabull/env'
 import { refreshLinearOauthToken } from './linear-client'
 
 const LINEAR_AUTHORIZATION_URL = 'https://linear.app/oauth/authorize'
-const LINEAR_OAUTH_SCOPE = 'read,issues:create'
+// Closing resolved incidents and posting recovery comments require write access.
+const LINEAR_OAUTH_SCOPE = 'read,write'
 const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000
 
 export function getLinearOauthConfig(): {

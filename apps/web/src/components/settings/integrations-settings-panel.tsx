@@ -21,6 +21,11 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
   const testLinearIntegration = useTestLinearIntegration()
   const [linearTeamId, setLinearTeamId] = useState('')
   const linearIntegration = linearIntegrationQuery.data?.integration ?? null
+  const needsLinearReconnect =
+    linearIntegration !== null &&
+    !linearIntegration.scopes
+      .split(/[,\s]+/)
+      .some((scope) => scope === 'write' || scope === 'admin')
 
   useEffect(() => {
     setLinearTeamId(linearIntegration?.defaultTeamId ?? '')
@@ -63,10 +68,16 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
             <div className="mb-2 flex items-center gap-2">
               <h3 className="text-sm font-semibold">Linear alerts</h3>
               <Badge
-                variant={linearIntegration?.validationStatus === 'valid' ? 'success' : 'secondary'}
+                variant={
+                  needsLinearReconnect
+                    ? 'warning'
+                    : linearIntegration?.validationStatus === 'valid'
+                      ? 'success'
+                      : 'secondary'
+                }
               >
                 {linearIntegration
-                  ? linearIntegration.validationStatus === 'valid'
+                  ? linearIntegration.validationStatus === 'valid' && !needsLinearReconnect
                     ? 'Valid'
                     : 'Needs attention'
                   : 'Not configured'}
@@ -88,7 +99,17 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
               ) : null}
             </div>
 
-            {!linearIntegration ? (
+            {needsLinearReconnect ? (
+              <p
+                role="alert"
+                className="mt-4 rounded-md border border-status-warning/30 bg-status-warning/10 p-3 text-sm"
+              >
+                Reconnect Linear so Durabull can close resolved incidents in Linear and add recovery
+                comments. The current authorization does not allow issue updates.
+              </p>
+            ) : null}
+
+            {!linearIntegration || needsLinearReconnect ? (
               <div className="mt-4">
                 <Button
                   type="button"
@@ -108,10 +129,15 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
                   }}
                   disabled={connectLinearIntegration.isPending}
                 >
-                  {connectLinearIntegration.isPending ? 'Connecting...' : 'Connect Linear'}
+                  {connectLinearIntegration.isPending
+                    ? 'Connecting...'
+                    : needsLinearReconnect
+                      ? 'Reconnect Linear'
+                      : 'Connect Linear'}
                 </Button>
               </div>
-            ) : (
+            ) : null}
+            {linearIntegration ? (
               <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
                 <input
                   className="h-10 rounded-md border border-input bg-background px-3 text-sm"
@@ -121,7 +147,7 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
                   aria-label="Default Linear team (name, key, or ID)"
                 />
               </div>
-            )}
+            ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
               {linearIntegration ? (
                 <Button

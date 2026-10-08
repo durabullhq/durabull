@@ -109,11 +109,17 @@ The connection flow:
 
 1. An organization admin starts the Linear connection from Durabull settings.
 2. Durabull creates an opaque, expiring OAuth state value.
-3. The user authorizes Durabull in Linear with `read` and `issues:create` scopes.
+3. The user authorizes Durabull in Linear with `read` and `write` scopes. Write access covers issue creation,
+   incident resolution, and recovery comments.
 4. Linear redirects back to Durabull's callback URL.
 5. Durabull validates and consumes the OAuth state before exchanging the code.
 6. Durabull validates the access token against Linear.
 7. Durabull stores encrypted access and refresh tokens with Linear organization metadata.
+
+Existing installations authorized with `read` and `issues:create` must reconnect Linear
+to grant write access before linked issues can be resolved or receive recovery comments.
+Token refresh preserves existing permissions; it cannot grant the new scope. See
+[Linear's OAuth scopes](https://linear.app/developers/oauth-2-0-authentication).
 
 Access tokens are refreshed automatically before Linear metadata lookup and issue creation
 when Durabull detects that the stored token is expired.

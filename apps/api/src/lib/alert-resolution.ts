@@ -456,6 +456,15 @@ async function getCachedLinearAuth(
       cache.set(organizationId, null)
       return null
     }
+    const scopes = integration.scopes.split(/[\s,]+/)
+    if (!scopes.includes('write') && !scopes.includes('admin')) {
+      // Refreshing a creation-only token cannot grant issue-update permission.
+      // Keep cleanup retryable while the operator reconnects the integration.
+      throw new LinearApiError('Reconnect Linear to grant incident cleanup permissions.', {
+        status: 403,
+        retryable: false,
+      })
+    }
     const accessToken = await getValidLinearAccessToken(integration)
     const auth = { integration, accessToken }
     cache.set(organizationId, auth)

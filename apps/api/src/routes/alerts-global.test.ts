@@ -526,7 +526,7 @@ describe('global alerts routes', () => {
     )
     expect(authorizeUrl.searchParams.get('client_id')).toBe('linear-client-id')
     expect(authorizeUrl.searchParams.get('redirect_uri')).toBe(LINEAR_CALLBACK_URL)
-    expect(authorizeUrl.searchParams.get('scope')).toBe('read,issues:create')
+    expect(authorizeUrl.searchParams.get('scope')).toBe('read,write')
     expect(authorizeUrl.searchParams.get('response_type')).toBe('code')
     expect(authorizeUrl.searchParams.get('prompt')).toBe('consent')
     expect(authorizeUrl.searchParams.has('actor')).toBe(false)

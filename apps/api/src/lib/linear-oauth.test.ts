@@ -51,7 +51,7 @@ describe('Linear OAuth helpers', () => {
     )
   })
 
-  it('builds the Linear authorization URL with required OAuth parameters and least scopes', () => {
+  it('builds the Linear authorization URL with required OAuth parameters and scopes for issue recovery', () => {
     const authorizationUrl = new URL(
       buildLinearOauthAuthorizeUrl({
         clientId: 'client-id',
@@ -69,7 +69,7 @@ describe('Linear OAuth helpers', () => {
       'https://durabull.example.com/api/alerts/integrations/linear/callback'
     )
     expect(authorizationUrl.searchParams.get('response_type')).toBe('code')
-    expect(authorizationUrl.searchParams.get('scope')).toBe('read,issues:create')
+    expect(authorizationUrl.searchParams.get('scope')).toBe('read,write')
     expect(authorizationUrl.searchParams.get('state')).toBe('opaque-state')
     expect(authorizationUrl.searchParams.get('prompt')).toBe('consent')
     expect(authorizationUrl.searchParams.has('actor')).toBe(false)

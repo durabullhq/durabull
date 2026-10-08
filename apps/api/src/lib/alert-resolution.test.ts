@@ -497,6 +497,50 @@ describe('alert resolution', () => {
     expect(release.mock.calls[0]?.[2]?.getTime()).toBeGreaterThanOrEqual(before + 30_000)
   })
   it.each([
+    'read issues:create',
+    'read,issues:create',
+  ])('retains cleanup for reconnect when the integration has creation-only scopes: %s', async (scopes) => {
+    const event = createEvent()
+    spyOn(alertEventRepository, 'claimLinearResolutionSync').mockResolvedValue(event)
+    spyOn(linearJobIssueRepository, 'findByEvent').mockResolvedValue([])
+    spyOn(alertDeliveryRepository, 'listByEvent').mockResolvedValue([
+      createDelivery({ status: 'delivered', externalId: 'linked-issue' }),
+    ])
+    spyOn(linearIntegrationRepository, 'findByOrganization').mockResolvedValue({
+      organizationId: event.organizationId,
+      scopes,
+    } as LinearIntegration)
+    const token = spyOn(linearOauthModule, 'getValidLinearAccessToken').mockResolvedValue('token')
+    const issueClaim = spyOn(linearIssueResolutionRepository, 'claim').mockResolvedValue('claimed')
+    const status = spyOn(linearClientModule, 'fetchLinearIssueStatus')
+    const update = spyOn(linearClientModule, 'updateLinearIssueState').mockResolvedValue()
+    const comment = spyOn(linearClientModule, 'createLinearComment').mockResolvedValue()
+    const retry = spyOn(
+      alertEventRepository,
+      'releaseLinearResolutionSyncClaims'
+    ).mockResolvedValue()
+    const clear = spyOn(
+      alertEventRepository,
+      'clearLinearResolutionSyncPending'
+    ).mockResolvedValue()
+    const abandon = spyOn(alertEventRepository, 'abandonLinearResolutionSync').mockResolvedValue()
+    spyOn(console, 'error').mockImplementation(() => {})
+    const before = Date.now()
+    const { syncLinearIssuesForResolvedEvents } = await loadResolutionModule()
+
+    expect(await syncLinearIssuesForResolvedEvents([event])).toEqual({ failedEventIds: [event.id] })
+    expect(retry.mock.calls[0]?.[0]).toEqual([event.id])
+    expect(retry.mock.calls[0]?.[2]?.getTime()).toBeGreaterThanOrEqual(before + 30_000)
+    expect(token).not.toHaveBeenCalled()
+    expect(issueClaim).not.toHaveBeenCalled()
+    expect(status).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
+    expect(comment).not.toHaveBeenCalled()
+    expect(clear).not.toHaveBeenCalled()
+    expect(abandon).not.toHaveBeenCalled()
+  })
+
+  it.each([
     false,
     true,
     'mixed',
@@ -538,6 +582,7 @@ describe('alert resolution', () => {
       ])
       spyOn(linearIntegrationRepository, 'findByOrganization').mockResolvedValue({
         organizationId: event.organizationId,
+        scopes: 'read write',
       } as LinearIntegration)
       spyOn(linearOauthModule, 'getValidLinearAccessToken').mockResolvedValue('token')
       spyOn(redisConnectionRepository, 'findByIdUnsafe').mockResolvedValue(null)
