@@ -72,6 +72,15 @@ It covers `.env` setup, secret generation, Docker ports, sample login credential
 To preview documentation changes, run `bun run dev:docs` and open
 **http://localhost:3002/documentation**.
 
+## UI catalog
+
+Run `bun run storybook` to browse the full UI at **http://localhost:6006**.
+`bun run build:storybook` produces a standalone static site in `apps/storybook/dist`.
+The catalog uses local demo fixtures for web screens, desktop controls, marketing,
+email, and MCP apps. `bun run build:docs` also includes it in the marketing export
+at `/ui/`, with links in the marketing footer. See [the Storybook package guide](apps/storybook/README.md)
+for coverage checks and public hosting instructions.
+
 ## Usage telemetry
 
 Production Durabull, including desktop and self-hosted builds, collects anonymous/pseudonymous
@@ -91,6 +100,7 @@ for details.
 | `apps/api` | Bun + Hono API, BullMQ operations, and MCP ingress |
 | `apps/web` | React dashboard |
 | `apps/docs` | Next.js documentation and marketing site |
+| [apps/storybook](apps/storybook/README.md) | Public static UI catalog with local fixtures |
 | [apps/desktop](apps/desktop/README.md) | Electron shell and desktop build guide |
 | [packages/auth](packages/auth/README.md) | Better Auth configuration and client helpers |
 | `packages/dal` | Database schema, persistence, and repositories |

@@ -1,0 +1,15 @@
+@import "../../web/src/styles.css";
+@source "../../web/src";
+@source "../../docs/src";
+@source "../../docs/app";
+@source "./";
+
+body { background: var(--color-background); color: var(--color-foreground); }
+.catalog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; }
+.catalog-stack { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.catalog-intro { max-width: 1000px; margin: 48px auto; padding: 40px; }
+.catalog-intro h1 { font-size: clamp(36px, 5vw, 64px); font-weight: 700; letter-spacing: -.05em; line-height: 1.05; }
+.catalog-intro p { color: var(--color-muted-foreground); line-height: 1.8; max-width: 650px; }
+.catalog-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .16em; color: #13795b; text-transform: uppercase; }
+.catalog-panel { padding: 24px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-card); }
+.catalog-panel h2 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }

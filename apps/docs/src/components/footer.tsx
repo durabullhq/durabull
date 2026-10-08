@@ -10,6 +10,7 @@ const footerLinks = {
   ],
   resources: [
     { label: 'Documentation', href: '/documentation' },
+    { label: 'UI Catalog', href: '/ui/' },
     { label: 'Desktop Apps', href: '/documentation/getting-started/desktop-apps' },
     { label: 'HTTP API', href: '/documentation/reference/http-api' },
     { label: 'Deployment Guide', href: '/documentation/deployment/docker' },
@@ -21,7 +22,12 @@ const footerLinks = {
 }
 
 function FooterLink({ href, label }: { href: string; label: string }) {
-  if (href.startsWith('#') || href.startsWith('http') || href.startsWith('mailto:')) {
+  if (
+    href === '/ui/' ||
+    href.startsWith('#') ||
+    href.startsWith('http') ||
+    href.startsWith('mailto:')
+  ) {
     return (
       <a
         href={href}

@@ -1,0 +1,36 @@
+{
+  "extends": [
+    "//"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/web/src/**",
+        "$TURBO_ROOT$/apps/docs/src/**",
+        "$TURBO_ROOT$/apps/docs/public/**",
+        "$TURBO_ROOT$/packages/mcp/src/**",
+        "$TURBO_ROOT$/packages/mcp/scripts/preview/fixtures.ts",
+        "$TURBO_ROOT$/packages/email/src/templates/**",
+        "$TURBO_ROOT$/apps/web/public/**",
+        "$TURBO_ROOT$/packages/auth/src/safe-redirect.ts",
+        "$TURBO_ROOT$/packages/auth/src/mcp-*.ts",
+        "$TURBO_ROOT$/packages/analytics/src/events.ts",
+        "$TURBO_ROOT$/apps/docs/app/**"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": []
+    },
+    "lint": {
+      "dependsOn": []
+    },
+    "test": {
+      "dependsOn": []
+    }
+  }
+}
