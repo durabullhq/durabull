@@ -43,3 +43,12 @@ Re-review confirmed all three findings resolved, with no new actionable defects.
 Live Claude/ChatGPT OAuth, directory review and public deployment remain release validation steps, not locally certified behavior.
 
 Summary: Standards — 3 substantive findings fixed, 1 nonblocking heuristic retained; Spec — 3 findings fixed; additional protocol review — 2 findings fixed. The highest-severity finding in each axis was P1 and is resolved.
+
+## Follow-up review fixes
+
+A fresh two-axis review of `cdc4518...a01fb49` found two additional P2 issues, now corrected:
+
+- **Standards — missing successful app-resource audit events.** The static shell now invokes the same request-context audit hook as other resources, with `resource:queue_explorer`, its exact URI, and success classification. Protocol tests require exactly one event in legacy, auto-negotiated, and pinned-current modes.
+- **Spec — unsampled Redis history looked like low memory use.** The chart now respects `sampleCount` and nullable metrics, preserves time gaps, distinguishes a measured zero, reports measured/returned bucket coverage, and independently shows disabled collection. A bounded history model has regression cases for empty buckets, mixed missing/zero/valid data, and older measurements outside the displayed window. Real AppBridge browser checks verify the disabled/no-data state and mixed chart gaps.
+
+Local verification: 177 MCP/package/plugin/API tests pass, plus repository lint, formatting, typecheck, and build. The generated app was rebuilt and passed the freshness check. This does not replace the live staging/Claude/ChatGPT release checks in `docs/mcp-apps-and-plugins.md`.

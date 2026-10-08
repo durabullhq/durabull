@@ -402,6 +402,11 @@ summary {
   height: var(--height);
   opacity: 0.8;
 }
+.bar.missing {
+  height: 100%;
+  background: transparent;
+  border-bottom: 1px dashed var(--line);
+}
 .legend {
   padding: 0 18px 15px;
   font-size: 11px;

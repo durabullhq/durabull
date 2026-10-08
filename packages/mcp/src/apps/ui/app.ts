@@ -1,5 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/client'
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps'
+import { healthSeries } from './health-series'
 import { readErrorMessage } from './read-errors'
 import { callReadTool, refreshToolCall } from './read-tools'
 
@@ -471,47 +472,44 @@ function renderMetrics(data: Data) {
     body.append(
       el('p', 'notice', 'The latest Redis sample is stale. Check collection health in Durabull.')
     )
-  const series = rows(data.series)
-  if (!series.length) {
-    body.append(
-      empty(
-        data.collectionEnabled === false
-          ? 'Redis health collection is disabled for this connection.'
-          : 'No metric samples for this time window.'
-      )
-    )
+  if (data.collectionEnabled === false)
+    body.append(el('p', 'notice', 'Redis health collection is disabled for this connection.'))
+  const history = healthSeries(data.series)
+  const coverage = `${history.measured} of ${history.total} returned time buckets have memory measurements.`
+  body.append(el('p', 'legend', coverage))
+  if (!history.measured) {
+    body.append(empty('No memory measurements for this time window.'))
     return body
   }
-  const key = 'completed' in series[0] ? 'completed' : 'memoryUsagePercent'
-  const samples = series.slice(-120)
-  const max = Math.max(1, ...samples.map((row) => num(row[key])))
+  const samples = history.points
   const chart = el('div', 'chart')
   chart.setAttribute('role', 'img')
   chart.setAttribute(
     'aria-label',
-    `${title(key)}: ${samples.length} samples. Values are in the table below.`
+    `Memory usage: ${history.displayedMeasured} of ${samples.length} displayed buckets measured. Missing measurements are gaps. Values are in the table below.`
   )
   for (const sample of samples) {
-    const bar = el('div', 'bar')
-    bar.style.setProperty('--height', `${Math.max(1, (num(sample[key]) / max) * 100)}%`)
-    bar.title = `${str(sample.capturedAt ?? sample.timestamp)}: ${fmt(sample[key])}`
+    const value = sample.memoryUsagePercent
+    const bar = el('div', value === null ? 'bar missing' : 'bar')
+    if (value !== null)
+      bar.style.setProperty('--height', `${(Math.max(0, value) / history.max) * 100}%`)
+    bar.title = `${sample.capturedAt}: ${value === null ? 'No memory measurement' : `${fmt(value)}%`}`
     chart.append(bar)
   }
   body.append(
-    panel(title(key), chart),
+    panel('Memory usage (%)', chart),
     el(
       'p',
       'legend',
-      `Last ${samples.length} samples · ${key === 'memoryUsagePercent' ? 'percent of memory capacity' : 'completed jobs'}`
-    )
-  )
-  const keys = Object.keys(samples[0]).slice(0, 5)
-  body.append(
+      `Last ${samples.length} time buckets · Gaps indicate unavailable memory measurements.`
+    ),
     panel(
-      'Sample values',
+      'Memory measurements',
       table(
-        keys.map(title),
-        samples.slice(-20).map((row) => keys.map((key) => row[key]))
+        ['Captured at', 'Memory usage (%)', 'Samples in bucket'],
+        samples
+          .slice(-20)
+          .map((sample) => [sample.capturedAt, fmt(sample.memoryUsagePercent), sample.sampleCount])
       )
     )
   )

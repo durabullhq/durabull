@@ -3,12 +3,16 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { MCP_APP_MIME_TYPE, MCP_APP_URI } from './apps/app-metadata'
 import { createMcpBearerAuthMiddleware } from './auth'
 import { MCP_LEGACY_PROTOCOL_VERSION, MCP_PROTOCOL_VERSION } from './constants'
-import { getMcpRequestContext } from './request-context'
+import {
+  getMcpRequestContext,
+  type McpRequestContext,
+  type McpToolInvocationAuditInput,
+} from './request-context'
 import { createMcpRoutes } from './routes'
 import { parseSseJson } from './testing/mcp-test-client'
 
 const origin = 'http://localhost:3000'
-function fixture() {
+function fixture(onToolInvocationComplete?: McpRequestContext['onToolInvocationComplete']) {
   return createMcpRoutes({
     version: '2.0.0-test',
     widgetDomain: origin,
@@ -42,6 +46,7 @@ function fixture() {
       },
     ],
     requestContextResolver: (c) => ({
+      onToolInvocationComplete,
       principal: {
         type: 'delegated_user',
         principalId: c.req.header('authorization')!.replace('Bearer ', ''),
@@ -75,8 +80,12 @@ function fixture() {
   })
 }
 
-async function connect(mode: 'auto' | 'legacy' | { pin: string }, token = 'user-one') {
-  const app = fixture()
+async function connect(
+  mode: 'auto' | 'legacy' | { pin: string },
+  token = 'user-one',
+  onToolInvocationComplete?: McpRequestContext['onToolInvocationComplete']
+) {
+  const app = fixture(onToolInvocationComplete)
   const requests: Request[] = []
   const client = new Client(
     { name: 'durabull-conformance-test', version: '1.0.0' },
@@ -144,7 +153,8 @@ describe('MCP protocol interoperability', () => {
   })
   for (const mode of ['legacy', 'auto', { pin: MCP_PROTOCOL_VERSION }] as const) {
     it(`serves discovery, tools, resources and prompts with ${JSON.stringify(mode)}`, async () => {
-      const { client, requests } = await connect(mode)
+      const audits: McpToolInvocationAuditInput[] = []
+      const { client, requests } = await connect(mode, 'user-one', (event) => audits.push(event))
       try {
         expect(client.getProtocolEra()).toBe(mode === 'legacy' ? 'legacy' : 'modern')
         const tools = await client.listTools()
@@ -168,6 +178,14 @@ describe('MCP protocol interoperability', () => {
           MCP_APP_MIME_TYPE
         )
         const resource = await client.readResource({ uri: MCP_APP_URI })
+        expect(audits.filter((event) => event.toolName === 'resource:queue_explorer')).toEqual([
+          {
+            toolName: 'resource:queue_explorer',
+            arguments: { uri: MCP_APP_URI },
+            connectionId: null,
+            responseClass: 'success',
+          },
+        ])
         const html = resource.contents[0]
         expect(html.mimeType).toBe(MCP_APP_MIME_TYPE)
         expect(html._meta?.['openai/widgetDomain']).toBe(origin)
