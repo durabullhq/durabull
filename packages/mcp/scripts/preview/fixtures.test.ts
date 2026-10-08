@@ -1,6 +1,24 @@
 import { describe, expect, it } from 'bun:test'
-import { getMcpToolDefinition } from '../../src/tools/tool-catalog'
+import { getMcpToolDefinition, MCP_TOOL_CATALOG } from '../../src/tools/tool-catalog'
 import { fixture } from './fixtures'
+
+describe('MCP App preview coverage', () => {
+  for (const tool of MCP_TOOL_CATALOG.filter(
+    (tool) => tool.annotations.readOnlyHint && tool.outputSchema
+  )) {
+    it(`renders schema-valid evidence for ${tool.name}`, () => {
+      const data = fixture(tool.name, {
+        connectionId: 'preview-production',
+        queueName: 'email:receipts',
+        jobId: 'job-1042',
+        schedulerId: 'daily-receipts',
+        eventId: 'evt-1',
+        ruleId: 'rule-1',
+      })
+      expect(tool.outputSchema!.safeParse(data).success).toBe(true)
+    })
+  }
+})
 
 describe('preview connection navigation', () => {
   const tools = [

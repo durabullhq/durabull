@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { env } from '@durabull/env'
 import { Hono } from 'hono'
-import { apiRateLimiter, resetRateLimitStoreForTests } from './rate-limit'
+import { apiRateLimiter, mcpRateLimiter, resetRateLimitStoreForTests } from './rate-limit'
 
 const mutableEnv = env as {
   CI?: boolean
@@ -35,6 +35,7 @@ describe('apiRateLimiter', () => {
   })
 
   afterEach(() => {
+    mock.restore()
     mutableEnv.CI = originalCi
     mutableEnv.DISABLE_RATE_LIMIT = originalDisableRateLimit
     mutableEnv.DURABULL_CLOUD = originalDurabullCloud
@@ -104,5 +105,43 @@ describe('apiRateLimiter', () => {
     )
 
     expect(responses.every((response) => response.status === 200)).toBe(true)
+  })
+  it('allows plugin setup after an agent discovery burst at the real MCP mount paths', async () => {
+    const app = new Hono()
+    app.use('/mcp', mcpRateLimiter)
+    app.use('/mcp/*', mcpRateLimiter)
+    app.post('/mcp', (c) => c.json({ ok: true }))
+    for (let i = 0; i < 80; i += 1) {
+      const response = await app.request('/mcp', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer setup-test', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: i,
+          method: i === 79 ? 'tools/call' : 'tools/list',
+          params: i === 79 ? { name: 'ping', arguments: {} } : {},
+        }),
+      })
+      expect(response.status).toBe(200)
+    }
+  })
+  it('charges overlapping ingress registrations once and refills an exhausted burst', async () => {
+    let now = 1000
+    spyOn(Date, 'now').mockImplementation(() => now)
+    const app = new Hono()
+    app.use('/mcp', mcpRateLimiter)
+    app.use('/mcp/*', mcpRateLimiter)
+    app.post('/mcp', (c) => c.json({ ok: true }))
+    const request = () =>
+      app.request('/mcp', { method: 'POST', headers: { Authorization: 'Bearer burst-test' } })
+    const first = await request()
+    expect(first.headers.get('X-RateLimit-Remaining')).toBe('599')
+    for (let i = 1; i < 600; i++) expect((await request()).status).toBe(200)
+    const denied = await request()
+    expect(denied.status).toBe(429)
+    expect(denied.headers.get('Retry-After')).toBe('1')
+    expect(await denied.json()).toMatchObject({ retryAfter: 1, bucket: 'ingress' })
+    now += 1000
+    expect((await request()).status).toBe(200)
   })
 })

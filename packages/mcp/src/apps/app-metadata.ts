@@ -41,7 +41,7 @@ export const appResourceMetadata = {
     csp: { connectDomains: [], resourceDomains: [], frameDomains: [], baseUriDomains: [] },
   },
   'openai/widgetDescription':
-    'Interactive BullMQ queue explorer. Browse connections, queues, jobs, failures and metrics; refresh data and ask the assistant to investigate or perform a scoped operation.',
+    'Interactive BullMQ queue explorer. Browse connections, queues, workers, jobs, recurring schedules, incidents, alert rules and Redis health. Search exact job IDs across queues, inspect redacted evidence, refresh snapshots and ask the assistant to perform a scoped operation.',
   'openai/widgetPrefersBorder': true,
   'openai/widgetCSP': { connect_domains: [], resource_domains: [], frame_domains: [] },
   'openai/ui': { availableDisplayModes: ['inline', 'fullscreen', 'pip'] },

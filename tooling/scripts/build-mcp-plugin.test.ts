@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import Ajv2020 from 'ajv/dist/2020'
-import { buildPlugin, validateEndpoint } from './build-mcp-plugin'
+import { MCP_TOOL_NAMES } from '../../packages/mcp/src/tools/tool-catalog'
+import { buildPlugin, skillShortDescription, validateEndpoint } from './build-mcp-plugin'
 import mcpSchema from './schemas/mcp.schema.json'
 import pluginSchema from './schemas/plugin.schema.json'
 
@@ -11,6 +12,23 @@ const root = resolve(import.meta.dir, '../../plugins/durabull')
 const json = async (path: string) => JSON.parse(await readFile(path, 'utf8'))
 
 describe('Durabull plugin distribution', () => {
+  it('decodes quoted and folded YAML descriptions and ignores body lookalikes', () => {
+    for (const scalar of [
+      '"Investigate failed jobs and retries"',
+      "'Investigate failed jobs and retries'",
+      '>-\n    Investigate failed jobs\n    and retries',
+    ]) {
+      expect(skillShortDescription(`---\nmetadata:\n  short-description: ${scalar}\n---\n  short-description: wrong`))
+        .toBe('Investigate failed jobs and retries')
+    }
+    for (const source of [
+      'No frontmatter\n  short-description: wrong',
+      '---\nmetadata: {}\n---',
+      '---\nmetadata:\n  short-description: 42\n---',
+      '---\nmetadata:\n  short-description: " "\n---',
+    ]) expect(() => skillShortDescription(source)).toThrow('short-description')
+  })
+
   it('validates portable files against the published Agent Plugins 1.0 schemas', async () => {
     const ajv = new Ajv2020({ strict: false, allErrors: true })
     for (const [schema, path] of [
@@ -27,11 +45,44 @@ describe('Durabull plugin distribution', () => {
     expect(claude.version).toBe(portable.version)
     expect(claude.name).toBe(portable.name)
     expect(claude.extensions).toBeUndefined()
-    for (const skill of ['setup', 'queue-triage', 'job-recovery']) {
-      const source = await readFile(resolve(root, `skills/${skill}/SKILL.md`), 'utf8')
-      expect(source).toContain(`name: ${skill}`)
-      expect(source).toContain('description:')
+    const presentation = portable.extensions['com.openai'].interface
+    for (const asset of [presentation.logo, ...presentation.screenshots]) {
+      expect(asset).toMatch(/^\.\/assets\//)
+      expect((await readFile(resolve(root, asset))).length).toBeGreaterThan(0)
     }
+    const covered = new Set<string>()
+    const evals = await json(resolve(root, 'evals.json'))
+    for (const entry of await readdir(resolve(root, 'skills'), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      const source = await readFile(resolve(root, `skills/${entry.name}/SKILL.md`), 'utf8')
+      const frontmatter = Bun.YAML.parse(source.split('---')[1]) as {
+        name: string; description: string; metadata: { 'short-description': string }
+      }
+      expect(frontmatter.name).toBe(entry.name)
+      expect(frontmatter.description.length).toBeLessThan(1024)
+      expect(frontmatter.metadata['short-description'].length).toBeGreaterThanOrEqual(25)
+      expect(frontmatter.metadata['short-description'].length).toBeLessThanOrEqual(64)
+      const config = Bun.YAML.parse(await readFile(resolve(root, `skills/${entry.name}/agents/openai.yaml`), 'utf8')) as {
+        interface: { short_description: string }; dependencies: { tools: Array<{ value: string; url: string }> }
+      }
+      expect(config.interface.short_description).toBe(frontmatter.metadata['short-description'])
+      expect(config.dependencies.tools).toEqual([expect.objectContaining({ value: 'durabull', url: 'https://app.durabull.io/mcp' })])
+      const tokens = source.match(/\b(?:ping|(?:list|get|find|explain|retry|promote|pause|resume|resolve|acknowledge|unacknowledge|snooze|unsnooze)_[a-z_]+)\b/g) ?? []
+      for (const token of tokens) {
+        expect(MCP_TOOL_NAMES).toContain(token)
+        covered.add(token)
+      }
+      const cases = evals.cases.filter((item: { skill: string }) => item.skill === entry.name)
+      expect(cases.length).toBeGreaterThanOrEqual(2)
+      for (const item of cases) {
+        for (const tool of item.expectedTools) {
+          expect(MCP_TOOL_NAMES).toContain(tool)
+          expect(tokens).toContain(tool)
+        }
+      }
+    }
+    // Any future tool needs a documented workflow, not just a schema entry.
+    expect([...covered].sort()).toEqual([...MCP_TOOL_NAMES].sort())
   })
 
   it('creates a self-hosted package without changing the Cloud source', async () => {
@@ -53,6 +104,12 @@ describe('Durabull plugin distribution', () => {
       expect(await readFile(resolve(output, 'skills/setup/SKILL.md'), 'utf8')).toContain(
         'list_connections'
       )
+      for (const entry of await readdir(resolve(output, 'skills'), { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const config = await readFile(resolve(output, 'skills', entry.name, 'agents/openai.yaml'), 'utf8')
+        expect(config).toContain(endpoint)
+        expect(config).not.toContain('https://app.durabull.io/mcp')
+      }
       await buildPlugin({ endpoint, out: output, check: true })
     } finally {
       await rm(directory, { recursive: true, force: true })

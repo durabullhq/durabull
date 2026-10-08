@@ -8,7 +8,7 @@ Durabull serves MCP revision **2026-07-28** using SDK **2.3.1**, with MCP Apps *
 - `packages/mcp/src/routes.ts` uses `createMcpHandler`. Host/Origin validation, 1 MB body limit, authentication, policy, rate limits and AsyncLocalStorage remain outside the SDK entry. No customer state is held in transport sessions.
 - `packages/mcp/src/apps/ui` contains the vanilla TypeScript/CSS app. The official Apps `App` bridge handles communication; it contains no API token, direct network requests, storage or external assets. The generated text asset is imported into the server and embedded by the production Bun build. It is committed so fresh checkouts, source-mode Docker, and tests do not require a separate frontend build.
 - `ui://durabull/queue-explorer-v1.html` is a data-free, authenticated discovery resource. Only this exact shell skips service-account tenant bindings. Every data call retains its own permission checks. Change the versioned URI for breaking UI contracts.
-- `plugins/durabull` is the portable Agent Plugins package. `.claude-plugin/plugin.json` and `.mcp.json` are generated compatibility files. Shared skills provide setup, queue triage, and authorized recovery. Repository marketplace manifests support local installation; they do not install or publish anything automatically.
+- `plugins/durabull` is the portable Agent Plugins package. `.claude-plugin/plugin.json` and `.mcp.json` are generated compatibility files. Nine focused skills cover setup, fleet health, queue triage, job inspection, recurring schedules, Redis health, alert triage, job recovery and queue control. Each skill has a generated MCP dependency for the selected deployment. Repository marketplace manifests support local installation; they do not install or publish anything automatically.
 
 ## Host behavior
 
@@ -19,7 +19,7 @@ Durabull serves MCP revision **2026-07-28** using SDK **2.3.1**, with MCP Apps *
 | ChatGPT Work | Custom MCP server; portable plugin for skills | Standard MCP Apps; global/sidebar and thread/panel entrypoints on supported surfaces |
 | Codex | Portable package through `.agents/plugins/marketplace.json` | Host dependent; text fallback always remains |
 
-The app opens on `list_connections` and supports browsing, filtering the current page, explicit refresh, cursor pagination, job details/logs, alerts and health. “Ask to…” actions send a user message through the host; they do not directly call mutations. The bridge enforces the catalog's read-only allowlist, and refreshing a mutation result reads the affected entity instead of repeating the write. Failed navigation has a Retry action for the exact failed read; history preserves each snapshot's timestamp. Features requiring a host capability are hidden when it is absent. UI visibility hints never replace server authorization.
+The app opens on `list_connections` and supports browsing, filtering the current page, explicit refresh, cursor pagination, exact job-ID search across queues, job details/logs, schedules, incidents, alert rules, delivery status and Redis health. “Ask to…” actions send a user message through the host; they do not directly call mutations. The bridge enforces the catalog's read-only allowlist, and refreshing a mutation result reads the affected entity instead of repeating the write. Failed navigation has a Retry action for the exact failed read; history preserves each snapshot's timestamp. Features requiring a host capability are hidden when it is absent. UI visibility hints never replace server authorization.
 
 The standard `ui.domain` is intentionally omitted: Claude and ChatGPT assign different meanings to it. `openai/widgetDomain` is derived from `APP_BASE_URL`; verify it is a unique plugin origin before OpenAI submission. The resource advertises an empty network/frame CSP. Embedded apps only need the host bridge. [MCP Apps migration](https://apps.extensions.modelcontextprotocol.io/api/documents/migrate-to-v2.html), [OpenAI metadata](https://developers.openai.com/plugins/reference).
 
@@ -74,3 +74,7 @@ Public platform installation/publishing still requires the actual deployment and
 5. Submit the remote Claude connector and Claude Code plugin separately where desired; submit the OpenAI plugin through its own review. Neither approval transfers to the other platform.
 
 [OpenAI review](https://developers.openai.com/plugins/deploy/app-review), [Claude submission](https://claude.com/docs/connectors/building/submission), [OAuth operations](./mcp-oauth-operator.md).
+
+## Plugin release package
+
+See [plugin release record](./mcp-plugin-release.md) for the capability inventory, host test scenarios, package checks and remaining publisher steps. The full nine-skill set ships in the portable package. MCP skill import is intentionally not advertised: OpenAI currently limits that import route to five skills; upload the plugin package instead.

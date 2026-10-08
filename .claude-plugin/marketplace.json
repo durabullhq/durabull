@@ -7,10 +7,10 @@
     {
       "name": "durabull",
       "source": "./plugins/durabull",
-      "description": "BullMQ queue diagnostics and scoped recovery operations."
+      "description": "BullMQ queue management and Redis monitoring with Durabull. Explore background jobs, diagnose failures and backlogs, inspect workers and repeatable schedules, review alerts, and retry, promote, pause or resume on request."
     }
   ],
   "metadata": {
-    "description": "Durabull plugins for BullMQ queue diagnostics and recovery."
+    "description": "Durabull for BullMQ queue management, background job diagnostics and Redis monitoring."
   }
 }

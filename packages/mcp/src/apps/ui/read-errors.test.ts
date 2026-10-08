@@ -21,4 +21,12 @@ describe('MCP App access errors', () => {
     expect(readErrorMessage(new Error('secret backend details'))).not.toContain('secret')
     expect(readErrorMessage(null)).toContain('Retry')
   })
+  it('explains rate limits using the server delay without suggesting reauthorization', () => {
+    const error = Object.assign(new Error('MCP work budget exhausted'), {
+      code: -32029,
+      data: { retryAfter: 1 },
+    })
+    expect(readErrorMessage(error)).toContain('Retry in 1 second.')
+    expect(readErrorMessage(new Error('HTTP 429'))).toContain('reconnecting is not required')
+  })
 })

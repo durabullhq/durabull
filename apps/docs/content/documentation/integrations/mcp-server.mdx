@@ -1,6 +1,6 @@
 ---
-title: MCP Server
-description: Connect AI assistants to Durabull queue diagnostics and scoped operations through the hosted MCP endpoint.
+title: BullMQ & Redis MCP Server
+description: Manage BullMQ queues and monitor Redis from ChatGPT, Claude and Codex with Durabull. Inspect jobs, workers, cron schedules, alerts and failure evidence, then recover work with scoped tools.
 ---
 
 Durabull exposes a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server on the same origin as the web app and API. The default consent bundle contains read scopes; a small set of non-destructive write tools sits behind dedicated scopes you approve explicitly.
@@ -37,7 +37,23 @@ For self-hosting, generate both platform configurations from the same endpoint:
 bun run mcp:plugin --endpoint https://queues.example.com/mcp --out /tmp/durabull-plugin
 ```
 
-The shared skills cover setup, queue triage, and user-requested recovery. UI buttons labeled “Ask to…” send a request to the assistant; data-changing tools retain their dedicated scopes and host approval flow. No browser credentials or direct Redis access are used.
+The plugin includes nine focused skills:
+
+| Workflow | Try asking |
+| --- | --- |
+| Setup | “Connect Durabull and show my environments.” |
+| Fleet health | “Which production queues need attention?” |
+| Queue triage | “Why is the receipt queue backing up?” |
+| Job inspection | “Find job 1042 and explain why it failed.” |
+| Recurring schedules | “Show cron jobs, timezones and next runs.” |
+| Redis health | “Is Redis memory pressure affecting our workers?” |
+| Alert triage | “Why did this incident's notification fail?” |
+| Job recovery | “Retry this failed job once.” |
+| Queue control | “Pause this queue during maintenance.” |
+
+The visual explorer includes exact job-ID search across queues, scheduler details, alert delivery attempts, incident breakdowns and rule inspection. Redis views show capacity, CPU, clients, evictions, rejected connections and history coverage; unavailable samples remain gaps. Alert triage also supports requested acknowledgement, resolution and timed rule snoozes.
+
+ UI buttons labeled “Ask to…” send a request to the assistant; data-changing tools retain their dedicated scopes and host approval flow. No browser credentials or direct Redis access are used.
 
 ## What MCP provides
 
@@ -139,7 +155,7 @@ Authorization requests for the canonical MCP resource always include the five re
 Authenticated callers still receive:
 
 - **Output redaction** — known sensitive keys and URL/token patterns redacted; `_mcpSafety.redactionCount` when redactions occur
-- **Rate limits** (when `NODE_ENV=production`) — 120 HTTP requests/min on `/mcp` ingress (discovery and tool RPCs); **60 calls/min per tool** per bearer (30/min for heavy tools: `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `get_failure_events`, `get_queue_metrics`, `find_job`, `get_connection_overview`, `list_scheduled_jobs`, `get_redis_health`, `get_alert_summary`)
+- **Rate limits** (production) — independent, continuously refilled budgets for setup/discovery (120 burst, 10/sec), ordinary reads (180 burst, 6/sec), diagnostics (90 burst, 3/sec), and writes (30 burst, 1/sec), keyed by validated user and OAuth client. HTTP ingress has a 600-request burst and 20/sec refill. A 429 reports the next-token delay in `Retry-After`; it does not impose a fixed one-minute lockout. Limits are per process, and OAuth registration retains its separate limit.
 - **Typed errors** — tool failures return `{ error: { code, message } }` with `code` in `not_found`, `validation_error`, `conflict`, `forbidden`, `internal_error`; messages are redacted before they leave the server
 - **Audit** — best-effort `mcp_audit_event` rows for tool calls (may drop under backpressure; see runbook)
 
