@@ -10,6 +10,7 @@ on:
       - 'apps/docs/public/**'
       - 'apps/docs/tooling/**'
       - 'apps/docs/package.json'
+      - 'apps/docs/serve.json'
       - 'apps/docs/turbo.json'
       - 'packages/mcp/**'
       - 'packages/email/**'

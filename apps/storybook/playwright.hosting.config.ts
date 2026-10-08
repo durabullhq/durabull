@@ -10,8 +10,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command:
-      'bun x serve ../docs/out -l 6016 --no-clipboard -c ../../storybook/serve.marketing.json',
+    command: 'bun run --cwd ../docs start -- -l 6016 --no-clipboard',
     url: 'http://127.0.0.1:6016',
     reuseExistingServer: !process.env.CI,
   },

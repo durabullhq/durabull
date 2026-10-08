@@ -27,7 +27,7 @@ The marketing static build (`bun run build:docs`, or `bun run build` inside `app
 
 For a standalone Vercel deployment, select `apps/storybook` as the Root Directory and enable access to files outside that directory. The included `vercel.json` builds the monorepo workspace and publishes `dist`. For other standalone hosts, use `bun run build:storybook` from the repo root with `apps/storybook/dist` as the publish directory. Serve standalone builds at the domain root so the existing product assets retain their URLs.
 
-The fixture worker is loaded relative to `iframe.html`, so at `/ui/` its default scope is **`/ui/`**. It intercepts requests from catalog previews without controlling the marketing pages or documentation.
+The fixture worker is loaded relative to `iframe.html`, so at `/ui/` its default scope is **`/ui/`**. It intercepts requests from catalog previews without controlling the marketing pages or documentation. `bun run --cwd apps/docs start` uses the shared serving configuration to preserve Storybook's `.html` URLs and their query strings while retaining marketing's existing clean URLs.
 
 The build disables source maps and telemetry. API traffic is handled by local MSW fixtures; unrecognized API endpoints fail visibly. Auth and analytics are replaced only in the Storybook bundle. MCP previews use a sandboxed iframe and the real `AppBridge`, with schema-validated tool fixtures. Assistant requests are recorded under Host activity. Email links use `example.com`.
 

@@ -9,7 +9,7 @@
     "build": "bun run search:index && NEXT_OUTPUT=export next build && bun run build:ui",
     "build:ui": "bun run --cwd ../storybook build:marketing && bun tooling/copy-ui-fonts.ts",
     "build:server": "bun run search:index && next build",
-    "start": "bun x serve out",
+    "start": "bun x serve out -c ../serve.json",
     "start:server": "next start",
     "typecheck": "bun run search:index && tsc --noEmit",
     "lint": "biome lint ./src ./app",
