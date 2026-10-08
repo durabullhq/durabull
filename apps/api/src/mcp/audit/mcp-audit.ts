@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto'
 
 import { mcpPolicyRepository } from '@durabull/dal'
 
+import {
+  mcpAnalyticsContext,
+  type McpAnalyticsContext,
+} from '../observability/mcp-analytics-context'
 import { recordMcpTelemetry } from '../observability/mcp-telemetry'
 
 export type McpAuditResponseClass = 'policy_denied' | 'rate_limited' | 'success' | 'tool_error'
@@ -27,8 +31,15 @@ const AUDIT_DROP_LOG_INTERVAL = 100
 let auditInFlight = 0
 let droppedAuditEvents = 0
 const pendingAuditEvents: McpAuditEventInput[] = []
+const auditAnalyticsContexts = new WeakMap<McpAuditEventInput, McpAnalyticsContext>()
 
 function dispatchAuditEvent(input: McpAuditEventInput): void {
+  mcpAnalyticsContext.run(auditAnalyticsContexts.get(input), () =>
+    dispatchAuditEventInContext(input)
+  )
+}
+
+function dispatchAuditEventInContext(input: McpAuditEventInput): void {
   auditInFlight += 1
   void mcpPolicyRepository
     .createAuditEvent(input)
@@ -38,6 +49,9 @@ function dispatchAuditEvent(input: McpAuditEventInput): void {
         signal: 'audit_write_failed',
         toolName: input.toolName,
         principalId: input.principalId,
+        principalType: input.principalType,
+        userId: input.userId,
+        organizationId: input.organizationId,
         correlationId: input.correlationId,
       })
     })
@@ -56,6 +70,8 @@ function flushPendingAuditEvents(): void {
 }
 
 export function writeMcpAuditEventNonBlocking(input: McpAuditEventInput): void {
+  const context = mcpAnalyticsContext.getStore()
+  if (context) auditAnalyticsContexts.set(input, context)
   if (input.responseClass === 'policy_denied') {
     recordMcpTelemetry({
       signal: 'policy_denied',

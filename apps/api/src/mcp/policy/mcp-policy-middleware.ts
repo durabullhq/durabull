@@ -8,23 +8,12 @@ import { resolveConnectionForPrincipal } from '../connections/resolve-connection
 import {
   isMcpResourcesReadMethod,
   isMcpToolsCallMethod,
-  parseMcpJsonRpcMethod,
   parseMcpJsonRpcPayloadId,
   parseMcpPolicyOperation,
 } from '../json-rpc-tool-call'
-import { type McpAnalyticsIdentity, recordMcpRpcAnalytics } from '../observability/mcp-analytics'
 import { evaluateMcpToolPolicy } from './policy-engine'
 import { resolveMcpPrincipal } from './principal-resolver'
 import type { McpPolicyDecision, McpPrincipal } from './types'
-
-const RPC_ANALYTICS_METHODS = new Set([
-  'initialize',
-  'tools/list',
-  'resources/list',
-  'resources/templates/list',
-  'prompts/list',
-  'prompts/get',
-])
 
 function buildCorrelationId(): string {
   return crypto.randomUUID()
@@ -76,21 +65,6 @@ function policyDenialErrorData(decision: McpPolicyDecision): Record<string, unkn
   return { code: 'policy_denied' }
 }
 
-function principalToAnalyticsIdentity(principal: McpPrincipal): McpAnalyticsIdentity {
-  return principal.type === 'delegated_user'
-    ? {
-        principalType: principal.type,
-        principalId: principal.principalId,
-        userId: principal.userId,
-        organizationId: null,
-      }
-    : {
-        principalType: principal.type,
-        principalId: principal.principalId,
-        organizationId: principal.organizationId,
-      }
-}
-
 export function createMcpPolicyMiddleware(appBaseUrl?: string) {
   return createMiddleware(async (c, next) => {
     if (c.req.method !== 'POST') {
@@ -131,15 +105,6 @@ export function createMcpPolicyMiddleware(appBaseUrl?: string) {
       )
     }
     if (!operation) {
-      const mcpMethod = parseMcpJsonRpcMethod(body)
-      if (mcpMethod && RPC_ANALYTICS_METHODS.has(mcpMethod)) {
-        const session = c.get('mcpSession')
-        const principal = await resolveMcpPrincipal(session)
-        recordMcpRpcAnalytics({
-          mcpMethod,
-          identity: principal ? principalToAnalyticsIdentity(principal) : null,
-        })
-      }
       return next()
     }
 
@@ -151,7 +116,7 @@ export function createMcpPolicyMiddleware(appBaseUrl?: string) {
     }
 
     const session = c.get('mcpSession')
-    const principal = await resolveMcpPrincipal(session)
+    const principal = c.get('mcpPrincipal') ?? (await resolveMcpPrincipal(session))
     const correlationId = c.req.header('x-request-id') ?? buildCorrelationId()
     const inputHash = hashMcpToolInput(toolCall.arguments)
 

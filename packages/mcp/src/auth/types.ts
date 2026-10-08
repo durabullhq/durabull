@@ -1,5 +1,6 @@
 export interface McpAccessTokenClaims {
   accessToken: string
+  clientName?: string
   clientId: string
   userId: string | null
   scopes: string[]

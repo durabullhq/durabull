@@ -237,6 +237,75 @@ describe('captureMcpAnalyticsServerEvent coalescing', () => {
     resetServerAnalyticsForTests()
   })
 
+  it('surfaces upstream rejection and invalid properties to the MCP queue', async () => {
+    globalThis.fetch = (async () => new Response(null, { status: 401 })) as unknown as typeof fetch
+    await expect(
+      captureMcpAnalyticsServerEvent({
+        event: AnalyticsEvents.MCP_RPC_COMPLETED,
+        properties: { mcp_method: 'tools/call' },
+        includeAnonymous: false,
+        identifiedDistinctId: 'hashed-user',
+      })
+    ).rejects.toThrow('MCP analytics upstream rejected batch')
+    await expect(
+      captureMcpAnalyticsServerEvent({
+        event: AnalyticsEvents.MCP_RPC_COMPLETED,
+        properties: { access_token: 'secret' },
+        includeAnonymous: false,
+        identifiedDistinctId: 'hashed-user',
+      })
+    ).rejects.toThrow('MCP analytics validation failed')
+    configure({ collectEnabled: false, collectSigningSecret: 'secret' })
+    await expect(
+      captureMcpAnalyticsServerEvent({
+        event: AnalyticsEvents.MCP_RPC_COMPLETED,
+        properties: {},
+        includeAnonymous: true,
+        anonymousInstanceId: 'instance',
+        sessionId: 'session',
+      })
+    ).rejects.toThrow('MCP analytics cloud collector rejected batch')
+  })
+
+  it('retains client attribution and outcome properties through the PostHog batch payload', async () => {
+    const { bodies } = captureFetchBodies()
+    await captureMcpAnalyticsServerEvent({
+      event: AnalyticsEvents.MCP_RPC_COMPLETED,
+      properties: {
+        mcp_method: 'tools/call',
+        tool_name: 'get_job',
+        mcp_client_family: 'codex',
+        mcp_client_key: 'hashed-client',
+        mcp_principal_key: 'hashed-principal',
+        mcp_connection_key: 'hashed-connection',
+        mcp_request_key: 'hashed-request',
+        http_status: 200,
+        duration_ms: 12,
+        rpc_error_code: -32602,
+        success: false,
+      },
+      includeAnonymous: false,
+      identifiedDistinctId: 'hashed-user',
+      organizationId: 'org',
+    })
+    const batch = (
+      bodies[0] as { batch: Array<{ event: string; properties: Record<string, unknown> }> }
+    ).batch
+    expect(batch[0]).toMatchObject({
+      event: AnalyticsEvents.MCP_RPC_COMPLETED,
+      properties: {
+        distinct_id: 'hashed-user',
+        mcp_client_family: 'codex',
+        mcp_client_key: 'hashed-client',
+        mcp_request_key: 'hashed-request',
+        http_status: 200,
+        rpc_error_code: -32602,
+        success: false,
+        $groups: { organization: hashIdentifiedOrganizationDistinctId('org', HMAC_SECRET) },
+      },
+    })
+  })
+
   it('coalesces anonymous and identified captures into one batch request when targets match', async () => {
     resetServerAnalyticsForTests()
     configure({ appPosthogKey: 'phc_durabull' })

@@ -115,6 +115,13 @@ export const AnalyticsEvents = {
 
   // MCP Events
   MCP_RPC_REQUESTED: 'mcp_rpc_requested',
+  MCP_RPC_COMPLETED: 'mcp_rpc_completed',
+  MCP_REQUEST_COMPLETED: 'mcp_request_completed',
+  MCP_AUTH_SUCCEEDED: 'mcp_auth_succeeded',
+  MCP_CONNECTION_INITIALIZED: 'mcp_connection_initialized',
+  MCP_OAUTH_REQUESTED: 'mcp_oauth_requested',
+  MCP_OAUTH_COMPLETED: 'mcp_oauth_completed',
+  MCP_OPERATIONAL_SIGNAL: 'mcp_operational_signal',
   MCP_TOOL_CALLED: 'mcp_tool_called',
   MCP_TOOL_DENIED: 'mcp_tool_denied',
   MCP_AUTH_FAILED: 'mcp_auth_failed',

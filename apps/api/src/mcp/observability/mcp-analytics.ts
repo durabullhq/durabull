@@ -7,7 +7,11 @@ import {
   tryGetServerAnalyticsOptions,
 } from '@durabull/analytics/server'
 
+import { getMcpToolDefinition } from '@durabull/mcp'
+
 import type { McpPrincipalType } from '@durabull/dal'
+
+import { mcpAnalyticsContext, mcpAnalyticsKey, mcpClientFamily } from './mcp-analytics-context'
 
 import { APP_VERSION } from '../../lib/build-info'
 import { enqueueMcpAnalytics } from './mcp-analytics-queue'
@@ -25,6 +29,7 @@ export interface McpAnalyticsInput {
   properties?: Record<string, unknown>
   identity?: McpAnalyticsIdentity | null
   sessionKey?: string
+  timestamp?: string
 }
 
 function categorizeDenialReason(reason: string | null | undefined): string {
@@ -56,6 +61,9 @@ async function processMcpAnalytics(input: McpAnalyticsInput): Promise<void> {
         organizationId: identity.organizationId,
       })
     : { distinctId: null, organizationGroup: null }
+  if (identity?.principalType === 'service_account' && !identity.userId) {
+    identified.distinctId = mcpAnalyticsKey('principal', identity.principalId) ?? null
+  }
   const hasIdentifiedIdentity = identified.distinctId != null
   const shouldSkipAnonymous = shouldDedupeIdentifiedPosthogEvents() && hasIdentifiedIdentity
 
@@ -79,11 +87,45 @@ async function processMcpAnalytics(input: McpAnalyticsInput): Promise<void> {
     // the PostHog group. Passing identified.organizationGroup (already hashed)
     // would double-hash and break org correlation.
     organizationId: identity?.organizationId ?? null,
+    timestamp: input.timestamp,
   })
 }
 
 export function recordMcpAnalytics(input: McpAnalyticsInput): void {
-  enqueueMcpAnalytics(input, processMcpAnalytics)
+  const context = mcpAnalyticsContext.getStore()
+  const contextIdentity = context?.identity()
+  const identity = input.identity
+    ? {
+        ...input.identity,
+        principalId: contextIdentity?.principalId ?? input.identity.principalId,
+        userId: input.identity.userId ?? contextIdentity?.userId,
+        organizationId: input.identity.organizationId ?? contextIdentity?.organizationId,
+      }
+    : (contextIdentity ?? null)
+  const family = mcpClientFamily(context?.clientName?.())
+  const properties = { ...context?.properties, ...input.properties }
+  if (
+    typeof properties.tool_name === 'string' &&
+    !properties.tool_name.startsWith('resource:') &&
+    !getMcpToolDefinition(properties.tool_name)
+  )
+    properties.tool_name = 'unknown'
+  enqueueMcpAnalytics(
+    {
+      ...input,
+      identity,
+      timestamp: input.timestamp ?? new Date().toISOString(),
+      properties: {
+        ...properties,
+        ...(family !== 'unknown' && family !== 'other' ? { mcp_client_family: family } : {}),
+        mcp_client_key: mcpAnalyticsKey('client', context?.clientId()),
+        mcp_connection_key: mcpAnalyticsKey('connection', context?.connectionId?.()),
+        mcp_principal_key: mcpAnalyticsKey('principal', identity?.principalId),
+        principal_type: identity?.principalType,
+      },
+    },
+    processMcpAnalytics
+  )
 }
 
 export function recordMcpRpcAnalytics(input: {
@@ -183,6 +225,7 @@ export function recordMcpTelemetryAnalytics(
     organizationId?: string | null
     denialReason?: string | null
     redactionCount?: number
+    count?: number
   }
 ): void {
   const identity =
@@ -197,6 +240,14 @@ export function recordMcpTelemetryAnalytics(
 
   switch (signal) {
     case 'tool_success':
+      {
+        const request = mcpAnalyticsContext.getStore()
+        if (request) {
+          request.toolOutcome = 'success'
+          request.redactionCount = context.redactionCount
+          return // The request boundary captures the final SDK outcome exactly once.
+        }
+      }
       if (!context.toolName || !identity) return
       recordMcpToolAnalytics({
         toolName: context.toolName,
@@ -207,6 +258,13 @@ export function recordMcpTelemetryAnalytics(
       })
       return
     case 'tool_error':
+      {
+        const request = mcpAnalyticsContext.getStore()
+        if (request) {
+          request.toolOutcome = 'tool_error'
+          return
+        }
+      }
       if (!context.toolName || !identity) return
       recordMcpToolAnalytics({
         toolName: context.toolName,
@@ -246,6 +304,15 @@ export function recordMcpTelemetryAnalytics(
     case 'redaction_applied':
     case 'audit_dropped':
     case 'audit_write_failed':
+      recordMcpAnalytics({
+        event: AnalyticsEvents.MCP_OPERATIONAL_SIGNAL,
+        identity,
+        properties: {
+          telemetry_signal: signal,
+          tool_name: context.toolName,
+          signal_count: context.count ?? context.redactionCount ?? 1,
+        },
+      })
       return
     default:
       return

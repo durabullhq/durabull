@@ -19,6 +19,23 @@ describe('mcp analytics queue', () => {
     resetTelemetryQueueDropTotalsForTests()
   })
 
+  it('exposes processing failures without disrupting MCP or logging credentials', async () => {
+    const warn = mock(() => {})
+    console.warn = warn as unknown as typeof console.warn
+    enqueueMcpAnalytics({ event: AnalyticsEvents.MCP_RPC_COMPLETED }, async () => {
+      throw new Error('SECRET upstream error')
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(warn).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: 'telemetry_queue',
+        queueName: 'mcp_analytics',
+        signal: 'queue_failed',
+      })
+    )
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET')
+  })
+
   it('warns and records a drop metric when dropping events because the queue is full', () => {
     const info = mock(() => {})
     const warn = mock(() => {})
