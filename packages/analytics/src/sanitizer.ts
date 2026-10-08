@@ -7,7 +7,7 @@ export type TelemetryEventName =
   | typeof PAGEVIEW_EVENT
 
 type JsonPrimitive = string | number | boolean | null
-type SanitizedPropertyValue = JsonPrimitive
+type SanitizedPropertyValue = JsonPrimitive | string[]
 
 export interface SanitizedTelemetryEvent {
   event: string
@@ -58,6 +58,23 @@ const FORBIDDEN_PROPERTY_KEYS = new Set([
 ])
 
 const ALLOWED_PROPERTY_KEYS = new Set([
+  '$session_id',
+  '$mcp_source',
+  '$mcp_tool_name',
+  '$mcp_resource_name',
+  '$mcp_duration_ms',
+  '$mcp_is_error',
+  '$mcp_error_type',
+  '$mcp_client_name',
+  '$mcp_client_version',
+  '$mcp_client_user_agent',
+  '$mcp_vendor_client',
+  '$mcp_protocol_version',
+  '$mcp_server_name',
+  '$mcp_server_version',
+  '$mcp_llm_model',
+  '$mcp_llm_model_source',
+  '$mcp_listed_tool_names',
   'action',
   'api_build_id',
   'api_version',
@@ -256,12 +273,20 @@ export function sanitizeTelemetryEvent(
       continue
     }
 
-    if (!isSanitizedPropertyValue(value)) {
+    if (
+      !(
+        key === '$mcp_listed_tool_names' &&
+        Array.isArray(value) &&
+        value.length <= 100 &&
+        value.every((name) => typeof name === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(name))
+      ) &&
+      !isSanitizedPropertyValue(value)
+    ) {
       droppedProperties.push(key)
       continue
     }
 
-    sanitized[key] = value
+    sanitized[key] = value as SanitizedPropertyValue
   }
 
   return {

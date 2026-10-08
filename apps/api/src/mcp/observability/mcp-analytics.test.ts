@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { createHmac } from 'node:crypto'
 import { AnalyticsEvents } from '@durabull/analytics/events'
+import {
+  PostHogMCPAnalyticsEvent as E,
+  PostHogMCPAnalyticsProperty as P,
+} from '@durabull/analytics/mcp'
 import { env } from '@durabull/env'
 
 const captureMcpAnalyticsServerEvent = mock(async () => {})
@@ -150,11 +154,13 @@ describe('mcp analytics', () => {
 })
 
 const { Hono } = await import('hono')
-const { MCP_TOOL_NAMES } = await import('@durabull/mcp')
+const { MCP_TOOL_NAMES, createMcpRoutes } = await import('@durabull/mcp')
 const { sanitizeTelemetryEvent } = await import('../../../../../packages/analytics/src/sanitizer')
-const { createMcpRequestAnalyticsMiddleware, readMcpResponseOutcome } = await import(
-  './mcp-request-analytics'
-)
+const {
+  createMcpRequestAnalyticsMiddleware,
+  createMcpRequestBodyAnalyticsMiddleware,
+  readMcpResponseOutcome,
+} = await import('./mcp-request-analytics')
 const { createMcpOAuthAnalyticsMiddleware } = await import('./mcp-oauth-analytics')
 
 async function settleAnalytics() {
@@ -243,6 +249,171 @@ describe('MCP lifecycle analytics coverage', () => {
       expect(JSON.stringify(event)).not.toContain('secret-bearer')
       expect(JSON.stringify(event.properties)).not.toContain('client-123')
     }
+  })
+
+  it('attributes unauthenticated calls after native ingress validation without changing rejection behavior', async () => {
+    const app = createMcpRoutes({
+      version: 'test',
+      allowedHosts: new Set(['localhost']),
+      corsOrigins: [],
+      observabilityMiddleware: createMcpRequestAnalyticsMiddleware(),
+      middleware: [
+        createMcpRequestBodyAnalyticsMiddleware(),
+        async (c) => c.json({ error: 'Unauthorized' }, 401),
+      ],
+    })
+    const response = await app.request('http://localhost/', {
+      ...rpcRequest('tools/call', { name: 'get_job' }),
+      headers: { 'content-type': 'application/json', host: 'localhost' },
+    })
+    expect(response.status).toBe(401)
+    const hostile = await app.request('http://hostile/', {
+      ...rpcRequest('tools/call', { name: 'list_jobs' }),
+      headers: { 'content-type': 'application/json', host: 'hostile' },
+    })
+    expect(hostile.status).toBe(403)
+    await settleAnalytics()
+    const tools = capturedEvents().filter((event) => event.event === E.ToolCall)
+    expect(tools).toHaveLength(1)
+    expect(tools[0].properties).toMatchObject({
+      [P.ToolName]: 'get_job',
+      [P.IsError]: true,
+      http_status: 401,
+    })
+    expect(tools[0].identifiedDistinctId).toBeNull()
+  })
+
+  it('uses the negotiated handshake protocol revision', async () => {
+    await rpcFixture(200, { result: { protocolVersion: '2025-11-25' } }).request(
+      '/',
+      rpcRequest('initialize', {
+        protocolVersion: '2026-07-28',
+        clientInfo: { name: 'Codex', version: 'v1.2.3' },
+      })
+    )
+    await settleAnalytics()
+    const event = capturedEvents().find((event) => event.event === E.Initialize)!
+    expect(event.properties[P.ProtocolVersion]).toBe('2025-11-25')
+    expect(event.properties[P.ClientVersion]).toBe('v1.2.3')
+  })
+
+  it('uses the exported PostHog contract for all supported canonical events', () => {
+    expect(AnalyticsEvents.MCP_TOOL_CALLED).toBe(E.ToolCall)
+    expect(AnalyticsEvents.MCP_CONNECTION_INITIALIZED).toBe(E.Initialize)
+    expect(AnalyticsEvents.MCP_TOOLS_LISTED).toBe(E.ToolsList)
+    expect(AnalyticsEvents.MCP_RESOURCES_LISTED).toBe(E.ResourcesList)
+    expect(AnalyticsEvents.MCP_RESOURCE_READ).toBe(E.ResourceRead)
+    expect(AnalyticsEvents.MCP_PROMPTS_LISTED).toBe(E.PromptsList)
+    expect(AnalyticsEvents.MCP_PROMPT_GET).toBe(E.PromptGet)
+  })
+
+  it('captures canonical discovery and resource events without payloads or tenant names', async () => {
+    await rpcFixture(200, {
+      result: { tools: [{ name: 'get_job' }, { name: 'list_jobs' }] },
+    }).request('/', rpcRequest('tools/list'))
+    for (const method of [
+      'resources/list',
+      'resources/templates/list',
+      'prompts/list',
+      'prompts/get',
+      'resources/read',
+    ]) {
+      await rpcFixture().request(
+        '/',
+        rpcRequest(method, { uri: 'durabull://connections/private-id/queues/private-queue' })
+      )
+    }
+    await settleAnalytics()
+    const events = capturedEvents().filter((event) => event.event.startsWith('$mcp_'))
+    expect(events.map((event) => event.event)).toEqual([
+      E.ToolsList,
+      E.ResourcesList,
+      E.ResourcesList,
+      E.PromptsList,
+      E.PromptGet,
+      E.ResourceRead,
+    ])
+    expect(events[0].properties[P.ListedToolNames]).toEqual(['get_job', 'list_jobs'])
+    expect(events.at(-1)?.properties[P.ResourceName]).toBe(
+      'durabull://connections/{connectionId}/queues/{queueName}'
+    )
+    for (const event of events) {
+      expect(event.properties[P.Source]).toBe('posthog_mcp_analytics')
+      expect(event.properties[P.ServerName]).toBeDefined()
+      expect(event.properties[P.DurationMs]).toBeNumber()
+      expect(event.properties[P.IsError]).toBe(false)
+      expect(sanitizeTelemetryEvent(event.event, event.properties).droppedProperties).toEqual([])
+    }
+    expect(JSON.stringify(events)).not.toContain('private-queue')
+    expect(JSON.stringify(events)).not.toContain('private-id')
+  })
+
+  it('captures failed calls and request metadata using canonical property keys', async () => {
+    await rpcFixture(403, {}, false).request('/', {
+      ...rpcRequest('tools/call', {
+        name: 'get_job',
+        arguments: { secret: 'SECRET' },
+        _meta: {
+          'io.modelcontextprotocol/clientInfo': { name: 'Claude Code', version: '1.2.3' },
+          'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+          'x-codex-turn-metadata': { model: 'gpt-5.2' },
+        },
+      }),
+      headers: {
+        'content-type': 'application/json',
+        'user-agent': 'Claude Code/1.2 (cli)',
+        'x-anthropic-client': 'claude-code',
+      },
+    })
+    await settleAnalytics()
+    const event = capturedEvents().find((event) => event.event === E.ToolCall)!
+    expect(event.properties).toMatchObject({
+      [P.ToolName]: 'get_job',
+      [P.ResourceName]: 'get_job',
+      [P.IsError]: true,
+      [P.ErrorType]: 'http_error',
+      [P.ClientName]: 'Claude Code',
+      [P.ClientVersion]: '1.2.3',
+      [P.ClientUserAgent]: 'Claude Code/1.2 (cli)',
+      [P.VendorClient]: 'claude-code',
+      [P.ProtocolVersion]: '2026-07-28',
+      [P.LlmModel]: 'gpt-5.2',
+      [P.LlmModelSource]: 'client_metadata',
+    })
+    expect(event.properties[P.SessionId]).toMatch(/^ses_[a-f0-9]{32}$/)
+    expect(event.properties[P.Parameters]).toBeUndefined()
+    expect(event.properties[P.Response]).toBeUndefined()
+    expect(sanitizeTelemetryEvent(event.event, event.properties).droppedProperties).toEqual([])
+    expect(JSON.stringify(event)).not.toContain('SECRET')
+  })
+
+  it('gives stateless requests separate sessions and prefers v2 envelope identity', async () => {
+    const body = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'get_job',
+        _meta: {
+          'io.modelcontextprotocol/clientInfo': { name: 'Fallback', version: '1.0' },
+        },
+      },
+      _meta: {
+        'io.modelcontextprotocol/clientInfo': { name: 'Cursor', version: '2.0' },
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      },
+    }
+    for (let i = 0; i < 2; i++)
+      await rpcFixture().request('/', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    await settleAnalytics()
+    const events = capturedEvents().filter((event) => event.event === E.ToolCall)
+    expect(events[0].properties[P.ClientName]).toBe('Cursor')
+    expect(events[0].properties[P.ClientVersion]).toBe('2.0')
+    expect(events[0].properties[P.SessionId]).not.toBe(events[1].properties[P.SessionId])
   })
 
   it('covers every catalog tool including ping and SDK errors that bypass handler callbacks', async () => {

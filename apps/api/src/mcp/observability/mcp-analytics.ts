@@ -1,19 +1,24 @@
 import { AnalyticsEvents, AnalyticsProperties } from '@durabull/analytics/events'
 import {
+  PostHogMCPAnalyticsProperty as P,
+  POSTHOG_MCP_ANALYTICS_SOURCE,
+} from '@durabull/analytics/mcp'
+import {
   captureMcpAnalyticsServerEvent,
   hashMcpAnalyticsSessionId,
   resolveIdentifiedDistinctIds,
   shouldDedupeIdentifiedPosthogEvents,
   tryGetServerAnalyticsOptions,
 } from '@durabull/analytics/server'
-
-import { getMcpToolDefinition } from '@durabull/mcp'
-
 import type { McpPrincipalType } from '@durabull/dal'
-
-import { mcpAnalyticsContext, mcpAnalyticsKey, mcpClientFamily } from './mcp-analytics-context'
-
+import { getMcpToolDefinition, MCP_SERVER_NAME } from '@durabull/mcp'
 import { APP_VERSION } from '../../lib/build-info'
+import {
+  mcpAnalyticsContext,
+  mcpAnalyticsKey,
+  mcpClientFamily,
+  mcpClientMetadata,
+} from './mcp-analytics-context'
 import { enqueueMcpAnalytics } from './mcp-analytics-queue'
 import type { McpTelemetrySignal } from './mcp-telemetry-signals'
 
@@ -45,6 +50,9 @@ function categorizeDenialReason(reason: string | null | undefined): string {
 function buildBaseProperties(properties: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     [AnalyticsProperties.SERVER_VERSION]: APP_VERSION,
+    [P.Source]: POSTHOG_MCP_ANALYTICS_SOURCE,
+    [P.ServerName]: MCP_SERVER_NAME,
+    [P.ServerVersion]: APP_VERSION,
     ...properties,
   }
 }
@@ -74,6 +82,9 @@ async function processMcpAnalytics(input: McpAnalyticsInput): Promise<void> {
   const secret = options.hmacSecret
   const sessionId =
     input.sessionKey ??
+    (typeof properties[P.SessionId] === 'string'
+      ? (properties[P.SessionId] as string)
+      : undefined) ??
     (identity && secret ? hashMcpAnalyticsSessionId(identity.principalId, secret) : 'mcp-server')
 
   await captureMcpAnalyticsServerEvent({
@@ -103,13 +114,28 @@ export function recordMcpAnalytics(input: McpAnalyticsInput): void {
       }
     : (contextIdentity ?? null)
   const family = mcpClientFamily(context?.clientName?.())
-  const properties = { ...context?.properties, ...input.properties }
+  const properties: Record<string, unknown> = {
+    [P.ClientName]: mcpClientMetadata(context?.clientName?.()),
+    ...context?.properties,
+    ...input.properties,
+  }
   if (
     typeof properties.tool_name === 'string' &&
     !properties.tool_name.startsWith('resource:') &&
     !getMcpToolDefinition(properties.tool_name)
   )
     properties.tool_name = 'unknown'
+  if (input.event === AnalyticsEvents.MCP_TOOL_CALLED) {
+    properties[P.ToolName] = properties.tool_name
+    properties[P.ResourceName] = properties.tool_name
+  }
+  if (input.event.startsWith('$mcp_')) {
+    if (typeof properties.success === 'boolean') properties[P.IsError] = !properties.success
+    if (typeof properties.duration_ms === 'number')
+      properties[P.DurationMs] = properties.duration_ms
+    if (properties.success === false)
+      properties[P.ErrorType] = properties.response_class ?? 'tool_error'
+  }
   enqueueMcpAnalytics(
     {
       ...input,

@@ -1,13 +1,13 @@
 import {
-  tryGetServerAnalyticsOptions,
-  type ServerAnalyticsOptions,
-  type ServerAnalyticsRuntimeContext,
-} from './config'
-import {
   signTelemetryCollectBody,
   TELEMETRY_COLLECT_SIGNATURE_HEADER,
   TELEMETRY_COLLECT_TIMESTAMP_HEADER,
 } from './collect-auth'
+import {
+  type ServerAnalyticsOptions,
+  type ServerAnalyticsRuntimeContext,
+  tryGetServerAnalyticsOptions,
+} from './config'
 import {
   hashIdentifiedOrganizationDistinctId,
   hashIdentifiedUserDistinctId,
@@ -15,10 +15,10 @@ import {
 } from './identifiers'
 import {
   POSTHOG_FETCH_TIMEOUT_MS,
-  resolvePosthogBatchUrl,
-  sendPosthogBatch,
   type PosthogBatchCapture,
   type PosthogBatchClientConfig,
+  resolvePosthogBatchUrl,
+  sendPosthogBatch,
 } from './posthog-batch'
 import { validateTelemetryPayload } from './validate'
 
@@ -84,7 +84,7 @@ function buildAnonymousCapture(input: {
   anonymousInstanceId: string
   sessionId: string
   event: string
-  properties: Record<string, string | number | boolean | null>
+  properties: Record<string, string | number | boolean | null | string[]>
   timestamp: string
   hmacSecret: string
 }): PosthogBatchCapture {
@@ -108,7 +108,7 @@ function buildAnonymousCapture(input: {
 
 function buildIdentifiedCapture(input: {
   event: string
-  properties: Record<string, string | number | boolean | null>
+  properties: Record<string, string | number | boolean | null | string[]>
   distinctId: string
   organizationId?: string | null
   timestamp?: string
@@ -142,7 +142,7 @@ async function forwardAnonymousToCloudCollect(input: {
   collectSigningSecret: string
   anonymousInstanceId: string
   event: string
-  properties: Record<string, string | number | boolean | null>
+  properties: Record<string, string | number | boolean | null | string[]>
   sessionId: string
   timestamp: string
   runtimeContext: ServerAnalyticsRuntimeContext

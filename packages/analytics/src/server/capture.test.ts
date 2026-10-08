@@ -6,15 +6,15 @@ import {
   ingestTelemetryCollectBatch,
 } from './capture'
 import {
-  configureServerAnalytics,
-  resetServerAnalyticsForTests,
-  type ServerAnalyticsOptions,
-} from './config'
-import {
   signTelemetryCollectBody,
   TELEMETRY_COLLECT_SIGNATURE_HEADER,
   TELEMETRY_COLLECT_TIMESTAMP_HEADER,
 } from './collect-auth'
+import {
+  configureServerAnalytics,
+  resetServerAnalyticsForTests,
+  type ServerAnalyticsOptions,
+} from './config'
 import { hashIdentifiedOrganizationDistinctId } from './identifiers'
 
 const HMAC_SECRET = 'test-hmac-secret'
@@ -304,6 +304,46 @@ describe('captureMcpAnalyticsServerEvent coalescing', () => {
         $groups: { organization: hashIdentifiedOrganizationDistinctId('org', HMAC_SECRET) },
       },
     })
+  })
+
+  it('retains the canonical MCP contract in the actual PostHog batch', async () => {
+    resetServerAnalyticsForTests()
+    configure({ appPosthogKey: 'phc_durabull' })
+    const { bodies, restore } = captureFetchBodies()
+    const properties = {
+      $mcp_source: 'posthog_mcp_analytics',
+      $session_id: `ses_${'a'.repeat(32)}`,
+      $mcp_listed_tool_names: ['get_job', 'list_jobs'],
+      $mcp_client_name: 'Codex',
+      $mcp_client_user_agent: 'Codex/1.2',
+      $mcp_vendor_client: 'codex',
+      $mcp_protocol_version: '2026-07-28',
+      $mcp_server_name: 'Durabull',
+      $mcp_server_version: '1.0',
+    }
+    try {
+      await captureMcpAnalyticsServerEvent({
+        event: '$mcp_tools_list',
+        properties,
+        includeAnonymous: false,
+        identifiedDistinctId: 'hashed-user',
+        organizationId: 'org',
+      })
+      const batch = (
+        bodies[0] as { batch: Array<{ event: string; properties: Record<string, unknown> }> }
+      ).batch
+      expect(batch[0]).toMatchObject({
+        event: '$mcp_tools_list',
+        properties: {
+          ...properties,
+          distinct_id: 'hashed-user',
+          $process_person_profile: true,
+          $groups: { organization: hashIdentifiedOrganizationDistinctId('org', HMAC_SECRET) },
+        },
+      })
+    } finally {
+      restore()
+    }
   })
 
   it('coalesces anonymous and identified captures into one batch request when targets match', async () => {

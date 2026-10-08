@@ -1,13 +1,18 @@
 import { AnalyticsEvents } from '@durabull/analytics/events'
+import {
+  PostHogMCPAnalyticsEvent as E,
+  PostHogMCPAnalyticsProperty as P,
+} from '@durabull/analytics/mcp'
 import { tryGetServerAnalyticsOptions } from '@durabull/analytics/server'
-import { getMcpToolDefinition } from '@durabull/mcp'
+import { getMcpToolDefinition, MCP_PROMPT_NAMES, parseMcpResourceUri } from '@durabull/mcp'
 import { createMiddleware } from 'hono/factory'
 import { parseMcpJsonRpcMethod, parseMcpPolicyOperation } from '../json-rpc-tool-call'
-import { recordMcpAnalytics, type McpAnalyticsIdentity } from './mcp-analytics'
+import { type McpAnalyticsIdentity, recordMcpAnalytics } from './mcp-analytics'
 import {
   mcpAnalyticsContext,
   mcpAnalyticsKey,
   mcpClientFamily,
+  mcpClientMetadata,
   mcpClientVersion,
 } from './mcp-analytics-context'
 
@@ -76,6 +81,16 @@ export async function readMcpResponseOutcome(response: Response): Promise<Record
         return {
           response_class: value.result.isError ? 'tool_error' : 'success',
           success: !value.result.isError,
+          ...(typeof value.result.protocolVersion === 'string' &&
+          /^\d{4}-\d{2}-\d{2}$/.test(value.result.protocolVersion)
+            ? { [P.ProtocolVersion]: value.result.protocolVersion }
+            : {}),
+          [P.ListedToolNames]: Array.isArray(value.result.tools)
+            ? value.result.tools
+                .slice(0, 100)
+                .map((tool: { name?: unknown }) => tool.name)
+                .filter((name: unknown) => typeof name === 'string' && !!getMcpToolDefinition(name))
+            : undefined,
         }
     }
     return {}
@@ -98,6 +113,9 @@ export function createMcpRequestAnalyticsMiddleware() {
     const context = {
       properties: {
         mcp_transport: 'streamable_http',
+        [P.SessionId]: `ses_${(mcpAnalyticsKey('session', c.req.header('mcp-session-id') ?? requestKey) ?? requestKey.replaceAll('-', '')).slice(0, 32)}`,
+        [P.ClientUserAgent]: mcpClientMetadata(c.req.header('user-agent')),
+        [P.VendorClient]: mcpClientMetadata(c.req.header('x-anthropic-client')),
         mcp_request_key: mcpAnalyticsKey('request', requestKey),
         mcp_client_family: mcpClientFamily(c.req.header('user-agent')),
         mcp_protocol_version: /^\d{4}-\d{2}-\d{2}$/.test(c.req.header('mcp-protocol-version') ?? '')
@@ -129,6 +147,43 @@ export function createMcpRequestAnalyticsMiddleware() {
         const body = c.get('mcpRequestJsonBody')
         const method = parseMcpJsonRpcMethod(body) ?? c.req.header('mcp-method')
         const safeMethod = method && METHODS.has(method) ? method : 'unknown'
+        const params =
+          body && typeof body === 'object' && !Array.isArray(body)
+            ? (body as { params?: Record<string, unknown> }).params
+            : undefined
+        const meta = params?._meta as Record<string, unknown> | undefined
+        const envelope =
+          body && typeof body === 'object'
+            ? (body as { _meta?: Record<string, unknown> })._meta
+            : undefined
+        const envelopeClient = envelope?.['io.modelcontextprotocol/clientInfo'] as
+          | { name?: unknown; version?: unknown }
+          | undefined
+        const metaClient = meta?.['io.modelcontextprotocol/clientInfo'] as
+          | { name?: unknown; version?: unknown }
+          | undefined
+        const clientInfo = {
+          name: envelopeClient?.name ?? metaClient?.name,
+          version: envelopeClient?.version ?? metaClient?.version,
+        }
+        const revision =
+          envelope?.['io.modelcontextprotocol/protocolVersion'] ??
+          meta?.['io.modelcontextprotocol/protocolVersion']
+        if (typeof revision === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(revision))
+          context.properties.mcp_protocol_version = revision
+        context.properties[P.ClientName] = mcpClientMetadata(
+          clientInfo?.name ?? context.clientName()
+        )
+        context.properties[P.ClientVersion] = mcpClientVersion(clientInfo?.version)
+        const codex = meta?.['x-codex-turn-metadata'] as { model?: unknown } | undefined
+        if (
+          typeof codex?.model === 'string' &&
+          /^[a-zA-Z0-9._-]{1,128}$/.test(codex.model) &&
+          codex.model !== 'unknown'
+        ) {
+          context.properties[P.LlmModel] = codex.model
+          context.properties[P.LlmModelSource] = 'client_metadata'
+        }
         const operation = parseMcpPolicyOperation(body)
         const name =
           operation?.name ?? (safeMethod === 'tools/call' ? c.req.header('mcp-name') : undefined)
@@ -152,12 +207,15 @@ export function createMcpRequestAnalyticsMiddleware() {
             client?.clientInfo?.name ?? c.req.header('user-agent')
           )
           context.properties.mcp_client_version = mcpClientVersion(client?.clientInfo?.version)
+          context.properties[P.ClientName] = mcpClientMetadata(client?.clientInfo?.name)
+          context.properties[P.ClientVersion] = mcpClientVersion(client?.clientInfo?.version)
           if (
             typeof client?.protocolVersion === 'string' &&
             /^\d{4}-\d{2}-\d{2}$/.test(client.protocolVersion)
           )
             context.properties.mcp_protocol_version = client.protocolVersion
         }
+        context.properties[P.ProtocolVersion] = context.properties.mcp_protocol_version
         const properties = {
           http_method: c.req.method,
           http_status: status,
@@ -205,30 +263,67 @@ export function createMcpRequestAnalyticsMiddleware() {
                 identity,
                 properties: result,
               })
-              if (safeMethod === 'initialize' && result.success === true) {
+              if (safeMethod === 'initialize') {
                 recordMcpAnalytics({
                   event: AnalyticsEvents.MCP_CONNECTION_INITIALIZED,
                   identity,
                   properties: result,
                 })
               }
-              // SDK schema validation runs outside domain callbacks; use the final result for tool success.
-              if (
-                (safeMethod === 'tools/call' ||
-                  (safeMethod === 'resources/read' && context.toolOutcome)) &&
-                status < 400 &&
-                result.success !== undefined
-              ) {
-                recordMcpAnalytics({
-                  event: AnalyticsEvents.MCP_TOOL_CALLED,
-                  identity,
-                  properties: { ...result, redaction_count: context.redactionCount },
-                })
+              // Canonical events cover requests rejected before a handler and final SDK errors.
+              const event = (
+                {
+                  'tools/call': E.ToolCall,
+                  'tools/list': E.ToolsList,
+                  'resources/read': E.ResourceRead,
+                  'resources/list': E.ResourcesList,
+                  'resources/templates/list': E.ResourcesList,
+                  'prompts/list': E.PromptsList,
+                  'prompts/get': E.PromptGet,
+                } as Record<string, string>
+              )[safeMethod]
+              if (event) {
+                const resource = parseMcpResourceUri(params?.uri)
+                const canonical = {
+                  ...result,
+                  [P.ListedToolNames]:
+                    safeMethod === 'tools/list' ? outcome[P.ListedToolNames] : undefined,
+                  [P.DurationMs]: properties.duration_ms,
+                  [P.IsError]: typeof result.success === 'boolean' ? !result.success : undefined,
+                  [P.ErrorType]: result.success === false ? result.response_class : undefined,
+                  [P.ResourceName]:
+                    safeMethod === 'resources/read'
+                      ? (resource?.definition.uriTemplate ?? 'unknown')
+                      : safeMethod === 'prompts/get'
+                        ? typeof params?.name === 'string' &&
+                          (MCP_PROMPT_NAMES as readonly string[]).includes(params.name)
+                          ? params.name
+                          : 'unknown'
+                        : undefined,
+                  redaction_count: context.redactionCount,
+                }
+                recordMcpAnalytics({ event, identity, properties: canonical })
               }
             })
             .catch(() => {})
         }
       }
     })
+  })
+}
+
+/** Install after Host/Origin/body limits and before authentication to attribute rejected calls. */
+export function createMcpRequestBodyAnalyticsMiddleware() {
+  return createMiddleware(async (c, next) => {
+    if (tryGetServerAnalyticsOptions()?.enabled && c.req.method === 'POST') {
+      c.set(
+        'mcpRequestJsonBody',
+        await c.req.raw
+          .clone()
+          .json()
+          .catch(() => null)
+      )
+    }
+    await next()
   })
 }

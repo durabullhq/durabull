@@ -36,8 +36,16 @@ export function mcpClientFamily(value: unknown): string {
 
 export function mcpClientVersion(value: unknown): string | undefined {
   return typeof value === 'string' &&
-    /^\d+(?:\.\d+){0,3}(?:-[a-zA-Z0-9.]+)?$/.test(value) &&
-    value.length <= 32
+    /^[a-zA-Z0-9._+-]{1,64}$/.test(value) &&
+    mcpClientMetadata(value) === value
     ? value
     : undefined
+}
+
+/** Header/client metadata is diagnostic text, never credentials or arbitrary payload content. */
+export function mcpClientMetadata(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  if (/[@\r\n]|https?:|bearer|password|secret|token|api[_-]?key|sk-|ph[a-z]_|eyJ/i.test(value))
+    return undefined
+  return value.replace(/[^a-zA-Z0-9 ._\-/();:+]/g, '').slice(0, 128) || undefined
 }
