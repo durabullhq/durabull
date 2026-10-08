@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import Ajv2020 from 'ajv/dist/2020'
 import { MCP_TOOL_NAMES } from '../../packages/mcp/src/tools/tool-catalog'
-import { buildPlugin, validateEndpoint } from './build-mcp-plugin'
+import { buildPlugin, skillShortDescription, validateEndpoint } from './build-mcp-plugin'
 import mcpSchema from './schemas/mcp.schema.json'
 import pluginSchema from './schemas/plugin.schema.json'
 
@@ -12,6 +12,23 @@ const root = resolve(import.meta.dir, '../../plugins/durabull')
 const json = async (path: string) => JSON.parse(await readFile(path, 'utf8'))
 
 describe('Durabull plugin distribution', () => {
+  it('decodes quoted and folded YAML descriptions and ignores body lookalikes', () => {
+    for (const scalar of [
+      '"Investigate failed jobs and retries"',
+      "'Investigate failed jobs and retries'",
+      '>-\n    Investigate failed jobs\n    and retries',
+    ]) {
+      expect(skillShortDescription(`---\nmetadata:\n  short-description: ${scalar}\n---\n  short-description: wrong`))
+        .toBe('Investigate failed jobs and retries')
+    }
+    for (const source of [
+      'No frontmatter\n  short-description: wrong',
+      '---\nmetadata: {}\n---',
+      '---\nmetadata:\n  short-description: 42\n---',
+      '---\nmetadata:\n  short-description: " "\n---',
+    ]) expect(() => skillShortDescription(source)).toThrow('short-description')
+  })
+
   it('validates portable files against the published Agent Plugins 1.0 schemas', async () => {
     const ajv = new Ajv2020({ strict: false, allErrors: true })
     for (const [schema, path] of [
@@ -46,8 +63,9 @@ describe('Durabull plugin distribution', () => {
       expect(frontmatter.metadata['short-description'].length).toBeGreaterThanOrEqual(25)
       expect(frontmatter.metadata['short-description'].length).toBeLessThanOrEqual(64)
       const config = Bun.YAML.parse(await readFile(resolve(root, `skills/${entry.name}/agents/openai.yaml`), 'utf8')) as {
-        dependencies: { tools: Array<{ value: string; url: string }> }
+        interface: { short_description: string }; dependencies: { tools: Array<{ value: string; url: string }> }
       }
+      expect(config.interface.short_description).toBe(frontmatter.metadata['short-description'])
       expect(config.dependencies.tools).toEqual([expect.objectContaining({ value: 'durabull', url: 'https://app.durabull.io/mcp' })])
       const tokens = source.match(/\b(?:ping|(?:list|get|find|explain|retry|promote|pause|resume|resolve|acknowledge|unacknowledge|snooze|unsnooze)_[a-z_]+)\b/g) ?? []
       for (const token of tokens) {

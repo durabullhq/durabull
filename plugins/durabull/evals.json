@@ -229,7 +229,7 @@
     },
     {
       "prompt": "Pause this queue for one hour and then automatically resume.",
-      "acceptance": "Do not promise durable scheduling from this MCP; use a host scheduler only if supported and authorized."
+      "acceptance": "Before pause_queue, verify an authorized durable resume through a supported host scheduler, or obtain explicit acceptance of manual resume. Leave the queue unchanged while resumption is unresolved; do not claim this MCP provides a durable timer."
     }
   ]
 }

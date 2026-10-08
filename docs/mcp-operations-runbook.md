@@ -114,7 +114,7 @@ Stdout JSON lines with `"type":"mcp_telemetry"`. Emitted signals today:
 | --- | --- | --- |
 | `policy_denied` | Org/connection boundary or missing binding | Review principal org membership and `mcp_policy_binding` rows |
 | `rate_limited_ingress` | `/mcp` transport burst exhausted (600 capacity, 20 requests/sec refill) | Reduce retry storms; see limits below |
-| `rate_limited_tool` | Per-tool cap hit | Reduce parallelism; see heavy-tool list below |
+| `rate_limited_tool` | Authenticated work-class budget exhausted (discovery/read/heavy/write) | Honor `Retry-After`, reduce parallelism; see [Agent workflow rate limits](#agent-workflow-rate-limits) |
 | `tool_success` / `tool_error` | Tool outcome | Correlate with `mcp_audit_event` |
 | `redaction_applied` | Sanitizer redacted fields | Expected for sensitive payloads |
 | `audit_dropped` / `audit_write_failed` | Audit backpressure/DB | Check Postgres load and `mcp_audit_event` health |
@@ -177,7 +177,7 @@ LIMIT 50;
 Wire your aggregator to count per hour:
 
 - `mcp_telemetry` where `signal` = `policy_denied`
-- `mcp_telemetry` where `signal` in (`rate_limited_ingress`, `rate_limited_tool`)
+- `mcp_telemetry` where `signal` in (`rate_limited_ingress`, `rate_limited_tool`): transport burst exhaustion and authenticated work-class budget exhaustion, respectively
 - `mcp_telemetry` where `signal` = `tool_error`
 - `telemetry_queue` where `signal` = `queue_dropped`, grouped by `queueName`
 - HTTP `401` / `403` / `429` on `/mcp` (access logs or edge metrics)

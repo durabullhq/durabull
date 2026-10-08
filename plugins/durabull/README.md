@@ -4,7 +4,7 @@ Manage BullMQ background jobs from your assistant: find a failing job, understan
 
 ## Connect
 
-- **ChatGPT:** add the custom MCP server `https://app.durabull.io/mcp` in plugin settings and complete browser OAuth. The portable package in this directory supplies the skills. Supported MCP Apps hosts show the interactive explorer.
+- **ChatGPT:** add the custom MCP server `https://app.durabull.io/mcp` in plugin settings and complete browser OAuth. Connecting the server supplies tools, but does not install the nine workflow skills. For those, add the portable package at `plugins/durabull` to a local marketplace, install it from the Plugins Directory, and start a new conversation with the plugin enabled. See [OpenAI’s complete-plugin installation guide](https://developers.openai.com/plugins/deploy/connect-chatgpt#test-the-complete-plugin). Supported MCP Apps hosts show the interactive explorer.
 - **Claude:** add the same URL as a remote connector and complete OAuth. The connector supplies tools and MCP Apps; the plugin supplies skills on hosts that support plugin installation.
 - **Claude Code:** from the repository root, run `claude --plugin-dir ./plugins/durabull`. To install from the repository marketplace, use `/plugin marketplace add durabullhq/durabull` followed by `/plugin install durabull@durabull`. Text tools and skills work without an embedded UI.
 - **Self-hosted:** generate an independent package with `bun run mcp:plugin --endpoint https://queues.example.com/mcp --out /tmp/durabull-plugin`. This updates both host configurations and every skill's MCP dependency. Connect to your own origin, not the Cloud URL.
