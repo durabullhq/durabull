@@ -1,8 +1,11 @@
-# MCP Phase 1 — Spec Compliance Checklist
+# MCP — Spec Compliance Checklist
 
-**GA target:** Read-only hosted MCP at `{APP_BASE_URL}/mcp`  
-**Verified on branch:** `feat/no-linear-mcp-pr08-ga-readiness` (2026-05-28)  
-**Stack:** PR-02 through PR-07 merged on `main`; PR-08 closes GA.  
+**Capability target:** Hosted diagnostics and explicitly scoped non-destructive writes at `{APP_BASE_URL}/mcp`
+
+**Initial evidence:** `feat/no-linear-mcp-pr08-ga-readiness` (2026-05-28); phase 2 evidence recorded 2026-09-09
+
+**Status:** Implementation coverage below is separate from current test results, staging validation, and release approval.
+
 **Index:** [mcp-ga-index.md](./mcp-ga-index.md)
 
 ## Transport (Streamable HTTP)
@@ -10,10 +13,10 @@
 | Requirement | Status | Evidence |
 | --- | --- | --- |
 | `GET` / `POST` / `DELETE` on `/mcp` | Done | [validation evidence](./mcp-ga-validation-evidence.md) |
-| MCP `initialize` + session handling | Done | `apps/api/src/mcp/mount.test.ts` |
+| MCP modern discovery + stateless legacy `initialize` | Done | `apps/api/src/mcp/mount.test.ts` |
 | Host header validation | Done | `packages/mcp` allowed-hosts tests + `mount.test.ts` |
 | `/mcp` not captured by SPA static fallback | Done | `apps/api/src/mcp/mount.test.ts` |
-| Request size limits (API app) | Done | `packages/mcp/src/routes.ts` — 1MB body limit |
+| Request size limits (API app) | Done | `apps/api/src/app.ts` — 1 MiB body limit |
 
 ## OAuth discovery and bearer auth
 
@@ -58,7 +61,7 @@ Tool names and scopes: [ADR-0001 §3](./adr/0001-mcp-security-architecture.md) a
 | Requirement | Status | Evidence |
 | --- | --- | --- |
 | Output sanitization | Done | `sanitize-output.test.ts` |
-| Per-tool rate limits (heavy set from catalog; resources limited per name) | Done | `mcp-tool-rate-limit.test.ts` |
+| Agent workflow rate budgets (discovery/read/heavy/write; resources share work classes) | Done | `mcp-tool-rate-limit.test.ts` |
 | Alert delivery targets and channel secrets omitted from MCP output | Done | `read-handlers.test.ts`, `write-handlers.test.ts` |
 | Audit `input_hash` + `response_class` | Done | `mcp-audit.test.ts` |
 | `mcp_telemetry` signals | Done | `mount.test.ts` |
@@ -81,7 +84,7 @@ Operator gates: [release checklist — Pre-release](./mcp-ga-release-checklist.m
 | --- | --- |
 | Redis-backed rate limits for multi-replica | Phase 2 |
 | `packages/mcp-domain` extraction | Master plan §2.2 |
-| Pre-existing `alerts-global.test.ts` typecheck | Blocks full `@durabull/api` typecheck |
+| Typecheck and format failures outside MCP | Re-run repository checks; historical failures are recorded in validation evidence, not a current status guarantee |
 | Staging soak / validated SLOs | Post-GA; see release checklist draft SLOs |
 
 ## Sign-off

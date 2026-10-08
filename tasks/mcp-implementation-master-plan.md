@@ -1,10 +1,15 @@
 # MCP Implementation Master Plan (Technical Blueprint)
 
+> Historical planning and handoff record. Implementation and test results below describe the
+> work at the time they were recorded. For current behavior and release gates, use the
+> [MCP documentation index](../docs/mcp-ga-index.md) and the
+> [user guide](../apps/docs/content/documentation/integrations/mcp-server.mdx).
+
 ## Purpose
 
 Define **how** to implement Durabull's hosted MCP server end-to-end, with concrete architecture, auth/tokening, permission boundaries, tool contracts, and validation strategy.
 
-This document is the technical source of truth for implementation details.  
+This document records the original technical blueprint for the initial implementation.
 Use `tasks/mcp-pr-execution-playbook.md` for sequencing and handoff execution.
 Security architecture baseline and threat model are anchored in `docs/adr/0001-mcp-security-architecture.md`.
 

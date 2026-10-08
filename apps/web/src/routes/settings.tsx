@@ -17,18 +17,13 @@ function LegacySettingsRedirect() {
   const search = Object.fromEntries(
     new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).entries()
   )
-  const destination = search.linear ? '/$orgSlug/settings/integrations' : '/$orgSlug/settings/connections'
+  const destination = search.linear
+    ? '/$orgSlug/settings/integrations'
+    : '/$orgSlug/settings/connections'
 
   if (!activeOrgSlug) {
     return <Navigate to="/" replace />
   }
 
-  return (
-    <Navigate
-      to={destination}
-      params={{ orgSlug: activeOrgSlug }}
-      search={search}
-      replace
-    />
-  )
+  return <Navigate to={destination} params={{ orgSlug: activeOrgSlug }} search={search} replace />
 }

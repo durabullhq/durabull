@@ -203,9 +203,7 @@ export function BulkResolveDialog({
         </div>
 
         <DialogFooter className="items-center gap-3 sm:justify-between">
-          <span className="text-sm text-muted-foreground">
-            {visibleSelectedCount} selected
-          </span>
+          <span className="text-sm text-muted-foreground">{visibleSelectedCount} selected</span>
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Close

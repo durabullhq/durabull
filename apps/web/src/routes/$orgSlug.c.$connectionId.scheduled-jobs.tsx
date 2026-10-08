@@ -612,7 +612,9 @@ function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: St
         {loading ? (
           <Skeleton className="h-8 w-12" />
         ) : (
-          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">{value}</div>
+          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
+            {value}
+          </div>
         )}
       </CardContent>
     </Card>

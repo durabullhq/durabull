@@ -64,9 +64,7 @@ export function signWebhookPayload(
   body: string
 ): { signature: string; timestamp: string } {
   const timestampValue = String(timestamp)
-  const digest = createHmac('sha256', secret)
-    .update(`${timestampValue}.${body}`)
-    .digest('hex')
+  const digest = createHmac('sha256', secret).update(`${timestampValue}.${body}`).digest('hex')
   return {
     signature: `sha256=${digest}`,
     timestamp: timestampValue,
@@ -83,7 +81,9 @@ export function classifyWebhookHttpStatus(status: number): { retryable: boolean;
   return { retryable: false, message: `Webhook endpoint returned HTTP ${status}.` }
 }
 
-export async function deliverWebhook(request: WebhookDeliveryRequest): Promise<WebhookDeliveryResult> {
+export async function deliverWebhook(
+  request: WebhookDeliveryRequest
+): Promise<WebhookDeliveryResult> {
   const startedAt = Date.now()
 
   let endpoint: ResolvedWebhookEndpoint
@@ -114,9 +114,14 @@ export async function deliverWebhook(request: WebhookDeliveryRequest): Promise<W
   }
 
   try {
-    const { statusCode, responseBodySnippet } = await postPinnedWebhook(endpoint, headers, request.body, {
-      timeoutMs: WEBHOOK_TIMEOUT_MS,
-    })
+    const { statusCode, responseBodySnippet } = await postPinnedWebhook(
+      endpoint,
+      headers,
+      request.body,
+      {
+        timeoutMs: WEBHOOK_TIMEOUT_MS,
+      }
+    )
     const durationMs = Date.now() - startedAt
     const classification = classifyWebhookHttpStatus(statusCode)
 

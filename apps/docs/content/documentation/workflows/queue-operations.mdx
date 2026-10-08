@@ -18,14 +18,16 @@ This page combines queue summary, jobs table, and scheduled-job tab.
 - `POST /api/c/:connectionId/queues/:queueName/pause`
 - `POST /api/c/:connectionId/queues/:queueName/resume`
 
-Use pause during incidents, downstream outages, or controlled maintenance.
+Pause prevents workers from picking up new jobs; jobs already active continue processing. Use it
+during downstream outages or maintenance, and resume after the underlying issue is resolved.
 
 ### Clean Queue by Status
 
 - `POST /api/c/:connectionId/queues/:queueName/clean`
-- Requires `status`, optional `gracePeriod`, optional `limit`
+- Requires `status`; optional `gracePeriod` in milliseconds (default `0`) and `limit` (default `1000`).
 
-Supported clean statuses include `completed`, `failed`, `delayed`, `paused`, `waiting`, and `active` (mapped internally to BullMQ equivalents).
+Supported clean statuses are `completed`, `failed`, `delayed`, `paused`, `waiting`, `active`,
+and `prioritized` (mapped internally to BullMQ equivalents).
 
 ### Purge Queue Jobs (Guarded + Multi-Status)
 
@@ -34,12 +36,12 @@ Supported clean statuses include `completed`, `failed`, `delayed`, `paused`, `wa
   - `confirmName` (must exactly match queue name)
   - `statuses` (one or more specific statuses, or `["all"]`)
 
-This is designed for full destructive cleanup of selected queue states.
+Purge removes jobs in the selected states. It excludes `waiting-children` and does not remove schedulers.
 
 Operational behavior:
 
 - users can select any status combination (`waiting`, `active`, `delayed`, `completed`, `failed`, `paused`, `prioritized`)
-- users can choose full purge via `statuses: ["all"]`
+- users can choose all supported statuses via `statuses: ["all"]`
 - confirmation input only authorizes purge when exact queue name is entered
 
 Response includes:
@@ -48,6 +50,10 @@ Response includes:
 - `totalRemoved`
 - `removedByStatus`
 - `removedJobIdsSample` (sample only)
+
+Optional `keepMostRecent` preserves the newest N jobs across the selected statuses (default `0`,
+maximum `1000000`). Locked jobs may remain or cause a conflict, depending on the removal path.
+A purge is not atomic: a `409` can occur after some jobs have already been removed.
 
 ### Purge Flow in the UI
 
@@ -61,13 +67,17 @@ Response includes:
 
 - `POST /api/c/:connectionId/queues/:queueName/obliterate`
 
-Removes queue data forcefully. Use only with clear intent.
+Forcefully removes queue data and its discovery index entry. Unlike the guarded delete endpoint,
+this endpoint does not require `confirmName` or check job counts. Stop producers and workers
+before using it; a running application can recreate the queue.
 
 ### Delete Queue (Guarded)
 
 - `DELETE /api/c/:connectionId/queues/:queueName`
 - Requires `confirmName` that must match queue name
-- Refuses deletion if active queue states still contain jobs
+- Refuses deletion while waiting, active, delayed, failed, paused, or prioritized jobs remain.
+- Completed jobs do not block deletion; deletion removes their data too.
+- The pre-flight check does not count `waiting-children`; inspect dependent jobs separately.
 
 Use pre-flight check route:
 
@@ -75,10 +85,7 @@ Use pre-flight check route:
 
 ## Safe Deletion Procedure
 
-1. Purge jobs by status (`POST /api/c/:connectionId/queues/:queueName/purge`) until queue is empty, or clean statuses manually.
-2. Confirm queue is deletable via `can-delete`.
-3. Delete with exact queue name confirmation.
-
-Screenshot placeholder: queue action menu showing pause/purge/delete controls.
-
-Video placeholder: safe queue cleanup and delete flow.
+1. Stop producers, remove schedulers that would create new jobs, and stop workers after active jobs finish.
+2. Purge or clean the supported states, then inspect and handle `waiting-children` separately.
+3. Confirm queue is deletable via `can-delete`.
+4. Delete with exact queue name confirmation.

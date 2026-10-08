@@ -10,9 +10,7 @@ interface TelemetryCollectReplayCacheEntry {
   expiresAtMs: number
 }
 
-export function createTelemetryCollectReplayCache(options?: {
-  maxEntries?: number
-}) {
+export function createTelemetryCollectReplayCache(options?: { maxEntries?: number }) {
   const maxEntries = options?.maxEntries ?? DEFAULT_REPLAY_MAX_ENTRIES
   const store = new Map<string, TelemetryCollectReplayCacheEntry>()
 
@@ -70,9 +68,7 @@ export function signTelemetryCollectBody(
   rawBody: string
 ): { signature: string; timestamp: string } {
   const timestampValue = String(timestamp)
-  const digest = createHmac('sha256', secret)
-    .update(`${timestampValue}.${rawBody}`)
-    .digest('hex')
+  const digest = createHmac('sha256', secret).update(`${timestampValue}.${rawBody}`).digest('hex')
 
   return {
     signature: `sha256=${digest}`,
@@ -119,11 +115,8 @@ export function verifyTelemetryCollectSignature(input: {
     return { ok: false, error: 'invalid' }
   }
 
-  const signatureExpiresAtMs =
-    (timestampSec + TELEMETRY_COLLECT_SIGNATURE_TOLERANCE_SEC) * 1000
-  if (
-    defaultReplayCache.consume(provided, nowSec * 1000, signatureExpiresAtMs) === 'replay'
-  ) {
+  const signatureExpiresAtMs = (timestampSec + TELEMETRY_COLLECT_SIGNATURE_TOLERANCE_SEC) * 1000
+  if (defaultReplayCache.consume(provided, nowSec * 1000, signatureExpiresAtMs) === 'replay') {
     return { ok: false, error: 'replay' }
   }
 

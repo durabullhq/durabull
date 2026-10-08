@@ -68,16 +68,21 @@ describe('mcpPolicyRepository', () => {
       })
       .returning()
 
-    const { secret, record } = await mcpPolicyRepository.issueServiceAccountSecret(serviceAccount.id, {
-      label: 'initial',
-    })
+    const { secret, record } = await mcpPolicyRepository.issueServiceAccountSecret(
+      serviceAccount.id,
+      {
+        label: 'initial',
+      }
+    )
 
     expect(secret.startsWith('dbsa_')).toBe(true)
     expect(record.secretHash.includes(secret)).toBe(false)
-    expect(await mcpPolicyRepository.verifyServiceAccountSecret(serviceAccount.id, secret)).toBe(true)
-    expect(await mcpPolicyRepository.verifyServiceAccountSecret(serviceAccount.id, 'dbsa_invalid')).toBe(
-      false
+    expect(await mcpPolicyRepository.verifyServiceAccountSecret(serviceAccount.id, secret)).toBe(
+      true
     )
+    expect(
+      await mcpPolicyRepository.verifyServiceAccountSecret(serviceAccount.id, 'dbsa_invalid')
+    ).toBe(false)
   })
 
   it('rotates service-account secrets and revokes previous active ones', async () => {
@@ -108,11 +113,11 @@ describe('mcpPolicyRepository', () => {
       label: 'rotated',
     })
 
-    expect(await mcpPolicyRepository.verifyServiceAccountSecret(serviceAccount.id, initial.secret)).toBe(
-      false
-    )
-    expect(await mcpPolicyRepository.verifyServiceAccountSecret(serviceAccount.id, rotated.secret)).toBe(
-      true
-    )
+    expect(
+      await mcpPolicyRepository.verifyServiceAccountSecret(serviceAccount.id, initial.secret)
+    ).toBe(false)
+    expect(
+      await mcpPolicyRepository.verifyServiceAccountSecret(serviceAccount.id, rotated.secret)
+    ).toBe(true)
   })
 })

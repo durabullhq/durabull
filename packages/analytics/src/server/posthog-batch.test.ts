@@ -60,13 +60,15 @@ describe('sendPosthogBatch', () => {
       },
     ]
 
-    globalThis.fetch = (async () => {
-      return {
-        ok: true,
-        status: 200,
-        body: { cancel },
-      } as unknown as Response
-    }) as typeof fetch
+    globalThis.fetch = Object.assign(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          body: { cancel },
+        }) as unknown as Response,
+      { preconnect: mock(() => {}) }
+    )
 
     const accepted = await sendPosthogBatch(
       { posthogBatchUrl: 'https://us.i.posthog.com/batch/', posthogKey: 'phc_test' },
@@ -88,13 +90,15 @@ describe('sendPosthogBatch', () => {
       },
     ]
 
-    globalThis.fetch = (async () => {
-      return {
-        ok: false,
-        status: 302,
-        body: { cancel },
-      } as unknown as Response
-    }) as typeof fetch
+    globalThis.fetch = Object.assign(
+      async () =>
+        ({
+          ok: false,
+          status: 302,
+          body: { cancel },
+        }) as unknown as Response,
+      { preconnect: mock(() => {}) }
+    )
 
     const accepted = await sendPosthogBatch(
       { posthogBatchUrl: 'https://us.i.posthog.com/batch/', posthogKey: 'phc_test' },

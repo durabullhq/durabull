@@ -1,11 +1,13 @@
-import { readFile, readdir } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createSearchAPI, type Index } from 'fumadocs-core/search/server'
+import { structure } from 'fumadocs-core/mdx-plugins'
+import { type AdvancedIndex, createSearchAPI } from 'fumadocs-core/search/server'
 
 export const dynamic = 'force-static'
 
 const docsRoot = resolve(process.cwd(), 'content/documentation')
 
+/** Turn a directory slug into a breadcrumb label. */
 function toTitleCase(segment: string): string {
   return segment
     .split('-')
@@ -13,6 +15,7 @@ function toTitleCase(segment: string): string {
     .join(' ')
 }
 
+/** Read simple string metadata separately from the MDX body. */
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?/)
   if (!match) return { frontmatter: {}, body: content }
@@ -32,22 +35,13 @@ function parseFrontmatter(content: string): { frontmatter: Record<string, string
   }
 }
 
-function stripMdxSyntax(content: string): string {
-  return content
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`[^`]*`/g, ' ')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/[#>*_~|-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
+/** Map an MDX source path to its documentation URL, including the index page. */
 function relativePathToUrl(relativePath: string): string {
   if (relativePath === 'index.mdx') return '/documentation'
   return `/documentation/${relativePath.replace(/\.mdx$/, '')}`
 }
 
+/** Recursively collect the MDX sources used to build the search index. */
 async function collectMdxFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true })
   const files: string[] = []
@@ -67,9 +61,10 @@ async function collectMdxFiles(dir: string): Promise<string[]> {
   return files
 }
 
-async function buildIndexes(): Promise<Index[]> {
+/** Index page metadata, headings, and prose for section-level browser search. */
+async function buildIndexes(): Promise<AdvancedIndex[]> {
   const files = await collectMdxFiles(docsRoot)
-  const indexes: Index[] = []
+  const indexes: AdvancedIndex[] = []
 
   for (const fullPath of files) {
     const relativePath = fullPath.replace(`${docsRoot}/`, '')
@@ -84,16 +79,17 @@ async function buildIndexes(): Promise<Index[]> {
           .pop()!
       )
     const description = frontmatter.description
-    const content = stripMdxSyntax(body)
+    const url = relativePathToUrl(relativePath)
     const segments = relativePath.split('/').slice(0, -1)
     const breadcrumbs = ['Documentation', ...segments.map(toTitleCase)]
 
     indexes.push({
+      id: url,
       title,
       description,
       breadcrumbs,
-      content,
-      url: relativePathToUrl(relativePath),
+      structuredData: structure(body),
+      url,
       keywords: `${title} ${description ?? ''}`.trim(),
     })
   }
@@ -101,8 +97,9 @@ async function buildIndexes(): Promise<Index[]> {
   return indexes
 }
 
-const searchAPI = createSearchAPI('simple', {
+const searchAPI = createSearchAPI('advanced', {
   indexes: () => buildIndexes(),
 })
 
-export const GET = process.env.NEXT_OUTPUT === 'export' ? searchAPI.staticGET : searchAPI.GET
+/** Serve the browser-searchable index in both server and static deployments. */
+export const GET = searchAPI.staticGET

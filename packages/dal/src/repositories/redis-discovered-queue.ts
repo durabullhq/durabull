@@ -49,7 +49,10 @@ export const redisDiscoveredQueueRepository = {
       .select()
       .from(redisDiscoveredQueue)
       .where(
-        and(eq(redisDiscoveredQueue.connectionId, connectionId), eq(redisDiscoveredQueue.name, name))
+        and(
+          eq(redisDiscoveredQueue.connectionId, connectionId),
+          eq(redisDiscoveredQueue.name, name)
+        )
       )
       .limit(1)
 

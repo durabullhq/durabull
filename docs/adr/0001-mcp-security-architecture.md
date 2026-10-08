@@ -1,18 +1,18 @@
 # ADR-0001: MCP Security Architecture
 
-**Status:** Accepted  
-**Date:** 2026-05-28 (phase 1); amended 2026-09-09 (phase 2 capability surface)  
+**Status:** Accepted
+**Date:** 2026-05-28 (phase 1); amended 2026-09-09 (phase 2 capability surface)
 **Supersedes:** N/A (initial ADR; deployable placement amended from early drafts that referenced standalone `apps/mcp`)
 
 ## Context
 
 Durabull exposes a hosted, remote MCP server so AI clients can perform queue diagnostics (jobs, failures, logs, metrics, scheduled jobs, Redis health, alerts) and a small set of **non-destructive operations** (retry, promote, pause/resume, alert acknowledge/resolve/snooze) without direct Redis access. Remote MCP transport requires OAuth 2.1 bearer tokens, tenant isolation, and output safety because tool responses may contain customer job payloads and logs.
 
-Phase 1 (GA 2026-05) shipped read-only tools. Phase 2 (2026-09) added descriptions, annotations, structured output, resources, prompts, more read tools, and explicitly scoped write tools. Phase 2 also corrected a phase-1 defect: `resolve_alert_event` mutated state but was gated by the read scope `mcp:failures:read`.
+Phase 1 (2026-05) introduced diagnostic tools and a `resolve_alert_event` action under a read scope; production approval was tracked separately in the release checklist. Phase 2 (2026-09) added descriptions, annotations, structured output, resources, prompts, more read tools, and explicitly scoped write tools. Phase 2 also corrected a phase-1 defect: `resolve_alert_event` mutated state but was gated by the read scope `mcp:failures:read`.
 
 ## Decision
 
-### 1. Deployable placement (phase 1)
+### 1. Deployable placement
 
 MCP runs on the **same origin, same process, and same public port** as the unified Durabull API + web app.
 
@@ -24,7 +24,7 @@ MCP runs on the **same origin, same process, and same public port** as the unifi
 
 Canonical resource URI: `{APP_BASE_URL}/mcp` (no trailing slash unless client libraries require consistency everywhere).
 
-**Not in phase 1:** standalone `apps/mcp` deployable, second public MCP port (`3020`), dual-process Docker supervisors.
+**Not part of the current deployment:** standalone `apps/mcp` deployable, second public MCP port (`3020`), dual-process Docker supervisors.
 
 ### 2. Module boundaries
 
@@ -44,6 +44,12 @@ The catalog in `packages/mcp/src/tools/tool-catalog.ts` is the single source of 
 **Write tools** (`readOnlyHint=false`, `destructiveHint=false`): `resolve_alert_event`, `acknowledge_alert_event`, `unacknowledge_alert_event`, `snooze_alert_rule`, `unsnooze_alert_rule`, `retry_job`, `promote_job`, `pause_queue`, `resume_queue`. Each requires exactly one write scope. Write tools never mutate job payloads.
 
 **Not exposed, by design:** job removal, queue clean/purge/obliterate/delete, job data edits, scheduler create/update/delete, arbitrary Redis key access, connection or alert-rule CRUD. These have no MCP scope and cannot be granted.
+
+**2026-10 protocol and UI upgrade:** SDK v2 serves protocol 2026-07-28 through `createMcpHandler`, with stateless legacy compatibility. No principal or domain data is retained in transport sessions. Present Origin headers are validated before CORS/auth; absent Origin is accepted for server clients. Authenticated data remains `Cache-Control: no-store`. Dynamic list-change subscriptions are not advertised; the UI refreshes explicitly.
+
+**MCP App:** `ui://durabull/queue-explorer-v1.html` is a bundled, data-free HTML/JS/CSS resource. It requires a resolved authenticated principal and `mcp:discover`; service accounts need no separate policy binding for this exact shell. All other resource and tool policies remain enforced. The browser uses the host bridge exclusively, with empty network/frame CSP allowlists, no stored credentials, and text-only rendering of untrusted values. UI mutation buttons send a user request to the host agent. The browser also enforces the catalog's read-only allowlist; refreshing a mutation result reads the affected entity. Write tools advertise model-only UI visibility; this is a host presentation restriction, not an authorization boundary.
+
+**Platform metadata:** standard MCP Apps resource metadata is shared. OpenAI-only global/thread entrypoints and security-scheme mirrors are additive. The top-level `securitySchemes` field is emitted via the SDK's public tools/list handler because SDK v2 registration drops unknown fields. `openai/widgetDomain` uses the deployment origin; standard `ui.domain` is omitted so Claude chooses its own sandbox. Public OpenAI submission must verify that origin is unique to this plugin.
 
 **Resources** (`durabull://` URIs, authorized like tools): `server`, `connections`, `connections/{id}/queues`, `connections/{id}/queues/{queueName}`, `connections/{id}/alerts`. Unknown URIs are rejected before reaching the MCP server.
 
@@ -100,7 +106,7 @@ The five read scopes form the bundle injected into authorize requests that omit 
 ### 8. Operational controls
 
 - Host header allowlist on `/mcp` (includes `APP_BASE_URL` host).
-- Ingress + per-operation in-memory rate limits (per-process; shared backend deferred for multi-replica). `resources/read` is limited under `resource:<name>`; heavy tools are flagged in the catalog.
+- Ingress plus authenticated work-class token buckets (per-process; shared backend deferred for multi-replica). Setup/discovery, ordinary reads, catalog-heavy diagnostics and mutations have independent burst/refill budgets keyed by validated user and OAuth client. Token refresh does not reset work budgets. Resource reads share the corresponding work class. The ingress wildcard covers the root route; requests are charged only once. See the operations runbook for capacities and retry semantics.
 - Structured `mcp_telemetry` JSON logs for policy denies, rate limits, tool outcomes.
 
 ## Threat model (summary)
@@ -124,7 +130,7 @@ The five read scopes form the bundle injected into authorize requests that omit 
 - Single deployment simplifies TLS, OAuth resource URI, and operator docs.
 - Clear security boundary in code despite unified process.
 - Read tools remain the default grant; write capability is opt-in per scope and visible on consent.
-- One catalog drives registration, policy, rate limiting, and docs, so they cannot drift.
+- One catalog drives registration, policy, and rate limiting. Consistency tests check documented tool/scope coverage; descriptions and examples still need review against the implementation.
 
 **Negative / accepted debt**
 

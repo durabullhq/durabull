@@ -78,9 +78,7 @@ export function getRetentionCount(value: boolean | number | undefined): string {
   return typeof value === 'number' ? String(value) : '100'
 }
 
-function parseBackoff(
-  backoff: unknown
-): Pick<JobOptionsFormValue, 'backoffMode' | 'backoffDelay'> {
+function parseBackoff(backoff: unknown): Pick<JobOptionsFormValue, 'backoffMode' | 'backoffDelay'> {
   if (typeof backoff === 'number') {
     return {
       backoffMode: 'fixed',
@@ -92,7 +90,7 @@ function parseBackoff(
     backoff &&
     typeof backoff === 'object' &&
     'type' in backoff &&
-  (backoff.type === 'fixed' || backoff.type === 'exponential') &&
+    (backoff.type === 'fixed' || backoff.type === 'exponential') &&
     'delay' in backoff &&
     typeof backoff.delay === 'number'
   ) {
@@ -169,10 +167,7 @@ export function validateJobOptionsFormValue(
   }
 
   const backoffDelayValue = parseOptionalWholeNumber(value.backoffDelay)
-  if (
-    value.backoffMode !== 'none' &&
-    (backoffDelayValue === undefined || backoffDelayValue < 1)
-  ) {
+  if (value.backoffMode !== 'none' && (backoffDelayValue === undefined || backoffDelayValue < 1)) {
     errors.backoff = 'Backoff delay must be greater than 0.'
   }
 

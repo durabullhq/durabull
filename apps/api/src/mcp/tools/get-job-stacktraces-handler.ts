@@ -1,9 +1,6 @@
 import { getQueue } from '../../lib/redis'
 import { toRedisConnectionOptions } from '../../lib/connection-options'
-import type {
-  GetJobStacktracesHandlerInput,
-  GetJobStacktracesHandlerOutput,
-} from '@durabull/mcp'
+import type { GetJobStacktracesHandlerInput, GetJobStacktracesHandlerOutput } from '@durabull/mcp'
 import { McpToolError, decodeCursor, encodeCursor, requireConnectionForPrincipal } from './shared'
 
 interface GetJobStacktracesHandlerDeps {
@@ -28,7 +25,10 @@ export function createGetJobStacktracesHandler(
     )
     const job = await queue.getJob(input.jobId)
     if (!job) {
-      throw new McpToolError('not_found', `Job ${input.jobId} not found in queue ${input.queueName}.`)
+      throw new McpToolError(
+        'not_found',
+        `Job ${input.jobId} not found in queue ${input.queueName}.`
+      )
     }
 
     const allStacktraces = job.stacktrace ?? []

@@ -1,7 +1,4 @@
-export type TelemetryQueueName =
-  | 'mcp_analytics'
-  | 'telemetry_collect'
-  | 'telemetry_events'
+export type TelemetryQueueName = 'mcp_analytics' | 'telemetry_collect' | 'telemetry_events'
 
 interface TelemetryQueueDropInput {
   dropped: number

@@ -22,13 +22,12 @@ export default function CommunityPage() {
         secondaryCta={{ label: 'View on GitHub', to: 'https://github.com/durabullhq/durabull' }}
         sections={[
           {
-            title: 'Office Hours',
-            description: 'Monthly calls to discuss roadmap updates and queue ops tips.',
+            title: 'Discuss queue operations',
+            description: "Share questions and feedback through the project's GitHub repository.",
           },
           {
-            title: 'Open Source',
-            description:
-              'Durabull is fully open source. Explore the codebase, self-host, and contribute on GitHub.',
+            title: 'Source Available',
+            description: 'Explore the codebase, self-host under ELv2, and contribute on GitHub.',
           },
           {
             title: 'Community Stories',

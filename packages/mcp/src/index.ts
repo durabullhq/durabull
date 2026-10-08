@@ -1,3 +1,4 @@
+export { MCP_APP_MIME_TYPE, MCP_APP_URI } from './apps/app-metadata'
 export {
   getCanonicalMcpResourceUri,
   getMcpProtectedResourceMetadataUrl,
@@ -13,6 +14,7 @@ export {
   MCP_ACCEPT_HEADER,
   MCP_CONTENT_TYPE,
   MCP_JSON_RPC_VERSION,
+  MCP_LEGACY_PROTOCOL_VERSION,
   MCP_PROTOCOL_VERSION,
   MCP_SERVER_NAME,
 } from './constants'

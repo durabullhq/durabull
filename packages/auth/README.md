@@ -1,118 +1,103 @@
 # @durabull/auth
 
-Authentication package using [Better Auth](https://www.better-auth.com/) with Drizzle ORM integration.
+Durabull's shared [Better Auth](https://www.better-auth.com/) configuration supports email/password
+login, Google and GitHub OAuth, sessions, organizations, invitations, and MCP OAuth consent.
+Database access uses `@durabull/dal` with PostgreSQL or PGlite.
 
-## Features
+## Configure authentication
 
-- **Email/Password Authentication** - Traditional sign-up and sign-in with email and password
-- **Social Login** - Google and GitHub OAuth providers
-- **Session Management** - Secure session handling with automatic token refresh
-- **Drizzle ORM Integration** - Uses the shared DAL package for database operations
+Create a repository-root `.env` using [`.env.example`](../../.env.example). Set:
 
-## Setup
+```dotenv
+DURABULL_AUTHLESS=false
+APP_BASE_URL=http://localhost:5173
+BETTER_AUTH_SECRET=<long-random-secret>
+DURABULL_REDIS_URL_ENCRYPTION_KEY=<64-character-hex-key>
+```
 
-### 1. Environment Variables
+Replace the placeholders with generated secrets. The normal development browser origin is
+`http://localhost:5173`, which proxies `/api/auth` to the API. For a deployment, use the public
+HTTPS origin instead.
 
-Create a `.env` file at the repo root. See [`.env.example`](../../.env.example) for the complete list of environment variables.
+Email/password login works without OAuth credentials. To enable a social provider, configure both
+its client ID and client secret:
 
-### 2. OAuth Provider Setup
+| Provider | Environment variables | Callback URI |
+| --- | --- | --- |
+| Google | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | `{APP_BASE_URL}/api/auth/callback/google` |
+| GitHub | `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | `{APP_BASE_URL}/api/auth/callback/github` |
 
-#### Google OAuth
+Register the exact callback with your provider. For Google, create a web application OAuth client
+in [Google Cloud Console](https://console.cloud.google.com/). For GitHub, create an OAuth App in
+[GitHub developer settings](https://github.com/settings/developers).
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one
-3. Navigate to "APIs & Services" > "Credentials"
-4. Click "Create Credentials" > "OAuth client ID"
-5. Configure the consent screen if prompted
-6. Select "Web application" as the application type
-7. Add authorized redirect URIs:
-   - `http://localhost:3001/api/auth/callback/google` (development)
-8. Copy the Client ID and Client Secret
+The DAL applies migrations when the database first initializes. Auth uses the `user`, `session`,
+`account`, and `verification` tables, organization membership/invitation tables, and MCP OAuth tables.
+Do not configure a separate database for this package.
 
-#### GitHub OAuth
+## Server usage
 
-1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
-2. Click "New OAuth App"
-3. Fill in the application details:
-   - Homepage URL: `http://localhost:3001`
-   - Authorization callback URL: `http://localhost:3001/api/auth/callback/github`
-4. Copy the Client ID and generate a Client Secret
-
-### 3. Database Migrations
-
-The auth tables are automatically created when the API server starts. The migration creates:
-
-- `user` - User profiles
-- `session` - Active sessions
-- `account` - OAuth provider accounts and credentials
-- `verification` - Email verification tokens
-
-## Usage
-
-### Server-side (API)
-
-```typescript
+```ts
 import { createAuth } from '@durabull/auth'
 
 const auth = await createAuth({
-  baseURL: 'http://localhost:3001',
+  baseURL: 'http://localhost:5173',
+  trustedOrigins: ['http://localhost:5173'],
 })
 
-// Use auth.handler for handling auth requests
 app.all('/api/auth/*', (c) => auth.handler(c.req.raw))
 ```
 
-### Client-side (React)
+The API's [`getAuth()`](../../apps/api/src/lib/auth.ts) supplies the app origin and an invitation
+email sender when Resend is configured. Use that shared instance in the API rather than creating
+another auth instance for every request.
 
-```typescript
+## Browser usage
+
+The package exports its client from `@durabull/auth/client`; it follows the current browser origin.
+The web app wraps those helpers with `useAuth` in `apps/web/src/hooks/use-auth.ts`.
+
+```tsx
 import { useAuth } from '@/hooks/use-auth'
 
-function MyComponent() {
+function AccountMenu() {
   const { user, isAuthenticated, signIn, signOut } = useAuth()
 
   if (!isAuthenticated) {
-    return <button onClick={() => signIn.social({ provider: 'google' })}>Sign In</button>
+    return <button onClick={() => signIn.social({ provider: 'google' })}>Sign in</button>
   }
 
-  return (
-    <div>
-      <p>Welcome, {user.name}!</p>
-      <button onClick={() => signOut()}>Sign Out</button>
-    </div>
-  )
+  return <button onClick={() => signOut()}>Sign out {user?.name}</button>
 }
 ```
 
-## API Endpoints
+Social providers do not implicitly create a new user on sign-in. Use the explicit sign-up or
+account-linking flow when the account does not already exist.
 
-Better Auth provides the following endpoints under `/api/auth/`:
+## Common endpoints
 
-- `POST /api/auth/sign-up/email` - Email/password registration
-- `POST /api/auth/sign-in/email` - Email/password login
-- `POST /api/auth/sign-out` - Sign out
-- `GET /api/auth/session` - Get current session
-- `GET /api/auth/sign-in/social?provider=google` - Google OAuth
-- `GET /api/auth/sign-in/social?provider=github` - GitHub OAuth
-- `GET /api/auth/callback/:provider` - OAuth callbacks
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/auth/sign-up/email` | Register with email/password |
+| `POST` | `/api/auth/sign-in/email` | Sign in with email/password |
+| `POST` | `/api/auth/sign-in/social` | Start social sign-in; provider is in the JSON body |
+| `POST` | `/api/auth/sign-out` | Sign out |
+| `GET` | `/api/auth/get-session` | Better Auth session snapshot |
+| `GET` | `/api/auth/callback/:provider` | OAuth callback |
+| `GET` | `/api/session` | Durabull session snapshot including organization context |
 
-## Architecture
+MCP clients use a separate bearer flow; see the [OAuth operator guide](../../docs/mcp-oauth-operator.md).
+Authless mode is handled by the API and bypasses ordinary login. It does not create an external
+identity boundary for callers.
 
-```
-packages/auth/
-├── src/
-│   ├── index.ts    # Server-side auth configuration
-│   └── client.ts   # Client-side auth hooks (React)
-├── package.json
-└── tsconfig.json
-```
+## Security behavior
 
-The auth package depends on:
-- `@durabull/dal` - Database schema and client
-- `better-auth` - Authentication library
+- Email verification is currently **not required in any environment**. Enabling it requires a
+  change to `createAuth` and an email-verification sender; there is no environment toggle.
+- Sessions expire after seven days, with a one-day update age and five-minute cookie cache.
+- Account linking is enabled for trusted Google/GitHub providers, including different email addresses.
+- Use HTTPS and trusted origins in production, keep `.env` private, and preserve the auth secret.
+- Organization creation is enabled for users. Apply deployment access controls appropriate to your team.
 
-## Security Notes
-
-1. **BETTER_AUTH_SECRET**: Always use a strong, random secret in production
-2. **HTTPS**: Use HTTPS in production for secure cookie handling
-3. **Email Verification**: Currently disabled for development; enable in production
-4. **CORS**: Configure trusted origins appropriately for your deployment
+See [Security and Hardening](../../apps/docs/content/documentation/operations/security-and-hardening.mdx)
+for the full deployment guidance.

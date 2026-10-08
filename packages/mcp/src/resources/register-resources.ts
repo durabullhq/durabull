@@ -1,5 +1,9 @@
-import { type McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
+import {
+  type McpServer,
+  ProtocolError,
+  ProtocolErrorCode,
+  ResourceTemplate,
+} from '@modelcontextprotocol/server'
 
 import { MCP_SERVER_NAME } from '../constants'
 import { MCP_PROMPT_CATALOG } from '../prompts/prompt-catalog'
@@ -21,6 +25,7 @@ export interface RegisterResourcesOptions {
 
 const RESOURCE_PAGE_SIZE = 100
 
+/** Fail during registration if a resource lacks its shared policy and metadata definition. */
 function requireResource(name: string): McpResourceDefinition {
   const definition = getMcpResourceDefinition(name)
   if (!definition) {
@@ -29,14 +34,19 @@ function requireResource(name: string): McpResourceDefinition {
   return definition
 }
 
+/** Extract one required URI-template value or report invalid protocol parameters. */
 function variable(value: string | string[] | undefined): string {
   const single = Array.isArray(value) ? value[0] : value
   if (!single) {
-    throw new McpError(ErrorCode.InvalidParams, 'Resource URI is missing a required segment.')
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
+      'Resource URI is missing a required segment.'
+    )
   }
   return single
 }
 
+/** Redact resource snapshots and report redaction counts before serializing content. */
 function jsonContents(uri: URL, definition: McpResourceDefinition, value: unknown) {
   const { value: sanitized, redactionCount } = sanitizeMcpOutput(value)
   const payload: Record<string, unknown> =
@@ -58,6 +68,7 @@ function jsonContents(uri: URL, definition: McpResourceDefinition, value: unknow
   }
 }
 
+/** Audit resource reads and translate handler failures into safe protocol errors. */
 async function readResource(
   definition: McpResourceDefinition,
   uri: URL,
@@ -81,19 +92,26 @@ async function readResource(
       connectionId,
       responseClass: 'tool_error',
     })
-    if (error instanceof McpError) throw error
+    if (error instanceof ProtocolError) throw error
     const toolError = toToolError(error)
-    throw new McpError(
-      toolError.code === 'internal_error' ? ErrorCode.InternalError : ErrorCode.InvalidParams,
+    throw new ProtocolError(
+      toolError.code === 'internal_error'
+        ? ProtocolErrorCode.InternalError
+        : ProtocolErrorCode.InvalidParams,
       `${toolError.code}: ${toolError.message}`
     )
   }
 }
 
+/** Report a resource whose backing handler is not installed on this server. */
 function unavailable(name: string): never {
-  throw new McpError(ErrorCode.MethodNotFound, `Resource ${name} is not available on this server.`)
+  throw new ProtocolError(
+    ProtocolErrorCode.MethodNotFound,
+    `Resource ${name} is not available on this server.`
+  )
 }
 
+/** Describe the catalogs and effective scopes visible in the current request context. */
 export function buildServerInfo(version: string) {
   const context = getMcpRequestContext()
   return {
@@ -109,6 +127,7 @@ export function buildServerInfo(version: string) {
     tools: MCP_TOOL_CATALOG.map((tool) => ({
       name: tool.name,
       title: tool.title,
+      description: tool.description,
       readOnly: tool.annotations.readOnlyHint,
       requiredScopes: [...tool.requiredScopes],
       optionalScopes: [...tool.optionalScopes],
@@ -116,16 +135,19 @@ export function buildServerInfo(version: string) {
     resources: MCP_RESOURCE_CATALOG.map((resource) => ({
       name: resource.name,
       uriTemplate: resource.uriTemplate,
+      description: resource.description,
       requiredScopes: [...resource.requiredScopes],
     })),
     prompts: MCP_PROMPT_CATALOG.map((prompt) => ({
       name: prompt.name,
       title: prompt.title,
+      description: prompt.description,
       arguments: prompt.arguments.map((argument) => argument.name),
     })),
   }
 }
 
+/** Register addressable snapshots backed by the same handlers as tool reads. */
 export function registerResources(server: McpServer, options: RegisterResourcesOptions): void {
   const handlers = options.toolHandlers
 

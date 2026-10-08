@@ -1,5 +1,5 @@
-import Link from 'next/link'
 import { Github, Twitter } from 'lucide-react'
+import Link from 'next/link'
 import { DurabullLogo, DurabullWordmark } from '@/components/durabull-logo'
 
 const footerLinks = {
@@ -124,7 +124,7 @@ export function Footer() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span className="status-dot active" />
-              All systems operational
+              BullMQ operations
             </span>
           </div>
         </div>

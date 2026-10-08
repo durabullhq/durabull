@@ -9,7 +9,7 @@ description: Configure authless or Better Auth mode and understand organization-
 
 Use when operating in trusted private environments.
 
-```bash
+```dotenv
 DURABULL_AUTHLESS=true
 ```
 
@@ -23,15 +23,25 @@ Behavior:
 
 Use for team and internet-facing deployments.
 
-```bash
+```dotenv
 DURABULL_AUTHLESS=false
 BETTER_AUTH_SECRET=<long-random-secret>
 ```
+
+Email/password sign-up and login are enabled by default. Email verification is not currently
+required, including in production. Restrict app access according to your deployment's needs.
 
 Optional OAuth providers:
 
 - Google: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`
 - GitHub: `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`
+
+Set `APP_BASE_URL` to your public app origin. Register callbacks at
+`{APP_BASE_URL}/api/auth/callback/google` or `{APP_BASE_URL}/api/auth/callback/github`.
+Normal local development uses `http://localhost:5173` through the Vite proxy.
+
+Social sign-in does not implicitly create new users. Use the explicit sign-up or account-linking
+flow for a new social account.
 
 ## Organization Model
 
@@ -62,7 +72,3 @@ Use this when:
 
 - Migrating from password login to OAuth
 - Enabling multiple sign-in methods for the same account
-
-Screenshot placeholder: login/signup/invite acceptance screens.
-
-Video placeholder: member invite from owner to accepted user session.

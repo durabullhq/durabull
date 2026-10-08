@@ -1,5 +1,10 @@
 # Handoff: Analytics package split + MCP product telemetry
 
+> Historical planning and handoff record. Implementation and test results below describe the
+> work at the time they were recorded. For current behavior and release gates, use the
+> [MCP documentation index](../docs/mcp-ga-index.md) and the
+> [user guide](../apps/docs/content/documentation/integrations/mcp-server.mdx).
+
 **Branch:** `main`
 **Last verified:** 2026-05-28 — P3 focused telemetry/web/docs checks passed; unrelated current-main checks noted below
 **Timeline:** #107 → #108 → #109 → #110 → #112 → #113 (all merged) → **P3 complete locally**

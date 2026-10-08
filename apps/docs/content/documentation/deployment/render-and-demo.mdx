@@ -1,61 +1,68 @@
 ---
 title: Render and Demo Account Pipeline
-description: Deploy Durabull with Render blueprint and understand the automated demo data refresh architecture.
+description: Configure a Render deployment and safely refresh a dedicated demo Redis database.
 ---
 
-## Render Blueprint
+## Deploy on Render
 
-Durabull Cloud uses a Render blueprint (maintained with the deployment; not always present in the public repository). Typical services:
+Deploy the published Durabull Docker image as a Render web service, or build from the repository
+using `tooling/docker/Dockerfile` with the repository root as the Docker build context. Follow
+[Render's Docker deployment guide](https://render.com/docs/docker) or its
+[prebuilt image guide](https://render.com/docs/deploying-an-image) for the current service setup.
+Pin a release tag or digest for repeatable deployments.
 
-- `durabull` web service
-- `demo-redis` managed Redis (Render KV)
-- `seed-demo-account` cron job (every 12 hours)
+Configure these settings on the web service:
 
-## MCP on Durabull Cloud
+- Public origin: set `APP_BASE_URL` and `VITE_PUBLIC_APP_URL` to your HTTPS app origin.
+- Authentication: keep `DURABULL_AUTHLESS=false` and set `BETTER_AUTH_SECRET`.
+- Encryption: set `DURABULL_REDIS_URL_ENCRYPTION_KEY` before adding Redis connections.
+- Persistence: use `DATABASE_URL` for PostgreSQL, or persist `/app/data` when using PGlite.
+- Redis: supply a URL reachable from the web service, using TLS when the provider requires it.
+- Health check: use `/api/health`, then separately confirm login and Redis connectivity.
 
-The `durabull` web service exposes MCP on the **same hostname and port** as the API and web UI:
+See [Environment Variables](/documentation/getting-started/environment-variables) for the full
+configuration and [Docker Image and Compose](/documentation/deployment/docker) for storage,
+backup, and upgrade requirements. The public repository does not provide a ready-to-deploy
+Render blueprint; configure your own services rather than relying on private Cloud service names.
 
-```txt
+## MCP on the same service
+
+The web service exposes MCP on the same hostname and port as the API and web UI:
+
+```text
 https://<your-app-domain>/mcp
 ```
 
-There is no separate Render service or MCP port. Set `APP_BASE_URL` on the web service to the public HTTPS origin (for example `https://app.durabull.io`) so OAuth resource metadata advertises `{APP_BASE_URL}/mcp`.
+There is no separate MCP service or port. Set `APP_BASE_URL` to the public HTTPS origin so OAuth
+resource metadata advertises the correct `/mcp` URL.
 
-Post-deploy: [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md). Run `mcp:e2e` on **staging only** when validating auth changes — it registers OAuth clients and writes tokens to the database.
+Follow the [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md)
+after deployment. Run `mcp:e2e` only in staging or a disposable local environment: it registers
+OAuth clients and writes tokens to the database.
 
-## Demo Refresh Pipeline
+## Optional demo refresh pipeline
 
-The cron job:
+`tooling/scripts/seed-demo-account.ts` creates realistic queues, jobs, schedulers, and Redis keys
+for a dedicated demo instance. It **flushes the entire selected Redis database** before seeding.
+Use an isolated, disposable database containing no production or shared application data.
 
-- reads `DURABULL_DEMO_ACCOUNT_REDIS_CONNECTION_STRING`
-- flushes the demo Redis database
-- reseeds realistic queues/jobs/scheduled jobs/redis keys
-- writes health metadata keys
+To run it manually from the repository root:
 
-Reference:
+```bash
+DURABULL_DEMO_ACCOUNT_REDIS_CONNECTION_STRING=redis://127.0.0.1:6379 bun run docker:seed:demo
+```
 
-- `tooling/scripts/seed-demo-account.ts` (cron invokes this script; see file header for `DURABULL_DEMO_ACCOUNT_REDIS_CONNECTION_STRING`)
+Replace the URL with the dedicated demo target. Confirm the selected host and Redis database
+number before running. The example uses database `0`; it must be dedicated to this demo.
 
-## Demo Health Keys
+You can schedule the same command in a Render cron job. The script suggests a 12-hour refresh
+cadence, but it does not install or configure that schedule for you.
 
-- `durabull:demo:seed-metadata`
-- `durabull:demo:last-seeded`
+After a successful run:
 
-These can be checked from Redis CLI or monitoring scripts.
+1. Check the structured seed logs for completion and errors.
+2. Inspect `durabull:demo:seed-metadata` and `durabull:demo:last-seeded` in Redis.
+3. Open Durabull with the demo connection selected.
+4. Confirm that queues, delayed jobs, and scheduled jobs appear.
 
-## Manual Verification Steps
-
-1. Trigger `seed-demo-account` run from Render dashboard.
-2. Confirm successful run logs.
-3. Open Durabull using demo connection.
-4. Verify queues, delayed jobs, and scheduled jobs appear fresh.
-
-## Important Safety Rule
-
-The demo Redis instance is intentionally wiped every cycle.
-
-- Do not store production data in this instance.
-
-Screenshot placeholder: Render service overview and cron run logs.
-
-Video placeholder: end-to-end demo reseed verification.
+A refresh repopulates data; it does not run your workers or prove that jobs can complete.

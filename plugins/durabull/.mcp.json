@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "durabull": {
+      "type": "http",
+      "url": "https://app.durabull.io/mcp"
+    }
+  }
+}

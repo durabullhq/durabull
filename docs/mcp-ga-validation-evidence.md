@@ -1,12 +1,15 @@
 # MCP — Validation Evidence
 
+These are dated implementation results. Rerun the commands from the repository root for the
+release under review; historical passes do not satisfy current release gates.
+
 ## Phase 2 (2026-09-09) — catalog, structured output, resources, prompts, write tools
 
 ```bash
-cd packages/mcp && bunx tsc --noEmit && bun test      # 68 pass (12 files)
-cd packages/auth && bun test                             # 8 pass
-cd apps/api && bunx tsc --noEmit && bun test src/mcp     # 81 pass (14 files)
-cd apps/web && bunx tsc --noEmit -p .                    # consent screen write-scope badge
+(cd packages/mcp && bunx tsc --noEmit && bun test)      # 68 pass (12 files)
+(cd packages/auth && bun test)                             # 8 pass
+(cd apps/api && bunx tsc --noEmit && bun test src/mcp)     # 81 pass (14 files)
+(cd apps/web && bunx tsc --noEmit -p .)                    # consent screen write-scope badge
 ```
 
 New or extended coverage:
@@ -20,10 +23,10 @@ New or extended coverage:
 - `apps/api/src/mcp/tools/write-handlers.test.ts`, `read-handlers.test.ts` — every new handler validated against its output schema; secrets/targets stripped; state guards return `conflict`.
 - `apps/api/src/mcp/mount.test.ts` — full catalog advertised; write tools return `403 insufficient_scope` for read-bundle tokens; `resources/read` authorized and unknown URIs rejected with `400`; prompts served; `structuredContent` returned.
 
-# Phase 1 — Validation Evidence (PR-08)
+## Phase 1 — Validation Evidence (PR-08)
 
-**Recorded:** 2026-05-28  
-**Branch:** `feat/no-linear-mcp-pr08-ga-readiness`  
+**Recorded:** 2026-05-28
+**Branch:** `feat/no-linear-mcp-pr08-ga-readiness`
 **Base:** `origin/main` (includes PR #99 PR-07)
 
 ## Commands executed

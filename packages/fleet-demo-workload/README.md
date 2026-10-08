@@ -50,12 +50,12 @@ Notes:
 - By default, queue names remain generic (`user-welcome`, `order-processing`, etc.).
 - Enable `WORKLOAD_NAMESPACE_QUEUES=true` if this workload shares Redis with other Bull workloads and you need strict isolation.
 - Startup resets this workload's known queue keys by default, then trims retained BullMQ data to the configured limits before scheduled jobs are upserted. Set `WORKLOAD_RESET_ON_BOOT=false` to keep queue history between restarts.
-- On Render, use the full internal Redis URL (often `rediss://...` with credentials) and make sure env changes are applied to the worker service before restart.
+- Use the complete Redis URL supplied by your hosting provider, including its credentials, database number, and TLS scheme. Apply environment changes to the workload service before restarting it.
 
 ## Run
 
 ```bash
-bun --filter @durabull/fleet-demo-workload start
+bun run --filter @durabull/fleet-demo-workload start
 ```
 
 or:
@@ -74,6 +74,7 @@ bun run dev
 
 Prerequisites:
 
-- Redis reachable at `WORKLOAD_REDIS_URL` (defaults to `redis://localhost:6379`)
+- Redis reachable at `WORKLOAD_REDIS_URL`; if unset, the workload uses `REDIS_URL`, then `redis://127.0.0.1:6379`.
+- Use a disposable Redis database: startup resets known demo queues by default. Namespacing avoids collisions but is not a separate database or access boundary.
 - If you start Durabull with root `bun run dev`, this workload is not included by default.
   Use `bun run workload:dev` or `bun run dev:demo` from the repo root when you want it.

@@ -1,33 +1,26 @@
 ---
 title: Installation
-description: Install Durabull for self-hosted use with a clear first-run checklist and validation steps.
+description: Install Durabull locally with Docker, or build a self-hosted instance from source.
 ---
 
-This guide gives you a practical installation path for self-hosted Durabull.
+For a first run, use Docker. For desktop installation, see
+[Desktop Apps](/documentation/getting-started/desktop-apps). If you need to choose authentication
+or persistence first, read [Self Hosting Setup](/documentation/self-hosting/setup).
 
-If you want the native desktop app instead, use
-[Desktop Apps](/documentation/getting-started/desktop-apps) for Apple Silicon macOS, Windows, and
-Homebrew installation options.
+## Try it locally with Docker
 
-If you are unsure which mode to pick first, start with
-[Self Hosting Setup](/documentation/self-hosting/setup).
-
-## Option A: Quick Install with Docker (Recommended)
-
-1. Create a Docker network and start Redis:
+This example starts an empty Redis instance and an ephemeral Durabull instance. Docker and
+OpenSSL must be installed.
 
 ```bash
 docker network create durabull
 docker run -d --name durabull-redis --network durabull redis:8-alpine
-```
 
-2. Run Durabull with the published image:
-
-```bash
-docker run --rm -p 3000:3000 --network durabull \
+docker run --rm -p 127.0.0.1:3000:3000 --network durabull \
   -e DURABULL_AUTHLESS=true \
+  -e MCP_AUTHLESS_BEARER_TOKEN="$(openssl rand -hex 32)" \
   -e DURABULL_ENV_CONNECTIONS=true \
-  -e DURABULL_REDIS_URL_ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  -e DURABULL_REDIS_URL_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
   -e DURABULL_REDIS_URL_MAIN=redis://durabull-redis:6379 \
   -e DURABULL_REDIS_URL_MAIN_ENVIRONMENT=development \
   -e DURABULL_REDIS_URL_DEFAULT=MAIN \
@@ -36,58 +29,74 @@ docker run --rm -p 3000:3000 --network durabull \
   ghcr.io/durabullhq/durabull:latest
 ```
 
-3. Open `http://localhost:3000`.
+Open **http://localhost:3000**. Queues appear after your BullMQ application writes to this Redis
+instance. To inspect existing queues, replace `DURABULL_REDIS_URL_MAIN` with a Redis URL reachable
+**from the container**; `localhost` inside the container refers to the container itself.
 
-For a full Compose setup and persistence notes, see
-[Docker Image and Compose](/documentation/deployment/docker).
+This command binds Durabull to localhost. Authless mode grants owner access to the entire web UI
+and HTTP API. `MCP_AUTHLESS_BEARER_TOKEN` protects only MCP, and is required by production images
+when authless mode is enabled. If you want to use an MCP client, supply a token you have saved
+securely instead of generating an unknown value inline.
 
-Production and self-hosted Durabull automatically collects anonymous/pseudonymous usage telemetry
-to understand feature usage and improve the product. Durabull does not collect Redis URLs, queue
-names, Redis key names, job data, logs, emails, names, organizations, or raw error messages.
+The app container is removed when it exits, including its local database. For persistent data,
+authenticated Compose deployment, image version pinning, and production configuration, continue
+to [Docker Image and Compose](/documentation/deployment/docker).
 
-## Option B: Install from Source
-
-1. Install dependencies:
-
-```bash
-bun install
-```
-
-2. Pick your mode in `.env`:
+After stopping the app with Ctrl+C, remove this example's Redis container and network:
 
 ```bash
-DURABULL_AUTHLESS=true
-DURABULL_ENV_CONNECTIONS=true
-DURABULL_REDIS_URL_ENCRYPTION_KEY=<openssl-rand-hex-32>
-DURABULL_REDIS_URL_MAIN=redis://localhost:6379
-DURABULL_REDIS_URL_MAIN_ENVIRONMENT=development
-DURABULL_REDIS_URL_DEFAULT=MAIN
-APP_BASE_URL=http://localhost:5173
-VITE_PUBLIC_APP_URL=http://localhost:5173
+docker rm -f durabull-redis
+docker network rm durabull
 ```
 
-3. Start services:
+This also discards the example Redis data.
+
+## Run from source
+
+For contributor development, follow [Local Development](/documentation/getting-started/local-development).
+For a production build, install Bun `1.3.5` and a compatible Node.js version (`20.19+` or `22.12+`), then:
 
 ```bash
-bun run dev:authless
+git clone https://github.com/durabullhq/durabull.git
+cd durabull
+bun install --frozen-lockfile
+cp .env.example .env
 ```
 
-For full local infrastructure, seeded data, and contributor workflows, see
-[Local Development](/documentation/getting-started/local-development).
+Edit `.env` before starting. Replace all secret placeholders with generated values, set the public
+app URLs, configure a reachable Redis instance, and choose PostgreSQL (`DATABASE_URL`) or PGlite
+(clear `DATABASE_URL`). The example's database and Redis URLs target the development Docker stack;
+replace them for your deployment.
 
-## First-Run Validation Checklist
+For an authenticated deployment, keep `DURABULL_AUTHLESS=false`. Configure environment-managed
+Redis connections or add connections through the UI. See
+[Environment Variables](/documentation/getting-started/environment-variables) for a complete reference.
 
-- `GET /api/health` returns `status: ok`
-- `GET /api/app/config` returns `200`
-- `GET /api/mode` matches expected auth, connection, and persistence mode
-- Queues load in the dashboard for your selected connection
-- Job details, scheduled jobs, and workers pages load without API errors
+```bash
+NODE_ENV=production bun run prod
+```
 
-## Next Steps After Install
+The build creates the web assets and the API serves them on port `3000` by default. Use a process
+supervisor and a reverse proxy with HTTPS for a lasting deployment. Database migrations run
+when Durabull initializes its database.
 
-1. Read [How to Use Durabull](/documentation/getting-started/how-to-use-durabull).
-2. Configure [Connection Management](/documentation/getting-started/connection-management).
-3. Standardize naming with
-   [Queue and Scheduled Job Naming Best Practices](/documentation/workflows/naming-best-practices).
-4. Adopt structured logs with
-   [Log Formatting and Highlighting](/documentation/workflows/log-formatting-and-highlighting).
+## Verify the installation
+
+```bash
+curl -fsS http://localhost:3000/api/health
+curl -fsS http://localhost:3000/api/mode
+```
+
+Use your public origin instead of localhost for a remote deployment. Confirm:
+
+- Health returns `status: "ok"` and `/api/app/config` returns JSON.
+- Mode reports the authentication, connection, and persistence choices you configured.
+- Login works when authentication is enabled.
+- The selected Redis connection shows your expected queues and job details.
+
+## Next steps
+
+- [Connection Management](/documentation/getting-started/connection-management)
+- [How to Use Durabull](/documentation/getting-started/how-to-use-durabull)
+- [Security and Hardening](/documentation/operations/security-and-hardening)
+- [Usage telemetry disclosure](/documentation/getting-started/environment-variables#anonymous-usage-telemetry)

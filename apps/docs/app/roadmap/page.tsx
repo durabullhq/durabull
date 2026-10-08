@@ -35,11 +35,7 @@ export default function RoadmapPage() {
           {
             title: 'Next',
             description: 'Collaboration and workflow improvements.',
-            items: [
-              'Role-based access controls',
-              'Saved views and filters',
-              'Slack notifications',
-            ],
+            items: ['Role-based access controls', 'Saved views and filters', 'Slack notifications'],
           },
           {
             title: 'Later',

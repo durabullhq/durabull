@@ -1,117 +1,150 @@
 ---
 title: Local Development
-description: Contributor-focused local setup with fast authless mode or a full seeded stack.
+description: Set up the source code with a minimal authless run or a seeded PostgreSQL and Redis stack.
 ---
 
-If you are self-hosting for the first time, start with
-[Installation](/documentation/self-hosting/installation).
-
-This page is optimized for local contributor workflows.
+All commands on this page run from the repository root unless stated otherwise. For a deployed
+instance, use [Installation](/documentation/self-hosting/installation).
 
 ## Prerequisites
 
-- Bun `1.3+`
-- Node.js `20.19+` or `22.12+` for the Vite web app
-- Redis (local or remote)
-- Optional: Docker (for Postgres + Redis local stack)
-
-## Path A: Fast Local Run (Authless + Env Connections)
-
-This is the fastest onboarding path and avoids full auth setup.
+- Bun `1.3.5`, the version used by the repository and CI.
+- Node.js `20.19+` or `22.12+` for the Vite web app.
+- A reachable Redis instance, or Docker with Compose to start one.
 
 ```bash
-bun install
+git clone https://github.com/durabullhq/durabull.git
+cd durabull
+bun install --frozen-lockfile
+```
+
+## Option A: Minimal local run
+
+Use this path to try the dashboard without configuring login or PostgreSQL. If Redis is not
+already running, start a disposable local instance:
+
+```bash
+docker run -d --name durabull-dev-redis -p 127.0.0.1:6379:6379 redis:8-alpine
+```
+
+Then start the API and web app:
+
+```bash
 bun run dev:authless
 ```
 
-`dev:authless` defaults:
+Open **http://localhost:5173**. The API runs at **http://localhost:3001/api**; Vite proxies API and
+MCP requests from the web origin.
 
-- `DURABULL_AUTHLESS=true`
-- `DURABULL_ENV_CONNECTIONS=true`
-- `DURABULL_REDIS_URL_MAIN` from `REDIS_URL` or `redis://localhost:6379`
-- `DURABULL_REDIS_URL_DEFAULT=MAIN`
+The launcher supplies defaults for authless mode, environment-managed connections, a `MAIN`
+connection at `redis://localhost:6379`, and development-only secrets. Existing shell variables
+override those defaults. It does **not** start Redis or unset `DATABASE_URL`.
 
-App URLs:
-
-- API: `http://localhost:3001/api`
-- Web: `http://localhost:5173`
-
-Security note:
-
-- Authless mode disables login and identity checks.
-- Do not expose authless mode directly to the public internet.
-
-## Path B: Full Local Stack (Postgres + Redis + Seeded Data)
-
-1. Start infrastructure:
+If a repository `.env` already configures PostgreSQL and you want PGlite instead, run:
 
 ```bash
-bun docker
+DATABASE_URL= bun run dev:authless
 ```
 
-If another local Postgres container already uses Durabull's default host port, set
-`DURABULL_POSTGRES_PORT` in your `.env` (for example `55433`) and keep
-`DATABASE_URL` on the same port.
-
-Set a Redis URL encryption key in `.env` before seeding:
+To use another Redis instance, set the connection explicitly:
 
 ```bash
-DURABULL_REDIS_URL_ENCRYPTION_KEY=$(openssl rand -hex 32)
+DURABULL_REDIS_URL_MAIN=redis://localhost:56379 bun run dev:authless
 ```
 
-2. Seed realistic development data:
+Authless mode gives every visitor owner access. Keep this development stack on a trusted machine
+or behind access controls. An empty Redis instance has no queues to display.
 
-```bash
-bun docker:seed
-```
+## Option B: Full stack with sample data
 
-Optional worker simulation:
+This path starts PostgreSQL and Redis in Docker and creates sample users, organizations, queues,
+jobs, and schedulers.
 
-```bash
-bun docker:seed:workers
-```
+1. Copy the example configuration:
 
-3. Run app services:
+   ```bash
+   cp .env.example .env
+   openssl rand -hex 32
+   ```
 
-```bash
-bun run dev
-```
+   In `.env`, replace `DURABULL_REDIS_URL_ENCRYPTION_KEY` with the generated value. Generate a
+   separate value for `DURABULL_SECRET_ENCRYPTION_KEY` and another random secret for
+   `BETTER_AUTH_SECRET`. Leave `DURABULL_AUTHLESS` and `DURABULL_ENV_CONNECTIONS` unset or `false`
+   for the authenticated, database-managed workflow.
 
-`bun run dev` starts the API and web app only. If you also want the synthetic ecommerce
-traffic generator, run it separately:
+   `.env` is a dotenv file: paste the generated values into it. Shell expressions such as
+   `$(openssl rand -hex 32)` are **not** evaluated when the file is loaded.
+
+2. Start infrastructure and seed it:
+
+   ```bash
+   bun docker
+   bun docker:seed
+   ```
+
+   Defaults are PostgreSQL at `localhost:55432` and Redis at `localhost:56379`. If you change
+   `DURABULL_POSTGRES_PORT` or `DURABULL_REDIS_PORT`, update `DATABASE_URL` or `REDIS_URL` to match.
+
+3. Start the app:
+
+   ```bash
+   bun run dev
+   ```
+
+4. Open **http://localhost:5173** and sign in with `admin@example.com` / `password`.
+   Select **Acme Corporation → Acme Production** to explore the seeded data. These credentials
+   are for disposable development data only.
+
+For mock workers, run `bun docker:seed:workers`; that command stays running until you stop it.
+
+## Generate continuous demo traffic
+
+`bun run dev` starts only the API and web app. To add the workload generator in a separate terminal:
 
 ```bash
 bun run workload:dev
 ```
 
-Or run all three together:
+Or start the API, web app, and workload together:
 
 ```bash
 bun run dev:demo
 ```
 
-## Local Validation Checklist
+The workload uses `WORKLOAD_REDIS_URL`, then `REDIS_URL`, then `redis://127.0.0.1:6379`. It resets
+its known demo queues on startup by default. Use a disposable Redis database; see the
+[fleet workload guide](https://github.com/durabullhq/durabull/blob/main/packages/fleet-demo-workload/README.md)
+for isolation and retention settings.
 
-- `/api/health` returns `status: ok`
-- `/api/mode` returns expected auth/connection/persistence mode
-- Connections list loads in UI
-- Queues page shows discovered queues
-- Scheduled jobs/workers/redis explorer all load without API errors
-
-## Resetting Local Data
-
-- Wipe seeded state:
+## Check your setup
 
 ```bash
-bun docker:wipe
+curl -fsS http://localhost:3001/api/health
+curl -fsS http://localhost:3001/api/mode
 ```
 
-- Re-seed from scratch:
+Health should report `status: "ok"`; mode should match your authentication, connection, and
+persistence choices. Then verify connections, queues, job details, schedulers, and workers in the UI.
+Health confirms that the API responds; it does not test every Redis connection.
+
+## Work on the docs
 
 ```bash
-bun docker:seed
+bun run dev:docs
 ```
 
-Screenshot placeholder: terminal session of `dev:authless` and first dashboard load.
+Open **http://localhost:3002/documentation**. To validate the documentation site:
 
-Video placeholder: local bootstrap from clone to first queue inspection.
+```bash
+bun run --filter @durabull/docs typecheck
+bun run build:docs
+```
+
+## Reset development data
+
+`bun docker:down` stops containers without deleting their volumes. Starting them again preserves
+existing data.
+
+`bun docker:wipe` deletes data from the configured development database and Redis instance.
+Check the targets in `.env` before running it, then use `bun docker:seed` to recreate sample data.
+`bun docker:reset` removes Docker volumes and recreates the infrastructure.

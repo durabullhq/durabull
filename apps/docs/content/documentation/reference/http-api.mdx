@@ -3,16 +3,25 @@ title: HTTP API Reference
 description: Endpoint-level overview of Durabull API resources, capabilities, and key limits.
 ---
 
+This is an endpoint overview of the current HTTP API. Paths are relative to the app origin
+unless a section specifies a connection-scoped prefix. JSON request bodies need
+`Content-Type: application/json`. URL-encode path parameters such as queue names, job IDs, and Redis keys.
+
 ## Base URL
 
-All endpoints are mounted under:
+REST endpoints use `/api`. MCP transport uses `/mcp`, outside that prefix. In development, the
+API is at `http://localhost:3001`; the Vite web origin proxies `/api` to it.
 
-- `/api`
+```bash
+curl -fsS http://localhost:3001/api/health
+curl -fsS http://localhost:3001/api/mode
+```
 
 Bootstrap and health:
 
 - `GET /api/health`
 - `GET /api/app/config`
+- `GET /api/app/version`
 - `GET /api/mode`
 - `GET /api/telemetry/status`
 - `POST /api/telemetry/events`
@@ -22,7 +31,13 @@ Bootstrap and health:
 - Better Auth endpoints under `/api/auth/*`
 - Session snapshot: `GET /api/session`
 
-In authless mode, auth endpoints return authless-safe behavior for session/signout and reject unsupported auth actions.
+Protected REST routes use the Better Auth session and its active organization. Send the session
+cookie with requests made outside the browser. A valid session without an active organization
+can receive `403`; select or create an organization first. MCP OAuth bearer tokens authenticate
+`/mcp`; they do not replace the REST session flow.
+
+In authless mode, auth endpoints return local session/sign-out behavior and reject unsupported
+auth actions. All reachable callers have owner access.
 
 ## Remote App Config
 
@@ -30,7 +45,7 @@ In authless mode, auth endpoints return authless-safe behavior for session/signo
 
 Behavior:
 
-- Always returns `200` with JSON config.
+- Returns `200` with JSON config on a successful request; middleware or initialization failures can still produce errors.
 - Works for both authenticated and unauthenticated requests.
 - In authless mode, returns authless/runtime flags from server env and mode.
 - If a valid signed-in user is present (non-authless mode), the API attempts to update that user's `lastSignInAt` timestamp before returning config.
@@ -64,7 +79,7 @@ Field notes:
 - `authless`: whether `DURABULL_AUTHLESS` mode is active.
 - `envConnections`: whether env-driven connection mode is active.
 - `persistence`: server persistence mode (`postgres` or `pglite`).
-- `stateless`: `true` when running in `pglite` mode.
+- `stateless`: `true` when running in `pglite` mode. This is an API mode label; PGlite still persists state on disk.
 - `environment`: `NODE_ENV` (`development`, `test`, or `production`; defaults to `development`).
 - `posthog.enabled`: `true` when `POSTHOG_KEY` is set.
 - `posthog.key`: PostHog project key (or `null` when disabled). When set, Durabull preserves
@@ -73,7 +88,7 @@ Field notes:
 - `posthog.host`: always `/ingest` (Durabull's reverse-proxied analytics endpoint).
 - `posthog.uiHost`: PostHog UI host used by the frontend.
 - `telemetry.enabled`: whether Durabull anonymous/pseudonymous telemetry is active for this runtime.
-- `telemetry.collectionRequired`: always `true` for production/self-hosted usage.
+- `telemetry.collectionRequired`: always `true` as a disclosure flag, even when `telemetry.enabled` is false in development or CI.
 - `telemetry.dedupeIdentifiedPosthogEvents`: `true` only when the configured PostHog project is
   Durabull-managed, so anonymous Durabull telemetry can be deduplicated once a user has been
   identified in the same Durabull-owned PostHog stream.
@@ -89,16 +104,18 @@ existing cloud API at `POST /api/telemetry/collect`.
 `POSTHOG_KEY` configures a PostHog destination for the cloud product or instance owner. It does not
 disable Durabull anonymous telemetry, and Durabull does not provide a product-level telemetry
 opt-out. When a self-hosted owner provides `POSTHOG_KEY`, they receive the full PostHog browser
-stream for their project while Durabull still receives independently sanitized anonymous telemetry.
+stream for their project. Sanitized forwarding to Durabull requires a configured signing secret
+and is best-effort; see [Environment Variables](/documentation/getting-started/environment-variables#anonymous-usage-telemetry).
 
 Durabull telemetry includes feature and route usage, safe runtime context, booleans, enums, and
 aggregate buckets. It does not include Redis URLs, queue names, Redis key names, job data, logs,
 emails, names, organizations, hostnames, raw URLs, search patterns, stack traces, or raw error
 messages.
 
-Telemetry endpoints return `202` after a sanitized event or batch is accepted into the bounded
-background queue. If the queue is full, the endpoint returns `503` and the API emits a stdout
-`telemetry_queue` signal with `signal: "queue_dropped"` and the operational queue name. That signal
+When telemetry is enabled, endpoints return `202` after accepting a sanitized event or batch
+into the bounded background queue. When disabled, `/events` returns `202` with `accepted: false`
+and `enabled: false`, without enqueueing. If the queue is full, the endpoint returns `503` and
+the API emits a stdout `telemetry_queue` signal with `signal: "queue_dropped"` and the operational queue name. That signal
 contains only queue depth counters and does not include product event properties.
 
 ## Connection Management
@@ -110,7 +127,43 @@ contains only queue depth counters and does not include product event properties
 - `DELETE /api/connections/:id`
 - `POST /api/connections/test`
 
-When `DURABULL_ENV_CONNECTIONS=true`, create/update/delete routes return `403`.
+When `DURABULL_ENV_CONNECTIONS=true`, create/update/delete routes return `403`. The test route is
+still available. Connection payloads support `name`, `url`, `environment`, `isDefault`, `prefix`,
+and `allowSelfSignedCerts`; set `prefix` to match the BullMQ application (default `bull`).
+
+### Organization resources
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/team/members` | List organization members |
+| `GET` | `/api/invitations/:id` | Public invitation preview |
+| `GET`, `PUT` | `/api/user-settings` | Read or update the signed-in user's theme |
+| `GET` | `/api/alerts/events` | List alert events across the organization |
+| `GET` | `/api/alerts/summary` | Organization alert summary |
+| `POST` | `/api/alerts/events/:eventId/resolve` | Resolve an event |
+| `POST`, `DELETE` | `/api/alerts/events/:eventId/acknowledge` | Acknowledge or clear acknowledgement |
+| `GET`, `POST` | `/api/alerts/destinations` | List or create reusable notification destinations |
+| `PATCH`, `DELETE` | `/api/alerts/destinations/:destinationId` | Update or delete a destination |
+| `POST` | `/api/alerts/destinations/:destinationId/test` | Test a destination |
+| `GET`, `POST` | `/api/alerts/webhook-destinations` | List or create saved webhooks |
+| `PATCH`, `DELETE` | `/api/alerts/webhook-destinations/:destinationId` | Update or delete a saved webhook |
+| `POST` | `/api/alerts/webhook-destinations/:destinationId/test` | Send a test webhook |
+
+Organization event lists accept `offset`, `limit` (maximum `100`), `status`, `acknowledged`, and
+optional `connectionId`. Member/invitation mutations are provided by the Better Auth organization
+endpoints under `/api/auth`, rather than `/api/team`.
+
+### Linear integration
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET`, `PUT`, `DELETE` | `/api/alerts/integrations/linear` | Read, configure defaults, or disconnect |
+| `POST` | `/api/alerts/integrations/linear/connect` | Start OAuth authorization |
+| `GET` | `/api/alerts/integrations/linear/callback` | OAuth callback |
+| `POST` | `/api/alerts/integrations/linear/test` | Validate the connected integration |
+| `GET` | `/api/alerts/integrations/linear/metadata` | Fetch teams and routing metadata |
+
+See [Linear Integration](/documentation/integrations/linear) for configuration and delivery behavior.
 
 ## Connection-Scoped Resources
 
@@ -121,6 +174,8 @@ All routes below are under:
 ### Queues
 
 - `GET /queues`
+- `GET /queues/discovery`
+- `POST /queues/discovery`
 - `GET /queues/:queueName`
 - `GET /queues/:queueName/metrics`
 - `POST /queues/:queueName/pause`
@@ -130,6 +185,9 @@ All routes below are under:
 - `POST /queues/:queueName/obliterate`
 - `DELETE /queues/:queueName`
 - `GET /queues/:queueName/can-delete`
+
+Queue discovery scans for `<prefix>:*:meta` and stores the discovered inventory. `POST /queues/discovery`
+starts a scan and returns `202`; add `wait=true` to wait for completion and receive `200`.
 
 ### Jobs
 
@@ -142,6 +200,24 @@ All routes below are under:
 - `POST /queues/:queueName/jobs/retry`
 - `POST /queues/:queueName/jobs/remove`
 - `POST /queues/:queueName/jobs/invoke`
+- `POST /queues/:queueName/jobs/:jobId/data`
+- `POST /queues/:queueName/jobs/:jobId/retry`
+- `POST /queues/:queueName/jobs/:jobId/logs/clear`
+- `POST /queues/:queueName/jobs/:jobId/stacktraces/clear`
+
+Job listing accepts `status`, `name`, `jobId`, and `data` search. Without search filters, `page`,
+index `cursor` (not Redis SCAN), and `pageSize` paginate results with a maximum page size of `100`.
+Name and payload searches return all matches for client-side pagination. `jobId` tries an exact
+lookup first; if absent, it returns all matching ID substrings. These searches scan the selected
+job states and can be expensive on large queues.
+
+Data edits require `{ "data": ... }` and return `409` while a job is active. Single-job retry accepts
+`{}` or `{ "data": ... }` and requires a failed job. Bulk retry accepts either `jobIds` (maximum `100`)
+or `statuses` (`failed`, `completed`, or `all`), but not both. Retrying completed work can repeat
+application side effects.
+
+The two `/clear` routes accept `{ "keepMostRecent": N }`, defaulting to `0`. They permanently
+remove older logs or stack traces. `DELETE .../logs` removes all logs.
 
 `POST /queues/:queueName/jobs` accepts optional BullMQ job options alongside `name` and `data`:
 
@@ -217,6 +293,35 @@ Optional query parameters:
 - `priorities`
 - `includePrometheus`
 
+### Redis Health History
+
+- `GET /metrics/redis-health`
+
+Query parameters: `windowMinutes` (`5`–`43200`, default `1440`) and `targetPoints` (`30`–`1000`,
+default `480`). Returns bounded history, coverage, the latest sample, active thresholds, collection
+status, retention days, and the freshness threshold. This is separate from BullMQ throughput metrics.
+
+### Connection Alerts
+
+These paths are relative to `/api/c/:connectionId`:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET`, `POST` | `/alerts/rules` | List or create rules |
+| `PATCH`, `DELETE` | `/alerts/rules/:ruleId` | Update or delete a rule |
+| `POST`, `DELETE` | `/alerts/rules/:ruleId/snooze` | Snooze or unsnooze a rule |
+| `POST` | `/alerts/rules/:ruleId/test` | Evaluate a rule without creating an incident |
+| `GET` | `/alerts/events` | List events for this connection |
+| `POST` | `/alerts/events/resolve-bulk` | Resolve selected events |
+| `POST` | `/alerts/events/:eventId/resolve` | Resolve one event |
+| `POST`, `DELETE` | `/alerts/events/:eventId/acknowledge` | Acknowledge or clear acknowledgement |
+| `POST` | `/alerts/events/:eventId/deliveries/:deliveryId/retry` | Retry a failed delivery |
+| `POST` | `/alerts/webhooks/test` | Send a test to a custom webhook |
+
+Snooze requests use `{ "minutes": N }` with `1`–`10080` minutes. Rules support job failures,
+queue thresholds, failure rates, stalled queues, and Redis health conditions. See
+[Redis Health Alerts](/documentation/workflows/redis-health-alerts) and the integration guides.
+
 ### Redis Keys
 
 - `GET /redis-keys/search`
@@ -225,9 +330,9 @@ Optional query parameters:
 
 ## Rate Limits and Payload Constraints
 
-- General API and auth endpoints have in-memory rate limiting in production.
-- Connection test route uses stricter limits.
-- Request body limit is `1MB`.
+- Production general API limits are `600/minute`; auth is `50/10 seconds`; connection tests are `10/minute` per limiter key.
+- Limits are in-memory and per process; test, development, CI, or `DISABLE_RATE_LIMIT=true` skip them.
+- Request body limit is `1 MiB`.
 - Bulk job actions cap `jobIds` at `100` per request.
 - Pagination page sizes are typically capped at `100`.
 
@@ -239,14 +344,15 @@ Common status patterns:
 - `401`: unauthenticated
 - `403`: forbidden (org scope, env connection mode restrictions)
 - `404`: missing connection/resource
+- `409`: state conflict or partial operation failure
 - `429`: rate limited
 - `500`: internal error
+- `503`: service unavailable or telemetry queue full
 
-Screenshot placeholder: API explorer or cURL snippets with representative responses.
 
 ## Queue Purge API (Destructive)
 
-Use this endpoint to remove jobs from a queue by selected statuses, or purge all statuses in one operation.
+Use this endpoint to remove jobs from a queue by selected statuses, or purge all supported statuses in one operation.
 
 Route:
 
@@ -268,7 +374,7 @@ This route is intentionally destructive and always requires exact queue-name con
 }
 ```
 
-For full purge across all statuses:
+For all supported statuses (excluding `waiting-children` and schedulers):
 
 ```json
 {
@@ -288,11 +394,17 @@ Allowed `statuses` values:
 - `paused`
 - `prioritized`
 
+Optional `keepMostRecent` is an integer from `0` to `1000000` (default `0`). It keeps the newest
+N jobs across all selected statuses, ordered by finished, processed, or created timestamp.
+
 ### Operational Behavior
 
 - The API deduplicates requested statuses.
 - If `statuses` contains `all`, it expands to all purgeable statuses.
-- For each status, the API repeatedly calls BullMQ cleanup in batches of `1000` until the status is empty.
+- Without retention, the API cleans in batches of `1000`; prioritized jobs are removed individually.
+- With `keepMostRecent`, the API selects the newest jobs to retain, then removes the rest individually.
+- Locked jobs can remain or produce a conflict. A purge is not atomic; inspect counts after failure.
+- `all` expands to the listed purgeable statuses; it does not include `waiting-children` or remove schedulers.
 - A safety cap of `500` batches per status is enforced to avoid unbounded loops.
   - If reached, route returns `409` and indicates which status hit the cap.
 
@@ -303,6 +415,8 @@ Allowed `statuses` values:
   "success": true,
   "queueName": "send-welcome-email",
   "statusesPurged": ["waiting", "active", "failed"],
+  "keepMostRecent": 0,
+  "keptMostRecent": 0,
   "totalRemoved": 18,
   "removedByStatus": {
     "waiting": 3,
@@ -325,3 +439,4 @@ Notes:
   - empty/invalid `statuses` payload
 - `409`:
   - purge safety cap reached for a specific status
+  - job removal conflict (some earlier removals may already have succeeded)

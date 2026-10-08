@@ -2,7 +2,7 @@
 
 Operator guide for deploying, validating, and troubleshooting Durabull's hosted MCP endpoint on the **unified** API + web deployment.
 
-MCP is **always available** at `{APP_BASE_URL}/mcp` when the Durabull API process is running. There is no separate MCP service, container, or public port in phase 1.
+MCP is **always available** at `{APP_BASE_URL}/mcp` when the Durabull API process is running. There is no separate MCP service, container, or public port.
 
 For OAuth client setup and HTTP status semantics, see [mcp-oauth-operator.md](./mcp-oauth-operator.md).
 
@@ -21,6 +21,14 @@ For GA documentation (release gates, compliance, security closure, validation ev
 
 **Self-hosted:** publish a single app port (default `3000`). Do not expose a second port for MCP.
 
+### TLS and reverse proxy
+
+- Terminate TLS at your edge; forward to Durabull on the app port.
+- Path-based routing: `/mcp` must reach the Durabull API process (same upstream as `/api/*`).
+- Present the public hostname as `Host` to the upstream.
+- No second hostname is required for MCP.
+- WebSocket upgrades are not required for Streamable HTTP MCP.
+
 ## Required environment
 
 | Variable | Required | Purpose |
@@ -34,7 +42,7 @@ Optional MCP-related toggles:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DISABLE_RATE_LIMIT` | unset | When `true`, disables **all** in-memory API + MCP ingress + per-tool limits (not recommended in production) |
+| `DISABLE_RATE_LIMIT` | unset | When `true`, disables **all** in-memory API + MCP ingress + work-class limits (not recommended in production) |
 | `MCP_TELEMETRY_LOG` | enabled | Set `false` to suppress stdout `mcp_telemetry` JSON lines |
 | `MCP_AUTHLESS_BEARER_TOKEN` | dev-only default in non-prod | Strong secret required when `DURABULL_AUTHLESS=true` and `NODE_ENV=production` on isolated lab networks only |
 
@@ -64,6 +72,8 @@ curl -fsS "$APP_BASE_URL/api/health" | jq .
 curl -fsS "$APP_BASE_URL/.well-known/oauth-protected-resource" | jq .resource
 ```
 
+For the shipped Docker setup, use `APP_BASE_URL=http://localhost:3000` (or your configured port).
+
 Expect `resource` to equal `"${APP_BASE_URL}/mcp"` (no trailing slash unless your client requires it everywhere).
 
 ### 2. Unauthenticated challenge
@@ -73,7 +83,7 @@ HOST="${APP_BASE_URL#*://}"; HOST="${HOST%%/*}"
 curl -si -X POST "$APP_BASE_URL/mcp" \
   -H "Host: $HOST" \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"1.0"}}}' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"smoke","version":"1.0"}}}' \
   | head -20
 ```
 
@@ -94,16 +104,6 @@ APP_BASE_URL="$APP_BASE_URL" bun run mcp:e2e
 
 Better Auth mode expects `DATABASE_URL` on a **staging** database. Authless mode (Docker/production image): `DURABULL_AUTHLESS=true MCP_AUTHLESS_BEARER_TOKEN=... APP_BASE_URL=... bun run mcp:e2e`.
 
-### 4. Self-host Docker quick check
-
-After `docker compose up`:
-
-```bash
-export APP_BASE_URL=http://localhost:3000
-curl -fsS "$APP_BASE_URL/api/health"
-curl -fsS "$APP_BASE_URL/.well-known/oauth-protected-resource" | jq .resource
-```
-
 ## Observability
 
 ### Structured logs (`mcp_telemetry`)
@@ -113,8 +113,8 @@ Stdout JSON lines with `"type":"mcp_telemetry"`. Emitted signals today:
 | Signal | Meaning | Operator action |
 | --- | --- | --- |
 | `policy_denied` | Org/connection boundary or missing binding | Review principal org membership and `mcp_policy_binding` rows |
-| `rate_limited_ingress` | `/mcp` burst exceeded (120 req/min per key) | Fix client retry storms; add edge rate limiting — scaling replicas **increases** effective quota (per-process counters) |
-| `rate_limited_tool` | Per-tool cap hit | Reduce parallelism; see heavy-tool list below |
+| `rate_limited_ingress` | `/mcp` transport burst exhausted (600 capacity, 20 requests/sec refill) | Reduce retry storms; see limits below |
+| `rate_limited_tool` | Authenticated work-class budget exhausted (discovery/read/heavy/write) | Honor `Retry-After`, reduce parallelism; see [Agent workflow rate limits](#agent-workflow-rate-limits) |
 | `tool_success` / `tool_error` | Tool outcome | Correlate with `mcp_audit_event` |
 | `redaction_applied` | Sanitizer redacted fields | Expected for sensitive payloads |
 | `audit_dropped` / `audit_write_failed` | Audit backpressure/DB | Check Postgres load and `mcp_audit_event` health |
@@ -139,15 +139,25 @@ Example log shape:
 {"type":"telemetry_queue","signal":"queue_dropped","queueName":"mcp_analytics","count":1,"dropped":3,"inFlight":8,"queued":512}
 ```
 
-### Per-tool rate limits (60/min default, 30/min heavy tools)
+### Agent workflow rate limits
 
 Enforced when `NODE_ENV=production` (skipped in local `development` / `test` unless you run with production `NODE_ENV`).
 
-Heavy tools (**30/min**, flagged `heavy` in the catalog): `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `get_failure_events`, `get_queue_metrics`, `find_job`, `get_connection_overview`, `list_scheduled_jobs`, `get_redis_health`, `get_alert_summary`. All other tools default to **60/min per tool name**. `resources/read` is limited at **60/min per resource name** (`resource:<name>`).
+Authenticated requests share budgets by validated user plus OAuth client (or service-account client), so token refresh does not reset them. Different users and OAuth clients are isolated. Each budget refills continuously; rejected requests do not add debt. The capacity permits a burst, while refill controls sustained throughput.
 
-Draft SLO targets: [release checklist — Draft SLO candidates](./mcp-ga-release-checklist.md#draft-slo-candidates-not-validated).
+| Budget | Burst capacity | Refill per second | Applies to |
+| --- | --- | --- | --- |
+| Discovery/setup | 120 | 10 | Protocol discovery, prompts, ping, connections, server metadata and static App shell |
+| Reads | 180 | 6 | Ordinary queue/job/worker/rule reads |
+| Diagnostics | 90 | 3 | Catalog `heavy` tools and connection queue/alert resources |
+| Writes | 30 | 1 | All mutations together |
+| Transport | 600 | 20 | HTTP ingress per bearer hash or trusted IP for anonymous requests; OPTIONS excluded |
 
-Ingress limit (**120/min**) applies to all `/mcp` HTTP methods (initialize, session traffic, and `tools/call`), not only tool calls.
+The wildcard `/mcp/*` covers the root `/mcp` too. Register once; a per-request guard also prevents double charging. Setup has its own budget and remains available when diagnostics are exhausted. All four authenticated budgets remain subject to the transport ceiling.
+
+On exhaustion, HTTP 429 includes the computed `Retry-After` for the next token (normally one second with these defaults). JSON-RPC errors preserve the request ID and include `data.retryAfter` and `data.bucket`. The transport response uses `retryAfter` and `bucket`. `X-RateLimit-Reset` is seconds until that bucket fills, not the required retry delay. Use Retry-After for scheduling retries, and never replay an uncertain mutation without first reading its state.
+
+Policies live in `apps/api/src/mcp/middleware/rate-limit-policy.ts`. Storage is bounded to 4096 buckets per limiter, expires full idle entries and evicts least recently used entries when necessary. This is process-local abuse protection, not a cross-replica billing quota. OAuth registration retains its separate 20/minute limit.
 
 ### Audit table (`mcp_audit_event`)
 
@@ -167,7 +177,7 @@ LIMIT 50;
 Wire your aggregator to count per hour:
 
 - `mcp_telemetry` where `signal` = `policy_denied`
-- `mcp_telemetry` where `signal` in (`rate_limited_ingress`, `rate_limited_tool`)
+- `mcp_telemetry` where `signal` in (`rate_limited_ingress`, `rate_limited_tool`): transport burst exhaustion and authenticated work-class budget exhaustion, respectively
 - `mcp_telemetry` where `signal` = `tool_error`
 - `telemetry_queue` where `signal` = `queue_dropped`, grouped by `queueName`
 - HTTP `401` / `403` / `429` on `/mcp` (access logs or edge metrics)
@@ -198,15 +208,15 @@ Full checklist: see [mcp-oauth-operator.md](./mcp-oauth-operator.md). Common cau
 
 ### `429` on diagnostic tools
 
-**Cause:** Ingress **120 req/min** per bearer (or IP), or per-tool limits — **60/min** default, **30/min** for heavy tools listed above.
+**Cause:** A transport or work-class burst budget was exhausted; see [Agent workflow rate limits](#agent-workflow-rate-limits).
 
-**Fix:** Reduce client parallelism. Do not set `DISABLE_RATE_LIMIT` in production unless you enforce limits at the edge (it disables **all** API rate limiting, not only MCP).
+**Fix:** Honor Retry-After, use bounded concurrency and retain pagination cursors. Inspect the reported bucket; reconnecting does not increase an authenticated work budget. Do not set `DISABLE_RATE_LIMIT` in production unless you enforce limits at the edge (it disables **all** API rate limiting, not only MCP).
 
 ### Multi-replica rate limit drift
 
-Ingress and per-tool limits are **in-memory per process**. Each replica enforces its own window; adding replicas multiplies effective quota.
+Ingress and work-class limits are **in-memory per process**. Each replica enforces its own window; adding replicas multiplies effective quota.
 
-**Mitigation:** Terminate TLS at a shared edge limiter with global limits, or plan Redis-backed limits (not shipped in phase 1).
+**Mitigation:** Terminate TLS at a shared edge limiter with global limits, or plan Redis-backed limits (not currently shipped).
 
 ## Key rotation
 
@@ -219,16 +229,8 @@ Ingress and per-tool limits are **in-memory per process**. Each replica enforces
 
 After rotation, run `mcp:e2e` on **staging/local** before closing the change.
 
-## TLS and reverse proxy
-
-- Terminate TLS at your edge; forward to Durabull on the app port.
-- Path-based routing: `/mcp` must reach the Durabull API process (same upstream as `/api/*`).
-- Present the public hostname as `Host` to the upstream.
-- No second hostname is required for MCP in phase 1.
-- WebSocket upgrades are not required for Streamable HTTP MCP in phase 1.
-
 ## Related documentation
 
-- User-facing: `apps/docs/content/documentation/integrations/mcp-server.mdx`
+- User-facing: [MCP Server](../apps/docs/content/documentation/integrations/mcp-server.mdx)
 - OAuth: [mcp-oauth-operator.md](./mcp-oauth-operator.md)
-- Security: `apps/docs/content/documentation/operations/security-and-hardening.mdx`
+- Security: [Security and Hardening](../apps/docs/content/documentation/operations/security-and-hardening.mdx)

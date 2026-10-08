@@ -64,7 +64,9 @@ export function buildQueueAddOptions(input: JobOptionsInput): JobsOptions {
   return options
 }
 
-export function buildTemplateOptions(input: JobTemplateOptionsInput | undefined): JobTemplateOptionsInput | undefined {
+export function buildTemplateOptions(
+  input: JobTemplateOptionsInput | undefined
+): JobTemplateOptionsInput | undefined {
   if (input === undefined) {
     return undefined
   }

@@ -5,6 +5,7 @@
  *
  * @see https://better-auth.com/docs/plugins/mcp
  */
+import type { MiddlewareHandler } from 'hono'
 import { createMiddleware } from 'hono/factory'
 
 import {
@@ -23,7 +24,9 @@ export interface McpBearerAuthMiddlewareOptions {
   verifyAccessToken: (accessToken: string) => Promise<McpAccessTokenClaims | null>
 }
 
-export function createMcpBearerAuthMiddleware(options: McpBearerAuthMiddlewareOptions) {
+export function createMcpBearerAuthMiddleware(
+  options: McpBearerAuthMiddlewareOptions
+): MiddlewareHandler {
   return createMiddleware(async (c, next) => {
     const bearerToken = extractBearerToken(c.req.header('Authorization'))
     if (!bearerToken) {

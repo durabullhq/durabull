@@ -13,6 +13,7 @@ Use this guide if you are adding a new Redis connection and the test or create f
    - **Connection Name**
    - **Connection URL**
    - **Environment**
+   - **BullMQ prefix** (match your worker and queue configuration; default `bull`)
    - **Allow self-signed TLS certificates** (only when your provider requires it)
 4. Click **Test** to verify connectivity before saving.
 5. Click **Create Connection**.
@@ -21,7 +22,7 @@ Use this guide if you are adding a new Redis connection and the test or create f
 
 ### TLS Encryption
 
-Ensure your protocol is set to `rediss://` instead of `redis://` (note the extra `s`).
+Use `rediss://` when your Redis provider requires TLS. Use `redis://` only for a connection that does not require TLS.
 
 ### Self-Signed TLS Certificates
 
@@ -44,14 +45,23 @@ Only enable this when your provider requires it. It disables certificate authori
 
 ### IP Allowlisting
 
-If your setup restricts incoming traffic, you will need to allowlist these Durabull IP ranges:
+Allowlist the outbound addresses of the machine or service running the **Durabull API**, which
+opens the Redis connection. Your browser's address is not the Redis client address.
 
-- `74.220.48.0/24`
-- `74.220.56.0/24`
+- **Self-hosted:** use your server or hosting provider's current outbound addresses. For Render,
+  obtain the service's current ranges from **Connect → Outbound**; see
+  [Render's outbound IP guide](https://render.com/docs/outbound-ip-addresses).
+- **Desktop:** allow the workstation's network egress address.
+- **Durabull Cloud:** confirm the current Cloud egress ranges with Durabull support at
+  `hello@durabull.io` before changing your Redis allowlist. Hosting ranges can change.
+
+For Docker, `localhost` refers to the container. Use a shared-network service name such as
+`redis`, or the host-access address supported by your Docker environment.
 
 ## Quick Verification Checklist
 
 - Confirm host, port, username, and password are correct.
 - Confirm TLS is enabled when your provider requires it.
-- Confirm network allowlists and firewall rules include Durabull source ranges.
+- Confirm network allowlists and firewall rules permit the API server's outbound addresses.
+- If the connection succeeds but no queues appear, verify the Redis database number and BullMQ prefix.
 - Re-run **Test** in the modal after each change.

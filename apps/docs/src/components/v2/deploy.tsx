@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, useReducedMotion } from 'framer-motion'
-import { Check, Cloud, Laptop, Lock, Server, type LucideIcon } from 'lucide-react'
+import { Check, Cloud, Laptop, Lock, type LucideIcon, Server } from 'lucide-react'
 import Link from 'next/link'
 import { useRef } from 'react'
 import { GITHUB_RELEASE_URL, MAC_CHECKSUM_URL, WEB_APP_URL } from '@/lib/config'
@@ -75,8 +75,8 @@ const modes: DeployMode[] = [
   {
     icon: Server,
     title: 'Self-hosted',
-    body: 'Docker on your own network. Full control, private traffic, Postgres persistence.',
-    cta: { label: 'Deployment guide', href: '/documentation' },
+    body: 'Docker on your own network, with persistent PGlite or PostgreSQL storage.',
+    cta: { label: 'Deployment guide', href: '/documentation/deployment/docker' },
   },
   {
     icon: Laptop,
@@ -88,7 +88,7 @@ const modes: DeployMode[] = [
   {
     icon: Lock,
     title: 'Authless mode',
-    body: 'For trusted LANs and VPNs. Stateful Postgres or stateless PGlite persistence.',
+    body: 'For trusted private networks. PostgreSQL and PGlite both persist data.',
     cta: { label: 'Read docs', href: '/documentation' },
   },
 ]
@@ -100,11 +100,11 @@ export function V2Deploy() {
         <Reveal>
           <Eyebrow>Deploy your way</Eyebrow>
           <h2 className="v2-h mt-4 max-w-2xl text-balance text-3xl leading-tight sm:text-4xl">
-            Cloud, desktop, Docker, or air-gapped.
+            Cloud, desktop, or self-hosted.
           </h2>
           <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-[var(--v2-muted)]">
-            Durabull is open source under the Elastic License 2.0. Run it where your security model
-            says it should run.
+            Durabull is source-available under the Elastic License 2.0. Run it where your security
+            model says it should run.
           </p>
         </Reveal>
 
@@ -208,12 +208,12 @@ export function V2Pricing() {
           <Reveal>
             <Eyebrow>Honest pricing</Eyebrow>
             <h2 className="v2-h mt-4 text-balance text-3xl leading-tight text-[var(--v2-fg)] sm:text-4xl">
-              Built by engineers, not a pricing team.
+              Free during beta.
             </h2>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-[var(--v2-muted)]">
-              Durabull is open source and free while in beta. When pricing arrives, it will be
-              break-even — just enough to cover cloud compute. We run queues every day too; this is
-              the tool we wanted, shared with the community that needed it.
+              The hosted app is currently free during beta. You can also run Durabull on your own
+              infrastructure under the Elastic License 2.0. Check published terms for future
+              pricing.
             </p>
             <p className="v2-mono mt-7 text-[var(--v2-faint)]">
               Elastic License 2.0 · Self-host anytime · No vendor lock-in

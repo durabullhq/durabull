@@ -40,12 +40,22 @@ jobs:
       - name: Run checks in parallel
         run: |
           bun run lint &
+          lint_pid=$!
           bun run format:check &
+          format_pid=$!
           bun run typecheck &
-          wait
+          typecheck_pid=$!
+          status=0
+          for pid in "$lint_pid" "$format_pid" "$typecheck_pid"; do
+            wait "$pid" || status=1
+          done
+          exit "$status"
 
       - name: Build
         run: bun run build
+
+      - name: Verify MCP protocol, apps, plugins and authorization
+        run: bun run mcp:check
 
       - name: Run mode unit tests
         run: bun test packages/dal/src/db/env-redis-connections.test.ts apps/api/src/lib/authless.test.ts

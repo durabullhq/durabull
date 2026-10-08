@@ -24,10 +24,7 @@ const analyticsQueue = createBoundedAsyncQueue<McpAnalyticsInput>({
   },
 })
 
-export function enqueueMcpAnalytics(
-  input: McpAnalyticsInput,
-  process: ProcessMcpAnalytics
-): void {
+export function enqueueMcpAnalytics(input: McpAnalyticsInput, process: ProcessMcpAnalytics): void {
   analyticsQueue.enqueue(input, process)
 }
 

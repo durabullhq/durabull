@@ -203,10 +203,7 @@ function Dashboard() {
       return
     }
 
-    if (
-      discoveryErrorMessage &&
-      discoveryErrorMessage !== lastDiscoveryErrorShownRef.current
-    ) {
+    if (discoveryErrorMessage && discoveryErrorMessage !== lastDiscoveryErrorShownRef.current) {
       lastDiscoveryErrorShownRef.current = discoveryErrorMessage
       toast.error(`Discovery failed: ${discoveryErrorMessage}`)
     }

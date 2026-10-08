@@ -1,4 +1,8 @@
-import { tryGetServerAnalyticsOptions, type ServerAnalyticsOptions, type ServerAnalyticsRuntimeContext } from './config'
+import {
+  tryGetServerAnalyticsOptions,
+  type ServerAnalyticsOptions,
+  type ServerAnalyticsRuntimeContext,
+} from './config'
 import {
   signTelemetryCollectBody,
   TELEMETRY_COLLECT_SIGNATURE_HEADER,
@@ -255,7 +259,8 @@ export async function captureMcpAnalyticsServerEvent(input: {
   if (!validated.ok) return
 
   const timestamp = resolveCollectTimestamp(input.timestamp, Date.now())
-  const shouldCaptureAnonymous = input.includeAnonymous && !!input.anonymousInstanceId && !!input.sessionId
+  const shouldCaptureAnonymous =
+    input.includeAnonymous && !!input.anonymousInstanceId && !!input.sessionId
   const shouldCaptureIdentified = !!input.identifiedDistinctId
 
   if (!shouldCaptureAnonymous && !shouldCaptureIdentified) {
@@ -303,12 +308,18 @@ export async function captureMcpAnalyticsServerEvent(input: {
     const tasks: Promise<boolean>[] = []
     if (anonymousCapture && anonymousConfig) {
       tasks.push(
-        sendPosthogBatch(anonymousConfig, [anonymousCapture], { runtimeContext, mergeRuntime: true })
+        sendPosthogBatch(anonymousConfig, [anonymousCapture], {
+          runtimeContext,
+          mergeRuntime: true,
+        })
       )
     }
     if (identifiedCapture && identifiedConfig) {
       tasks.push(
-        sendPosthogBatch(identifiedConfig, [identifiedCapture], { runtimeContext, mergeRuntime: true })
+        sendPosthogBatch(identifiedConfig, [identifiedCapture], {
+          runtimeContext,
+          mergeRuntime: true,
+        })
       )
     }
     if (tasks.length > 0) {

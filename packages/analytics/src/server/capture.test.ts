@@ -283,9 +283,9 @@ describe('captureMcpAnalyticsServerEvent coalescing', () => {
     restore()
 
     expect(bodies).toHaveLength(2)
-    expect(
-      bodies.every((body) => (body as { batch: Array<unknown> }).batch.length === 1)
-    ).toBe(true)
+    expect(bodies.every((body) => (body as { batch: Array<unknown> }).batch.length === 1)).toBe(
+      true
+    )
   })
 
   it('clamps stale explicit timestamps for MCP analytics capture', async () => {

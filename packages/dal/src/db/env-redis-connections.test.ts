@@ -111,9 +111,9 @@ describe('env-redis-connections', () => {
 
     const connections = getEnvRedisConnections()
 
-    expect(connections.find((connection) => connection.envName === 'MAIN')?.allowSelfSignedCerts).toBe(
-      true
-    )
+    expect(
+      connections.find((connection) => connection.envName === 'MAIN')?.allowSelfSignedCerts
+    ).toBe(true)
     expect(
       connections.find((connection) => connection.envName === 'WORKERS')?.allowSelfSignedCerts
     ).toBe(false)

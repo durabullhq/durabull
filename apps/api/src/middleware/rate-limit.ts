@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-
-import { extractBearerToken } from '@durabull/mcp/auth'
 import { env } from '@durabull/env'
+import { extractBearerToken } from '@durabull/mcp/auth'
 import { createMiddleware } from 'hono/factory'
 
+import { MCP_RATE_LIMIT_POLICIES } from '../mcp/middleware/rate-limit-policy'
 import { recordMcpTelemetry } from '../mcp/observability/mcp-telemetry'
+import { TokenBucketStore } from './token-bucket'
 
 /**
  * Simple in-memory rate limiter.
@@ -22,6 +23,7 @@ const rateLimitStore = new Map<string, RateLimitEntry>()
 /** Test-only: clear in-memory counters between cases. */
 export function resetRateLimitStoreForTests(): void {
   rateLimitStore.clear()
+  mcpIngressBuckets.clear()
 }
 
 const GENERAL_API_RATE_LIMIT_WINDOW_MS = 60 * 1000
@@ -286,21 +288,41 @@ export const mcpOAuthRegisterRateLimiter = rateLimiter({
     ),
 })
 
-export const mcpRateLimiter = rateLimiter({
-  windowMs: 60 * 1000,
-  limit: 120,
-  keyPrefix: 'rl:mcp',
-  keyGenerator: mcpIngressRateLimitKey,
-  onRateLimit: (c) => {
-    recordMcpTelemetry({ signal: 'rate_limited_ingress' })
-    return c.json(
-      {
-        error: 'Too Many Requests',
-        code: 'RATE_LIMITED',
-        message: 'MCP rate limit exceeded. Please slow down.',
-        retryAfter: 60,
-      },
-      429
-    )
-  },
+const mcpIngressBuckets = new TokenBucketStore()
+
+/** Transport abuse ceiling; authenticated work has independent budgets after validation. */
+export const mcpRateLimiter = createMiddleware(async (c, next) => {
+  if (
+    c.req.method === 'OPTIONS' ||
+    shouldSkipRateLimiting() ||
+    c.get('mcpIngressRateLimitApplied')
+  ) {
+    return next()
+  }
+  // Hono /mcp/* also matches /mcp. Guard against accidental overlapping registrations.
+  c.set('mcpIngressRateLimitApplied', true)
+  const policy = MCP_RATE_LIMIT_POLICIES.ingress
+  const result = mcpIngressBuckets.take(mcpIngressRateLimitKey(c), policy)
+  c.header('X-RateLimit-Limit', String(policy.capacity))
+  c.header('X-RateLimit-Remaining', String(result.remaining))
+  c.header('X-RateLimit-Reset', String(result.resetAfter))
+  if (result.allowed) return next()
+  c.header('Retry-After', String(result.retryAfter))
+  recordMcpTelemetry({ signal: 'rate_limited_ingress' })
+  return c.json(
+    {
+      error: 'Too Many Requests',
+      code: 'RATE_LIMITED',
+      message: 'MCP transport burst budget exhausted. Retry after the indicated delay.',
+      retryAfter: result.retryAfter,
+      bucket: 'ingress',
+    },
+    429
+  )
 })
+
+declare module 'hono' {
+  interface ContextVariableMap {
+    mcpIngressRateLimitApplied?: boolean
+  }
+}

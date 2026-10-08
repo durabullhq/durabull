@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     template: '%s | Durabull',
   },
   description:
-    'The BullMQ operations platform built for on-call speed. Zero code changes: point Durabull at Redis and get fleet analytics, failure debugging, scheduler control, and proactive alerts.',
+    'Connect Durabull to Redis to inspect BullMQ jobs, debug failures, manage schedulers, and configure alerts. Enable worker metrics for throughput charts.',
   metadataBase: new URL('https://durabull.io'),
   keywords: [
     'BullMQ',
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     url: 'https://durabull.io',
     title: 'Durabull — See every job. Fix every failure.',
     description:
-      'The BullMQ operations platform built for on-call speed. Zero code changes: point Durabull at Redis and get fleet analytics, failure debugging, scheduler control, and proactive alerts.',
+      'Connect Durabull to Redis to inspect BullMQ jobs, debug failures, manage schedulers, and configure alerts. Enable worker metrics for throughput charts.',
     siteName: 'Durabull',
     images: [
       {
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Durabull — See every job. Fix every failure.',
     description:
-      'The BullMQ operations platform built for on-call speed. Zero code changes: point Durabull at Redis and get fleet analytics, failure debugging, scheduler control, and proactive alerts.',
+      'Connect Durabull to Redis to inspect BullMQ jobs, debug failures, manage schedulers, and configure alerts. Enable worker metrics for throughput charts.',
     images: ['/og-image.png'],
     creator: '@durabullhq',
   },

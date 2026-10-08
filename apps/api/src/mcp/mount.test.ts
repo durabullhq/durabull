@@ -16,21 +16,23 @@ import {
   user,
 } from '@durabull/dal'
 import { env } from '@durabull/env'
-import { MCP_PROTOCOL_VERSION } from '@durabull/mcp'
+import { MCP_LEGACY_PROTOCOL_VERSION as MCP_PROTOCOL_VERSION } from '@durabull/mcp'
 import { MCP_JSON_RPC_VERSION, mcpHeaders, parseSseJson, postMcpJson } from '@durabull/mcp/testing'
 import type { Hono } from 'hono'
 import { createApiApp } from '../app'
 import { DEFAULT_AUTHLESS_MCP_BEARER_TOKEN } from './auth/mcp-auth-config'
+import { mountMcpIngress } from './mount'
 
 const mutableEnv = env as {
   APP_BASE_URL?: string
   DURABULL_AUTHLESS?: boolean
+  DURABULL_REDIS_URL_ENCRYPTION_KEY?: string
 }
 
 const originalAppBaseUrl = mutableEnv.APP_BASE_URL
 const originalAuthless = mutableEnv.DURABULL_AUTHLESS
 const originalPgliteDir = process.env.DURABULL_PGLITE_DIR
-const originalRedisUrlEncryptionKey = process.env.DURABULL_REDIS_URL_ENCRYPTION_KEY
+const originalRedisUrlEncryptionKey = mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY
 
 const authlessAuthorization = `Bearer ${DEFAULT_AUTHLESS_MCP_BEARER_TOKEN}`
 const mcpResource = 'http://localhost:3000/mcp'
@@ -47,7 +49,8 @@ describe('api MCP ingress', () => {
     process.env.DURABULL_PGLITE_DIR = tempPgliteDir
     mutableEnv.APP_BASE_URL = 'http://localhost:3000'
     mutableEnv.DURABULL_AUTHLESS = true
-    process.env.DURABULL_REDIS_URL_ENCRYPTION_KEY = TEST_REDIS_ENCRYPTION_KEY
+    // The validated env object is a snapshot; changing process.env cannot update it.
+    mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY = TEST_REDIS_ENCRYPTION_KEY
     await closeDb()
     ;({ app } = await createApiApp({ enableLogging: false }))
   })
@@ -63,11 +66,7 @@ describe('api MCP ingress', () => {
       delete process.env.DURABULL_PGLITE_DIR
     }
 
-    if (originalRedisUrlEncryptionKey) {
-      process.env.DURABULL_REDIS_URL_ENCRYPTION_KEY = originalRedisUrlEncryptionKey
-    } else {
-      delete process.env.DURABULL_REDIS_URL_ENCRYPTION_KEY
-    }
+    mutableEnv.DURABULL_REDIS_URL_ENCRYPTION_KEY = originalRedisUrlEncryptionKey
 
     if (tempPgliteDir) {
       await rm(tempPgliteDir, { recursive: true, force: true })
@@ -119,6 +118,21 @@ describe('api MCP ingress', () => {
     )
 
     expect(response.status).toBe(401)
+  })
+
+  it('accepts the deployment Origin when APP_BASE_URL has a trailing slash', async () => {
+    mutableEnv.APP_BASE_URL = 'http://localhost:3000/'
+    const ingress = await mountMcpIngress()
+    const response = await ingress.request('/', {
+      method: 'OPTIONS',
+      headers: {
+        host: 'localhost:3000',
+        origin: 'http://localhost:3000',
+        'access-control-request-method': 'POST',
+      },
+    })
+    expect(response.status).toBe(204)
+    expect(response.headers.get('access-control-allow-origin')).toBe('http://localhost:3000')
   })
 
   it('rejects /mcp requests with invalid Host header', async () => {
@@ -182,7 +196,7 @@ describe('api MCP ingress', () => {
 
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     await postMcp(
       {
@@ -446,7 +460,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const response = await postMcp(
       {
@@ -561,7 +575,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const response = await postMcp(
       {
@@ -679,7 +693,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const response = await postMcp(
       {
@@ -795,7 +809,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const response = await postMcp(
       {
@@ -893,7 +907,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const callResponse = await postMcp(
       {
@@ -989,7 +1003,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const callResponse = await postMcp(
       {
@@ -1091,7 +1105,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const callResponse = await postMcp(
       {
@@ -1195,7 +1209,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const callResponse = await postMcp(
       {
@@ -1322,7 +1336,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const callResponse = await postMcp(
       {
@@ -1445,7 +1459,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const firstCall = await postMcp(
       {
@@ -1588,7 +1602,7 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     const callResponse = await postMcp(
       {
@@ -1623,7 +1637,7 @@ describe('api MCP ingress', () => {
     })
 
     expect(response.headers.get('content-type')).not.toContain('text/html')
-    expect(response.status).toBe(400)
+    expect(response.status).toBe(405)
   })
 
   /** Seeds a delegated user, org, connection, and OAuth token with the given scopes. */
@@ -1714,14 +1728,57 @@ describe('api MCP ingress', () => {
     )
     expect(initResponse.status).toBe(200)
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     return {
       connectionId: connection.id,
+      token,
       call: (body: Parameters<typeof postMcpJson>[2]) =>
         postMcp(body, { authorization: `Bearer ${token}`, sessionId: sessionId ?? undefined }),
     }
   }
+
+  it('authorizes modern per-request discovery, data reads, and scope step-up without initialize', async () => {
+    const { token, connectionId } = await seedDelegatedToken('mcp:discover mcp:jobs:read')
+    const modern = async (method: string, params: Record<string, unknown>) => {
+      const response = await app.request('/mcp', {
+        method: 'POST',
+        headers: {
+          ...mcpHeaders('localhost:3000', undefined, `Bearer ${token}`),
+          'Mcp-Protocol-Version': '2026-07-28',
+          'Mcp-Method': method,
+          ...(typeof params.name === 'string' ? { 'Mcp-Name': params.name } : {}),
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 22,
+          method,
+          params: {
+            ...params,
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              'io.modelcontextprotocol/clientCapabilities': {},
+              'io.modelcontextprotocol/clientInfo': { name: 'modern-api-test', version: '1.0.0' },
+            },
+          },
+        }),
+      })
+      return response
+    }
+    const discovery = await modern('server/discover', {})
+    expect(discovery.status).toBe(200)
+    expect(discovery.headers.get('mcp-session-id')).toBeNull()
+    const read = await modern('tools/call', { name: 'list_connections', arguments: {} })
+    expect(read.status).toBe(200)
+    expect(read.headers.get('cache-control')).toBe('no-store')
+    expect(await read.text()).toContain(connectionId)
+    const write = await modern('tools/call', {
+      name: 'retry_job',
+      arguments: { connectionId, queueName: 'q', jobId: 'j' },
+    })
+    expect(write.status).toBe(403)
+    expect(write.headers.get('www-authenticate')).toContain('scope="mcp:discover mcp:jobs:retry"')
+  })
 
   it('denies write tools to tokens that hold only the read bundle', async () => {
     const { connectionId, call } = await seedDelegatedToken(
@@ -1747,6 +1804,8 @@ describe('api MCP ingress', () => {
       const body = await response.text()
       expect(body).toContain('insufficient_scope')
       expect(body).toContain(scope)
+      expect(response.headers.get('www-authenticate')).toContain('error="insufficient_scope"')
+      expect(response.headers.get('www-authenticate')).toContain(scope)
     }
   })
 
@@ -1769,6 +1828,23 @@ describe('api MCP ingress', () => {
     }
     expect(serverInfo.principalType).toBe('delegated_user')
     expect(serverInfo.grantedScopes).toEqual(['mcp:discover', 'mcp:jobs:read'])
+
+    const appResponse = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 20,
+      method: 'resources/read',
+      params: { uri: 'ui://durabull/queue-explorer-v1.html' },
+    })
+    expect(appResponse.status).toBe(200)
+    expect(await appResponse.text()).toContain('text/html;profile=mcp-app')
+
+    const unknownApp = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 21,
+      method: 'resources/read',
+      params: { uri: 'ui://durabull/arbitrary.html' },
+    })
+    expect(unknownApp.status).toBe(400)
 
     const queuesResponse = await call({
       jsonrpc: MCP_JSON_RPC_VERSION,

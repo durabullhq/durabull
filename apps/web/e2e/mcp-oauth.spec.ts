@@ -1,7 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { expect, test } from '@playwright/test'
+import {
+  MCP_LEGACY_PROTOCOL_VERSION as MCP_PROTOCOL_VERSION,
+  MCP_PROTOCOL_VERSION as MCP_CURRENT_PROTOCOL_VERSION,
+} from '../../../packages/mcp/src/constants'
 
-const MCP_PROTOCOL_VERSION = '2024-11-05'
 const MCP_JSON_RPC_VERSION = '2.0'
 
 const WEB_BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173'
@@ -127,8 +130,45 @@ async function exchangeAuthorizationCode(input: {
   return tokenBody.access_token as string
 }
 
+/** Verify a newly authorized token against current per-request and stateless legacy MCP flows. */
 async function mcpPingWithToken(accessToken: string) {
   const mcpHost = new URL(CANONICAL_MCP_RESOURCE).host
+  // A freshly issued OAuth token must work without a transport handshake.
+  const directPing = await fetch(CANONICAL_MCP_RESOURCE, {
+    method: 'POST',
+    headers: {
+      host: mcpHost,
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+      authorization: `Bearer ${accessToken}`,
+      'Mcp-Protocol-Version': MCP_CURRENT_PROTOCOL_VERSION,
+      'Mcp-Method': 'tools/call',
+      'Mcp-Name': 'ping',
+    },
+    body: JSON.stringify({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 0,
+      method: 'tools/call',
+      params: {
+        name: 'ping',
+        arguments: {},
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': MCP_CURRENT_PROTOCOL_VERSION,
+          'io.modelcontextprotocol/clientCapabilities': {},
+          'io.modelcontextprotocol/clientInfo': { name: 'playwright-mcp-oauth', version: '1.0.0' },
+        },
+      },
+    }),
+  })
+  const directText = await directPing.text()
+  expect(directPing.status, `direct ping failed: ${directPing.status} ${directText}`).toBe(200)
+  expect(directPing.headers.get('mcp-session-id')).toBeNull()
+  const directBody = parseSseJson(directText) as {
+    result?: { resultType?: string; content?: Array<{ text?: string }> }
+  }
+  expect(directBody.result?.resultType).toBe('complete')
+  expect(directBody.result?.content?.[0]?.text).toContain('pong')
+
   const initResponse = await fetch(CANONICAL_MCP_RESOURCE, {
     method: 'POST',
     headers: {
@@ -151,8 +191,7 @@ async function mcpPingWithToken(accessToken: string) {
 
   const initText = await initResponse.text()
   expect(initResponse.status, `initialize failed: ${initResponse.status} ${initText}`).toBe(200)
-  const sessionId = initResponse.headers.get('mcp-session-id')
-  expect(sessionId).toBeTruthy()
+  expect(initResponse.headers.get('mcp-session-id')).toBeNull()
 
   const initBody = parseSseJson(initText) as {
     result?: { serverInfo?: { name?: string } }
@@ -166,7 +205,7 @@ async function mcpPingWithToken(accessToken: string) {
       accept: 'application/json, text/event-stream',
       'content-type': 'application/json',
       authorization: `Bearer ${accessToken}`,
-      'mcp-session-id': sessionId as string,
+      'Mcp-Protocol-Version': MCP_PROTOCOL_VERSION,
     },
     body: JSON.stringify({
       jsonrpc: MCP_JSON_RPC_VERSION,
@@ -181,7 +220,7 @@ async function mcpPingWithToken(accessToken: string) {
       accept: 'application/json, text/event-stream',
       'content-type': 'application/json',
       authorization: `Bearer ${accessToken}`,
-      'mcp-session-id': sessionId as string,
+      'Mcp-Protocol-Version': MCP_PROTOCOL_VERSION,
     },
     body: JSON.stringify({
       jsonrpc: MCP_JSON_RPC_VERSION,

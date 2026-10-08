@@ -15,7 +15,7 @@ still receives the full PostHog browser analytics stream.
 ## Prerequisites
 
 - Redis instance(s) you want to manage
-- Bun `1.3+` (for source-based install and local development)
+- Bun `1.3.5` (for source-based install and local development)
 - Optional: Docker (recommended for fastest first run)
 - Optional: PostgreSQL (recommended for team deployments)
 
@@ -28,7 +28,10 @@ Durabull behavior is controlled by two toggles:
 
 And one persistence setting:
 
-- `DATABASE_URL` (set = PostgreSQL, unset = PGlite)
+- `DATABASE_URL` (set = PostgreSQL, empty/unset = file-backed PGlite)
+
+Both modes store Durabull state. Preserve the PGlite data directory for embedded deployments;
+use PostgreSQL for multiple API replicas sharing state. BullMQ jobs and queue data stay in Redis.
 
 ### Recommended Defaults
 
@@ -36,7 +39,7 @@ And one persistence setting:
 | --- | --- | --- | --- |
 | Local admin in trusted network | Authless | Env-driven | PGlite |
 | Team deployment | Authenticated | DB-managed or Env-driven | PostgreSQL |
-| Internet-facing production | Authenticated | Env-driven (most deterministic) | PostgreSQL |
+| Internet-facing production | Authenticated | DB-managed or Env-driven | PostgreSQL |
 
 ## Choose Your Installation Path
 

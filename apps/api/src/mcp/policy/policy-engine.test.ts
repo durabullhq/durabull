@@ -25,6 +25,35 @@ const delegatedPrincipal: McpPrincipal = {
 }
 
 describe('evaluateMcpToolPolicy', () => {
+  it('allows the exact data-free UI shell to authenticated service accounts without tenant bindings', async () => {
+    const principal: McpPrincipal = {
+      type: 'service_account',
+      principalId: 'service',
+      serviceAccountId: 'service',
+      organizationId: 'org',
+    }
+    const call = {
+      toolName: 'resource:queue_explorer',
+      arguments: { uri: 'ui://durabull/queue-explorer-v1.html' },
+      connectionId: null,
+      requiredScopes: ['mcp:discover'],
+    }
+    const granted = await evaluateMcpToolPolicy({
+      correlationId: 'ui',
+      principal,
+      session: baseSession,
+      call,
+    })
+    expect(granted.granted).toBe(true)
+    expect(granted.effectiveScopes).toEqual(['mcp:discover'])
+    const denied = await evaluateMcpToolPolicy({
+      correlationId: 'ui',
+      principal,
+      session: { ...baseSession, scopes: 'mcp:jobs:read' },
+      call,
+    })
+    expect(denied.granted).toBe(false)
+  })
   it('denies tools without explicit scope mapping', async () => {
     const decision = await evaluateMcpToolPolicy({
       correlationId: 'corr-1',

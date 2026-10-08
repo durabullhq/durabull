@@ -7,32 +7,11 @@ anonymous/pseudonymous usage telemetry is collected to understand feature usage 
 product. Durabull does not collect Redis URLs, queue names, Redis key names, job data, logs, emails,
 names, organizations, or raw error messages.
 
-## Installing on macOS
+## Installation
 
-Durabull is distributed outside the Mac App Store and is not signed with an Apple Developer ID certificate. macOS will block the app on first launch with a "cannot be verified" warning.
-
-After mounting the `.dmg` and dragging Durabull to Applications, run this once in Terminal:
-
-```bash
-xattr -cr /Applications/Durabull.app
-```
-
-Then open Durabull normally. The command strips the macOS quarantine flag that triggers Gatekeeper.
-
-**Alternative (no Terminal required):**
-
-1. Try to open Durabull — macOS will block it.
-2. Open **System Settings → Privacy & Security**.
-3. Scroll down to find *"Durabull" was blocked* and click **Open Anyway**.
-4. Confirm the dialog that follows.
-
-### Homebrew
-
-```bash
-brew install --cask durabullhq/tap/durabull
-```
-
-> Homebrew strips the quarantine flag automatically during install — no extra steps needed.
+Use the [desktop installation guide](https://durabull.io/documentation/getting-started/desktop-apps)
+for macOS and Windows downloads, checksum verification, and Homebrew installation. The current
+macOS app is unsigned; the guide includes first-launch steps if macOS blocks it.
 
 ## Why this structure
 
@@ -67,7 +46,7 @@ bun run build:desktop
 bun run dist:desktop
 ```
 
-This produces the packaged desktop artifacts in `apps/desktop/release/`, including the macOS `.dmg` and `.zip` targets configured in `apps/desktop/package.json`.
+This produces the packaged desktop artifacts in `apps/desktop/release/`, including the macOS `.dmg` and `.zip` targets configured in `apps/desktop/electron-builder.config.cjs`.
 
 If you only want the unpacked app bundle for a quick local sanity check, run:
 
@@ -79,7 +58,7 @@ bun run dist:desktop:dir
 
 - Tagged releases are built in GitHub Actions by `.github/workflows/desktop-build.yml`.
 - Pushing a tag like `v1.2.3` runs `bun run dist:desktop`, which uses Turborepo to build the desktop app plus its dependent `@durabull/api` and `@durabull/web` workspaces before uploading the generated desktop artifacts from `apps/desktop/release/` to the matching GitHub Release assets in CI.
-- Manual `workflow_dispatch` runs build the desktop artifacts and upload them as workflow artifacts without publishing a GitHub Release.
+- Manual `workflow_dispatch` runs build an unpacked app bundle with `dist:desktop:dir` and do not publish a GitHub Release. The current artifact upload patterns target installer files, so manual runs may fail the upload step when no installer files were produced.
 
 If you need to publish directly from a macOS machine instead of CI, run this from `apps/desktop` with a GitHub token available as `GH_TOKEN`:
 

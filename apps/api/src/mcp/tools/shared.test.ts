@@ -1,30 +1,20 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import { mcpPolicyRepository, redisConnectionRepository } from '@durabull/dal'
+import { resolveConnectionForPrincipal } from '../connections/resolve-connection'
 
 const canDelegatedUserAccessConnection = mock(async () => true)
-type MockConnection = {
-  id: string
-  organizationId: string
-  url: string
-  prefix: string
-  allowSelfSignedCerts: boolean
-}
-const findById = mock(async (): Promise<MockConnection | null> => null)
-const findByIdUnsafe = mock(async (): Promise<MockConnection | null> => null)
-
-mock.module('@durabull/dal', () => ({
-  mcpPolicyRepository: {
-    canDelegatedUserAccessConnection,
-  },
-  redisConnectionRepository: {
-    findById,
-    findByIdUnsafe,
-  },
-}))
-
-const { resolveConnectionForPrincipal } = await import('../connections/resolve-connection')
+const findById = mock(async () => null)
+const findByIdUnsafe = mock(redisConnectionRepository.findByIdUnsafe)
 
 describe('resolveConnectionForPrincipal', () => {
+  afterEach(() => mock.restore())
+
   beforeEach(() => {
+    spyOn(mcpPolicyRepository, 'canDelegatedUserAccessConnection').mockImplementation(
+      canDelegatedUserAccessConnection
+    )
+    spyOn(redisConnectionRepository, 'findById').mockImplementation(findById)
+    spyOn(redisConnectionRepository, 'findByIdUnsafe').mockImplementation(findByIdUnsafe)
     canDelegatedUserAccessConnection.mockReset()
     canDelegatedUserAccessConnection.mockImplementation(async () => true)
     findById.mockReset()
@@ -32,9 +22,14 @@ describe('resolveConnectionForPrincipal', () => {
     findByIdUnsafe.mockImplementation(async () => ({
       id: 'conn-1',
       organizationId: 'org-1',
+      name: 'Test connection',
+      environment: null,
       url: 'https://redis.example.com',
       prefix: 'queues',
       allowSelfSignedCerts: false,
+      isDefault: false,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
     }))
   })
 

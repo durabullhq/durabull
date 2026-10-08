@@ -1,5 +1,5 @@
 import { mcpPolicyRepository } from '@durabull/dal'
-import { getMcpToolRequiredScopes } from '@durabull/mcp'
+import { getMcpToolRequiredScopes, MCP_APP_URI } from '@durabull/mcp'
 
 import type { McpSession } from '../auth/mcp-session-middleware'
 import type { McpPolicyDecision, McpPrincipal, McpToolCallRequest } from './types'
@@ -70,6 +70,18 @@ export async function evaluateMcpToolPolicy(input: {
   const missing = missingScopes(grantedScopes, requiredScopes)
   if (missing.length > 0) {
     return deny(base, `missing_scopes:${missing.join(',')}`)
+  }
+
+  // The exact app shell contains only code/CSS. Like tools/list, it requires
+  // an authenticated principal and discovery scope, but no access to tenant data.
+  // All data loaded by the shell still passes the normal per-tool policy below.
+  if (
+    input.call.toolName === 'resource:queue_explorer' &&
+    input.call.arguments.uri === MCP_APP_URI &&
+    !input.call.connectionId &&
+    grantedScopes.includes('mcp:discover')
+  ) {
+    return { ...base, effectiveScopes: ['mcp:discover'], granted: true, denialReason: null }
   }
 
   if (input.principal.type === 'delegated_user') {

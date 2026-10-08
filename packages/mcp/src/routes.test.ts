@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import { createMcpBearerAuthMiddleware, MCP_SCOPE_DISCOVER } from './auth'
-import { MCP_PROTOCOL_VERSION } from './constants'
+import { MCP_LEGACY_PROTOCOL_VERSION as MCP_PROTOCOL_VERSION } from './constants'
 import { createMcpRoutes } from './routes'
 import { MCP_JSON_RPC_VERSION, postMcpJson, readMcpJsonResponse } from './testing/mcp-test-client'
 
@@ -102,7 +102,7 @@ describe('createMcpRoutes', () => {
     expect(response.status).toBe(403)
   })
 
-  it('requires session id for non-initialize requests', async () => {
+  it('serves legacy requests without a transport session', async () => {
     const response = await postMcp({
       jsonrpc: MCP_JSON_RPC_VERSION,
       id: 2,
@@ -110,10 +110,10 @@ describe('createMcpRoutes', () => {
       params: {},
     })
 
-    expect(response.status).toBe(400)
+    expect(response.status).toBe(200)
   })
 
-  it('initializes MCP session and lists ping tool', async () => {
+  it('initializes legacy MCP and lists ping tool', async () => {
     const initResponse = await postMcp({
       jsonrpc: MCP_JSON_RPC_VERSION,
       id: 1,
@@ -132,7 +132,7 @@ describe('createMcpRoutes', () => {
     expect(initPayload.result?.protocolVersion).toBeTruthy()
 
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     await postMcp(
       {
@@ -172,7 +172,7 @@ describe('createMcpRoutes', () => {
     })
 
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     await postMcp(
       {
@@ -248,7 +248,7 @@ describe('createMcpRoutes', () => {
     })
 
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
 
     await postMcpReadTool(
       {
@@ -365,7 +365,7 @@ describe('createMcpRoutes catalog surface', () => {
       },
     })
     const sessionId = initResponse.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
+    expect(sessionId).toBeNull()
     await post(
       { jsonrpc: MCP_JSON_RPC_VERSION, method: 'notifications/initialized' },
       { sessionId: sessionId ?? undefined }

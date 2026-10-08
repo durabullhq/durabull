@@ -81,10 +81,7 @@ export const alertDestinationRepository = {
       .select()
       .from(alertDestination)
       .where(
-        and(
-          inArray(alertDestination.id, ids),
-          eq(alertDestination.organizationId, organizationId)
-        )
+        and(inArray(alertDestination.id, ids), eq(alertDestination.organizationId, organizationId))
       )
       .orderBy(asc(alertDestination.name))
   },

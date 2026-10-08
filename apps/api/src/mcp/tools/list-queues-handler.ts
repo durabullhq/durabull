@@ -4,7 +4,9 @@ import { toRedisConnectionOptions } from '../../lib/connection-options'
 import type { ListQueuesHandlerInput, ListQueuesHandlerOutput } from '@durabull/mcp'
 import { decodeCursor, encodeCursor, requireConnectionForPrincipal } from './shared'
 
-export async function listQueuesHandler(input: ListQueuesHandlerInput): Promise<ListQueuesHandlerOutput> {
+export async function listQueuesHandler(
+  input: ListQueuesHandlerInput
+): Promise<ListQueuesHandlerOutput> {
   const connection = await requireConnectionForPrincipal(input.principal, input.connectionId)
 
   const offset = decodeCursor(input.cursor)

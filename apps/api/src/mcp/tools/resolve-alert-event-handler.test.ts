@@ -1,29 +1,9 @@
-import { describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
+import { alertEventRepository, redisConnectionRepository } from '@durabull/dal'
+import { resolveAlertEventHandler } from './resolve-alert-event-handler'
 
-const findById = mock(async () => null as Awaited<ReturnType<typeof import('@durabull/dal').alertEventRepository.findById>>)
-const resolve = mock(async () => null as Awaited<ReturnType<typeof import('@durabull/dal').alertEventRepository.resolve>>)
-
-mock.module('@durabull/dal', () => ({
-  alertEventRepository: { findById, resolve },
-}))
-
-const requireConnectionForPrincipal = mock(async () => ({
-  id: 'conn-1',
-  organizationId: 'org-1',
-}))
-
-mock.module('./shared', () => ({
-  McpToolError: class McpToolError extends Error {
-    readonly code: 'not_found' | 'validation_error' | 'internal_error'
-    constructor(code: 'not_found' | 'validation_error' | 'internal_error', message: string) {
-      super(message)
-      this.code = code
-    }
-  },
-  requireConnectionForPrincipal,
-}))
-
-const { resolveAlertEventHandler } = await import('./resolve-alert-event-handler')
+const findById = mock(alertEventRepository.findById)
+const resolve = mock(alertEventRepository.resolve)
 
 const principal = {
   type: 'service_account' as const,
@@ -32,6 +12,27 @@ const principal = {
 }
 
 describe('resolveAlertEventHandler', () => {
+  beforeEach(() => {
+    findById.mockReset()
+    resolve.mockReset()
+    spyOn(alertEventRepository, 'findById').mockImplementation(findById)
+    spyOn(alertEventRepository, 'resolve').mockImplementation(resolve)
+    spyOn(redisConnectionRepository, 'findById').mockResolvedValue({
+      id: 'conn-1',
+      organizationId: 'org-1',
+      name: 'Test connection',
+      environment: null,
+      url: 'redis://localhost:6379',
+      prefix: 'bull',
+      allowSelfSignedCerts: false,
+      isDefault: false,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    })
+  })
+
+  afterEach(() => mock.restore())
+
   it('returns not_found when the event is missing or on another connection', async () => {
     findById.mockResolvedValueOnce(null)
 

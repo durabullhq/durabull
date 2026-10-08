@@ -33,8 +33,8 @@ export default function PricingPage() {
             </h1>
 
             <p className="text-xl text-muted-foreground">
-              Durabull is free while we're in beta. When we introduce pricing, it will be kept as
-              low as possible — just enough to cover cloud compute costs.
+              The hosted app is currently free during beta. Check this page for published pricing
+              updates.
             </p>
           </motion.div>
 
@@ -86,7 +86,7 @@ export default function PricingPage() {
             </div>
           </motion.div>
 
-          {/* Our Philosophy */}
+          {/* Deployment choices */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -94,10 +94,9 @@ export default function PricingPage() {
             className="max-w-3xl mx-auto"
           >
             <div className="text-center mb-12">
-              <h2 className="text-2xl md:text-3xl font-bold mb-4">Our Philosophy</h2>
+              <h2 className="text-2xl md:text-3xl font-bold mb-4">Deployment choices</h2>
               <p className="text-muted-foreground">
-                We're building Durabull differently — as a service for the community, not for
-                profit.
+                Use the hosted app, desktop app, or your own infrastructure.
               </p>
             </div>
 
@@ -105,21 +104,20 @@ export default function PricingPage() {
               {[
                 {
                   icon: Heart,
-                  title: 'Community First',
-                  description:
-                    "We're a small group of engineers who love BullMQ and wanted a better dashboard. We built this for ourselves, and we're sharing it with you.",
+                  title: 'Hosted App',
+                  description: 'Connect Redis and inspect your queues in the hosted dashboard.',
                 },
                 {
                   icon: Users,
-                  title: 'Break-Even Model',
+                  title: 'Desktop App',
                   description:
-                    'No venture capital, no aggressive monetization. When we introduce pricing, it will only cover our cloud compute costs — nothing more.',
+                    'Install Durabull on Apple Silicon macOS or Windows with a bundled local API.',
                 },
                 {
                   icon: Sparkles,
-                  title: 'Open Source',
+                  title: 'Self-Hosted',
                   description:
-                    'Durabull is fully open source and available on GitHub. You can run authless mode and choose stateful (Postgres) or stateless (PGlite) persistence based on your needs.',
+                    'Source is available under ELv2. Self-host with PostgreSQL or PGlite; both persist data.',
                 },
               ].map((item) => (
                 <div

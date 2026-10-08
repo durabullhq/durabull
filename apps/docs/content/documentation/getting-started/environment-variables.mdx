@@ -1,144 +1,179 @@
 ---
 title: Environment Variables
-description: Complete runtime environment variable reference for local and production Durabull deployments.
+description: Configure runtime modes, Redis connections, persistence, authentication, integrations, and telemetry.
 ---
 
-## Core Runtime
+For source-based runs, copy the repository's
+[`.env.example`](https://github.com/durabullhq/durabull/blob/main/.env.example) to `.env` and replace
+its placeholders. Shell variables take precedence over dotenv values. Restart the API after
+changing configuration.
 
-| Variable | Required | Purpose |
+For Docker, explicitly pass settings with `-e`, `--env-file`, or the container's Compose
+`environment` block. A Compose substitution file does not automatically become container
+configuration; see [Docker configuration](/documentation/deployment/docker#add-settings-not-included-in-the-compose-file).
+
+## Core runtime
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `NODE_ENV` | No | Runtime mode (`development`, `test`, `production`) |
-| `PORT` | No | API server port |
-| `APP_BASE_URL` | Required when `DURABULL_AUTHLESS=false` or MCP on public ingress | Canonical app URL for auth, email, and MCP OAuth resource `{APP_BASE_URL}/mcp` |
-| `VITE_PUBLIC_APP_URL` | Recommended | Public URL exposed to browser clients |
+| `NODE_ENV` | Unset | `development`, `test`, or `production`; set `production` for deployments. Production images already set it. |
+| `PORT` | `3001` outside production; `3000` in production | API listening port. |
+| `APP_BASE_URL` | `http://localhost:5173` | Public app origin used by auth, invitations, and MCP. Set explicitly for any deployed origin. |
+| `VITE_PUBLIC_APP_URL` | Unset | Browser app URL fallback; normally match `APP_BASE_URL`. Vite embeds client environment values at build time. |
+| `DURABULL_AUTHLESS` | `false` | Bypass login and grant owner access. Use only in trusted local/private environments. |
+| `DURABULL_ENV_CONNECTIONS` | `false` | Manage Redis connections through environment variables instead of UI/API create/edit/delete. |
+| `TRUST_PROXY` | `false` | Honor forwarding headers for rate-limit keys; enable only behind a proxy that controls those headers. Cloud enables this behavior automatically. |
+| `DISABLE_RATE_LIMIT` | `false` | Disable all in-memory API and MCP rate limits. Keep unset in production. |
 
-## Auth and Identity
+Boolean settings in the shared environment schema accept `true`/`false`, `1`/`0`, `yes`/`no`,
+and `on`/`off`. Use `true` or `false` in deployment configuration for clarity.
 
-| Variable | Required | Purpose |
+## Authentication
+
+| Variable | Requirement | Purpose |
 | --- | --- | --- |
-| `DURABULL_AUTHLESS` | No | Enable/disable authless mode |
-| `BETTER_AUTH_SECRET` | Required for OAuth and shipped self-host Compose | Session/OAuth signing secret (set even for authless lab Compose) |
-| `GOOGLE_OAUTH_CLIENT_ID` | Optional | Google OAuth client ID |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | Optional | Google OAuth secret |
-| `GITHUB_OAUTH_CLIENT_ID` | Optional | GitHub OAuth client ID |
-| `GITHUB_OAUTH_CLIENT_SECRET` | Optional | GitHub OAuth secret |
+| `BETTER_AUTH_SECRET` | Authenticated deployments; required by the shipped self-hosted Compose file | Session and OAuth secret. Generate a long random value. |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Both needed for Google sign-in | Google OAuth credentials. |
+| `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | Both needed for GitHub sign-in | GitHub OAuth credentials. |
+| `MCP_AUTHLESS_BEARER_TOKEN` | Required when authless and `NODE_ENV=production` | Bearer token for MCP only; does not protect the web UI or REST API. |
 
-## Persistence and Data
+Email/password authentication is enabled without social providers. Register OAuth callbacks at
+`{APP_BASE_URL}/api/auth/callback/google` and `{APP_BASE_URL}/api/auth/callback/github`. In normal
+Vite development, the origin is `http://localhost:5173`.
 
-| Variable | Required | Purpose |
+## Persistence and encryption
+
+| Variable | Default / requirement | Purpose |
 | --- | --- | --- |
-| `DURABULL_POSTGRES_PORT` | Optional | Host port mapped to Docker Postgres (`55432` default) |
-| `DATABASE_URL` | Optional | Enables PostgreSQL mode when set |
-| `REDIS_URL` | Optional | Generic Redis URL used by scripts/defaults |
-| `DURABULL_REDIS_URL_ENCRYPTION_KEY` | Required when persisting connections | 32-byte key (hex/base64) used to encrypt Redis connection URLs at rest |
-| `DURABULL_SECRET_ENCRYPTION_KEY` | Required for Linear alert integrations | 32-byte key (hex/base64) used to encrypt third-party OAuth tokens at rest |
-| `DURABULL_PGLITE_DIR` | Optional | Override PGlite data directory |
+| `DATABASE_URL` | Optional | Set to use PostgreSQL; empty or unset uses file-backed PGlite. |
+| `DURABULL_PGLITE_DIR` | `data/pglite` relative to the API working directory | PGlite storage directory; preserve it across restarts. |
+| `DURABULL_REDIS_URL_ENCRYPTION_KEY` | Required when saving or synchronizing Redis connections | 32-byte encryption key encoded as 64 hexadecimal characters or base64. |
+| `DURABULL_SECRET_ENCRYPTION_KEY` | Required for persisted integration/signing secrets | Separate 32-byte key for Linear OAuth tokens and webhook signing secrets. |
+| `REDIS_URL` | Optional | Redis URL used by development/seed scripts and as a workload fallback; does not configure an API connection by itself. |
+| `DURABULL_POSTGRES_PORT` | `55432` | Host port for the development Docker PostgreSQL service. Match `DATABASE_URL`. |
+| `DURABULL_REDIS_PORT` | `56379` | Host port for the development Docker Redis service. Match `REDIS_URL`. |
 
-## Connection Mode
+Generate each encryption key separately with `openssl rand -hex 32`, then paste the result into
+configuration. Dotenv files do not evaluate `$(...)`. Preserve the keys with your backups;
+replacing a key without re-encrypting existing data makes that data unreadable.
 
-| Variable | Required | Purpose |
+## Environment-managed Redis connections
+
+Set `DURABULL_ENV_CONNECTIONS=true` and define one or more named connections:
+
+| Variable | Default / requirement | Purpose |
 | --- | --- | --- |
-| `DURABULL_ENV_CONNECTIONS` | No | Use env-driven connection set |
-| `DURABULL_REDIS_URL_DEFAULT` | Recommended | Default env connection key |
-| `DURABULL_REDIS_URL_<NAME>` | When env mode enabled | Redis URL for named connection |
-| `DURABULL_REDIS_URL_<NAME>_ENVIRONMENT` | Optional | `development`, `staging`, or `production` |
-| `DURABULL_REDIS_URL_<NAME>_ALLOW_SELF_SIGNED_CERTS` | Optional | Set to `true` for providers with self-signed TLS certs (for example Heroku Key-Value Store) |
+| `DURABULL_REDIS_URL_<NAME>` | At least one valid connection needed for queue operations | Redis URL (`redis://` or `rediss://`). Names begin with a letter and use uppercase letters, digits, or underscores. |
+| `DURABULL_REDIS_URL_<NAME>_ENVIRONMENT` | `development` | `development`, `staging`, or `production`; invalid labels fall back to development. |
+| `DURABULL_REDIS_URL_<NAME>_PREFIX` | `bull` | BullMQ key prefix, matching your queues and workers. |
+| `DURABULL_REDIS_URL_<NAME>_ALLOW_SELF_SIGNED_CERTS` | `false` | Disable certificate-authority validation for this connection when the provider requires it. Use with `rediss://`. |
+| `DURABULL_REDIS_URL_DEFAULT` | First valid name alphabetically | Default connection key, such as `MAIN`. |
 
-## Optional Integrations
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `RESEND_API_KEY` | Optional | Email delivery via Resend (invitations and alerts) |
-| `EMAIL_FROM` | No | Sender address for Resend emails (default: `Durabull <no-reply@durabull.io>`) |
-| `LINEAR_OAUTH_CLIENT_ID` | Required for Linear alert integrations | Linear OAuth application client ID |
-| `LINEAR_OAUTH_CLIENT_SECRET` | Required for Linear alert integrations | Linear OAuth application client secret |
-| `LINEAR_OAUTH_REDIRECT_URI` | Optional | Explicit Linear OAuth callback URL; defaults to `${APP_BASE_URL}/api/alerts/integrations/linear/callback` |
-| `LINEAR_OAUTH_ACTOR` | Optional | Linear OAuth actor mode: `user` by default, or `app` for service-account style app actor authorization |
-| `POSTHOG_KEY` | Optional | PostHog project API key |
-| `POSTHOG_HOST` | Optional | PostHog upstream host for the reverse proxy (defaults to `https://us.i.posthog.com`) |
-
-> **Note:** The web app receives PostHog configuration from the API at `/api/app/config`. You only need to set the server-side `POSTHOG_KEY` and `POSTHOG_HOST` variables — no `VITE_` prefix is required. Set `POSTHOG_HOST` to PostHog's ingestion domain (for example `https://us.i.posthog.com`), not your own app `/ingest` URL. The API reverse-proxies analytics traffic through `/ingest` to bypass ad blockers.
-
-### Linear OAuth callback
-
-For Linear alert integrations, register this callback URL in your Linear OAuth application:
-
-```txt
-https://your-domain.example/api/alerts/integrations/linear/callback
+```dotenv
+DURABULL_ENV_CONNECTIONS=true
+DURABULL_REDIS_URL_MAIN=rediss://user:password@redis.example.com:6379/0
+DURABULL_REDIS_URL_MAIN_ENVIRONMENT=production
+DURABULL_REDIS_URL_MAIN_PREFIX=bull
+DURABULL_REDIS_URL_DEFAULT=MAIN
 ```
 
-Durabull derives that URL from `APP_BASE_URL` by default. Set `LINEAR_OAUTH_REDIRECT_URI`
-explicitly when your self-hosted API is served from a different public origin than the web app.
-The redirect URI configured in Linear must exactly match the value Durabull sends during OAuth.
-By default, Durabull uses Linear's user actor OAuth flow and omits the `actor` authorize
-parameter. Set `LINEAR_OAUTH_ACTOR=app` only when the Linear application is configured for app
-actor authorization and you want alert-created issues attributed to the app.
+Replace the example credentials and host. These connections still use encrypted database rows,
+so `DURABULL_REDIS_URL_ENCRYPTION_KEY` is required.
 
-For the full connection, alert delivery, retry, and idempotency model, see
-[Linear Integration](/documentation/integrations/linear).
+## Alerts and Redis health history
 
-## Anonymous Usage Telemetry
-
-Durabull collects anonymous/pseudonymous usage telemetry in production and self-hosted usage to
-understand feature adoption and improve the product. Configuring `POSTHOG_KEY` for your own PostHog
-project does not disable Durabull telemetry, and Durabull does not provide a product-level telemetry
-opt-out. When `POSTHOG_KEY` is set, the configured PostHog project receives the full PostHog
-browser analytics stream.
-
-Telemetry includes feature and route usage, safe runtime context, success/failure booleans, enum
-values such as job status or theme, and aggregate count/duration buckets. Durabull does not collect
-Redis URLs, queue names, Redis key names, job data, logs, emails, names, organizations, hostnames,
-raw URLs, search patterns, stack traces, or raw error messages.
-
-Self-hosted deployments do not need a separate collector service or telemetry hostname. The app
-forwards sanitized telemetry to Durabull's existing cloud API.
-
-| Variable | Required | Purpose |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `DURABULL_TELEMETRY_COLLECT_SECRET` | Cloud + self-hosted telemetry forwarding | HMAC signing secret for batches sent to `/api/telemetry/collect` |
-| `DURABULL_TELEMETRY_HMAC_SECRET` | Production telemetry | Dedicated HMAC secret for anonymous instance and distinct identifiers. This is not derived from `BETTER_AUTH_SECRET`. |
-| `DURABULL_CLOUD` | Durabull cloud collector only | Enables cloud-only telemetry collection behavior |
-| `TRUST_PROXY` | Behind a trusted reverse proxy | Honors forwarding headers for rate limits and request context |
+| `DURABULL_ALERT_ENABLED` | `true` | Evaluate alert rules. Redis health history has its own collection toggle. |
+| `DURABULL_ALERT_POLL_INTERVAL_MS` | `60000` (minimum `5000`) | Polling interval for queue alerts and Redis health sampling. |
+| `DURABULL_ALERT_JOB_RESOLVE_INTERVAL_MS` | `300000` (minimum `30000`) | Interval for checking job-failure incidents for recovery. |
+| `DURABULL_REDIS_HEALTH_HISTORY_ENABLED` | `true` | Store Redis health samples for Analytics independently of alert evaluation. |
+| `DURABULL_REDIS_HEALTH_RETENTION_DAYS` | `30` (clamped to `1`–`30`) | Redis health history retention. |
+| `DURABULL_WEBHOOK_ALLOW_HTTP` | `false` | Allow HTTP webhook targets for testing. Does not allow private or localhost targets. Development mode also permits HTTP. |
 
-Telemetry queue backpressure emits stdout JSON with `type: "telemetry_queue"` and
-`signal: "queue_dropped"`. These operational signals report queue names and counts only; they do not
-include user, organization, Redis, queue, job, key, URL, or payload values.
+## Email and Linear
 
-## Optional Runtime Toggles
-
-| Variable | Required | Purpose |
+| Variable | Default / requirement | Purpose |
 | --- | --- | --- |
-| `ASSET_PRELOAD_MAX_SIZE` | No | Asset preload tuning |
-| `ASSET_PRELOAD_VERBOSE_LOGGING` | No | Extra preload diagnostics |
+| `RESEND_API_KEY` | Optional | Send invitation and alert emails through Resend. |
+| `EMAIL_FROM` | `Durabull <no-reply@durabull.io>` | Sender address. Self-hosted Resend accounts should use their own verified domain. |
+| `LINEAR_OAUTH_CLIENT_ID`, `LINEAR_OAUTH_CLIENT_SECRET` | Both needed for Linear | OAuth application credentials. |
+| `LINEAR_OAUTH_REDIRECT_URI` | `{APP_BASE_URL}/api/alerts/integrations/linear/callback` | Callback override when the API has a different public origin. |
+| `LINEAR_OAUTH_ACTOR` | `user` | Use `app` only when the Linear application is configured for app actor authorization. |
 
-## MCP
+Register the exact callback URL in Linear and set `DURABULL_SECRET_ENCRYPTION_KEY` before connecting.
+See [Linear Integration](/documentation/integrations/linear) and
+[Webhook Notifications](/documentation/integrations/webhooks) for setup and delivery behavior.
 
-MCP is **always enabled** on the unified API deployment at `{APP_BASE_URL}/mcp`. No separate MCP port, service, or enable flag is required.
+## PostHog
 
-| Variable | Required | Purpose |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `APP_BASE_URL` | See Core Runtime | MCP host allowlist and OAuth resource URI (`{APP_BASE_URL}/mcp`) |
-| `DURABULL_AUTHLESS` | No | Must remain `false` on internet-facing deployments |
-| `DISABLE_RATE_LIMIT` | No | When `true`, disables **all** in-memory API + MCP rate limiting |
-| `MCP_TELEMETRY_LOG` | No | Set `false` to disable stdout `mcp_telemetry` JSON logs (runtime-only; default: enabled) |
-| `MCP_AUTHLESS_BEARER_TOKEN` | Authless + production | Strong bearer for isolated lab authless only — not for internet-facing production |
+| `POSTHOG_KEY` | Unset | Send the full PostHog browser analytics stream to your project. |
+| `POSTHOG_HOST` | `https://us.i.posthog.com` | PostHog ingestion host, such as `https://eu.i.posthog.com` for EU Cloud. |
 
-See [MCP Server](/documentation/integrations/mcp-server) for scopes, tools, and client setup. Operators: [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md).
+The web app obtains PostHog configuration from `GET /api/app/config`; no `VITE_` prefix is needed.
+The API proxies browser analytics through `/ingest`. Set `POSTHOG_HOST` to the ingestion host,
+not your app's `/ingest` URL.
 
-## Recommended Production Baseline
+## Anonymous usage telemetry
 
-```bash
+Production Durabull, including desktop and self-hosted builds, collects anonymous/pseudonymous
+usage telemetry. Collection is disabled in development, test, and CI. Configuring `POSTHOG_KEY`
+for your own project does not disable Durabull telemetry, and there is no product-level opt-out.
+
+Durabull's sanitized telemetry includes feature and route usage, safe runtime context, booleans,
+enums, and aggregate count/duration buckets. It excludes Redis URLs, queue names, Redis key
+names, job data, logs, emails, names, organizations, hostnames, raw URLs, search patterns,
+stack traces, and raw error messages. This field restriction applies to the sanitized Durabull
+stream; your configured PostHog project receives its full browser analytics stream.
+
+Self-hosted instances forward sanitized batches to Durabull's existing cloud API. They do not need
+a separate collector service. These settings support forwarding and cloud collector operation:
+
+| Variable | Purpose |
+| --- | --- |
+| `DURABULL_TELEMETRY_COLLECT_SECRET` | HMAC signing secret for forwarded batches and collector verification. Forwarding is skipped when no signing secret is available. |
+| `DURABULL_TELEMETRY_HMAC_SECRET` | Dedicated HMAC secret for pseudonymous identifiers; not derived from `BETTER_AUTH_SECRET`. |
+| `DURABULL_CLOUD` | Enable Durabull Cloud collector behavior and trusted-proxy handling. Do not enable on an ordinary self-hosted instance. |
+| `DURABULL_TELEMETRY_POSTHOG_KEY` | Collector's Durabull telemetry destination; falls back to `POSTHOG_KEY`. |
+| `DURABULL_TELEMETRY_POSTHOG_HOST` | Collector's telemetry ingestion host. |
+
+Backpressure emits stdout JSON with `type: "telemetry_queue"` and `signal: "queue_dropped"`.
+These signals contain operational queue identifiers and counters rather than product payloads.
+See the [MCP operations runbook](https://github.com/durabullhq/durabull/blob/main/docs/mcp-operations-runbook.md#structured-logs-telemetry_queue).
+
+## MCP and asset serving
+
+MCP is always mounted at `{APP_BASE_URL}/mcp`; there is no enable flag or separate port.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MCP_TELEMETRY_LOG` | Enabled | Set `false` to suppress stdout `mcp_telemetry` logs. |
+
+`ASSET_PRELOAD_MAX_SIZE` and `ASSET_PRELOAD_VERBOSE_LOGGING` are accepted by the environment
+schema but are not consumed by the current API static-file serving implementation.
+
+See [MCP Server](/documentation/integrations/mcp-server) for OAuth scopes and client setup.
+
+## Example authenticated deployment
+
+Use this as a configuration template, replacing every placeholder before starting:
+
+```dotenv
 NODE_ENV=production
 APP_BASE_URL=https://your-domain.example
 VITE_PUBLIC_APP_URL=https://your-domain.example
 DURABULL_AUTHLESS=false
 BETTER_AUTH_SECRET=<long-random-secret>
-DURABULL_REDIS_URL_ENCRYPTION_KEY=<openssl-rand-hex-32>
-DURABULL_SECRET_ENCRYPTION_KEY=<openssl-rand-hex-32>
+DATABASE_URL=postgresql://user:password@postgres.example.com:5432/durabull
+DURABULL_REDIS_URL_ENCRYPTION_KEY=<64-character-hex-key>
 DURABULL_ENV_CONNECTIONS=true
-DURABULL_REDIS_URL_MAIN=redis://...
+DURABULL_REDIS_URL_MAIN=rediss://user:password@redis.example.com:6379/0
 DURABULL_REDIS_URL_MAIN_ENVIRONMENT=production
+DURABULL_REDIS_URL_MAIN_PREFIX=bull
 DURABULL_REDIS_URL_DEFAULT=MAIN
 ```
 
-Screenshot placeholder: `.env` sample file in docs-friendly format.
+Add `DURABULL_SECRET_ENCRYPTION_KEY` if you configure Linear or webhook signing. Review
+[Security and Hardening](/documentation/operations/security-and-hardening) before publishing the app.

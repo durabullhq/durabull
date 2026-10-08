@@ -1,5 +1,10 @@
 # MCP Readiness Review — Post PR-08 (2026-05-28)
 
+> Historical planning and handoff record. Implementation and test results below describe the
+> work at the time they were recorded. For current behavior and release gates, use the
+> [MCP documentation index](../docs/mcp-ga-index.md) and the
+> [user guide](../apps/docs/content/documentation/integrations/mcp-server.mdx).
+
 **Branch:** `feat/no-linear-mcp-pr08-ga-readiness`  
 **Plan position:** PR-02–PR-07 merged on `main`; PR-08 GA closure in review on branch (not merged until PR #100 lands).
 
