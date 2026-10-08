@@ -15,7 +15,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { mcp, organization } from 'better-auth/plugins'
 import {
   getCanonicalMcpResourceUri,
-  MCP_PHASE1_SCOPES,
+  MCP_ALL_SCOPES,
   MCP_OAUTH_SCOPES_SUPPORTED,
   normalizeResourceUri,
 } from '@durabull/mcp/auth'
@@ -252,7 +252,7 @@ export async function createAuth(options?: CreateAuthOptions) {
         oidcConfig: {
           loginPage: '/login',
           consentPage: MCP_OAUTH_CONSENT_PATH,
-          scopes: [...MCP_PHASE1_SCOPES],
+          scopes: [...MCP_ALL_SCOPES],
           metadata: {
             scopes_supported: [...MCP_OAUTH_SCOPES_SUPPORTED],
           },

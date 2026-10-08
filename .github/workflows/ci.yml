@@ -57,6 +57,9 @@ jobs:
       - name: Verify MCP protocol, apps, plugins and authorization
         run: bun run mcp:check
 
+      - name: Verify MCP OAuth login, consent and token issuance
+        run: bun test packages/auth
+
       - name: Run mode unit tests
         run: bun test packages/dal/src/db/env-redis-connections.test.ts apps/api/src/lib/authless.test.ts
 
