@@ -130,6 +130,7 @@ async function exchangeAuthorizationCode(input: {
   return tokenBody.access_token as string
 }
 
+/** Verify a newly authorized token against current per-request and stateless legacy MCP flows. */
 async function mcpPingWithToken(accessToken: string) {
   const mcpHost = new URL(CANONICAL_MCP_RESOURCE).host
   // A freshly issued OAuth token must work without a transport handshake.

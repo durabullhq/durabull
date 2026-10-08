@@ -312,6 +312,7 @@ function auditConnectionId(args: RawArgs): string | null {
   return typeof args.connectionId === 'string' ? args.connectionId : null
 }
 
+/** Redact tool output, audit success, and attach sanitized view identity for the app. */
 function finalizeToolSuccess(toolName: string, args: RawArgs, result: Record<string, unknown>) {
   const { value, redactionCount } = sanitizeMcpOutput(result)
   const sanitizedResult =
@@ -371,6 +372,7 @@ interface ToolRegistry {
   tools: Array<{ definition: McpToolDefinition; registered: RegisteredTool }>
 }
 
+/** Install an available handler with the shared schemas, app metadata, and audited execution boundary. */
 function registerFromCatalog<Input, Output extends Record<string, unknown>>(
   registry: ToolRegistry,
   name: string,
@@ -415,6 +417,7 @@ function buildDescription(definition: McpToolDefinition): string {
   return `${definition.description} ${scopes}${optional}`
 }
 
+/** Expose a data-free connectivity tool, including its discovery-only OAuth metadata. */
 function registerPing(registry: ToolRegistry): void {
   const definition = requireDefinition('ping')
   const registered = registry.server.registerTool(
@@ -430,6 +433,7 @@ function registerPing(registry: ToolRegistry): void {
   registry.tools.push({ definition, registered })
 }
 
+/** Register available domain handlers and derive host-compatible discovery from their registration records. */
 export function registerTools(server: McpServer, options: RegisterToolsOptions): void {
   const registry: ToolRegistry = { server, tools: [] }
   registerPing(registry)

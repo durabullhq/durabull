@@ -12,6 +12,7 @@ import { createMcpRoutes } from './routes'
 import { parseSseJson } from './testing/mcp-test-client'
 
 const origin = 'http://localhost:3000'
+/** Build an authenticated in-memory server with the same body-cache boundary as API ingress. */
 function fixture(onToolInvocationComplete?: McpRequestContext['onToolInvocationComplete']) {
   return createMcpRoutes({
     version: '2.0.0-test',
@@ -80,6 +81,7 @@ function fixture(onToolInvocationComplete?: McpRequestContext['onToolInvocationC
   })
 }
 
+/** Connect an official SDK client in the requested protocol mode and capture its wire requests. */
 async function connect(
   mode: 'auto' | 'legacy' | { pin: string },
   token = 'user-one',
