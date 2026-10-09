@@ -1,6 +1,7 @@
 import { Alert } from '@openai/apps-sdk-ui/components/Alert'
 import { Badge } from '@openai/apps-sdk-ui/components/Badge'
-import { Button } from '@openai/apps-sdk-ui/components/Button'
+import { Filter } from '@openai/apps-sdk-ui/components/Icon'
+import { Select } from '@openai/apps-sdk-ui/components/Select'
 import { MCP_JOB_STATES } from '../../../tools/tool-catalog'
 import {
   Actions,
@@ -19,10 +20,28 @@ import {
   useExplorer,
   useFilter,
 } from '../components'
-import { ago, type Data, fmt, num, obj, rows, str, strings, title, when } from '../format'
-import { JobSearch } from './connection'
+import {
+  ago,
+  count,
+  type Data,
+  dotted,
+  fmt,
+  num,
+  obj,
+  rows,
+  str,
+  strings,
+  title,
+  when,
+} from '../format'
 
-const staticRole = { role: 'note' }
+/** Overrides Alert's danger default of role=alert: a recorded failure is content, not news. */
+const nonLiveAlertRole = { role: 'note' }
+const ALL_STATES = 'all'
+const STATE_OPTIONS = [
+  { value: ALL_STATES, label: 'All states' },
+  ...MCP_JOB_STATES.map((state) => ({ value: state, label: title(state) })),
+]
 const attempts = (job: Data) => `${fmt(job.attemptsMade)} of ${fmt(job.maxAttempts)} attempts`
 
 export function Jobs({ data, args }: { data: Data; args: Data }) {
@@ -34,37 +53,38 @@ export function Jobs({ data, args }: { data: Data; args: Data }) {
   return (
     <>
       <Header
-        eyebrow={`Durabull · ${str(queue.queueName)}`}
+        eyebrow={dotted('Durabull', str(queue.queueName))}
         heading={status ? `${title(status)} jobs` : 'Jobs'}
-        subtitle={`${fmt(data.total)} jobs match`}
+        subtitle={`${count(data.total, 'job')} matched`}
       />
-      <nav
-        aria-label="Job state"
-        className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]"
-      >
-        {['', ...MCP_JOB_STATES].map((state) => (
-          <Button
-            key={state || 'all'}
-            color="secondary"
-            variant={state === status ? 'soft' : 'ghost'}
-            size="xs"
-            selected={state === status}
-            aria-pressed={state === status}
+      <div className="flex gap-2">
+        {/* Select names its trigger with the chosen state; the legend supplies the field name. */}
+        <fieldset className="m-0 shrink-0 border-0 p-0">
+          <legend className="sr-only">Job state</legend>
+          <Select
+            options={STATE_OPTIONS}
+            value={status || ALL_STATES}
+            size="sm"
+            variant="soft"
+            TriggerStartIcon={Filter}
             disabled={disabled}
-            onClick={() => open('list_jobs', { ...base, ...(state ? { status: state } : {}) })}
-          >
-            {state ? title(state) : 'All'}
-          </Button>
-        ))}
-      </nav>
-      {input}
+            onChange={(option) =>
+              open('list_jobs', {
+                ...base,
+                ...(option.value === ALL_STATES ? {} : { status: option.value }),
+              })
+            }
+          />
+        </fieldset>
+        <div className="min-w-0 flex-1">{input}</div>
+      </div>
       {filtered.length ? (
         <Rows>
           {filtered.map((job) => (
             <Row
               key={str(job.id)}
               label={str(job.id)}
-              meta={[str(job.name), attempts(job)].filter(Boolean).join(' · ')}
+              meta={dotted(str(job.name), attempts(job))}
               detail={
                 job.failedReason ? (
                   <p className="text-danger truncate text-sm">{str(job.failedReason)}</p>
@@ -91,9 +111,8 @@ export function FindJob({ data, args }: { data: Data; args: Data }) {
         eyebrow="Durabull job search"
         heading={str(data.jobId) || str(args.jobId) || 'Job search'}
         subtitle={`Searched ${fmt(data.queuesScanned)} of ${fmt(data.totalQueues)} queues`}
-        badge={<Badge>{`${matches.length} match${matches.length === 1 ? '' : 'es'}`}</Badge>}
+        badge={<Badge>{count(matches.length, 'match', 'matches')}</Badge>}
       />
-      <JobSearch initial={str(data.jobId)} />
       {matches.length ? (
         <Rows>
           {matches.map((match) => {
@@ -102,7 +121,7 @@ export function FindJob({ data, args }: { data: Data; args: Data }) {
               <Row
                 key={`${str(match.queueName)}:${str(job.id)}`}
                 label={str(job.id)}
-                meta={[str(match.queueName), str(job.name)].filter(Boolean).join(' · ')}
+                meta={dotted(str(match.queueName), str(job.name))}
                 trailing={<StatusBadge status={job.status} />}
                 onOpen={() =>
                   open('get_job', { ...ids, queueName: match.queueName, jobId: job.id })
@@ -131,7 +150,7 @@ export function Job({ data }: { data: Data }) {
   return (
     <>
       <Header
-        eyebrow={`Durabull job · ${str(data.queueName)}`}
+        eyebrow={dotted('Durabull job', str(data.queueName))}
         heading={str(job.name) || str(job.id) || 'Job'}
         subtitle={`ID ${str(job.id)}`}
         badge={<StatusBadge status={status} />}
@@ -140,8 +159,7 @@ export function Job({ data }: { data: Data }) {
         <Alert
           color="danger"
           variant="soft"
-          // A recorded failure is content, not a live error; Alert defaults danger to role=alert.
-          {...staticRole}
+          {...nonLiveAlertRole}
           title={`Failed after ${attempts(job)}`}
           description={str(job.failedReason)}
         />
@@ -176,7 +194,7 @@ export function Job({ data }: { data: Data }) {
       </Actions>
       <Section heading="Data">
         <div className="flex flex-col gap-3">
-          <Payload label="Payload · redacted" value={job.data} open />
+          <Payload label="Payload · redacted" value={job.data} defaultOpen />
           <Payload
             label="Result & progress"
             value={{ result: job.returnvalue, progress: job.progress }}
@@ -191,7 +209,7 @@ export function Logs({ data }: { data: Data }) {
   return (
     <>
       <Header
-        eyebrow={`Job logs · ${str(data.queueName)}`}
+        eyebrow={dotted('Job logs', str(data.queueName))}
         heading={str(data.jobId) || 'Job logs'}
         subtitle={`${fmt(data.total ?? logs.length)} lines · redacted`}
       />
@@ -218,7 +236,7 @@ export function Stacktraces({ data }: { data: Data }) {
   return (
     <>
       <Header
-        eyebrow={`Stacktraces · ${str(data.queueName)}`}
+        eyebrow={dotted('Stacktraces', str(data.queueName))}
         heading={str(data.jobId) || 'Stacktraces'}
         subtitle={`${fmt(data.total ?? traces.length)} attempts · redacted`}
       />
@@ -255,9 +273,12 @@ export function Explanation({ data }: { data: Data }) {
   return (
     <>
       <Header
-        eyebrow={`Failure investigation · ${str(data.queueName)}`}
+        eyebrow={dotted('Failure investigation', str(data.queueName))}
         heading={str(data.jobId) || 'Job'}
-        subtitle={`${title(str(data.status))} · ${fmt(timeline.attemptsMade)} of ${fmt(timeline.maxAttempts)} attempts`}
+        subtitle={dotted(
+          title(str(data.status)),
+          `${fmt(timeline.attemptsMade)} of ${fmt(timeline.maxAttempts)} attempts`
+        )}
         badge={
           confidence ? (
             <StatusBadge status={confidence} label={CONFIDENCE[confidence] ?? title(confidence)} />

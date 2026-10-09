@@ -13,8 +13,7 @@ import {
   useExplorer,
   useFilter,
 } from '../components'
-import { ago, type Data, duration, fmt, num, obj, rows, str, when } from '../format'
-import { ConnectionNav } from './connection'
+import { ago, count, type Data, dotted, duration, fmt, num, obj, rows, str, when } from '../format'
 
 /** Cron pattern or fixed interval, whichever the scheduler uses. */
 const cadence = (schedule: Data) =>
@@ -27,7 +26,7 @@ export function Schedules({ data, args }: { data: Data; args: Data }) {
   return (
     <>
       <Header
-        eyebrow={queueName ? `Durabull · ${queueName}` : 'Durabull'}
+        eyebrow={dotted('Durabull', queueName)}
         heading="Recurring schedules"
         subtitle={
           data.total == null
@@ -35,7 +34,6 @@ export function Schedules({ data, args }: { data: Data; args: Data }) {
             : `${fmt(data.total)} schedules`
         }
       />
-      {queueName ? null : <ConnectionNav current="list_scheduled_jobs" />}
       {input}
       {filtered.length ? (
         <Rows>
@@ -44,9 +42,7 @@ export function Schedules({ data, args }: { data: Data; args: Data }) {
               key={`${str(schedule.queueName)}:${str(schedule.schedulerId)}`}
               icon={<Calendar />}
               label={str(schedule.jobName) || str(schedule.schedulerId)}
-              meta={[queueName ? '' : str(schedule.queueName), cadence(schedule)]
-                .filter(Boolean)
-                .join(' · ')}
+              meta={dotted(queueName ? '' : str(schedule.queueName), cadence(schedule))}
               trailing={schedule.nextRunAt ? `next ${ago(schedule.nextRunAt)}` : null}
               onOpen={() =>
                 open('get_scheduled_job', {
@@ -72,15 +68,12 @@ export function Schedule({ data }: { data: Data }) {
   return (
     <>
       <Header
-        eyebrow={`Durabull schedule · ${str(schedule.queueName)}`}
+        eyebrow={dotted('Durabull schedule', str(schedule.queueName))}
         heading={str(schedule.jobName) || 'Recurring job'}
         subtitle={`Scheduler ${str(schedule.schedulerId)}`}
         badge={
           failures > 0 ? (
-            <StatusBadge
-              status="failed"
-              label={`${fmt(failures)} recent failure${failures === 1 ? '' : 's'}`}
-            />
+            <StatusBadge status="failed" label={count(failures, 'recent failure')} />
           ) : null
         }
       />

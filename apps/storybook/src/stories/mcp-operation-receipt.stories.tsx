@@ -1,20 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { McpPreview } from '../mcp-preview'
-import {
-  inChatGptDark,
-  inClaude,
-  inClaudeDark,
-  mcpArgTypes,
-  mcpDocs,
-  onPhone,
-} from '../mcp-stories'
+import type { McpPreview } from '../mcp-preview'
+import { inChatGptDark, inClaude, inClaudeDark, mcpCard, onPhone } from '../mcp-stories'
 
 const meta = {
   title: 'MCP Apps/Operation receipt',
-  component: McpPreview,
-  args: { tool: 'retry_job' },
-  argTypes: mcpArgTypes,
-  parameters: mcpDocs(
+  ...mcpCard(
+    'retry_job',
     'Receipt shown after the assistant performs a write. Refresh reads state; it never repeats the write.'
   ),
 } satisfies Meta<typeof McpPreview>
@@ -22,7 +13,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const JobRetried: Story = {}
-export const InChatGPTDark: Story = { ...inChatGptDark, name: 'In ChatGPT Dark' }
+export const InChatGPTDark: Story = inChatGptDark
 export const InClaude: Story = inClaude
 export const InClaudeDark: Story = inClaudeDark
 export const OnPhone: Story = onPhone

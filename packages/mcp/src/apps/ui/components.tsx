@@ -10,25 +10,34 @@ import {
   TriangleExclamationErrorWarning,
 } from '@openai/apps-sdk-ui/components/Icon'
 import { Input } from '@openai/apps-sdk-ui/components/Input'
+import { Tooltip } from '@openai/apps-sdk-ui/components/Tooltip'
 import { createContext, type ReactNode, useContext, useState } from 'react'
 import type { Explorer, ExplorerState } from './explorer'
 import { type Data, json, short, str, text, title } from './format'
+import type { ToolName } from './views/registry'
 
-type Ctx = { explorer: Explorer; state: ExplorerState; args: Data }
+type Ctx = {
+  explorer: Explorer
+  state: ExplorerState
+  /** Identifiers carried from the current snapshot into drill-down reads. */
+  ids: Data
+  /** Connection navigation, rendered under the card header when a connection is in scope. */
+  nav: ReactNode
+}
 const ExplorerContext = createContext<Ctx | null>(null)
 export const ExplorerProvider = ExplorerContext.Provider
 export function useExplorer() {
   const context = useContext(ExplorerContext)
   if (!context) throw new Error('Explorer context missing')
-  const { explorer, state, args } = context
-  const disabled = !state.connected || state.busy !== false
+  const { explorer, state, ids, nav } = context
   return {
     state,
-    disabled,
-    /** Identifiers carried from the current snapshot into drill-down reads. */
-    ids: args,
-    open: (tool: string, toolArgs: Data) => void explorer.load(tool, toolArgs),
-    ask: explorer.canAsk ? (action: string, ids: Data) => void explorer.ask(action, ids) : null,
+    ids,
+    nav,
+    disabled: !state.connected || state.busy !== false,
+    open: (tool: ToolName, args: Data) => void explorer.load(tool, args),
+    back: explorer.back,
+    ask: explorer.canAsk ? (action: string, args: Data) => void explorer.ask(action, args) : null,
   }
 }
 
@@ -38,48 +47,55 @@ export function Header({
   heading,
   subtitle,
   badge,
-  trailing,
 }: {
   eyebrow: string
   heading: string
   subtitle?: ReactNode
   badge?: ReactNode
-  trailing?: ReactNode
 }) {
-  const { state } = useExplorer()
-  const explorer = useContext(ExplorerContext)!.explorer
+  const { state, back, nav } = useExplorer()
   return (
-    <header className="flex items-start gap-2">
-      {state.depth > 0 ? (
-        <Button
-          color="secondary"
-          variant="ghost"
-          size="sm"
-          uniform
-          aria-label="Back"
-          className="-ms-1.5 mt-0.5"
-          disabled={state.busy === 'ask'}
-          onClick={explorer.back}
-        >
-          <ChevronLeft />
-        </Button>
-      ) : null}
-      <div className="min-w-0 flex-1">
-        <p className="text-secondary text-sm">{eyebrow}</p>
-        <h1 className="heading-lg mt-0.5 break-words outline-none">{heading}</h1>
-        {subtitle ? <p className="text-secondary mt-0.5 text-sm">{subtitle}</p> : null}
-      </div>
-      {badge || trailing ? (
-        <div className="flex shrink-0 items-center gap-2">
-          {badge}
-          {trailing}
+    <>
+      <header className="flex items-start gap-2">
+        {state.depth > 0 ? (
+          <Button
+            color="secondary"
+            variant="ghost"
+            size="sm"
+            uniform
+            aria-label="Back"
+            className="-ms-1.5 mt-0.5"
+            disabled={state.busy === 'ask'}
+            onClick={back}
+          >
+            <ChevronLeft />
+          </Button>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <p className="text-secondary text-sm">{eyebrow}</p>
+          <h1 className="heading-lg mt-0.5 break-words outline-none">{heading}</h1>
+          {subtitle ? <p className="text-secondary mt-0.5 text-sm">{subtitle}</p> : null}
         </div>
-      ) : null}
-    </header>
+        {badge ? <div className="flex shrink-0 items-center gap-2">{badge}</div> : null}
+      </header>
+      {nav}
+    </>
   )
 }
 
-type Tone = 'secondary' | 'success' | 'danger' | 'warning' | 'info' | 'discovery'
+/** Horizontally scrolling row of small pill controls that bleeds to the card edge. */
+export function ChipRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <nav
+      aria-label={label}
+      className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]"
+    >
+      {children}
+    </nav>
+  )
+}
+
+export type Tone = 'secondary' | 'success' | 'danger' | 'warning' | 'info' | 'discovery'
 const TONES: Record<string, Tone> = {
   failed: 'danger',
   firing: 'danger',
@@ -122,21 +138,31 @@ export function StatusBadge({ status, label }: { status: unknown; label?: string
   )
 }
 
-/** Headline metrics in soft tiles; counts shorten beyond 10k with the exact value in a title. */
-export function Stats({ items }: { items: [string, unknown, Tone?, string?][] }) {
+export type Stat = { label: string; value: unknown; tone?: Tone; display?: string }
+/** Headline metrics in soft tiles; counts shorten beyond 10k with the exact value on hover. */
+export function Stats({ items }: { items: Stat[] }) {
   return (
     <dl className="grid grid-cols-2 gap-2 min-[440px]:grid-cols-4">
-      {items.map(([label, value, tone, display]) => (
-        <div key={label} className="bg-surface-secondary rounded-xl px-3 py-2.5">
-          <dt className="text-secondary truncate text-xs">{label}</dt>
-          <dd
-            className={`mt-0.5 text-lg font-semibold tabular-nums ${tone ? TONE_TEXT[tone] : ''}`}
-            title={typeof value === 'number' ? value.toLocaleString() : undefined}
-          >
-            {display ?? short(value)}
-          </dd>
-        </div>
-      ))}
+      {items.map(({ label, value, tone, display }) => {
+        const shown = display ?? short(value)
+        const exact = typeof value === 'number' ? value.toLocaleString() : shown
+        return (
+          <div key={label} className="bg-surface-secondary rounded-xl px-3 py-2.5">
+            <dt className="text-secondary truncate text-xs">{label}</dt>
+            <dd
+              className={`mt-0.5 text-lg font-semibold tabular-nums ${tone ? TONE_TEXT[tone] : ''}`}
+            >
+              {display !== undefined || exact === shown ? (
+                shown
+              ) : (
+                <Tooltip content={exact} compact>
+                  <span>{shown}</span>
+                </Tooltip>
+              )}
+            </dd>
+          </div>
+        )
+      })}
     </dl>
   )
 }
@@ -162,19 +188,31 @@ export function Section({
   )
 }
 
+/** Values this long may truncate in a narrow card, so the full text shows on hover. */
+const LONG_FACT = 28
 /** Label/value pairs aligned like native receipt cards. Values are rendered as text only. */
 export function Facts({ items }: { items: [string, ReactNode][] }) {
   const visible = items.filter(([, value]) => value !== undefined)
   return (
     <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
-      {visible.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-secondary">{label}</dt>
-          <dd className="truncate text-end tabular-nums">
-            {value === null || value === '' ? '—' : typeof value === 'object' ? value : text(value)}
-          </dd>
-        </div>
-      ))}
+      {visible.map(([label, value]) => {
+        const content =
+          value === null || value === '' ? '—' : typeof value === 'object' ? value : text(value)
+        return (
+          <div key={label} className="contents">
+            <dt className="text-secondary">{label}</dt>
+            <dd className="truncate text-end tabular-nums">
+              {typeof content === 'string' && content.length > LONG_FACT ? (
+                <Tooltip content={content} maxWidth={320}>
+                  <span>{content}</span>
+                </Tooltip>
+              ) : (
+                content
+              )}
+            </dd>
+          </div>
+        )
+      })}
     </dl>
   )
 }
@@ -233,14 +271,14 @@ export function Rows({ children }: { children: ReactNode }) {
 export function Payload({
   label,
   value,
-  open = false,
+  defaultOpen = false,
 }: {
   label: string
   value: unknown
-  open?: boolean
+  defaultOpen?: boolean
 }) {
   return (
-    <details open={open} className="group">
+    <details open={defaultOpen} className="group">
       <summary className="text-secondary hover:text-default flex cursor-pointer list-none items-center gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-4 transition-transform group-open:rotate-90" />
         {label}
@@ -285,18 +323,18 @@ export function Go({
   label,
   tool,
   args,
-  primary = false,
+  variant = 'secondary',
 }: {
   label: string
-  tool: string
+  tool: ToolName
   args: Data
-  primary?: boolean
+  variant?: 'primary' | 'secondary'
 }) {
   const { open, disabled } = useExplorer()
   return (
     <Button
-      color={primary ? 'primary' : 'secondary'}
-      variant={primary ? 'solid' : 'soft'}
+      color={variant}
+      variant={variant === 'primary' ? 'solid' : 'soft'}
       size="sm"
       disabled={disabled}
       onClick={() => open(tool, args)}
@@ -333,20 +371,31 @@ export function useFilter(items: Data[]) {
   const filtered = query
     ? items.filter((item) => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()))
     : items
-  const input =
-    items.length > 4 || query ? (
-      <Input
-        size="sm"
-        variant="soft"
-        type="search"
-        placeholder="Filter this page"
-        aria-label="Filter current page"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        startAdornment={<Search className="text-tertiary size-4" />}
-      />
-    ) : null
+  const input = (
+    <Input
+      size="sm"
+      variant="soft"
+      type="search"
+      placeholder="Filter this page"
+      aria-label="Filter current page"
+      value={query}
+      onChange={(event) => setQuery(event.target.value)}
+      startAdornment={<Search className="text-tertiary size-4" />}
+    />
+  )
   return { filtered, input }
+}
+
+/** Confirms a write the assistant performed; the card below is the post-operation snapshot. */
+export function Receipt({ heading }: { heading: string }) {
+  return (
+    <Alert
+      color="success"
+      variant="soft"
+      title={heading}
+      description="Snapshot taken right after the operation."
+    />
+  )
 }
 
 /** Live error (Alert gives danger role=alert) that also offers to retry the exact failed read. */

@@ -107,3 +107,9 @@ export const ratio = (value: unknown) =>
 /** Serialize values for text-only cells. */
 export const text = (value: unknown) =>
   value == null ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value)
+/** Join the present parts of a metadata line with middle dots. */
+export const dotted = (...parts: unknown[]) =>
+  parts.filter((part): part is string => typeof part === 'string' && part !== '').join(' · ')
+/** Locale-formatted count with a singular or plural noun, e.g. "1 worker", "3 workers". */
+export const count = (value: unknown, singular: string, plural = `${singular}s`) =>
+  `${fmt(value)} ${num(value) === 1 ? singular : plural}`

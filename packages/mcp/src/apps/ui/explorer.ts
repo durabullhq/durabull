@@ -238,6 +238,4 @@ export class Explorer {
       this.set({ error: 'This host could not change display mode.' })
     }
   }
-
-  readonly dismissNotice = () => this.set({ notice: '' })
 }

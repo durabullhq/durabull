@@ -1,26 +1,19 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { McpPreview } from '../mcp-preview'
-import {
-  inChatGptDark,
-  inClaude,
-  inClaudeDark,
-  mcpArgTypes,
-  mcpDocs,
-  onPhone,
-} from '../mcp-stories'
+import type { McpPreview } from '../mcp-preview'
+import { inChatGpt, inChatGptDark, inClaude, inClaudeDark, mcpCard, onPhone } from '../mcp-stories'
 
 const meta = {
   title: 'MCP Apps/Connections',
-  component: McpPreview,
-  args: { tool: 'list_connections' },
-  argTypes: mcpArgTypes,
-  parameters: mcpDocs('Connection picker shown when the assistant lists Durabull connections.'),
+  ...mcpCard(
+    'list_connections',
+    'Connection picker shown when the assistant lists Durabull connections.'
+  ),
 } satisfies Meta<typeof McpPreview>
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const InChatGPT: Story = { name: 'In ChatGPT' }
-export const InChatGPTDark: Story = { ...inChatGptDark, name: 'In ChatGPT Dark' }
+export const InChatGPT: Story = inChatGpt
+export const InChatGPTDark: Story = inChatGptDark
 export const InClaude: Story = inClaude
 export const InClaudeDark: Story = inClaudeDark
 export const OnPhone: Story = onPhone

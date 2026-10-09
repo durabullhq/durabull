@@ -1,5 +1,6 @@
 import { readdir } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
+import { MCP_TOOL_NAMES } from '../../../packages/mcp/src/tools/tool-catalog'
 
 const root = resolve(import.meta.dir, '../../..')
 async function files(directory: string): Promise<string[]> {
@@ -86,11 +87,12 @@ for (const path of marketingPages) {
   if (!source.includes(modulePath)) missing.push(relative(root, path))
   else covered++
 }
-const appSource = await Bun.file(
-  resolve(root, 'packages/mcp/src/apps/ui/views/render-view.tsx')
-).text()
-for (const [, name] of appSource.matchAll(/case '([^']+)':/g)) {
-  if (!source.includes(`tool: '${name}'`) && !source.includes(`tool: "${name}"`))
+const registry = await Bun.file(resolve(root, 'packages/mcp/src/apps/ui/views/registry.tsx')).text()
+const viewTools = [...registry.matchAll(/^ {2}([a-z_]+): /gm)].map((match) => match[1])
+if (!viewTools.length) missing.push('MCP app view registry: no views found')
+for (const name of viewTools) {
+  if (!MCP_TOOL_NAMES.includes(name)) missing.push(`MCP app view for unknown tool: ${name}`)
+  if (!new RegExp(`(tool: |mcpCard\\(\\s*)['"]${name}['"]`).test(source))
     missing.push(`MCP app view: ${name}`)
 }
 if (missing.length) throw new Error(`UI needs a catalog story:\n${missing.join('\n')}`)

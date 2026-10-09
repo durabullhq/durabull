@@ -1,3 +1,4 @@
+import { Tooltip } from '@openai/apps-sdk-ui/components/Tooltip'
 import {
   Empty,
   Facts,
@@ -12,9 +13,21 @@ import {
   useExplorer,
   Warn,
 } from '../components'
-import { ago, bytes, type Data, fmt, num, obj, percent, rows, str, title, when } from '../format'
+import {
+  ago,
+  bytes,
+  type Data,
+  dotted,
+  fmt,
+  num,
+  obj,
+  percent,
+  rows,
+  str,
+  title,
+  when,
+} from '../format'
 import { healthSeries } from '../health-series'
-import { ConnectionNav } from './connection'
 
 const MEMORY_METRICS = new Set(['memoryUsagePercent', 'memory_usage_percent'])
 
@@ -45,20 +58,24 @@ function MemoryChart({ series, threshold }: { series: unknown; threshold?: numbe
           </div>
         ) : null}
         {points.map((point) => (
-          <div
+          <Tooltip
             key={point.capturedAt}
-            title={`${when(point.capturedAt)}: ${point.memoryUsagePercent === null ? 'No measurement' : percent(point.memoryUsagePercent)}`}
-            className="min-w-px flex-1 rounded-t-[2px]"
-            style={
-              point.memoryUsagePercent === null
-                ? { height: 2, background: 'var(--color-border-strong, var(--color-border))' }
-                : {
-                    height: `${Math.max(2, (Math.max(0, point.memoryUsagePercent) / max) * 100)}%`,
-                    background: 'var(--color-background-info-solid)',
-                    opacity: 0.85,
-                  }
-            }
-          />
+            compact
+            content={`${when(point.capturedAt)}: ${point.memoryUsagePercent === null ? 'No measurement' : percent(point.memoryUsagePercent)}`}
+          >
+            <div
+              className="min-w-px flex-1 rounded-t-[2px]"
+              style={
+                point.memoryUsagePercent === null
+                  ? { height: 2, background: 'var(--color-border-strong, var(--color-border))' }
+                  : {
+                      height: `${Math.max(2, (Math.max(0, point.memoryUsagePercent) / max) * 100)}%`,
+                      background: 'var(--color-background-info-solid)',
+                      opacity: 0.85,
+                    }
+              }
+            />
+          </Tooltip>
         ))}
       </div>
       <figcaption className="text-tertiary flex justify-between text-xs">
@@ -95,7 +112,6 @@ export function RedisHealth({ data }: { data: Data }) {
           ) : null
         }
       />
-      <ConnectionNav current="get_redis_health" />
       {data.collectionEnabled === false ? (
         <Warn>Redis health collection is disabled for this connection.</Warn>
       ) : null}
@@ -104,21 +120,22 @@ export function RedisHealth({ data }: { data: Data }) {
       ) : null}
       <Stats
         items={[
-          [
-            'Memory',
-            latest.memoryUsagePercent,
-            memoryThreshold && num(latest.memoryUsagePercent) >= num(memoryThreshold.threshold)
-              ? 'danger'
-              : undefined,
-            percent(latest.memoryUsagePercent),
-          ],
-          ['CPU', latest.cpuUsagePercent, undefined, percent(latest.cpuUsagePercent)],
-          ['Clients', latest.connectedClients],
-          [
-            'Evictions / min',
-            latest.evictedKeysPerMinute,
-            num(latest.evictedKeysPerMinute) > 0 ? 'danger' : undefined,
-          ],
+          {
+            label: 'Memory',
+            value: latest.memoryUsagePercent,
+            tone:
+              memoryThreshold && num(latest.memoryUsagePercent) >= num(memoryThreshold.threshold)
+                ? 'danger'
+                : undefined,
+            display: percent(latest.memoryUsagePercent),
+          },
+          { label: 'CPU', value: latest.cpuUsagePercent, display: percent(latest.cpuUsagePercent) },
+          { label: 'Clients', value: latest.connectedClients },
+          {
+            label: 'Evictions / min',
+            value: latest.evictedKeysPerMinute,
+            tone: num(latest.evictedKeysPerMinute) > 0 ? 'danger' : undefined,
+          },
         ]}
       />
       <Section
@@ -141,7 +158,7 @@ export function RedisHealth({ data }: { data: Data }) {
             ['Resident memory', bytes(latest.residentMemoryBytes)],
             [
               'Capacity',
-              `${bytes(latest.memoryCapacityBytes)}${latest.memoryCapacitySource ? ` · ${str(latest.memoryCapacitySource)}` : ''}`,
+              dotted(bytes(latest.memoryCapacityBytes), str(latest.memoryCapacitySource)),
             ],
             [
               'Fragmentation',

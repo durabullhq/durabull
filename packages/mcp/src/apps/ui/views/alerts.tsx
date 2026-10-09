@@ -1,4 +1,3 @@
-import { Alert } from '@openai/apps-sdk-ui/components/Alert'
 import { Badge } from '@openai/apps-sdk-ui/components/Badge'
 import { Bell } from '@openai/apps-sdk-ui/components/Icon'
 import {
@@ -10,6 +9,7 @@ import {
   Header,
   Note,
   Payload,
+  Receipt,
   Row,
   Rows,
   Section,
@@ -19,8 +19,7 @@ import {
   useFilter,
   Warn,
 } from '../components'
-import { ago, type Data, fmt, num, obj, rows, str, strings, title, when } from '../format'
-import { ConnectionNav } from './connection'
+import { ago, type Data, dotted, fmt, num, obj, rows, str, strings, title, when } from '../format'
 
 export function Incidents({ data }: { data: Data }) {
   const { ids, open } = useExplorer()
@@ -41,13 +40,12 @@ export function Incidents({ data }: { data: Data }) {
           )
         }
       />
-      <ConnectionNav current="get_alert_summary" />
       <Stats
         items={[
-          ['Open', data.open, num(data.open) > 0 ? 'danger' : undefined],
-          ['Unacknowledged', data.firing],
-          ['Acknowledged', data.acknowledged],
-          ['Rules', rules.total],
+          { label: 'Open', value: data.open, tone: num(data.open) > 0 ? 'danger' : undefined },
+          { label: 'Unacknowledged', value: data.firing },
+          { label: 'Acknowledged', value: data.acknowledged },
+          { label: 'Rules', value: rules.total },
         ]}
       />
       {data.truncated ? (
@@ -107,7 +105,6 @@ export function AlertEvents({ data }: { data: Data }) {
         heading="Alerts"
         subtitle={data.total == null ? undefined : `${fmt(data.total)} alert events`}
       />
-      <ConnectionNav current="get_failure_events" />
       {input}
       {filtered.length ? (
         <Rows>
@@ -116,9 +113,7 @@ export function AlertEvents({ data }: { data: Data }) {
               key={str(event.id)}
               icon={<Bell />}
               label={str(event.summary) || str(event.id)}
-              meta={[str(event.queueName), `fired ${ago(event.firedAt)}`]
-                .filter(Boolean)
-                .join(' · ')}
+              meta={dotted(str(event.queueName), `fired ${ago(event.firedAt)}`)}
               trailing={<StatusBadge status={event.status} />}
               onOpen={() => open('get_alert_event', { ...ids, eventId: event.id })}
             />
@@ -131,12 +126,7 @@ export function AlertEvents({ data }: { data: Data }) {
   )
 }
 
-const EVENT_RECEIPTS: Record<string, string> = {
-  resolve_alert_event: 'Alert resolved',
-  acknowledge_alert_event: 'Alert acknowledged',
-  unacknowledge_alert_event: 'Acknowledgement cleared',
-}
-export function AlertEvent({ data, tool }: { data: Data; tool: string }) {
+export function AlertEvent({ data, receipt }: { data: Data; receipt?: string }) {
   const { ids } = useExplorer()
   const event = obj(data.event)
   const target = { ...ids, eventId: event.id }
@@ -145,23 +135,16 @@ export function AlertEvent({ data, tool }: { data: Data; tool: string }) {
   return (
     <>
       <Header
-        eyebrow={`Durabull alert · ${str(event.queueName) || 'connection'}`}
+        eyebrow={dotted('Durabull alert', str(event.queueName) || 'connection')}
         heading={str(event.summary) || 'Alert'}
-        subtitle={`${title(str(event.type))} · fired ${ago(event.firedAt)}`}
+        subtitle={dotted(title(str(event.type)), `fired ${ago(event.firedAt)}`)}
         badge={
           <StatusBadge
             status={event.status === 'firing' && acknowledged ? 'acknowledged' : event.status}
           />
         }
       />
-      {EVENT_RECEIPTS[tool] ? (
-        <Alert
-          color="success"
-          variant="soft"
-          title={EVENT_RECEIPTS[tool]}
-          description="Snapshot taken right after the operation."
-        />
-      ) : null}
+      {receipt ? <Receipt heading={receipt} /> : null}
       <Facts
         items={[
           ['Fired', when(event.firedAt)],
@@ -208,12 +191,10 @@ export function AlertEvent({ data, tool }: { data: Data; tool: string }) {
               <Row
                 key={str(delivery.id)}
                 label={title(str(delivery.channelType))}
-                meta={[
+                meta={dotted(
                   `${fmt(delivery.attemptCount)} attempts`,
-                  delivery.nextRetryAt ? `next retry ${ago(delivery.nextRetryAt)}` : '',
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
+                  Boolean(delivery.nextRetryAt) && `next retry ${ago(delivery.nextRetryAt)}`
+                )}
                 detail={
                   delivery.lastError ? (
                     <p className="text-danger truncate text-sm">{str(delivery.lastError)}</p>
@@ -246,7 +227,6 @@ export function Rules({ data }: { data: Data }) {
         heading="Alert rules"
         subtitle={data.total == null ? undefined : `${fmt(data.total)} rules`}
       />
-      <ConnectionNav current="list_alert_rules" />
       {input}
       {filtered.length ? (
         <Rows>
@@ -254,13 +234,11 @@ export function Rules({ data }: { data: Data }) {
             <Row
               key={str(rule.id)}
               label={str(rule.name)}
-              meta={[
+              meta={dotted(
                 title(str(rule.type)),
                 str(rule.queueName) || 'Multiple queues',
-                rule.mutedUntil ? `snoozed until ${when(rule.mutedUntil)}` : '',
-              ]
-                .filter(Boolean)
-                .join(' · ')}
+                Boolean(rule.mutedUntil) && `snoozed until ${when(rule.mutedUntil)}`
+              )}
               trailing={
                 <>
                   {num(rule.openEventCount) > 0 ? (
@@ -282,11 +260,7 @@ export function Rules({ data }: { data: Data }) {
   )
 }
 
-const RULE_RECEIPTS: Record<string, string> = {
-  snooze_alert_rule: 'Rule snoozed',
-  unsnooze_alert_rule: 'Snooze cleared',
-}
-export function Rule({ data, tool }: { data: Data; tool: string }) {
+export function Rule({ data, receipt }: { data: Data; receipt?: string }) {
   const { ids, open } = useExplorer()
   const rule = obj(data.rule)
   const target = { ...ids, ruleId: rule.id }
@@ -297,17 +271,10 @@ export function Rule({ data, tool }: { data: Data; tool: string }) {
       <Header
         eyebrow="Durabull alert rule"
         heading={str(rule.name) || 'Alert rule'}
-        subtitle={`${title(str(rule.type))} · ${str(rule.queueName) || 'Multiple queues'}`}
+        subtitle={dotted(title(str(rule.type)), str(rule.queueName) || 'Multiple queues')}
         badge={<StatusBadge status={rule.state} />}
       />
-      {RULE_RECEIPTS[tool] ? (
-        <Alert
-          color="success"
-          variant="soft"
-          title={RULE_RECEIPTS[tool]}
-          description="Snapshot taken right after the operation."
-        />
-      ) : null}
+      {receipt ? <Receipt heading={receipt} /> : null}
       <Facts
         items={[
           ['Open events', fmt(rule.openEventCount)],

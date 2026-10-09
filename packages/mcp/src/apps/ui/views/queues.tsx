@@ -17,8 +17,22 @@ import {
   useFilter,
   Warn,
 } from '../components'
-import { type Data, duration, fmt, num, obj, ratio, rows, str, strings } from '../format'
-import { ConnectionNav } from './connection'
+import {
+  count,
+  type Data,
+  dotted,
+  duration,
+  fmt,
+  num,
+  obj,
+  ratio,
+  rows,
+  str,
+  strings,
+} from '../format'
+
+const workerTiming = (worker: Data) =>
+  dotted(`up ${duration(worker.ageMs)}`, `idle ${duration(worker.idleMs)}`)
 
 export function Queues({ data }: { data: Data }) {
   const { ids, open } = useExplorer()
@@ -30,7 +44,6 @@ export function Queues({ data }: { data: Data }) {
         heading="Queues"
         subtitle={data.total == null ? undefined : `${fmt(data.total)} queues on this connection`}
       />
-      <ConnectionNav current="list_queues" />
       {input}
       {filtered.length ? (
         <Rows>
@@ -41,7 +54,7 @@ export function Queues({ data }: { data: Data }) {
                 key={str(queue.name)}
                 icon={<Stack />}
                 label={str(queue.name)}
-                meta={`${fmt(counts.waiting)} waiting · ${fmt(counts.active)} active`}
+                meta={dotted(`${fmt(counts.waiting)} waiting`, `${fmt(counts.active)} active`)}
                 trailing={
                   <>
                     {num(counts.failed) > 0 ? (
@@ -72,19 +85,26 @@ export function Queue({ data }: { data: Data }) {
       <Header
         eyebrow="Durabull queue"
         heading={str(data.name) || 'Queue'}
-        subtitle={`${fmt(workers.length)} worker${workers.length === 1 ? '' : 's'} · ${fmt(data.scheduledJobsCount)} schedules`}
+        subtitle={dotted(
+          count(workers.length, 'worker'),
+          `${fmt(data.scheduledJobsCount)} schedules`
+        )}
         badge={<StatusBadge status={data.isPaused ? 'paused' : data.status} />}
       />
       <Stats
         items={[
-          ['Waiting', counts.waiting],
-          ['Active', counts.active],
-          ['Failed', counts.failed, num(counts.failed) > 0 ? 'danger' : undefined],
-          ['Completed', counts.completed],
+          { label: 'Waiting', value: counts.waiting },
+          { label: 'Active', value: counts.active },
+          {
+            label: 'Failed',
+            value: counts.failed,
+            tone: num(counts.failed) > 0 ? 'danger' : undefined,
+          },
+          { label: 'Completed', value: counts.completed },
         ]}
       />
       <Actions>
-        <Go primary label="Browse jobs" tool="list_jobs" args={queue} />
+        <Go variant="primary" label="Browse jobs" tool="list_jobs" args={queue} />
         <Go label="Failed jobs" tool="list_jobs" args={{ ...queue, status: 'failed' }} />
         <Go label="Metrics" tool="get_queue_metrics" args={queue} />
         <Go label="Schedules" tool="list_scheduled_jobs" args={queue} />
@@ -102,7 +122,7 @@ export function Queue({ data }: { data: Data }) {
                 key={str(worker.id)}
                 label={str(worker.name) || str(worker.id)}
                 meta={str(worker.address) || undefined}
-                trailing={`up ${duration(worker.ageMs)} · idle ${duration(worker.idleMs)}`}
+                trailing={workerTiming(worker)}
               />
             ))}
           </Rows>
@@ -125,7 +145,6 @@ export function Workers({ data }: { data: Data }) {
         heading="Workers"
         subtitle={`${fmt(data.totalWorkersInPage)} on this page across ${fmt(data.totalQueues)} queues`}
       />
-      <ConnectionNav current="get_workers" />
       {input}
       {filtered.length ? (
         <Rows>
@@ -133,8 +152,8 @@ export function Workers({ data }: { data: Data }) {
             <Row
               key={`${str(worker.queueName)}:${str(worker.id)}`}
               label={str(worker.name) || str(worker.id)}
-              meta={[str(worker.queueName), str(worker.address)].filter(Boolean).join(' · ')}
-              trailing={`idle ${duration(worker.idleMs)}`}
+              meta={dotted(str(worker.queueName), str(worker.address))}
+              trailing={workerTiming(worker)}
             />
           ))}
         </Rows>
@@ -165,15 +184,21 @@ export function Metrics({ data }: { data: Data }) {
       />
       <Stats
         items={[
-          ['Completed', totals.completedInWindow],
-          ['Failed', totals.failedInWindow, num(totals.failedInWindow) > 0 ? 'danger' : undefined],
-          ['Jobs / min', totals.avgCompletedPerMinuteInWindow],
-          [
-            'Drain time',
-            totals.estimatedDrainMinutes,
-            undefined,
-            totals.estimatedDrainMinutes == null ? '—' : `${fmt(totals.estimatedDrainMinutes)} min`,
-          ],
+          { label: 'Completed', value: totals.completedInWindow },
+          {
+            label: 'Failed',
+            value: totals.failedInWindow,
+            tone: num(totals.failedInWindow) > 0 ? 'danger' : undefined,
+          },
+          { label: 'Jobs / min', value: totals.avgCompletedPerMinuteInWindow },
+          {
+            label: 'Drain time',
+            value: totals.estimatedDrainMinutes,
+            display:
+              totals.estimatedDrainMinutes == null
+                ? '—'
+                : `${fmt(totals.estimatedDrainMinutes)} min`,
+          },
         ]}
       />
       {strings(data.warnings).map((warning) => (
