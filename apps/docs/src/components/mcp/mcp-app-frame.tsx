@@ -76,9 +76,13 @@ export function McpAppFrame({
   const themeRef = useRef(theme)
   themeRef.current = theme
   const [ready, setReady] = useState(false)
+  const [failed, setFailed] = useState(false)
+  /** Bumped by "Try again" to rerun the load effect. */
+  const [attempt, setAttempt] = useState(0)
   const [height, setHeight] = useState<number | null>(null)
   const argsKey = JSON.stringify(args ?? {})
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` reruns the load after a failure
   useEffect(() => {
     const iframe = frameRef.current
     if (!iframe || !inView) return
@@ -86,9 +90,10 @@ export function McpAppFrame({
     let disposed = false
     let bridge: AppBridge | null = null
     setReady(false)
+    setFailed(false)
 
-    void Promise.all([import('@modelcontextprotocol/ext-apps/app-bridge'), loadAppHtml()]).then(
-      async ([{ AppBridge, PostMessageTransport }, html]) => {
+    void Promise.all([import('@modelcontextprotocol/ext-apps/app-bridge'), loadAppHtml()])
+      .then(async ([{ AppBridge, PostMessageTransport }, html]) => {
         if (disposed || !iframe.contentWindow) return
         bridge = new AppBridge(
           null,
@@ -128,15 +133,19 @@ export function McpAppFrame({
         bridgeRef.current = bridge
         // srcdoc, like the Storybook host: an opaque-origin document with no network access.
         iframe.srcdoc = html
-      }
-    )
+      })
+      .catch((error) => {
+        if (disposed) return
+        console.warn('Durabull MCP app embed failed to load', error)
+        setFailed(true)
+      })
 
     return () => {
       disposed = true
       bridgeRef.current = null
       void bridge?.close()
     }
-  }, [tool, argsKey, inView])
+  }, [tool, argsKey, inView, attempt])
 
   // Theme flips are host-context changes, not a reload, just as in a real host.
   useEffect(() => {
@@ -160,7 +169,21 @@ export function McpAppFrame({
         )}
         style={{ height: height ?? 420, border: 0, background: 'transparent' }}
       />
-      {ready ? null : (
+      {ready ? null : failed ? (
+        <output
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center text-[13px]"
+          style={{ color: theme === 'dark' ? '#d4d4d4' : '#525252' }}
+        >
+          The Queue Explorer demo couldn’t load.
+          <button
+            type="button"
+            onClick={() => setAttempt((n) => n + 1)}
+            className="rounded-md border border-current px-3 py-1 text-[12px] font-medium"
+          >
+            Try again
+          </button>
+        </output>
+      ) : (
         <div
           aria-hidden
           className="absolute inset-0 flex flex-col gap-3 p-4"
