@@ -128,6 +128,14 @@ names, job data, logs, emails, names, organizations, hostnames, raw URLs, search
 stack traces, and raw error messages. This field restriction applies to the sanitized Durabull
 stream; your configured PostHog project receives its full browser analytics stream.
 
+MCP analytics additionally records tool/resource names, OAuth stages, scope counts, client and
+protocol metadata, event times, outcomes, and durations. Where configured, hashed user,
+service-account, organization, client, connection, session, and request identifiers associate
+activity across requests. These are pseudonymous identifiers, not a guarantee of anonymity.
+The separate browser PostHog stream can include identified user and organization profiles,
+page URLs, interactions, and exception diagnostics. See the [Privacy Policy](/privacy) for data
+uses, recipients, retention, and available controls.
+
 Self-hosted instances forward sanitized batches to Durabull's existing cloud API. They do not need
 a separate collector service. These settings support forwarding and cloud collector operation:
 

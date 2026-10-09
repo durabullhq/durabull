@@ -2,6 +2,21 @@
 
 Prepared October 7, 2026. This record describes repository validation, not a production deployment or public marketplace approval.
 
+## Privacy policy remediation — October 9, 2026
+
+The marketplace review rejected the policy for incomplete disclosure of data uses. The
+`/privacy` page now covers collection and purposes, current MCP inputs and outputs, client and
+service-provider recipients, storage-specific retention, cookies and both analytics streams,
+OAuth permissions and revocation, and access/correction/export/deletion requests. It explicitly
+distinguishes pseudonymous MCP analytics from identified browser analytics and describes the
+current lack of automatic audit expiry and a production telemetry opt-out.
+
+The manifest already points to `https://durabull.io/privacy`; that URL is unchanged. Use
+[the privacy data inventory and resubmission checklist](mcp-privacy-data-inventory.md) to review
+the implementation evidence, confirm provider-managed retention, and verify the deployed
+policy before resubmitting. Local policy changes do not establish production publication or
+marketplace approval.
+
 ## Customer experience
 
 The portable OpenAI package and generated Claude package use the same nine skills and Cloud endpoint. Listing copy names BullMQ, Redis, queue management, background jobs, workers, failures, cron schedules and monitoring in the context of actual capabilities. The manifest includes privacy/terms links and labeled fixture screenshots. No ranking or customer acquisition outcome is promised.
