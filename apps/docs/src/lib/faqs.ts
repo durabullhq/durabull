@@ -6,6 +6,11 @@ export const faqs = [
       'Durabull is a dashboard for BullMQ queue operations: inspect jobs, debug failures, manage schedulers, track workers, and configure alerts.',
   },
   {
+    question: 'Can AI agents use Durabull?',
+    answer:
+      'Yes. Durabull MCP connects Claude, ChatGPT, Cowork, Cursor, and any MCP client to your queues using OAuth. Agents get read access by default, and retrying, promoting, pausing, and alert actions are opt-in write scopes. Claude, Cowork, and ChatGPT also show an interactive Queue Explorer app in the conversation.',
+  },
+  {
     question: 'Do I need to modify my existing BullMQ code?',
     answer:
       'Queue and job inspection connects directly to Redis without a worker SDK. Throughput charts require BullMQ metrics enabled on your workers.',

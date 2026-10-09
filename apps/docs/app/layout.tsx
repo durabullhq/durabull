@@ -8,11 +8,11 @@ import '@/styles/landing.css'
 
 export const metadata: Metadata = {
   title: {
-    default: 'Durabull — See every job. Fix every failure.',
+    default: 'Durabull — Agentic operations for BullMQ',
     template: '%s | Durabull',
   },
   description:
-    'Connect Durabull to Redis to inspect BullMQ jobs, debug failures, manage schedulers, and configure alerts. Enable worker metrics for throughput charts.',
+    'Monitor, debug, and operate BullMQ queues from one dashboard, or from Claude, ChatGPT, Cursor, and any MCP client through Durabull MCP.',
   metadataBase: new URL('https://durabull.io'),
   keywords: [
     'BullMQ',
@@ -30,24 +30,24 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: 'https://durabull.io',
-    title: 'Durabull — See every job. Fix every failure.',
+    title: 'Durabull — Agentic operations for BullMQ',
     description:
-      'Connect Durabull to Redis to inspect BullMQ jobs, debug failures, manage schedulers, and configure alerts. Enable worker metrics for throughput charts.',
+      'Monitor, debug, and operate BullMQ queues from one dashboard, or from Claude, ChatGPT, Cursor, and any MCP client through Durabull MCP.',
     siteName: 'Durabull',
     images: [
       {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Durabull — See every job. Fix every failure.',
+        alt: 'Durabull — Agentic operations for BullMQ',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Durabull — See every job. Fix every failure.',
+    title: 'Durabull — Agentic operations for BullMQ',
     description:
-      'Connect Durabull to Redis to inspect BullMQ jobs, debug failures, manage schedulers, and configure alerts. Enable worker metrics for throughput charts.',
+      'Monitor, debug, and operate BullMQ queues from one dashboard, or from Claude, ChatGPT, Cursor, and any MCP client through Durabull MCP.',
     images: ['/og-image.png'],
     creator: '@durabullhq',
   },

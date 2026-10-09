@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { faqs } from '@/lib/faqs'
 import { Eyebrow, Reveal } from './reveal'
 
-function FaqItem({
+export function FaqItem({
   question,
   answer,
   open,

@@ -32,6 +32,19 @@ export function Reveal({ children, delay = 0, y = 20, className, once = true }: 
   )
 }
 
+/** Mount-time fade-up for hero content, staggered by `delay`. Respects reduced motion. */
+export function useHeroFadeUp() {
+  const reduceMotion = useReducedMotion()
+  return (delay: number) =>
+    reduceMotion
+      ? {}
+      : {
+          initial: { opacity: 0, y: 24 },
+          animate: { opacity: 1, y: 0 },
+          transition: { duration: 0.7, delay, ease: [0.2, 0.8, 0.2, 1] as const },
+        }
+}
+
 /** Mono uppercase section eyebrow. */
 export function Eyebrow({ children }: { children: ReactNode }) {
   return (
