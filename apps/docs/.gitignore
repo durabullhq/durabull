@@ -33,3 +33,6 @@ next-env.d.ts
 public/search-index.json
 public/llms.txt
 public/llms-full.txt
+
+# Production MCP app bundle, copied from packages/mcp by tooling/copy-mcp-app.ts
+public/mcp-app.html

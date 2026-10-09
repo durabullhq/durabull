@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "bun run search:index && next dev --port 3002",
-    "search:index": "bun x fumadocs-mdx && bun tooling/generate-search-index.ts && bun tooling/generate-llms-txt.ts",
+    "search:index": "bun x fumadocs-mdx && bun tooling/generate-search-index.ts && bun tooling/generate-llms-txt.ts && bun tooling/copy-mcp-app.ts",
     "build": "bun run search:index && NEXT_OUTPUT=export next build && bun run build:ui",
     "build:ui": "bun run --cwd ../storybook build:marketing && bun tooling/copy-ui-fonts.ts",
     "build:server": "bun run search:index && next build",
     "start": "bun x serve out -c ../serve.json",
     "start:server": "next start",
     "typecheck": "bun run search:index && tsc --noEmit",
+    "test": "bun test src",
     "lint": "biome lint ./src ./app",
     "lint:fix": "biome lint --write ./src ./app",
     "format": "biome format --write ./src ./app",
@@ -20,6 +21,7 @@
   "dependencies": {
     "@mdx-js/loader": "^3.1.1",
     "@mdx-js/react": "^3.1.1",
+    "@modelcontextprotocol/ext-apps": "2.0.3",
     "@next/mdx": "^16.1.6",
     "@next/third-parties": "^15.3.0",
     "class-variance-authority": "^0.7.0",
@@ -37,6 +39,7 @@
     "tailwind-merge": "^2.5.2"
   },
   "devDependencies": {
+    "@durabull/mcp": "workspace:*",
     "@tailwindcss/postcss": "^4.1.18",
     "@types/mdx": "^2.0.13",
     "@types/node": "^22.5.4",

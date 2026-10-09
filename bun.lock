@@ -59,6 +59,7 @@
       "dependencies": {
         "@mdx-js/loader": "^3.1.1",
         "@mdx-js/react": "^3.1.1",
+        "@modelcontextprotocol/ext-apps": "2.0.3",
         "@next/mdx": "^16.1.6",
         "@next/third-parties": "^15.3.0",
         "class-variance-authority": "^0.7.0",
@@ -76,6 +77,7 @@
         "tailwind-merge": "^2.5.2",
       },
       "devDependencies": {
+        "@durabull/mcp": "workspace:*",
         "@tailwindcss/postcss": "^4.1.18",
         "@types/mdx": "^2.0.13",
         "@types/node": "^22.5.4",

@@ -38,6 +38,9 @@
       "@/lib/mcp-faqs": [
         "../docs/src/lib/mcp-faqs.ts"
       ],
+      "@/lib/mcp-demo-fixtures": [
+        "../docs/src/lib/mcp-demo-fixtures.ts"
+      ],
       "@/components": [
         "../docs/src/components/index.ts"
       ],

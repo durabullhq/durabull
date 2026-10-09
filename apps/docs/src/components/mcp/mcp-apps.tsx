@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 import { EmberField } from '../v2/ember-field'
 import { Reveal } from '../v2/reveal'
 import { ClaudeMark, OpenAIMark } from './brand-marks'
-import { QueueExplorer } from './queue-explorer'
+import { MCP_HOST_SURFACES, McpAppFrame, type McpHostSurface } from './mcp-app-frame'
 
 const traits = [
   {
@@ -54,6 +54,7 @@ const traits = [
 
 export function McpApps() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
+  const [host, setHost] = useState<McpHostSurface>('claude')
   const [asked, setAsked] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -112,32 +113,64 @@ export function McpApps() {
 
         {/* interactive explorer */}
         <Reveal delay={0.1} className="relative mx-auto mt-14 max-w-4xl">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="v2-mono text-[var(--v2-faint)]">Try it · click the tabs</p>
-            <fieldset className="inline-flex rounded-lg border border-[var(--v2-line-strong)] p-0.5">
-              <legend className="sr-only">Host theme</legend>
-              {(['light', 'dark'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  aria-pressed={theme === t}
-                  onClick={() => setTheme(t)}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
-                    theme === t
-                      ? 'bg-[var(--v2-fg)] text-[var(--v2-bg)]'
-                      : 'text-[var(--v2-faint)] hover:text-[var(--v2-fg)]'
-                  )}
-                >
-                  {t === 'light' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
-                  {t === 'light' ? 'Light host' : 'Dark host'}
-                </button>
-              ))}
-            </fieldset>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="v2-mono text-[var(--v2-faint)]">Try it · the real app, live</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <fieldset className="inline-flex rounded-lg border border-[var(--v2-line-strong)] p-0.5">
+                <legend className="sr-only">Host</legend>
+                {(Object.keys(MCP_HOST_SURFACES) as McpHostSurface[]).map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    aria-pressed={host === h}
+                    onClick={() => setHost(h)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors',
+                      host === h
+                        ? 'bg-[var(--v2-fg)] text-[var(--v2-bg)]'
+                        : 'text-[var(--v2-faint)] hover:text-[var(--v2-fg)]'
+                    )}
+                  >
+                    {h === 'claude' ? (
+                      <ClaudeMark className="size-3.5" />
+                    ) : (
+                      <OpenAIMark className="size-3.5" />
+                    )}
+                    {MCP_HOST_SURFACES[h].name}
+                  </button>
+                ))}
+              </fieldset>
+              <fieldset className="inline-flex rounded-lg border border-[var(--v2-line-strong)] p-0.5">
+                <legend className="sr-only">Host theme</legend>
+                {(['light', 'dark'] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    aria-pressed={theme === t}
+                    aria-label={t === 'light' ? 'Light theme' : 'Dark theme'}
+                    onClick={() => setTheme(t)}
+                    className={cn(
+                      'inline-flex items-center rounded-md px-2 py-1 transition-colors',
+                      theme === t
+                        ? 'bg-[var(--v2-fg)] text-[var(--v2-bg)]'
+                        : 'text-[var(--v2-faint)] hover:text-[var(--v2-fg)]'
+                    )}
+                  >
+                    {t === 'light' ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+                  </button>
+                ))}
+              </fieldset>
+            </div>
           </div>
 
           <div className="v2-frame relative rounded-2xl">
-            <QueueExplorer initialView="overview" theme={theme} onAsk={onAsk} />
+            <McpAppFrame
+              tool="get_connection_overview"
+              host={host}
+              theme={theme}
+              onAsk={onAsk}
+              className="p-2 sm:p-4"
+            />
           </div>
 
           <AnimatePresence>
