@@ -1,0 +1,23 @@
+@import "tailwindcss";
+/*
+ * Apps SDK UI foundations, imported individually to omit its KaTeX bundle, whose web fonts
+ * would require a remote font origin that this app's CSP intentionally does not allow.
+ */
+@import "../../../node_modules/@openai/apps-sdk-ui/dist/es/styles/base.css";
+@import "../../../node_modules/@openai/apps-sdk-ui/dist/es/styles/variables-primitive.css";
+@import "../../../node_modules/@openai/apps-sdk-ui/dist/es/styles/variables-semantic.css";
+@import "../../../node_modules/@openai/apps-sdk-ui/dist/es/styles/variables-components.css";
+@import "../../../node_modules/@openai/apps-sdk-ui/dist/es/styles/tailwind-utilities.css";
+@import "../../../node_modules/@openai/apps-sdk-ui/dist/es/styles/globals.css";
+/* Required for Tailwind to find class references in Apps SDK UI components. */
+@source "../../../node_modules/@openai/apps-sdk-ui/dist/es";
+@source "./";
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--color-surface);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+}

@@ -4,31 +4,50 @@ import { useEffect, useRef, useState } from 'react'
 import { getMcpToolDefinition } from '../../../packages/mcp/src/tools/tool-catalog'
 import { mcpFixture } from './fixtures/mcp'
 
+/** Conversation surfaces the app is embedded in, approximated for visual review. */
+const HOSTS = {
+  chatgpt: { name: 'ChatGPT', light: '#ffffff', dark: '#212121' },
+  claude: { name: 'Claude', light: '#faf9f5', dark: '#262624' },
+} as const
+
 export interface McpPreviewProps {
   tool: string
+  /** Extra tool arguments, merged over the default demo identifiers. */
+  args?: Record<string, unknown>
+  host?: keyof typeof HOSTS
   theme?: 'light' | 'dark'
+  device?: 'desktop' | 'phone'
+  displayMode?: 'inline' | 'fullscreen'
   state?: 'ready' | 'empty' | 'loading' | 'error'
-  width?: number
 }
-export function McpPreview({ tool, theme = 'light', state = 'ready', width }: McpPreviewProps) {
+const DEFAULT_ARGS = {
+  connectionId: 'preview-production',
+  queueName: 'email:receipts',
+  jobId: 'job-1042',
+  schedulerId: 'daily-summary',
+  ruleId: 'rule-1',
+  eventId: 'evt-1',
+  minutes: 60,
+}
+
+export function McpPreview({
+  tool,
+  args: extraArgs,
+  host = 'chatgpt',
+  theme = 'light',
+  device = 'desktop',
+  displayMode = 'inline',
+  state = 'ready',
+}: McpPreviewProps) {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [requests, setRequests] = useState<string[]>([])
   const [messages, setMessages] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  const argsKey = JSON.stringify(extraArgs ?? {})
   useEffect(() => {
     const iframe = frameRef.current!
     const args =
-      tool === 'list_connections'
-        ? {}
-        : {
-            connectionId: 'preview-production',
-            queueName: 'email:receipts',
-            jobId: 'job-1042',
-            schedulerId: 'daily-summary',
-            ruleId: 'rule-1',
-            eventId: 'evt-1',
-            minutes: 60,
-          }
+      tool === 'list_connections' ? {} : { ...DEFAULT_ARGS, ...(JSON.parse(argsKey) as object) }
     let disposed = false
     const result = (name: string, input: Record<string, unknown>) => {
       if (state === 'error')
@@ -54,13 +73,14 @@ export function McpPreview({ tool, theme = 'light', state = 'ready', width }: Mc
     }
     const bridge = new AppBridge(
       null,
-      { name: 'Durabull Storybook host', version: '1.0.0' },
+      { name: `Durabull Storybook host (${HOSTS[host].name})`, version: '1.0.0' },
       { serverTools: {}, message: { text: {} }, updateModelContext: {}, openLinks: {} },
       {
         hostContext: {
           theme,
-          displayMode: 'inline',
+          displayMode,
           availableDisplayModes: ['inline', 'fullscreen'],
+          platform: device === 'phone' ? 'mobile' : 'web',
           toolInfo: { tool: { name: tool, inputSchema: { type: 'object' } } },
         },
       }
@@ -81,7 +101,7 @@ export function McpPreview({ tool, theme = 'light', state = 'ready', width }: Mc
       return { mode }
     }
     bridge.onsizechange = ({ height }) => {
-      if (height) iframe.style.height = `${Math.max(height, 400)}px`
+      if (height) iframe.style.height = `${Math.ceil(height)}px`
     }
     bridge.oninitialized = async () => {
       if (disposed || state === 'loading') return
@@ -103,20 +123,37 @@ export function McpPreview({ tool, theme = 'light', state = 'ready', width }: Mc
       disposed = true
       void bridge.close()
     }
-  }, [tool, theme, state])
+  }, [tool, argsKey, host, theme, device, displayMode, state])
+  const width = device === 'phone' ? 375 : displayMode === 'fullscreen' ? '100%' : 560
   return (
-    <section style={{ maxWidth: width, margin: '0 auto' }}>
-      <p className="catalog-eyebrow mb-3">Local MCP host · Fixture data</p>
+    <section style={{ display: 'grid', gap: 16 }}>
+      <div
+        style={{
+          background: HOSTS[host][theme],
+          colorScheme: theme,
+          padding: device === 'phone' ? 12 : 24,
+          borderRadius: 12,
+        }}
+      >
+        <iframe
+          ref={frameRef}
+          title="Durabull MCP app"
+          sandbox="allow-scripts"
+          style={{
+            display: 'block',
+            width,
+            maxWidth: '100%',
+            height: 160,
+            border: '1px solid rgba(128, 128, 128, 0.3)',
+            borderRadius: 16,
+          }}
+        />
+      </div>
       {error ? <p role="alert">{error}</p> : null}
-      <iframe
-        ref={frameRef}
-        title="Durabull MCP app"
-        sandbox="allow-scripts"
-        style={{ border: 0, width: '100%', minHeight: 500 }}
-      />
-      <details className="catalog-panel mt-4">
+      <details className="catalog-panel">
         <summary>
-          Host activity ({requests.length} tool calls, {messages.length} assistant requests)
+          Host activity ({requests.length} tool calls, {messages.length} assistant requests) ·{' '}
+          {HOSTS[host].name} · fixture data
         </summary>
         <pre className="text-xs whitespace-pre-wrap mt-3">
           {[...requests, ...messages].join('\n') ||

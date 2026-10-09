@@ -32,7 +32,7 @@ for (const story of Object.values(index.entries).filter((entry) => entry.type ==
 }
 
 test('MCP navigation calls local read tools and records assistant requests', async ({ page }) => {
-  await page.goto('/iframe.html?id=mcp-apps-queue-explorer--queue-detail&viewMode=story')
+  await page.goto('/iframe.html?id=mcp-apps-queue--in-chat-gpt&viewMode=story')
   const app = page.frameLocator('iframe[title="Durabull MCP app"]')
   await app.getByRole('button', { name: 'Browse jobs', exact: true }).click()
   await expect(app.getByRole('button', { name: 'job-1042', exact: true })).toBeVisible()
@@ -74,10 +74,37 @@ test('scheduled job detail renders the editable production form', async ({ page 
 })
 
 test('MCP operation receipts refresh state through read tools', async ({ page }) => {
-  await page.goto('/iframe.html?id=mcp-apps-queue-explorer--job-retried&viewMode=story')
+  await page.goto('/iframe.html?id=mcp-apps-operation-receipt--job-retried&viewMode=story')
   const app = page.frameLocator('iframe[title="Durabull MCP app"]')
-  await expect(app.getByText('Operation result', { exact: true })).toBeVisible()
+  await expect(app.getByRole('region', { name: 'Operation result' })).toBeVisible()
   await app.getByRole('button', { name: 'Inspect current state', exact: true }).click()
   await page.getByText(/Host activity/).click()
   await expect(page.locator('details pre')).toHaveText('get_job')
+})
+
+test('MCP detail cards keep connection navigation, job search and state filtering', async ({
+  page,
+}) => {
+  await page.goto('/iframe.html?id=mcp-apps-job--in-chat-gpt&viewMode=story')
+  const app = page.frameLocator('iframe[title="Durabull MCP app"]')
+  const nav = app.getByRole('navigation', { name: 'Connection views' })
+  await nav.getByRole('button', { name: 'Find job', exact: true }).click()
+  await app.getByLabel('Find job by exact ID across queues').fill('job-1042')
+  await app.getByLabel('Find job by exact ID across queues').press('Enter')
+  await expect(app.getByRole('heading', { name: 'job-1042' })).toBeVisible()
+  await app.getByRole('button', { name: 'job-1042', exact: true }).click()
+  await app.getByRole('button', { name: 'Back', exact: true }).click()
+  await nav.getByRole('button', { name: 'Workers', exact: true }).click()
+  await expect(app.getByRole('heading', { name: 'Workers' })).toBeVisible()
+  await expect(app.getByText('Structured response', { exact: true })).toBeVisible()
+  await page.getByText(/Host activity/).click()
+  await expect(page.locator('details pre')).toHaveText('find_job\nget_job\nget_workers')
+})
+
+test('MCP job list filters by state through the select', async ({ page }) => {
+  await page.goto('/iframe.html?id=mcp-apps-job-list--in-chat-gpt&viewMode=story')
+  const app = page.frameLocator('iframe[title="Durabull MCP app"]')
+  await app.getByRole('group', { name: 'Job state' }).getByRole('button').click()
+  await app.getByRole('option', { name: 'Failed' }).click()
+  await expect(app.getByRole('heading', { name: 'Failed jobs' })).toBeVisible()
 })

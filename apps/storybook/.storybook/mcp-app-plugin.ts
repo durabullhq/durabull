@@ -1,7 +1,6 @@
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { build } from 'esbuild'
 import type { Plugin } from 'vite'
+import { bundleMcpApp } from '../../../packages/mcp/scripts/bundle-app'
 
 /** Bundle the current production app sources without modifying the checked-in MCP asset. */
 export function mcpAppPlugin(root: string): Plugin {
@@ -14,20 +13,9 @@ export function mcpAppPlugin(root: string): Plugin {
     },
     async load(source) {
       if (source !== id) return
-      const result = await build({
-        entryPoints: [resolve(ui, 'app.ts')],
-        bundle: true,
-        write: false,
-        minify: true,
-        platform: 'browser',
-        format: 'esm',
-        metafile: true,
-      })
-      for (const input of Object.keys(result.metafile!.inputs)) this.addWatchFile(resolve(input))
-      this.addWatchFile(resolve(ui, 'app.css'))
-      const script = result.outputFiles[0].text.replaceAll('</script', '<\\/script')
-      const css = await readFile(resolve(ui, 'app.css'), 'utf8')
-      const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Durabull · Queue explorer</title><style>${css}</style></head><body><main id="app" aria-label="Durabull queue explorer"><div class="empty" role="status">Connecting to Durabull…</div></main><script type="module">${script}</script></body></html>`
+      const { html, files } = await bundleMcpApp()
+      for (const file of files) this.addWatchFile(file)
+      this.addWatchFile(resolve(ui, 'styles.css'))
       return `export default ${JSON.stringify(html)}`
     },
     handleHotUpdate(context) {

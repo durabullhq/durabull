@@ -31,7 +31,7 @@ test('MCP bridge and production assets work under /ui/', async ({ page, request 
     expect(response.ok(), asset).toBe(true)
     expect(response.headers()['content-type'], asset).not.toContain('text/html')
   }
-  await page.goto('/ui/iframe.html?id=mcp-apps-queue-explorer--queue-detail&viewMode=story')
+  await page.goto('/ui/iframe.html?id=mcp-apps-queue--in-chat-gpt&viewMode=story')
   const app = page.frameLocator('iframe[title="Durabull MCP app"]')
   await app.getByRole('button', { name: 'Browse jobs', exact: true }).click()
   await expect(app.getByRole('button', { name: 'job-1042', exact: true })).toBeVisible()
