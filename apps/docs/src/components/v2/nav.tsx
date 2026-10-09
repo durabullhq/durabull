@@ -33,8 +33,11 @@ export function V2Nav() {
           : 'border-transparent bg-transparent'
       }`}
     >
-      <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
-        <Link href="/" className="flex items-center gap-2.5">
+      <nav
+        aria-label="Main navigation"
+        className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8"
+      >
+        <Link href="/" aria-label="Durabull home" className="flex items-center gap-2.5">
           <DurabullLogo className="h-7 w-7 text-[var(--v2-accent)]" />
           <DurabullWordmark className="h-[15px] text-[var(--v2-fg)]" />
         </Link>
