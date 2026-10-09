@@ -7,10 +7,11 @@ import { DurabullLogo, DurabullWordmark } from '@/components/durabull-logo'
 import { WEB_APP_URL } from '@/lib/config'
 
 const links = [
-  { label: 'Features', href: '#features' },
-  { label: 'Product', href: '#product' },
-  { label: 'Deploy', href: '#deploy' },
-  { label: 'Pricing', href: '#pricing' },
+  { label: 'MCP', href: '/mcp', badge: 'New' },
+  { label: 'Features', href: '/#features' },
+  { label: 'Product', href: '/#product' },
+  { label: 'Deploy', href: '/#deploy' },
+  { label: 'Pricing', href: '/#pricing' },
   { label: 'Docs', href: '/documentation' },
 ]
 
@@ -43,9 +44,14 @@ export function V2Nav() {
             <Link
               key={link.label}
               href={link.href}
-              className="text-[13.5px] font-medium text-[var(--v2-muted)] transition-colors hover:text-[var(--v2-fg)]"
+              className="inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[var(--v2-muted)] transition-colors hover:text-[var(--v2-fg)]"
             >
               {link.label}
+              {link.badge ? (
+                <span className="rounded-full bg-[var(--v2-accent-soft)] px-1.5 py-px font-mono text-[9.5px] font-semibold uppercase tracking-wider text-[var(--v2-accent)]">
+                  {link.badge}
+                </span>
+              ) : null}
             </Link>
           ))}
         </div>

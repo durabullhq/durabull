@@ -58,13 +58,16 @@
   --color-chart-5: hsl(340 75% 55%);
 }
 
-* {
-  border-color: var(--color-border);
-}
+/* layered so Tailwind border-color utilities (utilities layer) can override it */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 
-body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
 }
 
 /* Custom animations */

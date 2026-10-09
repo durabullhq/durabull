@@ -625,6 +625,257 @@
   }
 }
 
+/* ---------- agentic / MCP ---------- */
+
+/* agent console: the chat surface every MCP demo renders inside */
+.v2-console {
+  border: 1px solid var(--v2-line-strong);
+  background: var(--v2-card);
+  box-shadow:
+    0 1px 2px rgba(12, 12, 12, 0.06),
+    0 30px 80px -32px rgba(12, 12, 12, 0.28);
+}
+
+.v2-dark .v2-console {
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 40px 100px -30px rgba(0, 0, 0, 0.8),
+    0 0 120px -40px rgba(249, 115, 22, 0.25);
+}
+
+.v2-bubble-user {
+  background: var(--v2-fg);
+  color: var(--v2-bg);
+}
+
+.v2-bubble-agent {
+  background: var(--v2-bg-2);
+  border: 1px solid var(--v2-line);
+}
+
+/* tool-call receipt, e.g. "durabull · list_jobs" */
+.v2-toolcall {
+  border: 1px solid var(--v2-line);
+  background: var(--v2-bg-2);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+}
+
+/* inline MCP App frame: a live Durabull view embedded in the conversation */
+.v2-app {
+  position: relative;
+  border: 1px solid var(--v2-line-strong);
+  background: var(--v2-card);
+  overflow: hidden;
+}
+
+.v2-app::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--v2-accent), transparent);
+  opacity: 0.85;
+}
+
+/* capability pill used for real tool names */
+.v2-tool-pill {
+  border: 1px solid var(--v2-line);
+  background: var(--v2-card);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.v2-tool-pill:hover {
+  border-color: var(--v2-accent);
+  color: var(--v2-fg);
+}
+
+/* hero aurora for the agentic sections */
+.v2-aurora {
+  background:
+    radial-gradient(40% 55% at 50% 0%, rgba(249, 115, 22, 0.16), transparent 70%),
+    radial-gradient(30% 40% at 85% 30%, rgba(251, 146, 60, 0.08), transparent 70%),
+    radial-gradient(30% 40% at 15% 40%, rgba(234, 88, 12, 0.07), transparent 70%);
+}
+
+/* hub diagram: packets travel along host → durabull wires */
+.v2-wire {
+  stroke: var(--v2-line-strong);
+  stroke-width: 1;
+  fill: none;
+}
+
+/* paths use pathLength="100" so every wire shares one dash rhythm */
+.v2-wire-flow {
+  stroke: var(--v2-accent);
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-dasharray: 3 97;
+  animation: v2-wire-flow 2.8s linear infinite;
+  filter: drop-shadow(0 0 4px rgba(249, 115, 22, 0.9));
+}
+
+.v2-wire-flow-rev {
+  stroke: var(--v2-ok);
+  filter: drop-shadow(0 0 4px rgba(74, 222, 128, 0.7));
+  animation-direction: reverse;
+  animation-duration: 3.4s;
+}
+
+@keyframes v2-wire-flow {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.v2-hub-core {
+  background:
+    radial-gradient(circle at 50% 40%, rgba(253, 186, 116, 0.25), transparent 60%),
+    linear-gradient(160deg, #1a130e, #0b0a09);
+  border: 1px solid rgba(249, 115, 22, 0.5);
+  box-shadow:
+    0 0 0 8px rgba(249, 115, 22, 0.05),
+    0 0 0 18px rgba(249, 115, 22, 0.03),
+    0 0 80px -10px rgba(249, 115, 22, 0.55);
+}
+
+.v2-hub-ring {
+  border: 1px dashed rgba(249, 115, 22, 0.25);
+  animation: v2-hub-spin 60s linear infinite;
+}
+
+@keyframes v2-hub-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* host logo tile */
+.v2-host {
+  border: 1px solid var(--v2-line);
+  background: var(--v2-card);
+  transition: border-color 0.25s ease, transform 0.25s ease, background-color 0.25s ease;
+}
+
+.v2-host:hover {
+  border-color: var(--v2-line-strong);
+  background: var(--v2-bg-2);
+  transform: translateY(-2px);
+}
+
+/* ---------- Queue Explorer (MCP App recreation) ----------
+   Mirrors packages/mcp/src/apps/ui: its own green palette, which the
+   real app swaps for host style variables at runtime. */
+
+.dbx {
+  --x-bg: #f6f7f4;
+  --x-card: #ffffff;
+  --x-sunk: #f1f3ef;
+  --x-line: #e2e5df;
+  --x-fg: #17231d;
+  --x-muted: #5d6b64;
+  --x-faint: #8a958f;
+  --x-accent: #1b6c4e;
+  --x-accent-soft: rgba(27, 108, 78, 0.1);
+  --x-bad: #b42318;
+  --x-warn: #b54708;
+
+  background: var(--x-bg);
+  color: var(--x-fg);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+.dbx[data-theme='dark'] {
+  --x-bg: #111915;
+  --x-card: #16201b;
+  --x-sunk: #1b2721;
+  --x-line: #2a3830;
+  --x-fg: #eef3ef;
+  --x-muted: #a3b2aa;
+  --x-faint: #6f7f77;
+  --x-accent: #8fd3ad;
+  --x-accent-soft: rgba(143, 211, 173, 0.12);
+  --x-bad: #f29a90;
+  --x-warn: #f5b971;
+}
+
+.dbx-card {
+  border: 1px solid var(--x-line);
+  background: var(--x-card);
+  border-radius: 10px;
+  transition: background-color 0.35s ease, border-color 0.35s ease;
+}
+
+.dbx-btn {
+  border: 1px solid var(--x-line);
+  background: var(--x-card);
+  color: var(--x-fg);
+  border-radius: 7px;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.dbx-btn:hover {
+  border-color: var(--x-faint);
+}
+
+.dbx-btn[data-active='true'] {
+  border-color: var(--x-accent);
+  background: var(--x-accent-soft);
+  color: var(--x-accent);
+}
+
+.dbx-btn-ask {
+  border: 1px solid var(--x-accent);
+  background: var(--x-accent);
+  color: var(--x-card);
+  border-radius: 7px;
+}
+
+.dbx[data-theme='dark'] .dbx-btn-ask {
+  color: #0d1511;
+}
+
+.dbx-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--x-muted);
+}
+
+.dbx-table th {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--x-muted);
+  background: var(--x-sunk);
+  text-align: left;
+}
+
+.dbx-table td,
+.dbx-table th {
+  padding: 8px 14px;
+  border-top: 1px solid var(--x-line);
+  white-space: nowrap;
+}
+
+.dbx-pre {
+  background: var(--x-sunk);
+  border: 1px solid var(--x-line);
+  border-radius: 8px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -650,5 +901,14 @@
 
   .v2-tilt {
     transition: none;
+  }
+
+  .v2-wire-flow,
+  .v2-hub-ring {
+    animation: none !important;
+  }
+
+  .v2-wire-flow {
+    display: none;
   }
 }

@@ -1,22 +1,16 @@
 'use client'
 
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowRight, BookOpen } from 'lucide-react'
+import { ArrowRight, Bot } from 'lucide-react'
 import Link from 'next/link'
 import { WEB_APP_URL } from '@/lib/config'
 import { FeatureStream } from './feature-stream'
 import { HeroGridShimmer } from './hero-grid-shimmer'
+import { useHeroFadeUp } from './reveal'
 
 export function V2Hero() {
   const reduceMotion = useReducedMotion()
-  const fadeUp = (delay: number) =>
-    reduceMotion
-      ? {}
-      : {
-          initial: { opacity: 0, y: 24 },
-          animate: { opacity: 1, y: 0 },
-          transition: { duration: 0.7, delay, ease: [0.2, 0.8, 0.2, 1] as const },
-        }
+  const fadeUp = useHeroFadeUp()
 
   return (
     <section className="relative overflow-hidden bg-[var(--v2-bg)] pt-36 sm:pt-44">
@@ -25,17 +19,23 @@ export function V2Hero() {
 
       <div className="relative mx-auto max-w-4xl px-5 text-center sm:px-8">
         <motion.div {...fadeUp(0)}>
-          <span className="v2-chip v2-mono inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[var(--v2-muted)]">
-            <span className="v2-pulse-dot inline-block size-1.5 rounded-full bg-[var(--v2-accent)] text-[var(--v2-accent)]" />
-            Source-available · Free during beta
-          </span>
+          <Link
+            href="/mcp"
+            className="v2-chip group inline-flex items-center gap-2.5 rounded-full py-1 pl-1 pr-3.5 text-[13px] text-[var(--v2-muted)] transition-colors hover:text-[var(--v2-fg)]"
+          >
+            <span className="rounded-full bg-[var(--v2-accent)] px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-white">
+              New
+            </span>
+            Durabull MCP for Claude, ChatGPT &amp; Cursor
+            <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+          </Link>
         </motion.div>
 
         <motion.h1
           {...fadeUp(0.1)}
           className="v2-h mt-8 text-balance text-[clamp(2.6rem,5.6vw,4.4rem)] leading-[1.04]"
         >
-          The operations platform
+          Agentic operations
           <br />
           for <span className="text-[var(--v2-accent)]">BullMQ</span>
         </motion.h1>
@@ -44,8 +44,9 @@ export function V2Hero() {
           {...fadeUp(0.2)}
           className="mx-auto mt-6 max-w-2xl text-pretty text-base leading-relaxed text-[var(--v2-muted)] sm:text-lg"
         >
-          Connect Redis to monitor queues, debug failures, and manage schedulers. Enable BullMQ
-          metrics on your workers for throughput charts.
+          Monitor queues, debug failures, and manage schedulers from one dashboard. Or hand the
+          pager to your AI agent: Claude, ChatGPT, and Cursor can triage and fix jobs through
+          Durabull MCP.
         </motion.p>
 
         <motion.div
@@ -60,16 +61,16 @@ export function V2Hero() {
             <ArrowRight className="size-4" />
           </Link>
           <Link
-            href="/documentation"
+            href="/mcp"
             className="v2-btn-ghost inline-flex items-center gap-2 rounded-lg px-6 py-3 text-[15px] font-medium"
           >
-            <BookOpen className="size-4" />
-            Read the docs
+            <Bot className="size-4" />
+            Connect your agent
           </Link>
         </motion.div>
 
         <motion.p {...fadeUp(0.4)} className="v2-mono mt-7 text-[var(--v2-faint)]">
-          Cloud, desktop, or self-hosted
+          Source-available · Free during beta · Cloud, desktop, or self-hosted
         </motion.p>
       </div>
 
