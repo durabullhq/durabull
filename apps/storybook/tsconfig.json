@@ -35,11 +35,17 @@
       "@/lib/mcp-facts": [
         "../docs/src/lib/mcp-facts.ts"
       ],
+      "@/lib/mcp-faqs": [
+        "../docs/src/lib/mcp-faqs.ts"
+      ],
       "@/components": [
         "../docs/src/components/index.ts"
       ],
       "@/components/v2/*": [
         "../docs/src/components/v2/*"
+      ],
+      "@/components/mcp/*": [
+        "../docs/src/components/mcp/*"
       ],
       "@/lib/seo": [
         "../docs/src/lib/seo.ts"
