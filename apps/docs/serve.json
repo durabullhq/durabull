@@ -1,3 +1,3 @@
 {
-  "cleanUrls": ["!/ui/**/*.html"]
+  "cleanUrls": ["!/ui/**/*.html", "!/mcp-app.html"]
 }

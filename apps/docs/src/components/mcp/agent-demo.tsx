@@ -8,7 +8,7 @@ import { DurabullLogo } from '@/components/durabull-logo'
 import { cn } from '@/lib/utils'
 import { ClaudeMark, OpenAIMark } from './brand-marks'
 import { UserMsg } from './primitives'
-import { type ExplorerView, QueueExplorer } from './queue-explorer'
+import { McpAppFrame, type McpHostSurface } from './mcp-app-frame'
 
 interface Scenario {
   id: string
@@ -16,7 +16,8 @@ interface Scenario {
   prompt: string
   tools: string[]
   answer: string
-  view: ExplorerView
+  /** read tool whose card the app opens on */
+  view: string
 }
 
 const scenarios: Scenario[] = [
@@ -27,7 +28,7 @@ const scenarios: Scenario[] = [
     tools: ['get_connection_overview', 'list_jobs', 'explain_job_failure'],
     answer:
       '7 receipts failed in the last hour, all for the same reason: your SMTP provider is rate-limiting sends (421 4.7.0). Confidence is high. It’s the failure reason on every attempt, and it matches the open “Receipt delivery failures” alert.',
-    view: 'investigation',
+    view: 'explain_job_failure',
   },
   {
     id: 'health',
@@ -36,7 +37,7 @@ const scenarios: Scenario[] = [
     tools: ['get_connection_overview', 'get_redis_health'],
     answer:
       'Mostly healthy. 12 workers are processing, but email:receipts has 128 waiting and 7 failed. Redis memory is at 64%, under your 80% threshold.',
-    view: 'overview',
+    view: 'get_connection_overview',
   },
   {
     id: 'incidents',
@@ -45,7 +46,7 @@ const scenarios: Scenario[] = [
     tools: ['get_alert_summary', 'list_alert_rules'],
     answer:
       'Two open incidents, both from “Receipt delivery failures”. Snoozing is a change, so I’ll check first: snooze that rule for 60 minutes?',
-    view: 'incidents',
+    view: 'get_alert_summary',
   },
 ]
 
@@ -54,12 +55,13 @@ interface HostSkin {
   name: string
   Mark: ComponentType<{ className?: string }>
   dark: boolean
+  surface: McpHostSurface
 }
 
 const hosts: HostSkin[] = [
-  { id: 'claude', name: 'Claude', Mark: ClaudeMark, dark: false },
-  { id: 'chatgpt', name: 'ChatGPT', Mark: OpenAIMark, dark: true },
-  { id: 'cowork', name: 'Cowork', Mark: ClaudeMark, dark: false },
+  { id: 'claude', name: 'Claude', Mark: ClaudeMark, dark: false, surface: 'claude' },
+  { id: 'chatgpt', name: 'ChatGPT', Mark: OpenAIMark, dark: true, surface: 'chatgpt' },
+  { id: 'cowork', name: 'Cowork', Mark: ClaudeMark, dark: false, surface: 'claude' },
 ]
 
 /* step timeline: 1 prompt → 2..(1+n) tools → answer → app */
@@ -232,11 +234,10 @@ export function AgentDemo() {
                   transition={{ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] }}
                   className="v2-app overflow-hidden rounded-xl"
                 >
-                  <QueueExplorer
-                    key={scenario.view}
-                    initialView={scenario.view}
+                  <McpAppFrame
+                    tool={scenario.view}
+                    host={host.surface}
                     theme={host.dark ? 'dark' : 'light'}
-                    showSearch={false}
                   />
                 </motion.div>
               ) : null}

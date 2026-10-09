@@ -6,7 +6,7 @@ import { MCP_FACTS } from '@/lib/mcp-facts'
 import { AgentHub, HostGrid } from '../mcp/agent-hub'
 import { TrademarkNote } from '../mcp/hosts'
 import { McpUrl } from '../mcp/primitives'
-import { QueueExplorer } from '../mcp/queue-explorer'
+import { McpAppFrame } from '../mcp/mcp-app-frame'
 import { EmberField } from './ember-field'
 import { Reveal } from './reveal'
 
@@ -104,10 +104,10 @@ export function V2Agents() {
           </div>
           <Reveal delay={0.12}>
             <div className="v2-frame overflow-hidden rounded-2xl">
-              <QueueExplorer initialView="overview" theme="dark" />
+              <McpAppFrame tool="get_connection_overview" theme="dark" className="p-2 sm:p-3" />
             </div>
             <p className="mt-3 text-center text-[11.5px] text-[var(--v2-faint)]">
-              Queue Explorer MCP App, shown with fixture data. Click the tabs.
+              The real Queue Explorer MCP App, running on fixture data. Click around.
             </p>
           </Reveal>
         </div>
