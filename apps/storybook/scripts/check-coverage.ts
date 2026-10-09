@@ -86,7 +86,9 @@ for (const path of marketingPages) {
   if (!source.includes(modulePath)) missing.push(relative(root, path))
   else covered++
 }
-const appSource = await Bun.file(resolve(root, 'packages/mcp/src/apps/ui/app.ts')).text()
+const appSource = await Bun.file(
+  resolve(root, 'packages/mcp/src/apps/ui/views/render-view.tsx')
+).text()
 for (const [, name] of appSource.matchAll(/case '([^']+)':/g)) {
   if (!source.includes(`tool: '${name}'`) && !source.includes(`tool: "${name}"`))
     missing.push(`MCP app view: ${name}`)

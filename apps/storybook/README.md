@@ -39,7 +39,7 @@ The build disables source maps and telemetry. API traffic is handled by local MS
 - **Desktop:** Electron title-bar and macOS navigation controls.
 - **Marketing:** production pages, landing sections, and brand/navigation components.
 - **Email:** production invitation and incident templates in isolated documents.
-- **MCP Apps:** production app views, error/empty/connecting states, dark and compact layouts.
+- **MCP Apps:** one card per production app view (Apps SDK UI), shown in ChatGPT and Claude host surfaces, light/dark, phone width, plus error/empty/connecting states.
 
 Stories live in `src/stories` and import production components directly. Fixtures live in `src/fixtures`; add invented data there, never copy customer data or load `.env`. Use `satisfies Meta<typeof Component>` and `StoryObj<typeof meta>` for typed args. Add meaningful variants and keep controlled inputs interactive. The global toolbar switches web themes; MCP previews additionally expose the host theme as a control.
 

@@ -32,7 +32,7 @@ for (const story of Object.values(index.entries).filter((entry) => entry.type ==
 }
 
 test('MCP navigation calls local read tools and records assistant requests', async ({ page }) => {
-  await page.goto('/iframe.html?id=mcp-apps-queue-explorer--queue-detail&viewMode=story')
+  await page.goto('/iframe.html?id=mcp-apps-queue--in-chat-gpt&viewMode=story')
   const app = page.frameLocator('iframe[title="Durabull MCP app"]')
   await app.getByRole('button', { name: 'Browse jobs', exact: true }).click()
   await expect(app.getByRole('button', { name: 'job-1042', exact: true })).toBeVisible()
@@ -74,9 +74,9 @@ test('scheduled job detail renders the editable production form', async ({ page 
 })
 
 test('MCP operation receipts refresh state through read tools', async ({ page }) => {
-  await page.goto('/iframe.html?id=mcp-apps-queue-explorer--job-retried&viewMode=story')
+  await page.goto('/iframe.html?id=mcp-apps-operation-receipt--job-retried&viewMode=story')
   const app = page.frameLocator('iframe[title="Durabull MCP app"]')
-  await expect(app.getByText('Operation result', { exact: true })).toBeVisible()
+  await expect(app.getByRole('region', { name: 'Operation result' })).toBeVisible()
   await app.getByRole('button', { name: 'Inspect current state', exact: true }).click()
   await page.getByText(/Host activity/).click()
   await expect(page.locator('details pre')).toHaveText('get_job')
