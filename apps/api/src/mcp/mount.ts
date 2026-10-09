@@ -2,13 +2,19 @@ import { env } from '@durabull/env'
 import type { McpToolInvocationAuditInput } from '@durabull/mcp'
 import { createMcpRoutes, getDefaultAllowedHosts, getProductionAllowedHosts } from '@durabull/mcp'
 
+import { createMiddleware } from 'hono/factory'
 import { APP_VERSION } from '../lib/build-info'
 import { hashMcpToolInput, writeMcpAuditEventNonBlocking } from './audit/mcp-audit'
 import { assertMcpAuthConfiguration } from './auth/mcp-auth-config'
 import { createMcpSessionMiddleware } from './auth/mcp-session-middleware'
 import { createMcpToolRateLimitMiddleware } from './middleware/mcp-tool-rate-limit'
+import {
+  createMcpRequestAnalyticsMiddleware,
+  createMcpRequestBodyAnalyticsMiddleware,
+} from './observability/mcp-request-analytics'
 import { recordMcpTelemetry } from './observability/mcp-telemetry'
 import { createMcpPolicyMiddleware } from './policy/mcp-policy-middleware'
+import { resolveMcpPrincipal } from './policy/principal-resolver'
 import {
   acknowledgeAlertEventHandler,
   getAlertEventHandler,
@@ -57,6 +63,7 @@ export async function mountMcpIngress() {
 
   return createMcpRoutes({
     version: APP_VERSION,
+    observabilityMiddleware: createMcpRequestAnalyticsMiddleware(),
     widgetDomain: appOrigin,
     allowedHosts: isProduction
       ? getProductionAllowedHosts(appBaseUrl)
@@ -167,6 +174,16 @@ export async function mountMcpIngress() {
         },
       }
     },
-    middleware: [authMiddleware, toolRateLimitMiddleware, policyMiddleware],
+    middleware: [
+      createMcpRequestBodyAnalyticsMiddleware(),
+      authMiddleware,
+      createMiddleware(async (c, next) => {
+        const principal = await resolveMcpPrincipal(c.get('mcpSession'))
+        if (principal) c.set('mcpPrincipal', principal)
+        return next()
+      }),
+      toolRateLimitMiddleware,
+      policyMiddleware,
+    ],
   })
 }

@@ -14,6 +14,8 @@ import { isAuthlessMode } from './lib/authless'
 import { bootstrapServerAnalytics } from './lib/configure-server-analytics'
 import { getAppVersionPayload } from './lib/build-info'
 import { mountMcpWellKnownRoutes } from './mcp/auth/mount-well-known'
+import { createMcpOAuthAnalyticsMiddleware } from './mcp/observability/mcp-oauth-analytics'
+import { createMcpRequestAnalyticsMiddleware } from './mcp/observability/mcp-request-analytics'
 import { mountMcpIngress } from './mcp/mount'
 import { RedisUnavailableError } from './lib/redis'
 import { createSessionMiddleware } from './middleware/auth'
@@ -332,6 +334,8 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
   )
 
   // Rate limiting
+  app.use('/api/auth/*', createMcpOAuthAnalyticsMiddleware())
+
   // Skip rate limiting for session checks - these are read-only and shouldn't break user sessions
   // Only rate limit actual auth actions (sign-in, sign-up, etc.)
   app.use('/api/auth/*', async (c, next) => {
@@ -447,11 +451,15 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
 
   const appBaseUrl = env.APP_BASE_URL ?? 'http://localhost:5173'
 
+  app.use('/.well-known/oauth-protected-resource', createMcpOAuthAnalyticsMiddleware())
+  app.use('/.well-known/oauth-authorization-server', createMcpOAuthAnalyticsMiddleware())
+
   // OAuth Protected Resource Metadata (RFC 9728) on app origin
   app.route('/', mountMcpWellKnownRoutes(appBaseUrl))
 
   // MCP Streamable HTTP ingress (before SPA/static fallbacks in index.ts)
   // Hono's wildcard also matches /mcp; register once to avoid double charging.
+  app.use('/mcp/*', createMcpRequestAnalyticsMiddleware())
   app.use('/mcp/*', mcpRateLimiter)
   app.route('/mcp', await mountMcpIngress())
 

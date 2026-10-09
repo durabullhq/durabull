@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { createHmac } from 'node:crypto'
 import { AnalyticsEvents } from '@durabull/analytics/events'
+import {
+  PostHogMCPAnalyticsEvent as E,
+  PostHogMCPAnalyticsProperty as P,
+} from '@durabull/analytics/mcp'
 import { env } from '@durabull/env'
 
 const captureMcpAnalyticsServerEvent = mock(async () => {})
@@ -36,6 +41,7 @@ mock.module('@durabull/analytics/server', () => ({
 }))
 
 const { recordMcpAnalytics, recordMcpTelemetryAnalytics } = await import('./mcp-analytics')
+const { mcpAnalyticsContext } = await import('./mcp-analytics-context')
 const { resetMcpAnalyticsQueueForTests } = await import('./mcp-analytics-queue')
 const { resetMcpTelemetryForTests } = await import('./mcp-telemetry')
 
@@ -105,7 +111,7 @@ describe('mcp analytics', () => {
     )
   })
 
-  it('records rpc requests for service accounts with hashed org distinct id', async () => {
+  it('keeps service-account people separate and groups them by organization', async () => {
     recordMcpAnalytics({
       event: AnalyticsEvents.MCP_RPC_REQUESTED,
       properties: { mcp_method: 'tools/list' },
@@ -120,14 +126,16 @@ describe('mcp analytics', () => {
 
     expect(captureMcpAnalyticsServerEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        identifiedDistinctId: 'hashed-org:org-1',
+        identifiedDistinctId: createHmac('sha256', 'test-secret')
+          .update('mcp:principal:sa-1')
+          .digest('hex'),
         // Raw org id is forwarded so capture hashes it exactly once (no double-hash).
         organizationId: 'org-1',
       })
     )
   })
 
-  it('does not emit product analytics for redaction-only signals', async () => {
+  it('emits operational analytics for redaction-only signals', async () => {
     recordMcpTelemetryAnalytics('redaction_applied', {
       toolName: 'list_jobs',
       principalId: 'principal-1',
@@ -137,6 +145,764 @@ describe('mcp analytics', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10))
 
-    expect(captureMcpAnalyticsServerEvent).not.toHaveBeenCalled()
+    expect(captureMcpAnalyticsServerEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: AnalyticsEvents.MCP_OPERATIONAL_SIGNAL,
+        properties: expect.objectContaining({ telemetry_signal: 'redaction_applied' }),
+      })
+    )
+  })
+
+  it('preserves an explicit principal when request context has a client-ID fallback', async () => {
+    const identity = {
+      principalType: 'service_account' as const,
+      principalId: 'service-account-principal',
+      organizationId: 'explicit-org',
+    }
+    mcpAnalyticsContext.run(
+      {
+        properties: {},
+        clientId: () => 'oauth-client',
+        identity: () => ({
+          ...identity,
+          principalId: 'oauth-client',
+          organizationId: 'context-org',
+        }),
+      },
+      () => recordMcpAnalytics({ event: AnalyticsEvents.MCP_RPC_REQUESTED, identity })
+    )
+    await settleAnalytics()
+    const event = capturedEvents()[0]
+    const expectedPrincipal = createHmac('sha256', 'test-secret')
+      .update('mcp:principal:service-account-principal')
+      .digest('hex')
+    expect(event.identifiedDistinctId).toBe(expectedPrincipal)
+    expect(event.properties.mcp_principal_key).toBe(expectedPrincipal)
+    expect(event.organizationId).toBe('explicit-org')
+  })
+})
+
+const { Hono } = await import('hono')
+const { MCP_TOOL_NAMES, createMcpRoutes } = await import('@durabull/mcp')
+const { sanitizeTelemetryEvent } = await import('../../../../../packages/analytics/src/sanitizer')
+const {
+  createMcpRequestAnalyticsMiddleware,
+  createMcpRequestBodyAnalyticsMiddleware,
+  readMcpResponseOutcome,
+} = await import('./mcp-request-analytics')
+const { createMcpOAuthAnalyticsMiddleware } = await import('./mcp-oauth-analytics')
+
+async function settleAnalytics() {
+  await new Promise((resolve) => setTimeout(resolve, 20))
+}
+
+function capturedEvents() {
+  return captureMcpAnalyticsServerEvent.mock.calls.map(
+    (call) =>
+      (
+        call as unknown as [
+          {
+            event: string
+            properties: Record<string, unknown>
+            identifiedDistinctId?: string
+            organizationId?: string
+          },
+        ]
+      )[0]
+  )
+}
+
+function rpcFixture(status = 200, result: unknown = { result: {} }, withIdentity = true) {
+  const app = new Hono()
+  app.use('*', createMcpRequestAnalyticsMiddleware())
+  // Nested mounts must not count a request twice.
+  app.use('*', createMcpRequestAnalyticsMiddleware())
+  app.post('/', async (c) => {
+    c.set('mcpRequestJsonBody', await c.req.json())
+    if (withIdentity)
+      c.set('mcpSession', {
+        accessToken: 'secret-bearer',
+        refreshToken: 'secret-refresh',
+        clientId: 'client-123',
+        clientName: 'Codex',
+        userId: 'user-123',
+        scopes: 'mcp:discover',
+        accessTokenExpiresAt: new Date(),
+        refreshTokenExpiresAt: new Date(),
+      })
+    return c.json(result, status as 200)
+  })
+  return app
+}
+
+function rpcRequest(method: string, params?: unknown) {
+  return {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'user-agent': 'Codex/1.2' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  }
+}
+
+describe('MCP lifecycle analytics coverage', () => {
+  beforeEach(() => {
+    resetMcpAnalyticsQueueForTests()
+    captureMcpAnalyticsServerEvent.mockClear()
+  })
+
+  it('tracks authentication and successful initialization with safe client identity', async () => {
+    const response = await rpcFixture().request(
+      '/',
+      rpcRequest('initialize', {
+        protocolVersion: '2026-07-28',
+        clientInfo: { name: 'Codex', version: '1.2.3' },
+      })
+    )
+    expect(response.status).toBe(200)
+    await settleAnalytics()
+    const events = capturedEvents()
+    expect(events.map((e) => e.event).sort()).toEqual(
+      [
+        AnalyticsEvents.MCP_AUTH_SUCCEEDED,
+        AnalyticsEvents.MCP_CONNECTION_INITIALIZED,
+        AnalyticsEvents.MCP_REQUEST_COMPLETED,
+        AnalyticsEvents.MCP_RPC_COMPLETED,
+        AnalyticsEvents.MCP_RPC_REQUESTED,
+      ].sort()
+    )
+    for (const event of events) {
+      expect(event.identifiedDistinctId).toBe('hashed-user:user-123')
+      expect(event.properties.mcp_client_family).toBe('codex')
+      expect(event.properties.mcp_client_key).toMatch(/^[a-f0-9]{64}$/)
+      expect(event.properties.mcp_request_key).toMatch(/^[a-f0-9]{64}$/)
+      expect(sanitizeTelemetryEvent(event.event, event.properties).droppedProperties).toEqual([])
+      expect(JSON.stringify(event)).not.toContain('secret-bearer')
+      expect(JSON.stringify(event.properties)).not.toContain('client-123')
+    }
+  })
+
+  it('attributes unauthenticated calls after native ingress validation without changing rejection behavior', async () => {
+    const app = createMcpRoutes({
+      version: 'test',
+      allowedHosts: new Set(['localhost']),
+      corsOrigins: [],
+      observabilityMiddleware: createMcpRequestAnalyticsMiddleware(),
+      middleware: [
+        createMcpRequestBodyAnalyticsMiddleware(),
+        async (c) => c.json({ error: 'Unauthorized' }, 401),
+      ],
+    })
+    const response = await app.request('http://localhost/', {
+      ...rpcRequest('tools/call', { name: 'get_job' }),
+      headers: { 'content-type': 'application/json', host: 'localhost' },
+    })
+    expect(response.status).toBe(401)
+    const hostile = await app.request('http://hostile/', {
+      ...rpcRequest('tools/call', { name: 'list_jobs' }),
+      headers: { 'content-type': 'application/json', host: 'hostile' },
+    })
+    expect(hostile.status).toBe(403)
+    await settleAnalytics()
+    const tools = capturedEvents().filter((event) => event.event === E.ToolCall)
+    expect(tools).toHaveLength(1)
+    expect(tools[0].properties).toMatchObject({
+      [P.ToolName]: 'get_job',
+      [P.IsError]: true,
+      http_status: 401,
+    })
+    expect(tools[0].identifiedDistinctId).toBeNull()
+  })
+
+  it('uses the negotiated handshake protocol revision', async () => {
+    await rpcFixture(200, { result: { protocolVersion: '2025-11-25' } }).request(
+      '/',
+      rpcRequest('initialize', {
+        protocolVersion: '2026-07-28',
+        clientInfo: { name: 'Codex', version: 'v1.2.3' },
+      })
+    )
+    await settleAnalytics()
+    const event = capturedEvents().find((event) => event.event === E.Initialize)!
+    expect(event.properties[P.ProtocolVersion]).toBe('2025-11-25')
+    expect(event.properties[P.ClientVersion]).toBe('v1.2.3')
+  })
+
+  it('times out an incomplete pre-auth upload and cancels both body branches', async () => {
+    let authenticated = false
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{'))
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const app = createMcpRoutes({
+      version: 'test',
+      allowedHosts: new Set(['localhost']),
+      corsOrigins: [],
+      observabilityMiddleware: createMcpRequestAnalyticsMiddleware(),
+      middleware: [
+        createMcpRequestBodyAnalyticsMiddleware(),
+        async (c) => {
+          authenticated = true
+          return c.json({ error: 'Unauthorized' }, 401)
+        },
+      ],
+    })
+    const response = await app.request(
+      new Request('http://localhost/', {
+        method: 'POST',
+        headers: { host: 'localhost', 'content-type': 'application/json', 'content-length': '100' },
+        body,
+      })
+    )
+    expect(response.status).toBe(408)
+    expect(authenticated).toBe(false)
+    await settleAnalytics()
+    expect(cancelled).toBe(true)
+    expect(
+      capturedEvents().find((event) => event.event === AnalyticsEvents.MCP_REQUEST_COMPLETED)
+        ?.properties.http_status
+    ).toBe(408)
+  })
+
+  it('preserves malformed input for the downstream SDK syntax-error path', async () => {
+    const app = new Hono()
+    app.use('*', createMcpRequestBodyAnalyticsMiddleware())
+    app.post('/', async (c) => {
+      expect(c.get('mcpRequestJsonBody')).toBeNull()
+      return c.text(await c.req.raw.text())
+    })
+    const response = await app.request('/', { method: 'POST', body: '{invalid json' })
+    expect(await response.text()).toBe('{invalid json')
+  })
+
+  it('enforces the body byte limit even when a supplied content length is misleading', async () => {
+    let authenticated = false
+    const app = new Hono()
+    app.use('*', createMcpRequestBodyAnalyticsMiddleware())
+    app.post('/', (c) => {
+      authenticated = true
+      return c.body(null, 204)
+    })
+    const response = await app.request('/', {
+      method: 'POST',
+      headers: { 'content-length': '1' },
+      body: 'x'.repeat(1024 * 1024 + 1),
+    })
+    expect(response.status).toBe(413)
+    expect(authenticated).toBe(false)
+  })
+
+  it('preserves native chunked body-limit rejection before authentication', async () => {
+    let authenticated = false
+    const app = createMcpRoutes({
+      version: 'test',
+      allowedHosts: new Set(['localhost']),
+      corsOrigins: [],
+      middleware: [
+        createMcpRequestBodyAnalyticsMiddleware(),
+        async (c) => {
+          authenticated = true
+          return c.body(null, 204)
+        },
+      ],
+    })
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024 + 1))
+        controller.close()
+      },
+    })
+    const response = await app.request(
+      new Request('http://localhost/', { method: 'POST', headers: { host: 'localhost' }, body })
+    )
+    expect(response.status).toBe(413)
+    expect(authenticated).toBe(false)
+  })
+
+  it('uses the exported PostHog contract for all supported canonical events', () => {
+    expect(AnalyticsEvents.MCP_TOOL_CALLED).toBe(E.ToolCall)
+    expect(AnalyticsEvents.MCP_CONNECTION_INITIALIZED).toBe(E.Initialize)
+    expect(AnalyticsEvents.MCP_TOOLS_LISTED).toBe(E.ToolsList)
+    expect(AnalyticsEvents.MCP_RESOURCES_LISTED).toBe(E.ResourcesList)
+    expect(AnalyticsEvents.MCP_RESOURCE_READ).toBe(E.ResourceRead)
+    expect(AnalyticsEvents.MCP_PROMPTS_LISTED).toBe(E.PromptsList)
+    expect(AnalyticsEvents.MCP_PROMPT_GET).toBe(E.PromptGet)
+  })
+
+  it('captures canonical discovery and resource events without payloads or tenant names', async () => {
+    await rpcFixture(200, {
+      result: { tools: [{ name: 'get_job' }, { name: 'list_jobs' }] },
+    }).request('/', rpcRequest('tools/list'))
+    for (const method of [
+      'resources/list',
+      'resources/templates/list',
+      'prompts/list',
+      'prompts/get',
+      'resources/read',
+    ]) {
+      await rpcFixture().request(
+        '/',
+        rpcRequest(method, { uri: 'durabull://connections/private-id/queues/private-queue' })
+      )
+    }
+    await settleAnalytics()
+    const events = capturedEvents().filter((event) => event.event.startsWith('$mcp_'))
+    expect(events.map((event) => event.event)).toEqual([
+      E.ToolsList,
+      E.ResourcesList,
+      E.ResourcesList,
+      E.PromptsList,
+      E.PromptGet,
+      E.ResourceRead,
+    ])
+    expect(events[0].properties[P.ListedToolNames]).toEqual(['get_job', 'list_jobs'])
+    expect(events.at(-1)?.properties[P.ResourceName]).toBe(
+      'durabull://connections/{connectionId}/queues/{queueName}'
+    )
+    for (const event of events) {
+      expect(event.properties[P.Source]).toBe('posthog_mcp_analytics')
+      expect(event.properties[P.ServerName]).toBeDefined()
+      expect(event.properties[P.DurationMs]).toBeNumber()
+      expect(event.properties[P.IsError]).toBe(false)
+      expect(sanitizeTelemetryEvent(event.event, event.properties).droppedProperties).toEqual([])
+    }
+    expect(JSON.stringify(events)).not.toContain('private-queue')
+    expect(JSON.stringify(events)).not.toContain('private-id')
+  })
+
+  it('captures failed calls and request metadata using canonical property keys', async () => {
+    await rpcFixture(403, {}, false).request('/', {
+      ...rpcRequest('tools/call', {
+        name: 'get_job',
+        arguments: { secret: 'SECRET' },
+        _meta: {
+          'io.modelcontextprotocol/clientInfo': { name: 'Claude Code', version: '1.2.3' },
+          'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+          'x-codex-turn-metadata': { model: 'gpt-5.2' },
+        },
+      }),
+      headers: {
+        'content-type': 'application/json',
+        'user-agent': 'Claude Code/1.2 (cli)',
+        'x-anthropic-client': 'claude-code',
+      },
+    })
+    await settleAnalytics()
+    const event = capturedEvents().find((event) => event.event === E.ToolCall)!
+    expect(event.properties).toMatchObject({
+      [P.ToolName]: 'get_job',
+      [P.ResourceName]: 'get_job',
+      [P.IsError]: true,
+      [P.ErrorType]: 'http_error',
+      [P.ClientName]: 'Claude Code',
+      [P.ClientVersion]: '1.2.3',
+      [P.ClientUserAgent]: 'Claude Code/1.2 (cli)',
+      [P.VendorClient]: 'claude-code',
+      [P.ProtocolVersion]: '2026-07-28',
+      [P.LlmModel]: 'gpt-5.2',
+      [P.LlmModelSource]: 'client_metadata',
+    })
+    expect(event.properties[P.SessionId]).toMatch(/^ses_[a-f0-9]{32}$/)
+    expect(event.properties[P.Parameters]).toBeUndefined()
+    expect(event.properties[P.Response]).toBeUndefined()
+    expect(sanitizeTelemetryEvent(event.event, event.properties).droppedProperties).toEqual([])
+    expect(JSON.stringify(event)).not.toContain('SECRET')
+  })
+
+  it('gives stateless requests separate sessions and prefers v2 envelope identity', async () => {
+    const body = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'get_job',
+        _meta: {
+          'io.modelcontextprotocol/clientInfo': { name: 'Fallback', version: '1.0' },
+        },
+      },
+      _meta: {
+        'io.modelcontextprotocol/clientInfo': { name: 'Cursor', version: '2.0' },
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      },
+    }
+    for (let i = 0; i < 2; i++)
+      await rpcFixture().request('/', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    await settleAnalytics()
+    const events = capturedEvents().filter((event) => event.event === E.ToolCall)
+    expect(events[0].properties[P.ClientName]).toBe('Cursor')
+    expect(events[0].properties[P.ClientVersion]).toBe('2.0')
+    expect(events[0].properties[P.SessionId]).not.toBe(events[1].properties[P.SessionId])
+  })
+
+  it('covers every catalog tool including ping and SDK errors that bypass handler callbacks', async () => {
+    for (const name of MCP_TOOL_NAMES) {
+      await rpcFixture().request('/', rpcRequest('tools/call', { name, arguments: {} }))
+    }
+    await settleAnalytics()
+    const tools = capturedEvents().filter((e) => e.event === AnalyticsEvents.MCP_TOOL_CALLED)
+    expect(tools.map((e) => e.properties.tool_name).sort()).toEqual([...MCP_TOOL_NAMES].sort())
+    captureMcpAnalyticsServerEvent.mockClear()
+    await rpcFixture(200, { error: { code: -32602, message: 'SECRET validation detail' } }).request(
+      '/',
+      rpcRequest('tools/call', { name: 'get_job', arguments: {} })
+    )
+    await settleAnalytics()
+    expect(
+      capturedEvents().find((e) => e.event === AnalyticsEvents.MCP_RPC_COMPLETED)?.properties
+    ).toMatchObject({ response_class: 'rpc_error', success: false, rpc_error_code: -32602 })
+    expect(JSON.stringify(capturedEvents())).not.toContain('SECRET')
+  })
+
+  it('records one final tool outcome even when SDK validation fails after handler success', async () => {
+    const app = new Hono()
+    app.use('*', createMcpRequestAnalyticsMiddleware())
+    app.post('/', async (c) => {
+      c.set('mcpRequestJsonBody', await c.req.json())
+      c.set('mcpSession', {
+        accessToken: 'secret',
+        refreshToken: 'secret',
+        clientId: 'client',
+        userId: 'user',
+        scopes: '',
+        accessTokenExpiresAt: new Date(),
+        refreshTokenExpiresAt: new Date(),
+      })
+      recordMcpTelemetryAnalytics('tool_success', {
+        toolName: 'get_job',
+        principalType: 'delegated_user',
+        principalId: 'user',
+        userId: 'user',
+      })
+      return c.json({ error: { code: -32603, message: 'Output validation failed' } })
+    })
+    await app.request('/', rpcRequest('tools/call', { name: 'get_job', arguments: {} }))
+    await settleAnalytics()
+    const tools = capturedEvents().filter(
+      (event) => event.event === AnalyticsEvents.MCP_TOOL_CALLED
+    )
+    expect(tools).toHaveLength(1)
+    expect(tools[0].properties).toMatchObject({ response_class: 'rpc_error', success: false })
+  })
+
+  it('tracks GET and OPTIONS without changing HTTP outcomes', async () => {
+    const app = new Hono()
+    app.use('*', createMcpRequestAnalyticsMiddleware())
+    app.get('/', (c) => c.json({ error: 'Method not supported' }, 405))
+    app.options('/', (c) => c.body(null, 204))
+    expect((await app.request('/')).status).toBe(405)
+    expect((await app.request('/', { method: 'OPTIONS' })).status).toBe(204)
+    await settleAnalytics()
+    expect(
+      capturedEvents()
+        .filter((event) => event.event === AnalyticsEvents.MCP_REQUEST_COMPLETED)
+        .map((event) => event.properties.http_status)
+    ).toEqual([405, 204])
+    expect(
+      capturedEvents().some((event) => event.event === AnalyticsEvents.MCP_RPC_REQUESTED)
+    ).toBe(false)
+  })
+
+  it('covers resources, notifications, unsupported methods, malformed requests and HTTP rejection', async () => {
+    for (const method of [
+      'resources/read',
+      'notifications/initialized',
+      'completion/complete',
+      'private-secret-method',
+    ]) {
+      await rpcFixture(403, { error: { message: 'denied' } }, false).request(
+        '/',
+        rpcRequest(method)
+      )
+    }
+    await rpcFixture(400, {}, false).request('/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    await settleAnalytics()
+    expect(
+      capturedEvents()
+        .filter((e) => e.event === AnalyticsEvents.MCP_RPC_REQUESTED)
+        .map((e) => e.properties.mcp_method)
+    ).toEqual([
+      'resources/read',
+      'notifications/initialized',
+      'completion/complete',
+      'unknown',
+      'unknown',
+    ])
+    expect(
+      capturedEvents()
+        .filter((e) => e.event === AnalyticsEvents.MCP_RPC_COMPLETED)
+        .every((e) => e.properties.success === false)
+    ).toBe(true)
+    expect(capturedEvents().some((e) => e.event === AnalyticsEvents.MCP_AUTH_SUCCEEDED)).toBe(false)
+  })
+
+  it('parses legacy SSE outcomes and bounds response inspection', async () => {
+    expect(
+      await readMcpResponseOutcome(
+        new Response(
+          'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"isError":true}}\n\n',
+          { headers: { 'content-type': 'text/event-stream' } }
+        )
+      )
+    ).toMatchObject({ response_class: 'tool_error', success: false })
+    expect(
+      await readMcpResponseOutcome(Response.json({ result: { payload: 'x'.repeat(70_000) } }))
+    ).toEqual({ response_class: 'unobserved' })
+  })
+
+  it('isolates simultaneous user and client identities', async () => {
+    const app = new Hono()
+    app.use('*', createMcpRequestAnalyticsMiddleware())
+    app.post('/', async (c) => {
+      const user = c.req.header('x-test-user')!
+      c.set('mcpSession', {
+        accessToken: 'secret',
+        refreshToken: 'secret',
+        clientId: user,
+        userId: user,
+        scopes: '',
+        accessTokenExpiresAt: new Date(),
+        refreshTokenExpiresAt: new Date(),
+      })
+      c.set('mcpRequestJsonBody', await c.req.json())
+      await new Promise((resolve) => setTimeout(resolve, user === 'alice' ? 10 : 1))
+      recordMcpTelemetryAnalytics('rate_limited_tool', {
+        toolName: 'get_job',
+        principalType: 'delegated_user',
+        principalId: user,
+      })
+      return c.json({ result: {} })
+    })
+    await Promise.all(
+      ['alice', 'bob'].map((user) =>
+        app.request('/', {
+          ...rpcRequest('ping'),
+          headers: { 'content-type': 'application/json', 'x-test-user': user },
+        })
+      )
+    )
+    await settleAnalytics()
+    const limits = capturedEvents().filter((e) => e.event === AnalyticsEvents.MCP_RATE_LIMITED)
+    expect(limits.map((e) => e.identifiedDistinctId).sort()).toEqual([
+      'hashed-user:alice',
+      'hashed-user:bob',
+    ])
+    expect(limits[0].properties.mcp_client_key).not.toBe(limits[1].properties.mcp_client_key)
+  })
+
+  it('starts OAuth authentication before a slow analytics body or identity lookup completes', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({
+      start(value) {
+        controller = value
+      },
+    })
+    let finishIdentity!: (user: string | null) => void
+    const identity = new Promise<string | null>((resolve) => {
+      finishIdentity = resolve
+    })
+    const app = new Hono()
+    app.use(
+      '*',
+      createMcpOAuthAnalyticsMiddleware({
+        userId: () => identity,
+        consentContext: async () => null,
+        tokenIdentity: async () => null,
+      })
+    )
+    app.post('/api/auth/mcp/register', (c) => c.json({ client_id: 'issued-client' }, 201))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const response = await Promise.race([
+        app.request(
+          new Request('http://localhost/api/auth/mcp/register', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body,
+          })
+        ),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Analytics delayed authentication')), 500)
+        }),
+      ])
+      expect(response.status).toBe(201)
+      controller.enqueue(
+        new TextEncoder().encode(
+          JSON.stringify({ client_name: 'Codex', scope: 'mcp:discover mcp:jobs:read' })
+        )
+      )
+      controller.close()
+      finishIdentity('register-user')
+      await settleAnalytics()
+      const event = capturedEvents().find(
+        (event) => event.event === AnalyticsEvents.MCP_CLIENT_REGISTERED
+      )!
+      expect(event.identifiedDistinctId).toBe('hashed-user:register-user')
+      expect(event.properties).toMatchObject({
+        mcp_client_family: 'codex',
+        scope_count: 2,
+        http_status: 201,
+      })
+      expect(event.properties.mcp_client_key).toBe(
+        createHmac('sha256', 'test-secret').update('mcp:client:issued-client').digest('hex')
+      )
+    } finally {
+      clearTimeout(timer)
+      finishIdentity(null)
+    }
+  })
+
+  it('keeps the OAuth handler body intact when the analytics tee branch cancels at its size limit', async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      start(value) {
+        controller = value
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const app = new Hono()
+    app.use(
+      '*',
+      createMcpOAuthAnalyticsMiddleware({
+        userId: async () => null,
+        consentContext: async () => null,
+        tokenIdentity: async () => null,
+      })
+    )
+    app.post('/api/auth/mcp/register', async (c) => {
+      const input = (await c.req.raw.json()) as { padding: string }
+      return c.json({ size: input.padding.length }, 201)
+    })
+    const response = app.request(
+      new Request('http://localhost/api/auth/mcp/register', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      })
+    )
+    controller.enqueue(new TextEncoder().encode(`{"padding":"${'x'.repeat(20_000)}`))
+    await settleAnalytics()
+    expect(cancelled).toBe(false)
+    controller.enqueue(new TextEncoder().encode('"}'))
+    controller.close()
+    const result = await response
+    expect(result.status).toBe(201)
+    expect(await result.json()).toEqual({ size: 20_000 })
+  })
+
+  it('tracks OAuth registration, exchange, refresh, consent and failures without credentials', async () => {
+    const app = new Hono()
+    app.use(
+      '*',
+      createMcpOAuthAnalyticsMiddleware({
+        userId: async () => 'oauth-user',
+        consentContext: async () => ({ clientId: 'oauth-client', scopeCount: 3 }),
+        cookieSecret: async () => 'cookie-secret',
+        tokenIdentity: async () => ({
+          clientId: 'oauth-client',
+          identity: {
+            principalType: 'delegated_user',
+            principalId: 'oauth-user',
+            userId: 'oauth-user',
+          },
+        }),
+      })
+    )
+    app.post('/api/auth/mcp/register', (c) =>
+      c.json({ client_id: 'oauth-client', client_secret: 'SECRET-client' }, 201)
+    )
+    app.post('/api/auth/mcp/token', async (c) => {
+      const input = await c.req.json()
+      return input.grant_type === 'invalid'
+        ? c.json({ error: 'invalid_grant' }, 400)
+        : c.json({ access_token: 'SECRET-access', refresh_token: 'SECRET-refresh' })
+    })
+    app.get('/api/auth/mcp/authorize', (c) => c.redirect('https://example.com/consent?code=SECRET'))
+    app.post('/api/auth/oauth2/consent', async (c) => {
+      const body = await c.req.json()
+      return c.json({
+        redirectURI: body.accept
+          ? 'https://example.com/?code=SECRET'
+          : 'https://example.com/?error=access_denied',
+      })
+    })
+    const post = (path: string, body: unknown) =>
+      app.request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    await post('/api/auth/mcp/register', {
+      client_name: 'Claude',
+      redirect_uris: ['https://private.example.com'],
+    })
+    await post('/api/auth/mcp/token', { grant_type: 'authorization_code', code: 'SECRET-code' })
+    await post('/api/auth/mcp/token', {
+      grant_type: 'refresh_token',
+      refresh_token: 'SECRET-refresh',
+    })
+    await post('/api/auth/mcp/token', { grant_type: 'invalid', client_id: 'oauth-client' })
+    await app.request('/api/auth/mcp/authorize?client_id=oauth-client')
+    await post('/api/auth/oauth2/consent', { accept: true, consent_code: 'SECRET-consent' })
+    await post('/api/auth/oauth2/consent', { accept: false, consent_code: 'SECRET-consent' })
+    const cookieCode = 'COOKIE-CODE'
+    const signature = createHmac('sha256', 'cookie-secret').update(cookieCode).digest('base64')
+    await app.request('/api/auth/oauth2/consent', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        cookie: `oidc_consent_prompt=${encodeURIComponent(`${cookieCode}.${signature}`)}`,
+      },
+      body: JSON.stringify({ accept: true }),
+    })
+    await settleAnalytics()
+    const events = capturedEvents()
+    expect(events.filter((e) => e.event === AnalyticsEvents.MCP_OAUTH_COMPLETED)).toHaveLength(8)
+    for (const event of [
+      AnalyticsEvents.MCP_CLIENT_REGISTERED,
+      AnalyticsEvents.MCP_CONSENT_GRANTED,
+      AnalyticsEvents.MCP_CONSENT_DENIED,
+    ])
+      expect(events.filter((e) => e.event === event)).toHaveLength(
+        event === AnalyticsEvents.MCP_CONSENT_GRANTED ? 2 : 1
+      )
+    expect(
+      events
+        .filter(
+          (e) =>
+            e.event === AnalyticsEvents.MCP_OAUTH_COMPLETED &&
+            e.properties.oauth_stage === 'token' &&
+            e.properties.success === true
+        )
+        .map((e) => e.properties.oauth_grant_type)
+    ).toEqual(['authorization_code', 'refresh_token'])
+    expect(
+      events
+        .filter((e) => e.event === AnalyticsEvents.MCP_OAUTH_COMPLETED)
+        .filter((e) => e.properties.success === true || e.properties.oauth_stage === 'consent')
+        .every((e) => e.identifiedDistinctId === 'hashed-user:oauth-user')
+    ).toBe(true)
+    for (const event of events)
+      expect(sanitizeTelemetryEvent(event.event, event.properties).droppedProperties).toEqual([])
+    expect(
+      events.find(
+        (e) => e.event === AnalyticsEvents.MCP_OAUTH_COMPLETED && e.properties.http_status === 400
+      )?.properties.success
+    ).toBe(false)
+    expect(JSON.stringify(events)).not.toContain('SECRET')
+    expect(JSON.stringify(events)).not.toContain('private.example.com')
   })
 })

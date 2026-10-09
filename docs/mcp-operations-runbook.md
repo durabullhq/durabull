@@ -119,7 +119,7 @@ Stdout JSON lines with `"type":"mcp_telemetry"`. Emitted signals today:
 | `redaction_applied` | Sanitizer redacted fields | Expected for sensitive payloads |
 | `audit_dropped` / `audit_write_failed` | Audit backpressure/DB | Check Postgres load and `mcp_audit_event` health |
 
-Auth failures (`401` / `403`) are returned on the HTTP response; monitor access logs and `WWW-Authenticate` challenges until dedicated auth telemetry is wired.
+Auth failures (`401` / `403`) emit `auth_missing_bearer`, `auth_unauthorized` or `auth_forbidden` signals and `mcp_auth_failed` analytics. Monitor these alongside access logs and `WWW-Authenticate` challenges.
 
 Disable stdout telemetry only if your platform duplicates logs elsewhere: `MCP_TELEMETRY_LOG=false`.
 
@@ -234,3 +234,36 @@ After rotation, run `mcp:e2e` on **staging/local** before closing the change.
 - User-facing: [MCP Server](../apps/docs/content/documentation/integrations/mcp-server.mdx)
 - OAuth: [mcp-oauth-operator.md](./mcp-oauth-operator.md)
 - Security: [Security and Hardening](../apps/docs/content/documentation/operations/security-and-hardening.mdx)
+
+### MCP PostHog coverage
+
+The API records the following server events when production analytics is enabled. MCP tracking uses the same HMAC user distinct ID as other identified server analytics. Each service account has its own HMAC principal distinct ID; organization groups are hashed once. Requests without a validated identity stay anonymous.
+
+| Event | Coverage |
+| --- | --- |
+| `mcp_oauth_requested`, `mcp_oauth_completed` | Discovery, registration, authorization, consent, token exchange and refresh, session/userinfo/JWKS endpoints; includes HTTP failures and throttling |
+| `mcp_client_registered`, `mcp_consent_granted`, `mcp_consent_denied` | Successful registration and processed consent decisions, rather than browser clicks |
+| `mcp_request_completed` | Every ingress HTTP request, including GET/DELETE/OPTIONS, Host/Origin/body-limit rejection, authentication failures and ingress throttling |
+| `mcp_auth_succeeded`, `mcp_auth_failed` | Validated bearer authentication per HTTP request and missing/invalid bearer or insufficient transport scopes |
+| `mcp_rpc_requested`, `mcp_rpc_completed` | Every POST, including tools, resources, prompts, discovery, ping, completion, logging, notifications, invalid JSON/batches and unsupported methods |
+| `$mcp_initialize` | Every initialize handshake and its outcome; this stateless transport has no persistent session or disconnect lifecycle |
+| `$mcp_tool_call` | One final outcome per tools/call, including unknown tools, authentication/policy/rate rejection, SDK input/output validation errors and handler errors |
+| `$mcp_tools_list` | Tool discovery, with `$mcp_listed_tool_names` from the advertised response |
+| `$mcp_resources_list`, `$mcp_resource_read` | Resource/template discovery and reads; resource names use catalog URI templates to remove tenant identifiers |
+| `$mcp_prompts_list`, `$mcp_prompt_get` | Prompt discovery and retrieval (PostHog declares these in its Ruby SDK contract) |
+| `mcp_tool_denied`, `mcp_rate_limited` | Policy/principal/scope/connection denials and ingress/tool work budgets |
+| `mcp_operational_signal` | Redaction, dropped audit events and audit write failures |
+
+Canonical event names and property keys use the constants exported by `@posthog/mcp`, pinned to 0.22.2. See [PostHog’s wire contract](https://posthog.com/docs/mcp-analytics/events). OAuth, authentication, transport, RPC and operational events remain custom events because the contract declares no standard equivalents. Go-only unknown-tool/input-required events and the optional get_more_tools virtual tool do not apply to this server.
+
+All MCP events carry `$mcp_source: "posthog_mcp_analytics"`, `$mcp_server_name` and `$mcp_server_version`. HTTP requests carry `$session_id` in `ses_<32-hex>` form, derived from a protocol session header when present, otherwise newly generated per stateless request; a user/principal ID is not a protocol session. Canonical outcome events carry `$mcp_duration_ms`, `$mcp_is_error` when observed, and a fixed `$mcp_error_type` on failure. Client attribution uses `$mcp_client_name`, `$mcp_client_version`, `$mcp_client_user_agent`, `$mcp_vendor_client` and `$mcp_protocol_version`; credential-shaped metadata is omitted, and strings are capped. Codex model metadata is recorded as `$mcp_llm_model` with `$mcp_llm_model_source: "client_metadata"` when present. This server does not inject model, intent or conversation arguments into application schemas.
+
+Additional properties include `mcp_client_family` (a fixed label derived from registered OAuth name, initialize clientInfo or User-Agent), `mcp_client_key`, `mcp_principal_key`, `mcp_connection_key` for connection policy operations, and `mcp_request_key`. Keys are HMAC hashes, never raw identifiers. Client and protocol versions are validated before capture. Tool names come from the catalog; unsupported names/methods use `unknown`. User-supplied host metadata is attribution, not proof of the host's identity. Initialize metadata is scoped to that request; subsequent stateless requests use the registered OAuth client and User-Agent.
+
+HTTP/RPC outcome events include HTTP status, duration and safe numeric JSON-RPC error codes. Response inspection is asynchronous and bounded to 64 KiB/one second; it never waits on a GET subscription. Large or incomplete responses use the handler outcome when available, otherwise `unobserved`/`accepted` with no inferred success. Following the [documented privacy hook policy](https://posthog.com/docs/mcp-analytics/privacy), `$mcp_parameters`, `$mcp_response`, raw exception messages and `$exception` payloads are intentionally excluded. Analytics never emits OAuth secrets/codes/redirect URLs, RPC arguments, payloads, job/queue names, raw connection names or error messages. Explicit consent codes and verified signed consent cookies are looked up to enrich user/client attribution when the pending consent record remains available; scope counts retain aggregate consent metadata.
+
+OAuth body inspection and identity enrichment run concurrently with authentication, without delaying the handler. Explicit stream tee branches preserve handler request/response bodies when analytics cancels its bounded read. The MCP request-body inspection before authentication has a one-second total deadline and a 1 MiB byte cap; incomplete uploads return HTTP 408 without entering authentication, and oversized uploads return HTTP 413. Malformed JSON retains the original handler body for the SDK's syntax-error response.
+
+Tracking remains best-effort: the bounded queue can drop events and process restarts can lose queued work. `telemetry_queue` with `queueName: "mcp_analytics"` reports `queue_dropped` for backpressure and `queue_failed` for processing, validation or upstream rejection failures. These signals must be monitored outside PostHog because an unavailable ingestion destination cannot report its own loss. There is no durable outbox or delivery retry guarantee.
+
+After deployment, verify the register → authorize/consent → token → initialize → tools/list → tools/call funnel in PostHog; repeat with token refresh, an SDK validation error, a policy denial and a rate limit. Confirm one final tool event, matching hashed user identity, distinct service-account people with the correct organization group, consistent client/request keys and no raw credentials or tenant data. Local automated tests validate capture contracts and batch payloads; they do not establish production receipt.

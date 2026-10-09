@@ -113,9 +113,22 @@ export const AnalyticsEvents = {
   // App Lifecycle Events
   APP_UPDATE_CLICKED: 'app_update_clicked',
 
-  // MCP Events
+  // Canonical MCP wire values; server captures use @posthog/mcp constants.
+  // Shared literals keep the server SDK out of browser bundles (contract tested).
   MCP_RPC_REQUESTED: 'mcp_rpc_requested',
-  MCP_TOOL_CALLED: 'mcp_tool_called',
+  MCP_RPC_COMPLETED: 'mcp_rpc_completed',
+  MCP_REQUEST_COMPLETED: 'mcp_request_completed',
+  MCP_AUTH_SUCCEEDED: 'mcp_auth_succeeded',
+  MCP_CONNECTION_INITIALIZED: '$mcp_initialize',
+  MCP_OAUTH_REQUESTED: 'mcp_oauth_requested',
+  MCP_OAUTH_COMPLETED: 'mcp_oauth_completed',
+  MCP_OPERATIONAL_SIGNAL: 'mcp_operational_signal',
+  MCP_TOOL_CALLED: '$mcp_tool_call',
+  MCP_TOOLS_LISTED: '$mcp_tools_list',
+  MCP_RESOURCES_LISTED: '$mcp_resources_list',
+  MCP_RESOURCE_READ: '$mcp_resource_read',
+  MCP_PROMPTS_LISTED: '$mcp_prompts_list',
+  MCP_PROMPT_GET: '$mcp_prompt_get',
   MCP_TOOL_DENIED: 'mcp_tool_denied',
   MCP_AUTH_FAILED: 'mcp_auth_failed',
   MCP_RATE_LIMITED: 'mcp_rate_limited',

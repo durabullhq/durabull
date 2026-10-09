@@ -20,7 +20,13 @@ const analyticsQueue = createBoundedAsyncQueue<McpAnalyticsInput>({
     console.warn('[analytics] MCP analytics queue full; dropping event')
   },
   onError: () => {
-    // Analytics must never affect MCP behavior.
+    console.warn(
+      JSON.stringify({
+        type: 'telemetry_queue',
+        queueName: 'mcp_analytics',
+        signal: 'queue_failed',
+      })
+    )
   },
 })
 

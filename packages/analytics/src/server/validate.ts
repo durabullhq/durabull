@@ -5,7 +5,7 @@ export type TelemetryValidationResult =
   | {
       ok: true
       event: string
-      properties: Record<string, string | number | boolean | null>
+      properties: Record<string, string | number | boolean | null | string[]>
     }
   | { ok: false; error: 'unknown_event' | 'invalid_properties' }
 

@@ -22,6 +22,8 @@ export interface CreateMcpRoutesOptions {
    * PR-03: bearer token validation goes here.
    */
   middleware?: MiddlewareHandler[]
+  /** Observability boundary; must not parse bodies before host and size validation. */
+  observabilityMiddleware?: MiddlewareHandler
   /** Domain handlers for catalog tools. Tools without a handler are not registered. */
   toolHandlers?: RegisterToolsOptions
   /** Optional request-scoped context resolver used by MCP tool handlers. */
@@ -45,6 +47,7 @@ export function createMcpRoutes(options: CreateMcpRoutesOptions): Hono {
   )
 
   const routes = new Hono()
+  if (options.observabilityMiddleware) routes.use('*', options.observabilityMiddleware)
 
   // CORS controls browser access to responses; it does not reject hostile origins.
   routes.use('*', async (c, next) => {

@@ -24,6 +24,7 @@ export interface McpSession {
   refreshToken: string
   accessTokenExpiresAt: Date
   refreshTokenExpiresAt: Date
+  clientName?: string
   clientId: string
   userId: string | null
   scopes: string
@@ -83,6 +84,8 @@ export async function createMcpSessionMiddleware(appBaseUrl: string) {
     const cacheKey = bearerToken
     const cached = tokenCache.get(cacheKey)
     if (cached) {
+      c.set('mcpAnalyticsClientId', cached.clientId)
+      c.set('mcpAnalyticsClientName', cached.clientName)
       const cachedValidation = validateMcpAccessTokenClaims(cached, {
         canonicalResourceUri,
         requiredScopes: MCP_TRANSPORT_REQUIRED_SCOPES,
@@ -116,9 +119,12 @@ export async function createMcpSessionMiddleware(appBaseUrl: string) {
       return buildMcpUnauthorizedResponse(resourceMetadataUrl)
     }
 
+    c.set('mcpAnalyticsClientId', session.clientId)
+    c.set('mcpAnalyticsClientName', session.clientName)
     const claims = {
       accessToken: bearerToken,
       clientId: session.clientId,
+      clientName: session.clientName,
       userId: session.userId,
       scopes: parseScopeString(session.scopes),
       accessTokenExpiresAt: session.accessTokenExpiresAt,
@@ -161,6 +167,7 @@ export async function createMcpSessionMiddleware(appBaseUrl: string) {
 
 function sessionFromClaims(claims: {
   accessToken: string
+  clientName?: string
   clientId: string
   userId: string | null
   scopes: string[]
@@ -172,6 +179,7 @@ function sessionFromClaims(claims: {
     accessTokenExpiresAt: claims.accessTokenExpiresAt,
     refreshTokenExpiresAt: claims.accessTokenExpiresAt,
     clientId: claims.clientId,
+    clientName: claims.clientName,
     userId: claims.userId,
     scopes: claims.scopes.join(' '),
   }
@@ -180,5 +188,7 @@ function sessionFromClaims(claims: {
 declare module 'hono' {
   interface ContextVariableMap {
     mcpSession: McpSession
+    mcpAnalyticsClientId?: string
+    mcpAnalyticsClientName?: string
   }
 }

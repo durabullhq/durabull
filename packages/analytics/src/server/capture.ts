@@ -1,13 +1,13 @@
 import {
-  tryGetServerAnalyticsOptions,
-  type ServerAnalyticsOptions,
-  type ServerAnalyticsRuntimeContext,
-} from './config'
-import {
   signTelemetryCollectBody,
   TELEMETRY_COLLECT_SIGNATURE_HEADER,
   TELEMETRY_COLLECT_TIMESTAMP_HEADER,
 } from './collect-auth'
+import {
+  type ServerAnalyticsOptions,
+  type ServerAnalyticsRuntimeContext,
+  tryGetServerAnalyticsOptions,
+} from './config'
 import {
   hashIdentifiedOrganizationDistinctId,
   hashIdentifiedUserDistinctId,
@@ -15,10 +15,10 @@ import {
 } from './identifiers'
 import {
   POSTHOG_FETCH_TIMEOUT_MS,
-  resolvePosthogBatchUrl,
-  sendPosthogBatch,
   type PosthogBatchCapture,
   type PosthogBatchClientConfig,
+  resolvePosthogBatchUrl,
+  sendPosthogBatch,
 } from './posthog-batch'
 import { validateTelemetryPayload } from './validate'
 
@@ -84,7 +84,7 @@ function buildAnonymousCapture(input: {
   anonymousInstanceId: string
   sessionId: string
   event: string
-  properties: Record<string, string | number | boolean | null>
+  properties: Record<string, string | number | boolean | null | string[]>
   timestamp: string
   hmacSecret: string
 }): PosthogBatchCapture {
@@ -108,7 +108,7 @@ function buildAnonymousCapture(input: {
 
 function buildIdentifiedCapture(input: {
   event: string
-  properties: Record<string, string | number | boolean | null>
+  properties: Record<string, string | number | boolean | null | string[]>
   distinctId: string
   organizationId?: string | null
   timestamp?: string
@@ -142,10 +142,11 @@ async function forwardAnonymousToCloudCollect(input: {
   collectSigningSecret: string
   anonymousInstanceId: string
   event: string
-  properties: Record<string, string | number | boolean | null>
+  properties: Record<string, string | number | boolean | null | string[]>
   sessionId: string
   timestamp: string
   runtimeContext: ServerAnalyticsRuntimeContext
+  rejectOnFailure?: boolean
 }): Promise<void> {
   const sentAt = new Date().toISOString()
   const rawBody = JSON.stringify({
@@ -185,6 +186,8 @@ async function forwardAnonymousToCloudCollect(input: {
   }
 
   await response.body?.cancel()
+  if (!response.ok && input.rejectOnFailure)
+    throw new Error('MCP analytics cloud collector rejected batch')
 }
 
 export async function captureAnonymousServerEvent(input: {
@@ -241,6 +244,16 @@ export async function captureAnonymousServerEvent(input: {
   })
 }
 
+async function sendMcpPosthogBatch(
+  config: PosthogBatchClientConfig,
+  captures: PosthogBatchCapture[],
+  options: Parameters<typeof sendPosthogBatch>[2]
+): Promise<boolean> {
+  const accepted = await sendPosthogBatch(config, captures, options)
+  if (!accepted) throw new Error('MCP analytics upstream rejected batch')
+  return true
+}
+
 export async function captureMcpAnalyticsServerEvent(input: {
   event: string
   properties: Record<string, unknown>
@@ -256,7 +269,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
 
   const runtimeContext = options.getRuntimeContext()
   const validated = validateTelemetryPayload(input.event, input.properties, runtimeContext)
-  if (!validated.ok) return
+  if (!validated.ok) throw new Error(`MCP analytics validation failed: ${validated.error}`)
 
   const timestamp = resolveCollectTimestamp(input.timestamp, Date.now())
   const shouldCaptureAnonymous =
@@ -298,7 +311,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
       identifiedCapture &&
       isSamePosthogConfig(anonymousConfig, identifiedConfig)
     ) {
-      await sendPosthogBatch(anonymousConfig, [anonymousCapture, identifiedCapture], {
+      await sendMcpPosthogBatch(anonymousConfig, [anonymousCapture, identifiedCapture], {
         runtimeContext,
         mergeRuntime: true,
       })
@@ -308,7 +321,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
     const tasks: Promise<boolean>[] = []
     if (anonymousCapture && anonymousConfig) {
       tasks.push(
-        sendPosthogBatch(anonymousConfig, [anonymousCapture], {
+        sendMcpPosthogBatch(anonymousConfig, [anonymousCapture], {
           runtimeContext,
           mergeRuntime: true,
         })
@@ -316,7 +329,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
     }
     if (identifiedCapture && identifiedConfig) {
       tasks.push(
-        sendPosthogBatch(identifiedConfig, [identifiedCapture], {
+        sendMcpPosthogBatch(identifiedConfig, [identifiedCapture], {
           runtimeContext,
           mergeRuntime: true,
         })
@@ -343,6 +356,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
           sessionId: input.sessionId!,
           timestamp,
           runtimeContext,
+          rejectOnFailure: true,
         })
       )
     }
@@ -352,7 +366,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
     const identifiedConfig = getIdentifiedPosthogConfig(options)
     if (identifiedConfig) {
       tasks.push(
-        sendPosthogBatch(
+        sendMcpPosthogBatch(
           identifiedConfig,
           [
             buildIdentifiedCapture({

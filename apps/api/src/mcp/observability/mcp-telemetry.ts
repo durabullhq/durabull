@@ -32,6 +32,7 @@ export function recordMcpTelemetry(event: McpTelemetryEvent): void {
     organizationId: event.organizationId,
     denialReason: event.denialReason,
     redactionCount: event.redactionCount,
+    count: increment,
   })
 
   if (!telemetryLoggingEnabled) return

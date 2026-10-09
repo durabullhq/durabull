@@ -1,5 +1,3 @@
-import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents } from '@durabull/analytics/events'
 import {
   labelConsentScopes,
   type McpOAuthConsentContext,
@@ -125,13 +123,6 @@ function ConsentPage() {
         accept,
         consentCode: search.consent_code,
       })
-      trackEvent(
-        accept ? AnalyticsEvents.MCP_CONSENT_GRANTED : AnalyticsEvents.MCP_CONSENT_DENIED,
-        {
-          success: accept,
-          scope_count: context?.scopes.length ?? 0,
-        }
-      )
       window.location.assign(result.redirectURI)
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Failed to complete authorization')

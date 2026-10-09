@@ -19,6 +19,10 @@
     "./server": {
       "types": "./src/server/index.ts",
       "import": "./src/server/index.ts"
+    },
+    "./mcp": {
+      "types": "./src/mcp.ts",
+      "import": "./src/mcp.ts"
     }
   },
   "scripts": {
@@ -30,6 +34,7 @@
     "format:check": "biome format ./src"
   },
   "dependencies": {
+    "@posthog/mcp": "0.22.2",
     "posthog-js": "1.351.1"
   },
   "devDependencies": {
