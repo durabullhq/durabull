@@ -26,3 +26,6 @@ release/
 # Local PGlite data (created by the API when DATABASE_URL is unset)
 apps/api/data/
 /data/
+
+# Playwright CLI console and page snapshots
+.playwright-cli/
