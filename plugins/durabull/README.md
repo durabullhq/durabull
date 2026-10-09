@@ -1,6 +1,6 @@
-# Durabull — BullMQ & Redis
+# Durabull: BullMQ & Redis Admin
 
-Manage BullMQ background jobs from your assistant: find a failing job, understand a backlog, inspect recurring schedules, check Redis health, and recover work with a specific request.
+Administer BullMQ queues and monitor Redis health from your assistant. Diagnose backlogs, inspect jobs and workers, review schedules and alerts, retry failed jobs, and pause or resume queues with a specific request.
 
 ## Connect
 

@@ -1,6 +1,16 @@
-# Durabull plugin 1.1.0 release record
+# Durabull plugin 1.1.1 release record
 
-Prepared October 7, 2026. This record describes repository validation, not a production deployment or public marketplace approval.
+Initially prepared October 7, 2026; updated October 9, 2026. This record describes repository validation, not a production deployment or public marketplace approval.
+
+## Marketplace copy refresh — October 9, 2026
+
+Version 1.1.1 uses the listing name **Durabull: BullMQ & Redis Admin** and subtitle
+**Manage queues. Retry jobs.** The name is 30 characters and the subtitle is 26, within
+[OpenAI's public-submission limits](https://developers.openai.com/plugins/deploy/submission#listing-metadata).
+The expanded description leads with queue administration and Redis diagnostics, describes
+the intended users and available operations, and states the current tool limitations.
+The portable manifest, generated Claude manifest, repository listing and package README
+use the same package summary. Rebuild the upload ZIP from this version.
 
 ## Privacy policy remediation — October 9, 2026
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "durabull",
-  "version": "1.1.0",
-  "description": "BullMQ queue management and Redis monitoring with Durabull. Explore background jobs, diagnose failures and backlogs, inspect workers and repeatable schedules, review alerts, and retry, promote, pause or resume on request.",
+  "version": "1.1.1",
+  "description": "Administer BullMQ queues and monitor Redis health from your conversation. Diagnose backlogs, inspect jobs and workers, review schedules and alerts, retry failed jobs, and pause or resume queues on request.",
   "author": {
     "name": "Durabull",
     "url": "https://durabull.io"
@@ -29,9 +29,9 @@
     "com.openai": {
       "onboardingSkill": "./skills/setup/SKILL.md",
       "interface": {
-        "displayName": "Durabull \u2014 BullMQ & Redis",
-        "shortDescription": "BullMQ queues & Redis health",
-        "longDescription": "Inspect your BullMQ queues and Redis health without leaving the conversation. Find jobs across queues, investigate failures with redacted payloads, logs and stacktraces, measure throughput, inspect workers and recurring schedules, and review incidents and notification delivery. Explore interactive queue, job, schedule, alert and health views in MCP Apps hosts. Retry failed jobs, promote delayed jobs, pause or resume queues, and manage alert acknowledgements and snoozes when requested. Connect Durabull Cloud or a self-hosted installation with scoped OAuth access.",
+        "displayName": "Durabull: BullMQ & Redis Admin",
+        "shortDescription": "Manage queues. Retry jobs.",
+        "longDescription": "Administer BullMQ queues and monitor Redis health directly from your conversation. Built for developers and operators running background jobs, Durabull helps you diagnose backlogs, investigate failures, and recover work.\n\nFind jobs across queues, inspect redacted payloads, results, logs and stack traces, and review throughput, workers and recurring schedules. Check Redis memory, CPU, fragmentation, clients and health history. Review incidents and notification delivery, acknowledge or resolve alerts, and snooze alert rules.\n\nWhen you request a change, retry failed jobs, promote delayed jobs, or pause and resume queues. Supported MCP Apps hosts provide interactive queue, job, schedule, alert and health views.\n\nConnect Durabull Cloud or your self-hosted installation with scoped OAuth access. You need a Durabull account and permission to access the relevant connections. The plugin supports queue operations and Redis health diagnostics; it does not execute arbitrary Redis commands, edit keys or job payloads, delete jobs, purge queues, scale workers, or create or edit schedules and alert rules.",
         "developerName": "Durabull",
         "category": "Developer Tools",
         "capabilities": [

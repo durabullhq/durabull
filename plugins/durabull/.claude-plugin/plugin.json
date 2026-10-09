@@ -1,7 +1,7 @@
 {
   "name": "durabull",
-  "version": "1.1.0",
-  "description": "BullMQ queue management and Redis monitoring with Durabull. Explore background jobs, diagnose failures and backlogs, inspect workers and repeatable schedules, review alerts, and retry, promote, pause or resume on request.",
+  "version": "1.1.1",
+  "description": "Administer BullMQ queues and monitor Redis health from your conversation. Diagnose backlogs, inspect jobs and workers, review schedules and alerts, retry failed jobs, and pause or resume queues on request.",
   "author": {
     "name": "Durabull",
     "url": "https://durabull.io"
