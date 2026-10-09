@@ -64,37 +64,48 @@ const footerLinks = [
   { label: 'Desktop apps', href: GITHUB_RELEASE_URL },
   { label: 'GitHub', href: 'https://github.com/durabullhq/durabull' },
   { label: 'Pricing', href: '/#pricing' },
-  { label: 'Contact', href: 'mailto:hello@durabull.io' },
+  { label: 'Contact', href: '/contact' },
 ]
 
 export function V2Footer() {
   return (
     <footer className="border-t border-[var(--v2-line)] bg-[var(--v2-bg)]">
-      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 px-5 py-9 sm:flex-row sm:px-8">
-        <div className="flex items-center gap-2.5">
-          <DurabullLogo className="h-6 w-6 text-[var(--v2-accent)]" />
-          <DurabullWordmark className="h-[13px] text-[var(--v2-fg)]" />
-          <span className="v2-mono ml-3 flex items-center gap-1.5 text-[var(--v2-ok)]">
-            <span className="v2-pulse-dot inline-block size-1.5 rounded-full bg-[var(--v2-ok)]" />
-            BullMQ operations
-          </span>
+      <div className="mx-auto max-w-7xl px-5 py-9 sm:px-8">
+        <div className="flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-center">
+          <div className="flex items-center gap-2.5">
+            <DurabullLogo className="h-6 w-6 text-[var(--v2-accent)]" />
+            <DurabullWordmark className="h-[13px] text-[var(--v2-fg)]" />
+            <span className="v2-mono ml-3 flex items-center gap-1.5 text-[var(--v2-ok)]">
+              <span className="v2-pulse-dot inline-block size-1.5 rounded-full bg-[var(--v2-ok)]" />
+              BullMQ operations
+            </span>
+          </div>
+
+          <nav aria-label="Site links" className="flex flex-wrap items-center gap-x-5 gap-y-3">
+            {footerLinks.map((link) => (
+              <a
+                key={link.label}
+                href={link.href}
+                className="text-[12.5px] text-[var(--v2-muted)] transition-colors hover:text-[var(--v2-fg)]"
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
         </div>
-
-        <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
-          {footerLinks.map((link) => (
-            <a
-              key={link.label}
-              href={link.href}
-              className="text-[12.5px] text-[var(--v2-faint)] transition-colors hover:text-[var(--v2-fg)]"
-            >
-              {link.label}
-            </a>
-          ))}
-        </nav>
-
-        <p className="v2-mono text-[var(--v2-faint)]">
-          © {new Date().getFullYear()} Durabull · ELv2
-        </p>
+        <div className="mt-7 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--v2-line)] pt-5">
+          <p className="v2-mono text-[var(--v2-muted)]">
+            © {new Date().getFullYear()} Durabull · ELv2
+          </p>
+          <nav aria-label="Legal" className="flex gap-6 text-[12.5px] text-[var(--v2-muted)]">
+            <Link href="/privacy" className="transition-colors hover:text-[var(--v2-fg)]">
+              Privacy policy
+            </Link>
+            <Link href="/terms" className="transition-colors hover:text-[var(--v2-fg)]">
+              Terms of service
+            </Link>
+          </nav>
+        </div>
       </div>
     </footer>
   )

@@ -5,8 +5,7 @@ import { McpFaq, McpFinalCta, McpWorksWith } from '@/components/mcp/mcp-closing'
 import { McpConnect } from '@/components/mcp/mcp-connect'
 import { McpHero, McpStats } from '@/components/mcp/mcp-hero'
 import { McpSafety } from '@/components/mcp/mcp-safety'
-import { V2Footer } from '@/components/v2/closing'
-import { V2Nav } from '@/components/v2/nav'
+import { SiteLayout } from '@/components/v2/site-layout'
 import { SITE_URL } from '@/lib/config'
 import { mcpFaqs } from '@/lib/mcp-faqs'
 import { createBreadcrumbSchema, createFAQSchema, createMetadata } from '@/lib/seo'
@@ -40,7 +39,7 @@ export const metadata: Metadata = {
 
 export default function McpPage() {
   return (
-    <>
+    <SiteLayout>
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for JSON-LD
@@ -54,19 +53,15 @@ export default function McpPage() {
           ]),
         }}
       />
-      <V2Nav />
-      <main>
-        <McpHero />
-        <McpStats />
-        <McpCapabilities />
-        <McpApps />
-        <McpWorksWith />
-        <McpSafety />
-        <McpConnect />
-        <McpFaq />
-        <McpFinalCta />
-      </main>
-      <V2Footer />
-    </>
+      <McpHero />
+      <McpStats />
+      <McpCapabilities />
+      <McpApps />
+      <McpWorksWith />
+      <McpSafety />
+      <McpConnect />
+      <McpFaq />
+      <McpFinalCta />
+    </SiteLayout>
   )
 }
