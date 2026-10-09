@@ -26,8 +26,8 @@ export function V2FinalCta() {
             Know what they&apos;re doing — before 3 a.m. does.
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-[var(--v2-muted)] sm:text-base">
-            Connect Redis to inspect your queues, workers, and failed jobs. The hosted app is free
-            during beta.
+            Connect Redis to inspect your queues, workers, and failed jobs, then connect your agent
+            to keep an eye on them with you. The hosted app is free during beta.
           </p>
         </Reveal>
 
@@ -49,7 +49,7 @@ export function V2FinalCta() {
             </Link>
           </div>
           <p className="v2-mono mt-7 text-[var(--v2-faint)]">
-            cloud · macOS &amp; windows desktop · homebrew · docker self-host
+            cloud · macOS &amp; windows desktop · homebrew · docker self-host · any MCP agent
           </p>
         </Reveal>
       </div>
@@ -58,11 +58,12 @@ export function V2FinalCta() {
 }
 
 const footerLinks = [
+  { label: 'Durabull MCP', href: '/mcp' },
   { label: 'Documentation', href: '/documentation' },
   { label: 'UI catalog', href: '/ui/' },
   { label: 'Desktop apps', href: GITHUB_RELEASE_URL },
   { label: 'GitHub', href: 'https://github.com/durabullhq/durabull' },
-  { label: 'Pricing', href: '#pricing' },
+  { label: 'Pricing', href: '/#pricing' },
   { label: 'Contact', href: 'mailto:hello@durabull.io' },
 ]
 

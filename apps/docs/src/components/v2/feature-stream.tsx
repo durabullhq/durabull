@@ -1,4 +1,6 @@
 const TERMS = [
+  'mcp server',
+  'agent triage',
   'bulk retry',
   'failure-rate alerts',
   'cron schedulers',
@@ -19,6 +21,8 @@ const TERMS = [
   'multi-connection',
   'grace periods',
   'delayed jobs',
+  'oauth scopes',
+  'mcp apps',
 ]
 
 const ROWS = 6

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { V2Agents } from '@/components/v2/agents'
 import { V2FinalCta, V2Footer } from '@/components/v2/closing'
 import { V2Deploy, V2Pricing } from '@/components/v2/deploy'
 import { V2Faq } from '@/components/v2/faq'
@@ -16,9 +17,9 @@ import {
 
 export const metadata: Metadata = createMetadata(
   {
-    title: 'Durabull — See every job. Fix every failure.',
+    title: 'Durabull — Agentic operations for BullMQ',
     description:
-      'Connect Durabull to Redis to inspect BullMQ jobs, debug failures, manage schedulers, and configure alerts. Enable worker metrics for throughput charts.',
+      'Monitor, debug, and operate BullMQ queues from one dashboard, or from Claude, ChatGPT, Cursor, and any MCP client through Durabull MCP. Inspect jobs, fix failures, manage schedulers, and configure alerts.',
     keywords: [
       'BullMQ',
       'Redis',
@@ -28,6 +29,8 @@ export const metadata: Metadata = createMetadata(
       'admin dashboard',
       'monitoring',
       'Node.js',
+      'MCP server',
+      'AI agents',
       'Apple Silicon macOS app',
       'Windows app',
       'Homebrew',
@@ -54,6 +57,7 @@ export default function HomePage() {
       <main>
         <V2Hero />
         <V2LogoMarquee />
+        <V2Agents />
         <V2ValueGrid />
         <V2Showcase />
         <V2Problem />
