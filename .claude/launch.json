@@ -6,6 +6,18 @@
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "dev:authless"],
       "port": 5173
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "apps/docs", "dev"],
+      "port": 3002
+    },
+    {
+      "name": "storybook",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "apps/storybook", "dev"],
+      "port": 6006
     }
   ]
 }
