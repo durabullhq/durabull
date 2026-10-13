@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { LandingLayout } from '@/components'
+import { PageHeading } from '@/components/v2/page-heading'
+import { SiteLayout } from '@/components/v2/site-layout'
 import { createMetadata } from '@/lib/seo'
 
 const policyDescription =
   'How Durabull collects, uses, shares, and retains data across its website, Cloud service, and BullMQ & Redis plugin, and the controls available to you.'
 
-export const metadata: Metadata = createMetadata(
+const baseMetadata = createMetadata(
   {
     title: 'Privacy Policy',
     description: policyDescription,
@@ -14,6 +15,11 @@ export const metadata: Metadata = createMetadata(
   },
   '/privacy'
 )
+
+export const metadata: Metadata = {
+  ...baseMetadata,
+  title: { absolute: 'Privacy Policy | Durabull' },
+}
 
 const sections = [
   ['scope', 'Who this policy covers'],
@@ -111,34 +117,45 @@ const retentionRows = [
 
 export default function PrivacyPage() {
   return (
-    <LandingLayout>
-      <article className="relative mx-auto max-w-5xl px-6 pt-32 pb-20">
-        <header className="mb-10 max-w-3xl">
-          <p className="mb-4 text-sm font-medium text-emerald-300">Privacy · Durabull</p>
-          <h1 className="mb-5 text-4xl font-bold tracking-tight md:text-5xl">Privacy Policy</h1>
-          <p className="mb-4 text-lg text-muted-foreground">{policyDescription}</p>
-          <p className="text-sm text-muted-foreground">
-            Last updated: <time dateTime="2026-10-09">October 9, 2026</time>
-          </p>
-        </header>
+    <SiteLayout>
+      <PageHeading label="Legal · Durabull" title="Privacy Policy">
+        <p>{policyDescription}</p>
+        <p className="v2-mono mt-5 text-[var(--v2-muted)]">
+          Last updated: <time dateTime="2026-10-09">October 9, 2026</time>
+        </p>
+      </PageHeading>
 
-        <nav
-          aria-label="Privacy policy contents"
-          className="mb-12 rounded-xl border border-border p-6"
+      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:px-8 sm:py-20 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-16">
+        <aside>
+          <nav
+            aria-label="Privacy policy contents"
+            className="border-y border-[var(--v2-line)] py-5 lg:sticky lg:top-24"
+          >
+            <h2 className="v2-mono mb-4 text-[var(--v2-muted)]">On this page</h2>
+            <ol className="grid gap-1 text-sm sm:grid-cols-2 lg:grid-cols-1">
+              {sections.map(([id, title], index) => (
+                <li key={id}>
+                  <a
+                    href={`#${id}`}
+                    className="group flex items-baseline gap-3 py-2 text-[var(--v2-muted)] transition-colors hover:text-[var(--v2-fg)]"
+                  >
+                    <span className="shrink-0 font-mono text-xs text-[var(--v2-muted)]">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span className="group-hover:underline group-hover:decoration-[var(--v2-accent)] group-hover:underline-offset-4">
+                      {title}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+        </aside>
+
+        <article
+          aria-label="Privacy policy"
+          className="min-w-0 max-w-3xl space-y-12 text-[15px] leading-7 text-[var(--v2-muted)] [&_h2]:font-semibold [&_h2]:tracking-tight [&_h2]:mb-5 [&_h2]:text-2xl [&_h2]:text-[var(--v2-fg)] [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-[var(--v2-fg)] [&_p+p]:mt-4 [&_section]:scroll-mt-28 [&_section]:border-b [&_section]:border-[var(--v2-line)] [&_section]:pb-12 [&_a]:text-[var(--v2-fg)] [&_a]:underline [&_a]:decoration-[var(--v2-line-strong)] [&_a]:underline-offset-4 hover:[&_a]:decoration-[var(--v2-accent)]"
         >
-          <h2 className="mb-4 font-semibold">Contents</h2>
-          <ol className="grid gap-3 text-sm md:grid-cols-2">
-            {sections.map(([id, title], index) => (
-              <li key={id}>
-                <a href={`#${id}`} className="text-emerald-300 underline underline-offset-4">
-                  {index + 1}. {title}
-                </a>
-              </li>
-            ))}
-          </ol>
-        </nav>
-
-        <div className="space-y-12 text-base leading-7 text-muted-foreground [&_h2]:mb-4 [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:mb-2 [&_h3]:font-semibold [&_h3]:text-foreground [&_p+p]:mt-4 [&_section]:scroll-mt-28 [&_a]:text-emerald-300 [&_a]:underline [&_a]:underline-offset-4">
           <PrivacyScopeSection />
 
           <PrivacyCollectionSection />
@@ -156,9 +173,9 @@ export default function PrivacyPage() {
           <PrivacySecuritySection />
 
           <PrivacyChangesSection />
-        </div>
-      </article>
-    </LandingLayout>
+        </article>
+      </div>
+    </SiteLayout>
   )
 }
 
@@ -198,7 +215,7 @@ function PrivacyCollectionSection() {
             <h3>{row.category}</h3>
             <p>{row.data}</p>
             <p>
-              <strong className="text-foreground">Purpose:</strong> {row.purpose}
+              <strong className="text-[var(--v2-fg)]">Purpose:</strong> {row.purpose}
             </p>
           </div>
         ))}
@@ -301,17 +318,19 @@ function PrivacySharingSection() {
       <h2 id="sharing-heading">5. Who receives data</h2>
       <ul className="list-disc space-y-4 pl-6">
         <li>
-          <strong className="text-foreground">Your MCP client and provider:</strong> OpenAI for
+          <strong className="text-[var(--v2-fg)]">Your MCP client and provider:</strong> OpenAI for
           ChatGPT and Codex, or another client provider you connect, receives authorized tool
           results and view data to fulfill your requests.
         </li>
         <li>
-          <strong className="text-foreground">Your organization and deployment operator:</strong>{' '}
+          <strong className="text-[var(--v2-fg)]">
+            Your organization and deployment operator:
+          </strong>{' '}
           authorized members access shared operational data according to their roles. Operators
           manage the database, audit records, and integrations.
         </li>
         <li>
-          <strong className="text-foreground">Infrastructure and service providers:</strong>{' '}
+          <strong className="text-[var(--v2-fg)]">Infrastructure and service providers:</strong>{' '}
           hosting, database, storage, backup, network, and support providers process service data
           needed to run Durabull. PostHog receives configured analytics and diagnostics; Google
           receives configured website analytics. Resend processes recipient addresses and email
@@ -319,14 +338,14 @@ function PrivacySharingSection() {
           authentication when you choose that sign-in provider.
         </li>
         <li>
-          <strong className="text-foreground">Destinations you configure:</strong> notification
+          <strong className="text-[var(--v2-fg)]">Destinations you configure:</strong> notification
           recipients, webhook endpoints, and Linear receive incident or issue data for enabled
           workflows, including job identifiers, failure details, and operational context. You choose
           these destinations; their operators control the copies they receive.
         </li>
         <li>
-          <strong className="text-foreground">Support and necessary disclosures:</strong> personnel
-          handling support and security receive relevant records. We may disclose relevant
+          <strong className="text-[var(--v2-fg)]">Support and necessary disclosures:</strong>{' '}
+          personnel handling support and security receive relevant records. We may disclose relevant
           information when required by law, to investigate abuse or protect the service and its
           users, or as part of a business transfer subject to applicable privacy obligations.
         </li>
@@ -350,10 +369,10 @@ function PrivacyRetentionSection() {
         that connection; it does not erase existing records or third-party copies. The current
         application’s retention behavior is described below.
       </p>
-      <div className="overflow-x-auto rounded-xl border border-border">
+      <div className="overflow-x-auto rounded-xl border border-[var(--v2-line)]">
         <table className="w-full table-fixed border-collapse break-words text-left text-sm leading-6">
           <caption className="sr-only">Data categories and current retention periods</caption>
-          <thead className="bg-card text-foreground">
+          <thead className="bg-[var(--v2-bg-2)] text-[var(--v2-fg)]">
             <tr>
               <th scope="col" className="w-2/5 p-3 font-semibold md:w-1/3 md:p-4">
                 Data
@@ -365,8 +384,8 @@ function PrivacyRetentionSection() {
           </thead>
           <tbody>
             {retentionRows.map((row) => (
-              <tr key={row.category} className="border-t border-border align-top">
-                <th scope="row" className="p-3 font-medium text-foreground md:p-4">
+              <tr key={row.category} className="border-t border-[var(--v2-line)] align-top">
+                <th scope="row" className="p-3 font-medium text-[var(--v2-fg)] md:p-4">
                   {row.category}
                 </th>
                 <td className="p-3 md:p-4">{row.period}</td>
@@ -391,33 +410,34 @@ function PrivacyControlsSection() {
       <h2 id="controls-heading">7. Your choices and requests</h2>
       <ul className="list-disc space-y-4 pl-6">
         <li>
-          <strong className="text-foreground">Limit access:</strong> review OAuth scopes before
+          <strong className="text-[var(--v2-fg)]">Limit access:</strong> review OAuth scopes before
           approval, decline permissions you do not need, and choose read access unless you need
           write tools. Your organization controls membership and connection access. Supply only the
           identifiers and filters necessary for your request.
         </li>
         <li>
-          <strong className="text-foreground">Disconnect or revoke access:</strong> remove Durabull
-          in your MCP client’s connection settings. For server-side revocation of OAuth grants or
-          tokens, contact Cloud support or your self-hosted administrator. Administrators can
-          disable service accounts and revoke secrets. Removing a client connection does not erase
-          previously returned data or audits.
+          <strong className="text-[var(--v2-fg)]">Disconnect or revoke access:</strong> remove
+          Durabull in your MCP client’s connection settings. For server-side revocation of OAuth
+          grants or tokens, contact Cloud support or your self-hosted administrator. Administrators
+          can disable service accounts and revoke secrets. Removing a client connection does not
+          erase previously returned data or audits.
         </li>
         <li>
-          <strong className="text-foreground">Manage operational data:</strong> remove unused Redis
-          connections, review alert destinations, disable unused integrations, and set BullMQ job
-          and log retention in your application. Self-hosting gives your operator control of storage
-          and backups; results sent to an external MCP client still share data with that client.
+          <strong className="text-[var(--v2-fg)]">Manage operational data:</strong> remove unused
+          Redis connections, review alert destinations, disable unused integrations, and set BullMQ
+          job and log retention in your application. Self-hosting gives your operator control of
+          storage and backups; results sent to an external MCP client still share data with that
+          client.
         </li>
         <li>
-          <strong className="text-foreground">Manage browser analytics:</strong> use browser
+          <strong className="text-[var(--v2-fg)]">Manage browser analytics:</strong> use browser
           controls to block analytics requests or third-party scripts and clear cookies and local
           storage. Clearing storage may sign you out; identifiers can be recreated on later visits.
           Operators can omit optional PostHog configuration or the website Google Analytics
           measurement ID. This does not opt out of sanitized production telemetry.
         </li>
         <li>
-          <strong className="text-foreground">
+          <strong className="text-[var(--v2-fg)]">
             Request access, correction, export, or deletion:
           </strong>{' '}
           email <a href="mailto:hello@durabull.io">hello@durabull.io</a> with your account email,
