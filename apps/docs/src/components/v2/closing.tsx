@@ -82,15 +82,20 @@ export function V2Footer() {
           </div>
 
           <nav aria-label="Site links" className="flex flex-wrap items-center gap-x-5 gap-y-3">
-            {footerLinks.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                className="text-[12.5px] text-[var(--v2-muted)] transition-colors hover:text-[var(--v2-fg)]"
-              >
-                {link.label}
-              </a>
-            ))}
+            {footerLinks.map((link) => {
+              // The UI catalog is a separate static site, outside the Next.js router.
+              const FooterLink = link.href.startsWith('/') && link.href !== '/ui/' ? Link : 'a'
+
+              return (
+                <FooterLink
+                  key={link.label}
+                  href={link.href}
+                  className="text-[12.5px] text-[var(--v2-muted)] transition-colors hover:text-[var(--v2-fg)]"
+                >
+                  {link.label}
+                </FooterLink>
+              )
+            })}
           </nav>
         </div>
         <div className="mt-7 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--v2-line)] pt-5">
