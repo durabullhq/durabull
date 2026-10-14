@@ -13,6 +13,7 @@ import {
   createMcpRequestBodyAnalyticsMiddleware,
 } from './observability/mcp-request-analytics'
 import { recordMcpTelemetry } from './observability/mcp-telemetry'
+import { instrumentMcpAnalytics } from './observability/posthog-mcp'
 import { createMcpPolicyMiddleware } from './policy/mcp-policy-middleware'
 import { resolveMcpPrincipal } from './policy/principal-resolver'
 import {
@@ -62,6 +63,7 @@ export async function mountMcpIngress() {
   const toolRateLimitMiddleware = createMcpToolRateLimitMiddleware()
 
   return createMcpRoutes({
+    configureServer: instrumentMcpAnalytics,
     version: APP_VERSION,
     observabilityMiddleware: createMcpRequestAnalyticsMiddleware(),
     widgetDomain: appOrigin,

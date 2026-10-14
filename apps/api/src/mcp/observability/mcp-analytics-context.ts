@@ -11,6 +11,7 @@ export interface McpAnalyticsContext {
   connectionId?: () => string | undefined
   toolOutcome?: 'success' | 'tool_error'
   redactionCount?: number
+  sdkToolCallCaptured?: boolean
 }
 
 export const mcpAnalyticsContext = new AsyncLocalStorage<McpAnalyticsContext | undefined>()

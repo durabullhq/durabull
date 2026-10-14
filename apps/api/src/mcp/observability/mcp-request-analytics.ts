@@ -138,6 +138,7 @@ export function createMcpRequestAnalyticsMiddleware() {
       },
       toolOutcome: undefined as 'success' | 'tool_error' | undefined,
       redactionCount: undefined as number | undefined,
+      sdkToolCallCaptured: false,
     }
     return mcpAnalyticsContext.run(context, async () => {
       try {
@@ -282,7 +283,7 @@ export function createMcpRequestAnalyticsMiddleware() {
                   'prompts/get': E.PromptGet,
                 } as Record<string, string>
               )[safeMethod]
-              if (event) {
+              if (event && !(event === E.ToolCall && context.sdkToolCallCaptured)) {
                 const resource = parseMcpResourceUri(params?.uri)
                 const canonical = {
                   ...result,
