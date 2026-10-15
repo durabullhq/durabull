@@ -13,6 +13,7 @@ import {
   getRedisHealthRetentionDays,
   isRedisHealthHistoryEnabled,
 } from './lib/redis-health-history'
+import { shutdownMcpAnalytics } from './mcp/observability/posthog-mcp'
 
 process.on('unhandledRejection', (reason) => {
   console.error('[process] Unhandled promise rejection:', reason)
@@ -34,6 +35,7 @@ async function shutdown(reason: NodeJS.Signals): Promise<void> {
       stopAlertMonitor()
       stopRedisHealthCleanupJob()
       console.log('[shutdown] Alert monitor stopped.')
+      await shutdownMcpAnalytics()
 
       console.log('[shutdown] Closing database...')
       await closeDb()

@@ -1,4 +1,4 @@
-import { createMcpHandler } from '@modelcontextprotocol/server'
+import { createMcpHandler, type McpServer } from '@modelcontextprotocol/server'
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -9,6 +9,8 @@ import { createMcpServer } from './server/create-mcp-server'
 import type { RegisterToolsOptions } from './tools/register-tools'
 
 export interface CreateMcpRoutesOptions {
+  /** Instrument each request-scoped server before it accepts requests. */
+  configureServer?: (server: McpServer) => void
   /** App version reported in MCP server metadata. */
   version: string
   /** Dedicated OpenAI widget origin. Standard ui.domain stays host-managed for Claude. */
@@ -37,12 +39,15 @@ export function createMcpRoutes(options: CreateMcpRoutesOptions): Hono {
   // A fresh server per request supports the 2026 protocol and stateless legacy clients.
   // No bearer token, principal or domain data is retained in a transport session.
   const handler = createMcpHandler(
-    () =>
-      createMcpServer({
+    () => {
+      const server = createMcpServer({
         version: options.version,
         toolHandlers: options.toolHandlers,
         widgetDomain: options.widgetDomain,
-      }),
+      })
+      options.configureServer?.(server)
+      return server
+    },
     { legacy: 'stateless', maxRequestBodySize: 1024 * 1024, maxSubscriptions: 0 }
   )
 
