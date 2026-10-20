@@ -34,8 +34,7 @@ export function CompareCta() {
         <div>
           <h2 className="v2-h text-xl">Connect Redis. Queues appear.</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--v2-muted)]">
-            Inspect your Redis-backed BullMQ queues in one place. Hosted Durabull is free during
-            beta.
+            Inspect your Redis-backed BullMQ queues in one place. Hosted Durabull is free to start.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">

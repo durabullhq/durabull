@@ -4,7 +4,7 @@ import type { Competitor } from './types'
 const sharedRows = {
   inspect: 'Inspect payloads, logs, stack traces; retry, promote, pause from the dashboard',
   mcp: `Hosted MCP with OAuth, ${MCP_FACTS.tools} tools, redaction, opt-in writes`,
-  price: 'Free during beta ($0/mo). Self-host under Apache-2.0.',
+  price: 'Hosted app is free to start. Self-host under Apache-2.0.',
   multi: 'Many Redis connections per org, grouped by environment',
   discover: 'Redis SCAN for `<prefix>:*:meta`. No app SDK for inspection.',
 } as const
@@ -204,7 +204,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: true,
     title: 'Durabull vs Taskforce.sh',
     description:
-      'Compare Taskforce.sh and Durabull on BullMQ discovery, alerts, MCP, self-hosting, and price. Taskforce adds Slack/PagerDuty; Durabull uses email and webhooks.',
+      'Compare Taskforce.sh and Durabull on BullMQ discovery, alerts, MCP, self-hosting, and price. Taskforce has Slack/PagerDuty today; Durabull has email, webhooks, and Linear, with Slack and PagerDuty coming soon.',
     keywords: [
       'Taskforce.sh alternative',
       'Taskforce vs Durabull',
@@ -233,7 +233,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose Taskforce when you want the BullMQ authors’ dashboard, native Slack/PagerDuty monitors, Pro group views, or PostgreSQL-backed BullMQ support through its connector. Taskforce publishes a SOC 2 Type II report, available on request, for procurement review.',
     whenToChooseDurabull:
-      'Choose Durabull when you want the same Redis-scan model plus MCP with no published connection cap, Apache-2.0 source you can self-host, and a hosted app that is free during beta. Durabull alerts are email, signed webhooks, and Linear — not native Slack or PagerDuty.',
+      'Choose Durabull when you want the same Redis-scan model plus MCP, multiple Redis connections per org, Apache-2.0 source you can self-host, and a hosted app that is free to start. Durabull alerts today are email, signed webhooks, and Linear; Slack and PagerDuty are coming soon.',
     rows: [
       {
         feature: 'See queues',
@@ -243,12 +243,12 @@ export const uiCompetitors: Competitor[] = [
       { feature: 'App code', durabull: 'Not for inspection', competitor: 'None' },
       {
         feature: 'Connections',
-        durabull: 'No published connection cap during beta',
+        durabull: 'Multiple Redis connections per org',
         competitor: '1 / 5 / 15 on hosted plans',
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, signed webhooks, Linear',
+        durabull: 'Email, signed webhooks, Linear (Slack, PagerDuty coming soon)',
         competitor: 'Email, Slack, PagerDuty',
       },
       {
@@ -276,7 +276,7 @@ export const uiCompetitors: Competitor[] = [
       {
         question: 'Does Durabull replace Taskforce.sh?',
         answer:
-          'For Redis auto-discovery, job inspection, and MCP, the two compare directly. Taskforce adds native Slack/PagerDuty monitors, a SOC 2 Type II report, and first-party BullMQ Pro group views. Durabull is open source under Apache-2.0 and free during beta.',
+          'For Redis auto-discovery, job inspection, and MCP, the two compare directly. Taskforce has native Slack/PagerDuty monitors today (Durabull’s are coming soon), a SOC 2 Type II report, and first-party BullMQ Pro group views. Durabull is open source under Apache-2.0 and free to start.',
       },
     ],
     sources: [
@@ -417,7 +417,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose QueueDash OSS as another embed/discovery UI. Choose hosted if you want SaaS recording of job events and can stay inside the job and queue caps.',
     whenToChooseDurabull:
-      'Choose Durabull when you do not want an SDK in the hot path, you already have jobs in Redis you need to see immediately, or you need MCP. Durabull does not meter recorded jobs during beta.',
+      'Choose Durabull when you do not want an SDK in the hot path, you already have jobs in Redis you need to see immediately, or you need MCP. Durabull does not bill per recorded job.',
     rows: [
       {
         feature: 'See existing jobs',
@@ -431,7 +431,7 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Env / queue caps',
-        durabull: 'No published caps in beta',
+        durabull: 'Free to start',
         competitor: 'Per project: 1 / 3 / 10 envs; 5 / 20 / 100 queues per env',
       },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Not documented' },
@@ -467,7 +467,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: false,
     title: 'Durabull vs Bullpane',
     description:
-      'Bullpane is a self-hosted BullMQ UI: Free has no login, Pro is $39/mo per install with MCP. Durabull includes hosted MCP and org auth during beta.',
+      'Bullpane is a self-hosted BullMQ UI: Free has no login, Pro is $39/mo per install with MCP. Durabull includes hosted MCP and org auth, free to start.',
     keywords: ['Bullpane alternative', 'Bullpane vs Durabull', 'self-hosted BullMQ dashboard'],
     intro:
       'Bullpane sits next to Durabull on the self-hosted axis. You add Redis (or BullMQ 6 Postgres) in the UI. The Free edition has no login. Pro adds roles, SSO, alerts, audit, and MCP.',
@@ -484,7 +484,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose Bullpane when you want a self-hosted box with a simple Free/Pro split and you accept a per-install Pro license for MCP and SSO.',
     whenToChooseDurabull:
-      'Choose Durabull for a hosted cloud option, org invitations without buying Pro, and MCP included during beta. Durabull is Apache-2.0 for the whole project, not a Free/Pro split.',
+      'Choose Durabull for a hosted cloud option, org invitations without buying Pro, and MCP included in the hosted app. Durabull is Apache-2.0 for the whole project, not a Free/Pro split.',
     rows: [
       {
         feature: 'See queues',

@@ -18,6 +18,7 @@ Durabull serves MCP revision **2026-07-28** using SDK **2.3.1**, with MCP Apps *
 | Claude Code | `claude --plugin-dir ./plugins/durabull`, or repository marketplace | Text tools and skills |
 | ChatGPT Work | Custom MCP server; portable plugin for skills | Standard MCP Apps; global/sidebar and thread/panel entrypoints on supported surfaces |
 | Codex | Portable package through `.agents/plugins/marketplace.json` | Host dependent; text fallback always remains |
+| Cursor | Remote MCP URL in `mcp.json`, then OAuth | Text tools |
 
 The app opens on `list_connections` and supports browsing, filtering the current page, explicit refresh, cursor pagination, exact job-ID search across queues, job details/logs, schedules, incidents, alert rules, delivery status and Redis health. “Ask to…” actions send a user message through the host; they do not directly call mutations. The bridge enforces the catalog's read-only allowlist, and refreshing a mutation result reads the affected entity instead of repeating the write. Failed navigation has a Retry action for the exact failed read; history preserves each snapshot's timestamp. Features requiring a host capability are hidden when it is absent. UI visibility hints never replace server authorization.
 
