@@ -14,6 +14,7 @@ import {
   CopyPlus,
   ExternalLink,
   FileJson2,
+  GitBranch,
   History,
   Info,
   Layers,
@@ -35,6 +36,7 @@ import { DuplicateJobDialog } from '@/components/duplicate-job-dialog'
 import { EditJobDataDialog } from '@/components/edit-job-data-dialog'
 import { FailedAttempts } from '@/components/failed-attempts'
 import { InvokeJobDialog } from '@/components/invoke-job-dialog'
+import { JobDependencies } from '@/components/job-dependencies'
 import { JobRemoveButton } from '@/components/job-remove-button'
 import { JsonViewer } from '@/components/json-viewer'
 import { QueueNameTag } from '@/components/queue-name-tag'
@@ -54,7 +56,7 @@ import { useJob, useJobLogs, useRemoveJobs } from '@/hooks/use-queues'
 import { cn, formatDate, formatDuration, getTimezoneAbbreviation } from '@/lib/utils'
 
 const jobSearchSchema = z.object({
-  tab: z.enum(['attempts', 'data', 'logs', 'options']).catch('data'),
+  tab: z.enum(['attempts', 'data', 'logs', 'options', 'dependencies']).catch('data'),
 })
 
 const LOG_FORMATTING_DOCS_URL =
@@ -66,6 +68,7 @@ const JOB_STATUS_CONFIG: Record<string, { variant: string; color: string }> = {
   delayed: { variant: 'warning', color: 'text-status-delayed' },
   completed: { variant: 'success', color: 'text-status-success' },
   failed: { variant: 'destructive', color: 'text-status-danger' },
+  'waiting-children': { variant: 'warning', color: 'text-status-warning' },
 }
 
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/queues/$queueName_/jobs/$jobId')({
@@ -458,7 +461,7 @@ function JobDetailPage() {
           })
         }}
       >
-        <TabsList className="w-full justify-start">
+        <TabsList className="h-auto w-full flex-wrap justify-start">
           {(hasFailedAttempts || hasFailed) && (
             <TabsTrigger value="attempts" className="gap-2">
               <History className="h-4 w-4" />
@@ -486,6 +489,10 @@ function JobDetailPage() {
           <TabsTrigger value="options" className="gap-2">
             <Settings2 className="h-4 w-4" />
             Options
+          </TabsTrigger>
+          <TabsTrigger value="dependencies" className="gap-2">
+            <GitBranch className="h-4 w-4" />
+            Dependencies
           </TabsTrigger>
         </TabsList>
 
@@ -573,6 +580,16 @@ function JobDetailPage() {
               <LogViewer queueName={queueName} jobId={jobId} />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="dependencies" className="mt-6">
+          <JobDependencies
+            key={`${connectionId}:${queueName}:${jobId}`}
+            orgSlug={orgSlug}
+            connectionId={connectionId}
+            queueName={queueName}
+            jobId={jobId}
+          />
         </TabsContent>
 
         {/* Options Tab */}
