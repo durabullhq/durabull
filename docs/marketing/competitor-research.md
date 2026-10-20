@@ -73,7 +73,7 @@ Only what the repo already documents:
 - Alerts: email, signed webhooks, Linear — not native Slack/PagerDuty
 - MCP: 30 tools, 9 scopes, opt-in writes, redaction
 - Hosted $0/mo during beta
-- Apache-2.0 (relicensed from ELv2 on 2026-10-20)
+- Apache-2.0 (OSI-approved open source)
 - Homebrew is the **desktop cask**, not a CLI
 - Cursor MCP “not fully tested”
 

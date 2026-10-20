@@ -92,6 +92,7 @@ export function createSoftwareApplicationSchema() {
     description:
       'The modern BullMQ dashboard for browser, Apple Silicon macOS, Windows, and self-hosted environments. Monitor jobs, debug failures, and scale background processing with confidence.',
     url: SITE_URL,
+    license: 'https://www.apache.org/licenses/LICENSE-2.0',
     downloadUrl: MAC_DOWNLOAD_URL,
     installUrl: GITHUB_RELEASE_URL,
     offers: {
