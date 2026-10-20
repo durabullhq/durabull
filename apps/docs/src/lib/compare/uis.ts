@@ -31,7 +31,7 @@ export const uiCompetitors: Competitor[] = [
     ],
     alternativesTitle: 'Bull Board alternatives',
     alternativesDescription:
-      'Bull Board alternatives if you need Redis auto-discovery, multiple environments, alerts, or an MCP server for AI agents — without mounting @bull-board in every app.',
+      'Compare Bull Board alternatives by team access, alert delivery, deployment model, and MCP. Bull Board already offers standalone Redis discovery.',
     intro:
       'Bull Board is an MIT dashboard for Bull and BullMQ. Embed it in a server with Queue adapters, or use its standalone CLI to discover queues from Redis. Durabull adds a shared workspace for connections, teams, alerting, and MCP; both can inspect and retry existing jobs.',
     howItConnects:
@@ -554,6 +554,7 @@ export const uiCompetitors: Competitor[] = [
   },
   {
     slug: 'redis-insight',
+    complementary: true,
     name: 'Redis Insight',
     shortName: 'Redis Insight',
     website: 'https://redis.io/insight/',
@@ -821,6 +822,7 @@ export const uiCompetitors: Competitor[] = [
   },
   {
     slug: 'bullmq-pro',
+    complementary: true,
     name: 'BullMQ Pro',
     shortName: 'BullMQ Pro',
     website: 'https://docs.bullmq.io/bullmq-pro/introduction',

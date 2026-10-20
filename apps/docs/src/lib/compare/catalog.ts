@@ -14,7 +14,7 @@ const bySlug = new Map(competitors.map((item) => [item.slug, item]))
 export const categoryOrder: Array<{ id: CompetitorCategory; label: string; blurb: string }> = [
   {
     id: 'bullmq-ui',
-    label: 'BullMQ and Redis dashboards',
+    label: 'BullMQ dashboards and related tools',
     blurb:
       'Embedded interfaces, standalone dashboards, and Redis tools. Compare deployment modes, discovery, job operations, and team access.',
   },
@@ -62,4 +62,21 @@ export function comparePath(slug: string): string {
 
 export function alternativesPath(slug: string): string {
   return `/alternatives/${slug}`
+}
+
+/** Shortlist actual replacements, excluding contextual tools and unverified products. */
+export function alternativesFor(target: Competitor): Competitor[] {
+  return competitors
+    .filter(
+      (item) =>
+        item.category === target.category &&
+        item.slug !== target.slug &&
+        !item.complementary &&
+        !item.discontinued &&
+        item.researchStatus !== 'limited'
+    )
+    .sort(
+      (a, b) => Number(target.related.includes(b.slug)) - Number(target.related.includes(a.slug))
+    )
+    .slice(0, 8)
 }

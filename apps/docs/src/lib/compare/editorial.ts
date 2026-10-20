@@ -3,7 +3,7 @@ import type { Article, CompetitorCategory } from './types'
 export const REVIEWED_DATE = '2026-10-20'
 export const REVIEWED_LABEL = '20 October 2026'
 export const categoryLabels: Record<CompetitorCategory, string> = {
-  'bullmq-ui': 'Queue dashboards',
+  'bullmq-ui': 'BullMQ & Redis tools',
   'managed-platform': 'Runtimes & workflows',
   observability: 'Observability',
 }

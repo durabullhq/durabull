@@ -31,6 +31,8 @@ export interface Competitor {
   category: CompetitorCategory
   /** Hub card one-liner */
   oneLiner: string
+  /** Contextual tool, not a replacement for products in this category. */
+  complementary?: boolean
   featured: boolean
   alternativesPage: boolean
   discontinued?: boolean

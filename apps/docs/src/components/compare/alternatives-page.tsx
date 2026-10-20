@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { SiteLayout } from '@/components/v2/site-layout'
-import { competitors } from '@/lib/compare/catalog'
+import { alternativesFor } from '@/lib/compare/catalog'
 import { categoryLabels } from '@/lib/compare/editorial'
 import type { Competitor } from '@/lib/compare/types'
 import { SITE_URL } from '@/lib/config'
@@ -11,17 +11,7 @@ import { JsonLd } from './json-ld'
 import { CompareCta, SectionIntro, SourceList } from './prose-blocks'
 
 export function AlternativesPage({ competitor: c }: { competitor: Competitor }) {
-  // Keep the shortlist in-category: an APM product is not a workflow runtime.
-  const peers = competitors
-    .filter(
-      (item) =>
-        item.category === c.category &&
-        item.slug !== c.slug &&
-        !item.discontinued &&
-        item.researchStatus !== 'limited'
-    )
-    .sort((a, b) => Number(c.related.includes(b.slug)) - Number(c.related.includes(a.slug)))
-    .slice(0, 8)
+  const peers = alternativesFor(c)
   const isDashboard = c.category === 'bullmq-ui'
   const title = c.alternativesTitle ?? `${c.name} alternatives`
   const faqs = [

@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { articles } from './articles'
-import { alternativeTargets, competitors, getCompetitor, relatedCompetitors } from './catalog'
+import {
+  alternativesFor,
+  alternativeTargets,
+  competitors,
+  getCompetitor,
+  relatedCompetitors,
+} from './catalog'
 
 describe('comparison catalog', () => {
   test('has unique slugs, titles, and descriptions', () => {
@@ -75,4 +81,14 @@ describe('editorial evidence', () => {
       }
     }
   })
+})
+
+test('dashboard replacement shortlists exclude libraries and database browsers', () => {
+  for (const target of alternativeTargets().filter((item) => item.category === 'bullmq-ui')) {
+    const slugs = alternativesFor(target).map((item) => item.slug)
+    expect(slugs).not.toContain('bullmq-pro')
+    expect(slugs).not.toContain('redis-insight')
+    expect(slugs).not.toContain('upqueue')
+    expect(slugs).not.toContain(target.slug)
+  }
 })
