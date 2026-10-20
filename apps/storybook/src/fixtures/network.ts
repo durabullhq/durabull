@@ -17,6 +17,7 @@ import {
   user,
   workers,
 } from './data'
+import { jobDependenciesFixture } from './job-dependencies'
 
 export type FixtureState = 'ready' | 'empty' | 'empty-connections' | 'loading' | 'error'
 let state: FixtureState = 'ready'
@@ -118,6 +119,8 @@ function readFixture(path: string, url: URL): unknown {
   if (path.endsWith('/discovery')) return discovery
   if (path.endsWith('/can-delete'))
     return { canDelete: true, reason: null, jobCounts: counts, workers: [], totalJobs: 0 }
+  if (/\/jobs\/[^/]+\/dependencies$/.test(path))
+    return jobDependenciesFixture(url, state === 'empty')
   if (path.endsWith('/stacktraces'))
     return {
       items: [{ attemptNumber: 3, stacktrace: job.stacktrace[0], isLatest: true }],
