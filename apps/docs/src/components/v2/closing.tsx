@@ -100,7 +100,7 @@ export function V2Footer() {
         </div>
         <div className="mt-7 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--v2-line)] pt-5">
           <p className="v2-mono text-[var(--v2-muted)]">
-            © {new Date().getFullYear()} Durabull · ELv2
+            © {new Date().getFullYear()} Durabull · Apache-2.0
           </p>
           <nav aria-label="Legal" className="flex gap-6 text-[12.5px] text-[var(--v2-muted)]">
             <Link href="/privacy" className="transition-colors hover:text-[var(--v2-fg)]">

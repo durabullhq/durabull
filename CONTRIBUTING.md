@@ -3,6 +3,13 @@
 Documentation improvements, bug fixes, and focused features are welcome. Read the
 [Code of Conduct](CODE_OF_CONDUCT.md) and [license](LICENSE) before contributing.
 
+## Contribution license
+
+Durabull is licensed under the Apache License 2.0. Unless you explicitly state otherwise,
+contributions intentionally submitted for inclusion are provided under that license, as described
+in its section 5. Submit work you have the right to contribute and preserve applicable third-party
+copyright and license notices.
+
 ## Set up a development environment
 
 Use Bun `1.3.5` and Node.js `20.19+` or `22.12+`. The

@@ -2,6 +2,7 @@
   "name": "@durabull/storybook",
   "version": "1.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "storybook dev -p 6006 --no-open",

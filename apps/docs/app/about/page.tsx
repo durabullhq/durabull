@@ -47,7 +47,7 @@ export default function AboutPage() {
           {
             title: 'Deployment Options',
             description:
-              'Durabull is source-available under ELv2. Self-host with PostgreSQL or persistent PGlite storage, or use the desktop app.',
+              'Durabull is open source under Apache-2.0. Self-host with PostgreSQL or persistent PGlite storage, or use the desktop app.',
           },
         ]}
         footerNote="Questions about Durabull? Email us at hello@durabull.io."

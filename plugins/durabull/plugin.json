@@ -9,7 +9,7 @@
   },
   "homepage": "https://durabull.io/documentation/integrations/mcp-server",
   "repository": "https://github.com/durabullhq/durabull",
-  "license": "Elastic-2.0",
+  "license": "Apache-2.0",
   "keywords": [
     "bullmq",
     "redis",

@@ -125,7 +125,7 @@ export function Footer() {
         {/* Bottom */}
         <div className="mt-16 pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Durabull. All rights reserved.
+            © {new Date().getFullYear()} Durabull · Apache-2.0
           </p>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
