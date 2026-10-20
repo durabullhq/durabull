@@ -250,8 +250,8 @@ export const articles: Article[] = [
       {
         heading: 'Durabull: evaluate fleet visibility and agent-assisted operations',
         body: [
-          'Durabull is Apache-2.0 open source. It connects to Redis-backed BullMQ queues and groups connections by environment. It combines queue inspection, Redis health history, alerts, and scoped MCP tools. Alerts are delivered by email, signed webhooks, or Linear; native Slack and PagerDuty delivery are not included. Historical BullMQ throughput still requires worker metrics, and some Redis providers restrict worker or INFO introspection.',
-          'Choose it for evaluation when multiple Redis environments and a shared human-and-agent workflow are central requirements. Test missing permissions and incomplete metrics as well as the happy path. The hosted app is free during beta; budget against current terms rather than assuming beta pricing lasts indefinitely. Self-hosting brings deployment and monitoring responsibilities.',
+          'Durabull is Apache-2.0 open source. It connects to Redis-backed BullMQ queues and groups connections by environment. It combines queue inspection, Redis health history, alerts, and scoped MCP tools. Alerts are delivered by email, signed webhooks, or Linear today; Slack and PagerDuty delivery are coming soon. Historical BullMQ throughput still requires worker metrics, and some Redis providers restrict worker or INFO introspection.',
+          'Choose it for evaluation when multiple Redis environments and a shared human-and-agent workflow are central requirements. Test missing permissions and incomplete metrics as well as the happy path. The hosted app is free to start; budget against current published terms. Self-hosting brings deployment and monitoring responsibilities.',
         ],
         sourceUrls: urls('connections', 'nativeMetrics', 'mcp', 'health', 'pricing', 'deployment'),
       },
@@ -425,7 +425,7 @@ export const articles: Article[] = [
       {
         heading: 'Build the BullMQ side from measured resources',
         body: [
-          'For Redis-backed BullMQ, estimate Redis capacity and availability, worker compute, network traffic, backups, telemetry, and engineering operations. Durabull’s hosted dashboard is free during beta, but that does not make the underlying workload free. Durabull is Apache-2.0 open source; self-hosting it adds its own deployment costs.',
+          'For Redis-backed BullMQ, estimate Redis capacity and availability, worker compute, network traffic, backups, telemetry, and engineering operations. Durabull’s hosted dashboard is free to start, but that does not make the underlying workload free. Durabull is Apache-2.0 open source; self-hosting it adds its own deployment costs.',
           'Use the same job mix, payload sizes, retention, peak arrival pattern, and recovery target on both sides. Measure CPU time and memory for your processors; a large idle worker fleet and a highly utilized fleet produce very different costs per completed job. Include retained failed jobs when sizing Redis, especially after a prolonged dependency outage.',
           'Distinguish incremental cost from total cost. An existing BullMQ fleet may have spare capacity, making the next workload inexpensive to add. A greenfield comparison must include provisioning and maintaining that fleet. Both are valid questions, but they cannot share one unlabeled savings percentage.',
         ],
@@ -721,7 +721,7 @@ export const articles: Article[] = [
       {
         heading: 'Compare with your full BullMQ operating cost',
         body: [
-          'On the BullMQ side, include worker compute, Redis, storage retention, availability, network transfer, observability, and operations. Durabull’s $0 beta dashboard does not offset any of those costs; it is an operations interface, not a runtime. Existing spare worker capacity can reduce incremental cost, but a greenfield fleet needs its full cost included.',
+          'On the BullMQ side, include worker compute, Redis, storage retention, availability, network transfer, observability, and operations. Durabull’s free-to-start hosted dashboard does not offset any of those costs; it is an operations interface, not a runtime. Existing spare worker capacity can reduce incremental cost, but a greenfield fleet needs its full cost included.',
           'For I/O-heavy work, a BullMQ worker can handle multiple concurrent jobs subject to application resources and downstream limits. Do not equate one Trigger.dev machine with one permanently dedicated BullMQ process without measuring the workload. The compute architectures are different.',
           'Choose Trigger.dev when its managed execution and developer workflow justify the cost for your team. Keep BullMQ when its runtime already meets your needs and the gap is operational visibility. Use a representative pilot to compare recovery, deployment effort, and cost together; a dashboard is not a drop-in replacement for a task runtime.',
         ],

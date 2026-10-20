@@ -39,11 +39,11 @@ export const featuredHosts: Host[] = [
     Mark: CodexMark,
     surface: `Plugin + ${MCP_FACTS.skills} skills`,
   },
+  { name: 'Cursor', maker: 'Anysphere', Mark: CursorMark, surface: 'Remote MCP + mcp.json' },
 ]
 
-/** Remote-MCP clients Durabull has not documented or tested yet. */
+/** Other remote MCP clients that use the same URL and OAuth flow. */
 export const openHosts: Host[] = [
-  { name: 'Cursor', maker: 'Anysphere', Mark: CursorMark, surface: 'Standard remote MCP' },
   { name: 'Muse', maker: 'Meta', Mark: MetaMark, surface: 'Standard remote MCP' },
   { name: 'Grok', maker: 'xAI', Mark: GrokMark, surface: 'Standard remote MCP' },
   { name: 'GitHub Copilot', maker: 'GitHub', Mark: CopilotMark, surface: 'Standard remote MCP' },
@@ -74,9 +74,9 @@ export function TrademarkNote({ className }: { className?: string }) {
   return (
     <p className={cn('text-[11px] leading-relaxed text-[var(--v2-faint)]', className)}>
       Product names and logos are trademarks of their respective owners and are shown to indicate
-      compatibility, not endorsement. Claude, Cowork, ChatGPT, Claude Code, and Codex have
-      documented Durabull setups. Other clients are listed for standard remote MCP and have not been
-      tested by Durabull; support varies by client, plan, and version.
+      compatibility, not endorsement. Claude, Cowork, ChatGPT, Cursor, Claude Code, and Codex have
+      documented Durabull setups. Other MCP clients use the same remote URL and OAuth flow; support
+      varies by client, plan, and version.
     </p>
   )
 }

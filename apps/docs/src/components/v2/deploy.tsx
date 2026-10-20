@@ -192,8 +192,8 @@ function DrawnCheck({ delay }: { delay: number }) {
 }
 
 const included = [
-  'Unlimited Redis connections',
-  'Unlimited queues & jobs',
+  'Multiple Redis connections',
+  'Queue and job inspection',
   'Fleet Analytics',
   'Alerts: email, webhooks, Linear',
   'Team & organizations',
@@ -208,11 +208,11 @@ export function V2Pricing() {
           <Reveal>
             <Eyebrow>Honest pricing</Eyebrow>
             <h2 className="v2-h mt-4 text-balance text-3xl leading-tight text-[var(--v2-fg)] sm:text-4xl">
-              Free during beta.
+              Free to start.
             </h2>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-[var(--v2-muted)]">
-              The hosted app is currently free during beta. You can also run Durabull on your own
-              infrastructure under the Apache License 2.0. Check published terms for future pricing.
+              The hosted app is free to start. You can also run Durabull on your own infrastructure
+              under the Apache License 2.0. Check the pricing page for published terms.
             </p>
             <p className="v2-mono mt-7 text-[var(--v2-faint)]">
               Apache License 2.0 · Self-host anytime · No vendor lock-in
@@ -222,7 +222,7 @@ export function V2Pricing() {
           <Reveal delay={0.12}>
             <div className="rounded-2xl border border-[var(--v2-line-strong)] bg-[var(--v2-card)] p-8 sm:p-9">
               <div className="flex items-baseline justify-between">
-                <p className="v2-mono text-[var(--v2-accent)]">Beta · everything included</p>
+                <p className="v2-mono text-[var(--v2-accent)]">Free to start</p>
                 <p className="v2-h text-5xl text-[var(--v2-fg)]">
                   $0<span className="text-lg font-medium text-[var(--v2-muted)]">/mo</span>
                 </p>

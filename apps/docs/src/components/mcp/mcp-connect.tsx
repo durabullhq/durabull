@@ -78,8 +78,8 @@ const guides: Guide[] = [
     label: 'Cursor & any MCP client',
     Mark: CursorMark,
     lines: [
-      'Any client that supports remote MCP over Streamable HTTP with OAuth can connect.',
-      'Add Durabull to your client’s MCP config, then sign in when prompted.',
+      'Cursor is a first-class Durabull MCP client. Add the remote URL to mcp.json, then sign in when prompted.',
+      'Other clients that support remote MCP over Streamable HTTP with OAuth use the same URL and sign-in flow.',
     ],
     code: [
       {
