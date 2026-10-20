@@ -8,9 +8,9 @@ import { WEB_APP_URL } from '@/lib/config'
 
 const links = [
   { label: 'MCP', href: '/mcp', badge: 'New' },
+  { label: 'Compare', href: '/compare' },
+  { label: 'Guides', href: '/blog' },
   { label: 'Features', href: '/#features' },
-  { label: 'Product', href: '/#product' },
-  { label: 'Deploy', href: '/#deploy' },
   { label: 'Pricing', href: '/#pricing' },
   { label: 'Docs', href: '/documentation' },
 ]

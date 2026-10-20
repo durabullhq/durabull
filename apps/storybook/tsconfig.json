@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "DOM",
-      "DOM.Iterable",
-      "ES2022"
-    ],
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
@@ -14,45 +10,22 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "types": [
-      "vite/client",
-      "bun"
-    ],
+    "types": ["vite/client", "bun"],
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "../web/src/*"
-      ],
-      "@docs/*": [
-        "../docs/src/*"
-      ],
-      "@/lib/config": [
-        "../docs/src/lib/config.ts"
-      ],
-      "@/lib/faqs": [
-        "../docs/src/lib/faqs.ts"
-      ],
-      "@/lib/mcp-facts": [
-        "../docs/src/lib/mcp-facts.ts"
-      ],
-      "@/lib/mcp-faqs": [
-        "../docs/src/lib/mcp-faqs.ts"
-      ],
-      "@/lib/mcp-demo-fixtures": [
-        "../docs/src/lib/mcp-demo-fixtures.ts"
-      ],
-      "@/components": [
-        "../docs/src/components/index.ts"
-      ],
-      "@/components/v2/*": [
-        "../docs/src/components/v2/*"
-      ],
-      "@/components/mcp/*": [
-        "../docs/src/components/mcp/*"
-      ],
-      "@/lib/seo": [
-        "../docs/src/lib/seo.ts"
-      ]
+      "@/*": ["../web/src/*"],
+      "@docs/*": ["../docs/src/*"],
+      "@/lib/config": ["../docs/src/lib/config.ts"],
+      "@/lib/faqs": ["../docs/src/lib/faqs.ts"],
+      "@/lib/mcp-facts": ["../docs/src/lib/mcp-facts.ts"],
+      "@/lib/mcp-faqs": ["../docs/src/lib/mcp-faqs.ts"],
+      "@/lib/mcp-demo-fixtures": ["../docs/src/lib/mcp-demo-fixtures.ts"],
+      "@/components": ["../docs/src/components/index.ts"],
+      "@/components/v2/*": ["../docs/src/components/v2/*"],
+      "@/components/mcp/*": ["../docs/src/components/mcp/*"],
+      "@/lib/seo": ["../docs/src/lib/seo.ts"],
+      "@/components/compare/*": ["../docs/src/components/compare/*"],
+      "@/lib/compare/*": ["../docs/src/lib/compare/*"]
     }
   },
   "include": [

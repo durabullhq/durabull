@@ -1,6 +1,8 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { createSearchAPI } from 'fumadocs-core/search/server'
+import { articles } from '../src/lib/compare/articles'
+import { competitors } from '../src/lib/compare/catalog'
 
 const docsRoot = resolve(import.meta.dir, '../content/documentation')
 const outputPath = resolve(import.meta.dir, '../public/search-index.json')
@@ -83,7 +85,14 @@ async function buildIndexes(): Promise<SearchIndexEntry[]> {
     const relativePath = fullPath.replace(`${docsRoot}/`, '')
     const raw = await readFile(fullPath, 'utf8')
     const { frontmatter, body } = parseFrontmatter(raw)
-    const title = frontmatter.title || toTitleCase(relativePath.replace(/\.mdx$/, '').split('/').pop()!)
+    const title =
+      frontmatter.title ||
+      toTitleCase(
+        relativePath
+          .replace(/\.mdx$/, '')
+          .split('/')
+          .pop()!
+      )
     const description = frontmatter.description
     const content = stripMdxSyntax(body)
     const segments = relativePath.split('/').slice(0, -1)
@@ -99,6 +108,35 @@ async function buildIndexes(): Promise<SearchIndexEntry[]> {
     })
   }
 
+  indexes.push(
+    ...articles.map((article) => ({
+      title: article.title,
+      description: article.description,
+      breadcrumbs: ['Guides', article.category],
+      content: [
+        article.takeaway,
+        article.intro,
+        ...article.sections.flatMap((section) => [section.heading, ...section.body]),
+      ].join(' '),
+      url: `/blog/${article.slug}`,
+      keywords: article.keywords.join(' '),
+    })),
+    ...competitors
+      .filter((item) => item.researchStatus !== 'limited')
+      .map((item) => ({
+        title: item.title,
+        description: item.description,
+        breadcrumbs: ['Compare'],
+        content: [
+          item.intro,
+          item.whenToChooseThem,
+          item.whenToChooseDurabull,
+          ...item.rows.map((row) => `${row.feature}: ${row.competitor}`),
+        ].join(' '),
+        url: `/compare/${item.slug}`,
+        keywords: item.keywords.join(' '),
+      }))
+  )
   return indexes
 }
 

@@ -22,6 +22,8 @@ export interface SEOConfig {
   noIndex?: boolean
   /** Additional keywords for meta tag */
   keywords?: string[]
+  publishedTime?: string
+  modifiedTime?: string
 }
 
 /**
@@ -31,9 +33,11 @@ export function createMetadata(config: SEOConfig, path: string): Metadata {
   const {
     title,
     description,
-    canonical = `${SITE_URL}${path}`,
+    canonical = `${SITE_URL}${path === '/' ? '/' : `${path.replace(/\/$/, '')}/`}`,
     ogImage = DEFAULT_OG_IMAGE,
     ogType = 'website',
+    publishedTime,
+    modifiedTime,
     noIndex = false,
     keywords = [],
   } = config
@@ -44,7 +48,9 @@ export function createMetadata(config: SEOConfig, path: string): Metadata {
     title: fullTitle,
     description,
     keywords: keywords.length > 0 ? keywords : undefined,
-    robots: noIndex ? 'noindex, nofollow' : undefined,
+    robots: noIndex
+      ? 'noindex, follow'
+      : { index: true, follow: true, googleBot: { 'max-image-preview': 'large' } },
     alternates: {
       canonical,
     },
@@ -62,6 +68,7 @@ export function createMetadata(config: SEOConfig, path: string): Metadata {
         },
       ],
       type: ogType,
+      ...(ogType === 'article' ? { publishedTime, modifiedTime, authors: [SITE_URL] } : {}),
     },
     twitter: {
       card: 'summary_large_image',
@@ -85,6 +92,7 @@ export function createSoftwareApplicationSchema() {
     description:
       'The modern BullMQ dashboard for browser, Apple Silicon macOS, Windows, and self-hosted environments. Monitor jobs, debug failures, and scale background processing with confidence.',
     url: SITE_URL,
+    license: 'https://www.apache.org/licenses/LICENSE-2.0',
     downloadUrl: MAC_DOWNLOAD_URL,
     installUrl: GITHUB_RELEASE_URL,
     offers: {
@@ -181,5 +189,57 @@ export function createBreadcrumbSchema(items: Array<{ name: string; url: string 
       name: item.name,
       item: item.url.startsWith('http') ? item.url : `${SITE_URL}${item.url}`,
     })),
+  }
+}
+
+/**
+ * Next.js root layout appends `| Durabull` via `title.template`.
+ * Use this for marketing pages so the visible title is not doubled.
+ */
+export function createAbsoluteMetadata(config: SEOConfig, path: string): Metadata {
+  const metadata = createMetadata(config, path)
+  const fullTitle = path === '/' ? config.title : `${config.title} | ${SITE_NAME}`
+  return {
+    ...metadata,
+    title: { absolute: fullTitle },
+  }
+}
+
+/** JSON-LD Article for long-form guides. */
+export function createArticleSchema(config: {
+  headline: string
+  description: string
+  url: string
+  datePublished: string
+  dateModified?: string
+  image?: string
+  sources?: string[]
+}) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: config.headline,
+    description: config.description,
+    url: config.url,
+    mainEntityOfPage: config.url,
+    datePublished: config.datePublished,
+    dateModified: config.dateModified ?? config.datePublished,
+    author: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      url: SITE_URL,
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${SITE_URL}/favicon-512x512.png`,
+      },
+    },
+    image: config.image ?? DEFAULT_OG_IMAGE,
+    citation: config.sources,
+    inLanguage: 'en',
   }
 }

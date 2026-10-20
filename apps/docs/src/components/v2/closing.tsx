@@ -59,6 +59,8 @@ export function V2FinalCta() {
 
 const footerLinks = [
   { label: 'Durabull MCP', href: '/mcp' },
+  { label: 'Compare', href: '/compare' },
+  { label: 'Guides', href: '/blog' },
   { label: 'Documentation', href: '/documentation' },
   { label: 'UI catalog', href: '/ui/' },
   { label: 'Desktop apps', href: GITHUB_RELEASE_URL },
