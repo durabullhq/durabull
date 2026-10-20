@@ -23,7 +23,7 @@ export default function PricingPage() {
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-sm text-emerald-300 mb-8">
               <Sparkles className="h-4 w-4" />
-              Free During Beta
+              Free to start
             </div>
 
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6">
@@ -33,8 +33,7 @@ export default function PricingPage() {
             </h1>
 
             <p className="text-xl text-muted-foreground">
-              The hosted app is currently free during beta. Check this page for published pricing
-              updates.
+              The hosted app is free to start. Check this page for published pricing updates.
             </p>
           </motion.div>
 
@@ -54,13 +53,13 @@ export default function PricingPage() {
                     $0
                     <span className="text-xl text-muted-foreground font-normal">/month</span>
                   </div>
-                  <div className="text-muted-foreground">Free while in beta</div>
+                  <div className="text-muted-foreground">Free to start</div>
                 </div>
 
                 <div className="space-y-4 mb-8">
                   {[
-                    'Unlimited connections',
-                    'Unlimited queues',
+                    'Multiple Redis connections',
+                    'Queue and job inspection',
                     'Real-time monitoring',
                     'Job debugging & retry',
                     'Team collaboration',

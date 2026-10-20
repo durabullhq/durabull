@@ -27,7 +27,7 @@ export function V2FinalCta() {
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-[var(--v2-muted)] sm:text-base">
             Connect Redis to inspect your queues, workers, and failed jobs, then connect your agent
-            to keep an eye on them with you. The hosted app is free during beta.
+            to keep an eye on them with you. The hosted app is free to start.
           </p>
         </Reveal>
 

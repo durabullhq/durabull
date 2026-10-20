@@ -44,7 +44,7 @@ const MARKETING_LINKS: MarketingLink[] = [
   {
     path: '/pricing',
     title: 'Pricing',
-    description: 'Plans and beta pricing for Durabull Cloud and self-hosted usage.',
+    description: 'Hosted Durabull is free to start. Self-host anytime under ELv2.',
   },
   {
     path: '/docs',
@@ -388,7 +388,7 @@ function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: Meta
     '',
     '## Comparison coverage',
     '',
-    'Durabull discovers BullMQ queues by scanning Redis meta keys. No worker SDK is required for inspection. Throughput charts need BullMQ metrics on workers. Hosted pricing is free during beta. License is Elastic License 2.0 (source-available, not OSI open source). MCP lives at the app origin /mcp with 30 tools and opt-in writes.',
+    'Durabull discovers BullMQ queues by scanning Redis meta keys. No worker SDK is required for inspection. Throughput charts need BullMQ metrics on workers. Hosted pricing is free to start. License is Elastic License 2.0 (source-available, not OSI open source). Homebrew installs the desktop app (cask), not a CLI. Alerts today are email, signed webhooks, and Linear; Slack and PagerDuty are coming soon. MCP lives at the app origin /mcp with 30 tools and opt-in writes, and is fully supported in Cursor and other MCP clients.',
     ''
   )
 

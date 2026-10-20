@@ -93,8 +93,8 @@ export function VsPage({ competitor }: { competitor: Competitor }) {
         {competitor.costs ? (
           <section>
             <SectionIntro title="Published cost at volume">
-              {competitor.shortName} list prices. Durabull hosted is $0/mo during beta. Your Redis
-              and workers are separate and already yours.
+              {competitor.shortName} list prices. Durabull hosted is free to start. Your Redis and
+              workers are separate and already yours.
             </SectionIntro>
             <CostTable caption={competitor.costs.caption} rows={competitor.costs.rows} />
           </section>

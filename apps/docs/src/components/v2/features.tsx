@@ -126,7 +126,10 @@ export function V2GettingStarted() {
             </p>
           </Reveal>
           <Reveal delay={0.12} className="space-y-3">
-            <CommandBlock label="macOS (Homebrew)" command={HOMEBREW_INSTALL_COMMAND} />
+            <CommandBlock
+              label="macOS desktop (Homebrew cask)"
+              command={HOMEBREW_INSTALL_COMMAND}
+            />
             <CommandBlock
               label="Self-hosted (Docker)"
               command="docker compose --env-file .env.self-hosted -f tooling/docker/docker-compose.self-hosted.yaml up -d"

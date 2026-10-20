@@ -52,17 +52,22 @@ Only what the repo already documents:
 - Redis SCAN `<prefix>:*:meta`, no worker SDK for inspection
 - Metrics and `job.log()` need worker changes
 - Multiple connections, env enum
-- Alerts: email, signed webhooks, Linear — not native Slack/PagerDuty
-- MCP: 30 tools, 9 scopes, opt-in writes, redaction
-- Hosted $0/mo during beta
+- Alerts today: email, signed webhooks, Linear. Slack and PagerDuty are coming soon.
+- MCP: 30 tools, 9 scopes, opt-in writes, redaction. Fully supported in Cursor and other MCP clients.
+- Hosted is free to start. Do not invent a post-beta price or promise permanent no-caps.
 - ELv2, not OSI open source
 - Homebrew is the **desktop cask**, not a CLI
-- Cursor MCP “not fully tested”
 
-## Gregg should confirm before treating as evergreen
+## Confirmed by Gregg (2026-10-20)
 
-1. Whether beta remains $0 with unlimited connections (homepage claim).
-2. Whether to name Taskforce.sh as the closest commercial peer in paid ads (we already do on the vs page).
-3. Future paid SKUs — do not invent them.
-4. Whether Upqueue should stay listed after someone loads upqueue.io from a non-blocked network.
-5. Linear: this workspace has no Durabull team, so no Linear issue was created.
+1. Hosted: use “free to start.” Do not invent a post-beta price or promise permanent no-caps.
+2. Homebrew installs the desktop app (cask), not a CLI.
+3. Alerts today are email, signed webhooks, and Linear. Slack and PagerDuty are coming soon.
+4. Cursor MCP is fully supported. Remove “not fully tested” caveats.
+5. Leave ELv2 source-available wording as is.
+
+## Still open
+
+1. Whether to name Taskforce.sh as the closest commercial peer in paid ads (we already do on the vs page).
+2. Whether Upqueue should stay listed after someone loads upqueue.io from a non-blocked network.
+3. Linear: this workspace has no Durabull team, so no Linear issue was created.

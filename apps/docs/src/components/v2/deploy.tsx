@@ -208,12 +208,11 @@ export function V2Pricing() {
           <Reveal>
             <Eyebrow>Honest pricing</Eyebrow>
             <h2 className="v2-h mt-4 text-balance text-3xl leading-tight text-[var(--v2-fg)] sm:text-4xl">
-              Free during beta.
+              Free to start.
             </h2>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-[var(--v2-muted)]">
-              The hosted app is currently free during beta. You can also run Durabull on your own
-              infrastructure under the Elastic License 2.0. Check published terms for future
-              pricing.
+              The hosted app is free to start. You can also run Durabull on your own infrastructure
+              under the Elastic License 2.0. Check this page for published pricing updates.
             </p>
             <p className="v2-mono mt-7 text-[var(--v2-faint)]">
               Elastic License 2.0 · Self-host anytime · No vendor lock-in

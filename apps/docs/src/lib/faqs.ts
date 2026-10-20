@@ -27,12 +27,12 @@ export const faqs = [
   },
   {
     question: 'How does pricing work?',
-    answer: 'The hosted app is free during beta. See the pricing page for current terms.',
+    answer: 'The hosted app is free to start. See the pricing page for current terms.',
   },
   {
     question: 'How can I install Durabull?',
     answer:
-      'Use the hosted app, install the desktop app on Apple Silicon macOS or Windows, or self-host with Docker or from source. The desktop guide includes downloads, Homebrew installation, and macOS checksum verification.',
+      'Use the hosted app, install the desktop app on Apple Silicon macOS or Windows, or self-host with Docker or from source. Homebrew installs the desktop app (cask), not a CLI. The desktop guide includes downloads, the Homebrew cask, and macOS checksum verification.',
   },
   {
     question: 'Can I run Durabull in authless mode?',

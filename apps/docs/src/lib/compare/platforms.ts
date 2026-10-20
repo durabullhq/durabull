@@ -1,7 +1,7 @@
 import type { Competitor } from './types'
 
 const durabullOps =
-  'Stay on Redis + BullMQ. Durabull is the operations layer: discovery, alerts, MCP. No per-job vendor meter during beta.'
+  'Stay on Redis + BullMQ. Durabull is the operations layer: discovery, alerts, MCP. Hosted is free to start and does not bill per job.'
 
 export const platformCompetitors: Competitor[] = [
   {
@@ -16,7 +16,7 @@ export const platformCompetitors: Competitor[] = [
     alternativesPage: true,
     title: 'Durabull vs Inngest',
     description:
-      'Inngest replaces Redis + BullMQ and bills each function run and step. Durabull monitors the BullMQ you already run, with no per-job meter during beta, plus a BullMQ MCP server.',
+      'Inngest replaces Redis + BullMQ and bills each function run and step. Durabull monitors the BullMQ you already run. Hosted is free to start and does not bill per job, plus a BullMQ MCP server.',
     keywords: [
       'Inngest alternative',
       'Inngest vs BullMQ',
@@ -47,22 +47,22 @@ export const platformCompetitors: Competitor[] = [
       { feature: 'Relationship to BullMQ', durabull: 'Monitors it', competitor: 'Replaces it' },
       {
         feature: 'Billed unit',
-        durabull: 'No job meter in beta',
+        durabull: 'No per-job product fee. Free to start.',
         competitor: 'Execution = run or step',
       },
       {
         feature: '1M billed executions',
-        durabull: '$0 during beta',
+        durabull: 'Free to start',
         competitor: '$99 Pro (included 1M)',
       },
       {
         feature: '10M executions',
-        durabull: '$0 during beta',
+        durabull: 'Free to start',
         competitor: '$499 Business (included 10M)',
       },
       {
         feature: '100M executions',
-        durabull: '$0 during beta',
+        durabull: 'Free to start',
         competitor: 'Not fully published; Pro overage bounds ~$1,584–$5,049 after 1M',
       },
       { feature: 'MCP', durabull: 'BullMQ queue ops', competitor: 'Inngest run ops' },
@@ -79,19 +79,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M executions',
           competitor: '$99 (Pro included)',
-          durabull: '$0 beta',
+          durabull: 'Free to start',
           unit: 'execution',
         },
         {
           volume: '10M executions',
           competitor: '$499 (Business included)',
-          durabull: '$0 beta',
+          durabull: 'Free to start',
           unit: 'execution',
         },
         {
           volume: '100M executions',
           competitor: '$1,584–$5,049 on Pro overage bounds',
-          durabull: '$0 beta',
+          durabull: 'Free to start',
           unit: 'execution',
         },
       ],
@@ -161,11 +161,11 @@ export const platformCompetitors: Competitor[] = [
       },
       {
         feature: '1M × 10s small-1x',
-        durabull: '$0 beta + your Redis/compute',
+        durabull: 'Free to start + your Redis/compute',
         competitor: '~$363 usage (Pro $50 credit)',
       },
-      { feature: '10M × 10s', durabull: '$0 beta + your infra', competitor: '~$3,630' },
-      { feature: '100M × 10s', durabull: '$0 beta + your infra', competitor: '~$36,300' },
+      { feature: '10M × 10s', durabull: 'Free to start + your infra', competitor: '~$3,630' },
+      { feature: '100M × 10s', durabull: 'Free to start + your infra', competitor: '~$36,300' },
       { feature: 'MCP', durabull: 'BullMQ ops', competitor: 'Trigger.dev runs and deploy' },
     ],
     costs: {
@@ -175,19 +175,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M runs × 10s',
           competitor: '~$363',
-          durabull: '$0 product fee in beta',
+          durabull: 'Free to start',
           unit: 'run + compute',
         },
         {
           volume: '10M runs × 10s',
           competitor: '~$3,630',
-          durabull: '$0 product fee in beta',
+          durabull: 'Free to start',
           unit: 'run + compute',
         },
         {
           volume: '100M runs × 10s',
           competitor: '~$36,300',
-          durabull: '$0 product fee in beta',
+          durabull: 'Free to start',
           unit: 'run + compute',
         },
       ],
@@ -196,7 +196,7 @@ export const platformCompetitors: Competitor[] = [
       {
         question: 'Is Trigger.dev cheaper than BullMQ + Durabull?',
         answer:
-          'Trigger.dev bills compute on their machines. BullMQ bills whatever you already pay for Redis and workers. Durabull adds $0 during beta. At 10M ten-second tasks the published Trigger.dev example is about $3,630/mo before Enterprise discounts.',
+          'Trigger.dev bills compute on their machines. BullMQ bills whatever you already pay for Redis and workers. Durabull hosted is free to start. At 10M ten-second tasks the published Trigger.dev example is about $3,630/mo before Enterprise discounts.',
       },
     ],
     sources: [
@@ -248,11 +248,11 @@ export const platformCompetitors: Competitor[] = [
       { feature: 'Model', durabull: 'BullMQ jobs on Redis', competitor: 'Workflows + Activities' },
       {
         feature: '1M Actions (Developer)',
-        durabull: '$0 beta',
+        durabull: 'Free to start',
         competitor: '$55 ($50 + 10% support)',
       },
-      { feature: '10M Actions (Developer)', durabull: '$0 beta', competitor: '$550' },
-      { feature: '100M Actions (Developer)', durabull: '$0 beta', competitor: '$5,500' },
+      { feature: '10M Actions (Developer)', durabull: 'Free to start', competitor: '$550' },
+      { feature: '100M Actions (Developer)', durabull: 'Free to start', competitor: '$5,500' },
       {
         feature: 'Official ops MCP',
         durabull: 'Yes',
@@ -263,9 +263,9 @@ export const platformCompetitors: Competitor[] = [
       caption:
         'Developer plan, Actions only, no storage, no heartbeats (docs.temporal.io/cloud/pricing, 2026-10-20). A start + one Activity is already ~2 Actions.',
       rows: [
-        { volume: '1M Actions', competitor: '$55', durabull: '$0 beta', unit: 'Action' },
-        { volume: '10M Actions', competitor: '$550', durabull: '$0 beta', unit: 'Action' },
-        { volume: '100M Actions', competitor: '$5,500', durabull: '$0 beta', unit: 'Action' },
+        { volume: '1M Actions', competitor: '$55', durabull: 'Free to start', unit: 'Action' },
+        { volume: '10M Actions', competitor: '$550', durabull: 'Free to start', unit: 'Action' },
+        { volume: '100M Actions', competitor: '$5,500', durabull: 'Free to start', unit: 'Action' },
       ],
     },
     faqs: [
@@ -318,18 +318,23 @@ export const platformCompetitors: Competitor[] = [
       'Choose Hatchet when you want orchestration with a cheaper published per-run list price than Temporal Developer, retries not billed, and you will run workers.',
     whenToChooseDurabull: durabullOps,
     rows: [
-      { feature: '1M task runs', durabull: '$0 beta', competitor: '$0 (included)' },
-      { feature: '10M task runs', durabull: '$0 beta', competitor: '$270 (9×$30)' },
-      { feature: '100M task runs', durabull: '$0 beta', competitor: '$2,970 list' },
+      { feature: '1M task runs', durabull: 'Free to start', competitor: '$0 (included)' },
+      { feature: '10M task runs', durabull: 'Free to start', competitor: '$270 (9×$30)' },
+      { feature: '100M task runs', durabull: 'Free to start', competitor: '$2,970 list' },
       { feature: 'Monitors BullMQ', durabull: 'Yes', competitor: 'No' },
     ],
     costs: {
       caption:
         'Hatchet Cloud PAYG, events inside the 1M free allotment, 2026-10-20. Storage/log overages excluded.',
       rows: [
-        { volume: '1M runs', competitor: '$0', durabull: '$0 beta', unit: 'task run' },
-        { volume: '10M runs', competitor: '$270', durabull: '$0 beta', unit: 'task run' },
-        { volume: '100M runs', competitor: '$2,970 list', durabull: '$0 beta', unit: 'task run' },
+        { volume: '1M runs', competitor: '$0', durabull: 'Free to start', unit: 'task run' },
+        { volume: '10M runs', competitor: '$270', durabull: 'Free to start', unit: 'task run' },
+        {
+          volume: '100M runs',
+          competitor: '$2,970 list',
+          durabull: 'Free to start',
+          unit: 'task run',
+        },
       ],
     },
     faqs: [
@@ -377,11 +382,11 @@ export const platformCompetitors: Competitor[] = [
       { feature: 'Broker', durabull: 'Your Redis + BullMQ', competitor: 'Upstash HTTP push' },
       {
         feature: '1M messages PAYG',
-        durabull: '$0 beta',
+        durabull: 'Free to start',
         competitor: '$10 (if 1 publish = 1 bill)',
       },
-      { feature: '10M messages', durabull: '$0 beta', competitor: '$100' },
-      { feature: '100M messages', durabull: '$0 beta', competitor: '$1,000' },
+      { feature: '10M messages', durabull: 'Free to start', competitor: '$100' },
+      { feature: '100M messages', durabull: 'Free to start', competitor: '$1,000' },
     ],
     costs: {
       caption:
@@ -390,19 +395,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M messages',
           competitor: '$10',
-          durabull: '$0 beta',
+          durabull: 'Free to start',
           unit: 'published message',
         },
         {
           volume: '10M messages',
           competitor: '$100',
-          durabull: '$0 beta',
+          durabull: 'Free to start',
           unit: 'published message',
         },
         {
           volume: '100M messages',
           competitor: '$1,000',
-          durabull: '$0 beta',
+          durabull: 'Free to start',
           unit: 'published message',
         },
       ],
@@ -452,12 +457,12 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M jobs, 3 SQS req each',
-        durabull: '$0 beta + Redis',
+        durabull: 'Free to start + Redis',
         competitor: '$0.80 after free tier',
       },
       {
         feature: 'Same + 4 SF transitions',
-        durabull: '$0 beta + Redis',
+        durabull: 'Free to start + Redis',
         competitor: '~$100.70 + Lambda',
       },
       { feature: 'Understands BullMQ', durabull: 'Yes', competitor: 'No' },
@@ -469,19 +474,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M jobs (SQS only)',
           competitor: '$0.80',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '3 API requests/job',
         },
         {
           volume: '10M jobs (SQS only)',
           competitor: '$11.60',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '3 API requests/job',
         },
         {
           volume: '100M jobs (SQS only)',
           competitor: '$119.60',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '3 API requests/job',
         },
       ],
@@ -528,11 +533,11 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M tasks, 2 ops each',
-        durabull: '$0 beta + Redis',
+        durabull: 'Free to start + Redis',
         competitor: '$0.40 after 1M free',
       },
-      { feature: '10M tasks, 2 ops', durabull: '$0 beta + Redis', competitor: '$7.60' },
-      { feature: '100M tasks, 2 ops', durabull: '$0 beta + Redis', competitor: '$79.60' },
+      { feature: '10M tasks, 2 ops', durabull: 'Free to start + Redis', competitor: '$7.60' },
+      { feature: '100M tasks, 2 ops', durabull: 'Free to start + Redis', competitor: '$79.60' },
     ],
     costs: {
       caption:
@@ -541,19 +546,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M tasks',
           competitor: '$0.40',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '2 ops/task',
         },
         {
           volume: '10M tasks',
           competitor: '$7.60',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '2 ops/task',
         },
         {
           volume: '100M tasks',
           competitor: '$79.60',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '2 ops/task',
         },
       ],
@@ -597,11 +602,11 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M messages (3 ops)',
-        durabull: '$0 beta + Redis',
+        durabull: 'Free to start + Redis',
         competitor: '$5.80 ($5 plan + $0.80 ops)',
       },
-      { feature: '10M messages', durabull: '$0 beta + Redis', competitor: '$16.60' },
-      { feature: '100M messages', durabull: '$0 beta + Redis', competitor: '$124.60' },
+      { feature: '10M messages', durabull: 'Free to start + Redis', competitor: '$16.60' },
+      { feature: '100M messages', durabull: 'Free to start + Redis', competitor: '$124.60' },
     ],
     costs: {
       caption: 'Official Cloudflare formula with 3 ops/message + $5 Workers Paid (2026-10-20).',
@@ -609,19 +614,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M messages',
           competitor: '$5.80',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '3 ops/message',
         },
         {
           volume: '10M messages',
           competitor: '$16.60',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '3 ops/message',
         },
         {
           volume: '100M messages',
           competitor: '$124.60',
-          durabull: '$0 beta + Redis',
+          durabull: 'Free to start + Redis',
           unit: '3 ops/message',
         },
       ],
@@ -670,7 +675,7 @@ export const platformCompetitors: Competitor[] = [
       'You already chose Redis + BullMQ and need operations, not a second queue library.',
     rows: [
       { feature: 'Store', durabull: 'Redis (BullMQ)', competitor: 'PostgreSQL' },
-      { feature: 'Product fee', durabull: '$0 beta', competitor: '$0 OSS or $100/mo Pro' },
+      { feature: 'Product fee', durabull: 'Free to start', competitor: '$0 OSS or $100/mo Pro' },
       {
         feature: 'Scales with job count',
         durabull: 'No product meter',
@@ -803,7 +808,7 @@ export const platformCompetitors: Competitor[] = [
     whenToChooseDurabull:
       'If you moved those jobs to BullMQ, Durabull is the dashboard and MCP for that Redis.',
     rows: [
-      { feature: 'Hosted', durabull: 'Free during beta', competitor: 'Ended 2022' },
+      { feature: 'Hosted', durabull: 'Free to start', competitor: 'Ended 2022' },
       {
         feature: 'Author guidance',
         durabull: 'Built for BullMQ',

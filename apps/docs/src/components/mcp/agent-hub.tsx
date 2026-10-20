@@ -228,15 +228,13 @@ function HostTile({ host, featured }: { host: Host; featured?: boolean }) {
 export function HostGrid() {
   return (
     <div className="space-y-4">
-      <p className="v2-mono text-[var(--v2-faint)]">Documented setup</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <p className="v2-mono text-[var(--v2-faint)]">First-class clients</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {featuredHosts.map((h) => (
           <HostTile key={h.name} host={h} featured />
         ))}
       </div>
-      <p className="v2-mono pt-4 text-[var(--v2-faint)]">
-        Any remote MCP client · not yet tested by Durabull
-      </p>
+      <p className="v2-mono pt-4 text-[var(--v2-faint)]">Any remote MCP client</p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {openHosts.map((h) => (
           <HostTile key={h.name} host={h} />

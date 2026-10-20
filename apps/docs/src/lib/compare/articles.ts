@@ -40,7 +40,7 @@ export const articles: Article[] = [
       {
         heading: 'Alert on queue and Redis health, not only process crashes',
         body: [
-          'A worker crash is an APM event. A silent backlog with completions stopped is a queue event. Durabull ships failure threshold, failure rate, queue stalled, per-job failed, and Redis INFO health (memory %, evictions, rejected connections). Delivery is email, HMAC-signed webhooks, and Linear.',
+          'A worker crash is an APM event. A silent backlog with completions stopped is a queue event. Durabull ships failure threshold, failure rate, queue stalled, per-job failed, and Redis INFO health (memory %, evictions, rejected connections). Delivery today is email, HMAC-signed webhooks, and Linear. Slack and PagerDuty are coming soon.',
           'Datadog, Grafana, and Sentry are still useful. They do not replace a retry console.',
         ],
       },
@@ -93,7 +93,7 @@ export const articles: Article[] = [
         heading: 'If you want Redis URL, no app SDK',
         body: [
           'Taskforce.sh (BullMQ authors): auto-discovery, Slack/PagerDuty monitors, hosted MCP. $19.95 / $49.95 / $99.95 per month for 1 / 5 / 15 connections.',
-          'Durabull: SCAN discovery, many connections per org, email/webhook/Linear alerts, hosted MCP with OAuth, cloud + desktop + Docker. $0/mo during beta. ELv2, not OSI open source.',
+          'Durabull: SCAN discovery, many connections per org, email/webhook/Linear alerts (Slack and PagerDuty coming soon), hosted MCP with OAuth, cloud + desktop app (Homebrew cask on Apple Silicon macOS, not a CLI) + Docker. Free to start. ELv2, not OSI open source.',
           'Bullpane: self-hosted, Free without login, Pro $39/mo per install for SSO/MCP/alerts.',
           'QueueDash hosted is the exception: SDK `attach()`, job quotas, env/queue caps. OSS QueueDash can discover Bull/BullMQ.',
         ],
@@ -141,7 +141,7 @@ export const articles: Article[] = [
         body: [
           'Hosted URL: `https://app.durabull.io/mcp`. 30 tools (21 read, 9 write), 9 OAuth scopes, 4 prompts (`triage_failed_jobs`, `investigate_queue_backlog`, `alert_activity_review`, `connection_health_check`).',
           'Writes are opt-in: retry, promote, pause/resume, alert acknowledge/resolve/snooze. Deletes, purges, obliterates, payload edits, and raw Redis commands are not on MCP.',
-          'Responses are redacted server-side. Each teammate signs in as themselves. Cursor is listed as not fully tested; the same remote URL is the integration path.',
+          'Responses are redacted server-side. Each teammate signs in as themselves. Cursor is a first-class supported client; Claude, ChatGPT, and other MCP clients use the same remote URL.',
         ],
       },
       {
@@ -187,7 +187,7 @@ export const articles: Article[] = [
     keywords: ['Inngest pricing', 'Inngest vs BullMQ', 'Inngest cost', 'durable functions cost'],
     datePublished: '2026-10-20',
     intro:
-      'Inngest bills executions. BullMQ bills Redis and your workers. Durabull is $0/mo during beta. The units are not the same, so the table below states the unit on every row.',
+      'Inngest bills executions. BullMQ bills Redis and your workers. Durabull hosted is free to start. The units are not the same, so the table below states the unit on every row.',
     sections: [
       {
         heading: 'What Inngest meters',
@@ -206,7 +206,7 @@ export const articles: Article[] = [
       {
         heading: 'What BullMQ + Durabull meters',
         body: [
-          'BullMQ has no per-job SaaS fee. You pay Redis and compute you already run. Durabull hosted is free during beta with no published job cap. Self-host is ELv2.',
+          'BullMQ has no per-job SaaS fee. You pay Redis and compute you already run. Durabull hosted is free to start. Self-host is ELv2.',
           'The hidden cost of Inngest is not only dollars. Cloud must be up to start and resume runs. Self-host Inngest is SSPL. You give up owning the broker.',
         ],
       },
@@ -292,7 +292,7 @@ export const articles: Article[] = [
       {
         heading: 'Paths',
         body: [
-          'Durabull: create an org, paste the Redis URL, confirm prefix. Queues appear from SCAN. Add staging/production as more connections. Connect MCP if you want agents.',
+          'Durabull: create an org, paste the Redis URL, confirm prefix. Queues appear from SCAN. Add staging/production as more connections. Connect MCP if you want agents. Install the desktop app from GitHub releases or Homebrew (`brew install --cask durabullhq/tap/durabull`); Homebrew installs the desktop app, not a CLI.',
           'Taskforce.sh: Redis URL or connector. Pay per connection. Enable monitors (they default off).',
           'Workbench: mount with `redis` instead of `queues`, or use the Mac app. Raise `maxQueues` if you have more than 100. Docker still wants names.',
           'Stay on Bull Board CLI if one Redis and no team auth is enough.',
@@ -327,7 +327,7 @@ export const articles: Article[] = [
       {
         heading: 'BullMQ + Durabull',
         body: [
-          'You already pay workers. Durabull does not take a cut per run during beta. The comparison is “keep that fleet” versus “move task bodies onto Trigger.dev machines.”',
+          'You already pay workers. Durabull hosted is free to start and does not bill per run. The comparison is “keep that fleet” versus “move task bodies onto Trigger.dev machines.”',
         ],
       },
     ],

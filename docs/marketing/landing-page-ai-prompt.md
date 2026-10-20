@@ -43,7 +43,7 @@ Use these guides as the source of truth. Check current implementation before add
   destructive action as guarded. Purge excludes `waiting-children` and does not remove schedulers.
 - Worker activity is a Redis connectivity heuristic. Linear mappings reduce duplicates but do
   not guarantee exactly-once issue creation.
-- Webhooks can feed Slack or PagerDuty through middleware; do not claim native integrations.
+- Alerts today are email, signed webhooks, and Linear. Slack and PagerDuty are coming soon. Webhooks can already feed Slack or PagerDuty through middleware.
 - Verify current pricing, usage limits, supported versions, support terms, and release status
   before publication. Do not invent future prices, SLAs, compatibility guarantees, or MCP GA approval.
 - Use the [public roadmap](https://durabull.io/roadmap) for planned work and preserve its horizon.

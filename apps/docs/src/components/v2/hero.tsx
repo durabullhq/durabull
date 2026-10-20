@@ -70,7 +70,7 @@ export function V2Hero() {
         </motion.div>
 
         <motion.p {...fadeUp(0.4)} className="v2-mono mt-7 text-[var(--v2-faint)]">
-          Source-available · Free during beta · Cloud, desktop, or self-hosted
+          Source-available · Free to start · Cloud, desktop, or self-hosted
         </motion.p>
       </div>
 

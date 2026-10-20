@@ -15,6 +15,7 @@ Durabull serves MCP revision **2026-07-28** using SDK **2.3.1**, with MCP Apps *
 | Host | Integration | UI |
 | --- | --- | --- |
 | Claude app/Desktop/Cowork | Remote connector at the deployment `/mcp` URL | Standard MCP Apps |
+| Cursor | Remote MCP at the deployment `/mcp` URL via `mcp.json` | Text tools; first-class supported client |
 | Claude Code | `claude --plugin-dir ./plugins/durabull`, or repository marketplace | Text tools and skills |
 | ChatGPT Work | Custom MCP server; portable plugin for skills | Standard MCP Apps; global/sidebar and thread/panel entrypoints on supported surfaces |
 | Codex | Portable package through `.agents/plugins/marketplace.json` | Host dependent; text fallback always remains |

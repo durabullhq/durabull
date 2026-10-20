@@ -91,7 +91,7 @@ export function createSoftwareApplicationSchema() {
       '@type': 'Offer',
       price: '0',
       priceCurrency: 'USD',
-      description: 'Free during beta',
+      description: 'Free to start',
     },
   }
 }
@@ -163,7 +163,7 @@ export function createProductSchema() {
       price: '0',
       priceCurrency: 'USD',
       availability: 'https://schema.org/InStock',
-      description: 'Free during beta period',
+      description: 'Free to start',
     },
   }
 }

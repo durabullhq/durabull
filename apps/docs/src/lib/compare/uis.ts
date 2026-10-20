@@ -3,7 +3,8 @@ import type { Competitor } from './types'
 const sharedRows = {
   inspect: 'Inspect payloads, logs, stack traces; retry, promote, pause from the dashboard',
   mcp: 'Hosted MCP with OAuth, 30 tools, redaction, opt-in writes',
-  price: 'Free during beta ($0/mo). Self-host ELv2.',
+  price: 'Free to start. Self-host ELv2.',
+  alerts: 'Email, signed webhooks, Linear. Slack and PagerDuty coming soon.',
   multi: 'Many Redis connections per org, grouped by environment',
   discover: 'Redis SCAN for `<prefix>:*:meta`. No app SDK for inspection.',
 } as const
@@ -67,7 +68,7 @@ export const uiCompetitors: Competitor[] = [
         durabull: sharedRows.multi,
         competitor: 'One Redis per CLI/process',
       },
-      { feature: 'Alerts', durabull: 'Email, signed webhooks, Linear', competitor: 'None' },
+      { feature: 'Alerts', durabull: sharedRows.alerts, competitor: 'None' },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'No. CLI has a JSON HTTP API.' },
       {
         feature: 'Job ops',
@@ -152,7 +153,7 @@ export const uiCompetitors: Competitor[] = [
         durabull: sharedRows.multi,
         competitor: 'Manual host list, no org model',
       },
-      { feature: 'Alerts', durabull: 'Email, webhooks, Linear', competitor: 'Not documented' },
+      { feature: 'Alerts', durabull: sharedRows.alerts, competitor: 'Not documented' },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Not documented' },
       { feature: 'Price', durabull: sharedRows.price, competitor: 'Free (MIT)' },
     ],
@@ -186,7 +187,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: true,
     title: 'Durabull vs Taskforce.sh',
     description:
-      'Taskforce.sh is the BullMQ authors’ hosted dashboard with auto-discovery, Slack/PagerDuty monitors, and MCP. Durabull is source-available, free during beta, and self-hostable without a license phone-home.',
+      'Taskforce.sh is the BullMQ authors’ hosted dashboard with auto-discovery, Slack/PagerDuty monitors, and MCP. Durabull is source-available, free to start, and self-hostable without a license phone-home.',
     keywords: [
       'Taskforce.sh alternative',
       'Taskforce vs Durabull',
@@ -215,7 +216,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose Taskforce when you want the first-party UI, Slack/PagerDuty monitors, custom roles, SOC 2 Type II as they claim, and you accept paying per Redis connection or running their on-prem image with a license check every 15 minutes.',
     whenToChooseDurabull:
-      'Choose Durabull when you want the same Redis-scan model plus MCP, without a connection cap on a published price list, with source you can self-host under ELv2, and while the hosted app is free during beta. Durabull alerts are email, signed webhooks, and Linear — not native Slack or PagerDuty.',
+      'Choose Durabull when you want the same Redis-scan model plus MCP, with source you can self-host under ELv2, and a hosted app that is free to start. Durabull alerts today are email, signed webhooks, and Linear. Slack and PagerDuty are coming soon.',
     rows: [
       {
         feature: 'See queues',
@@ -225,12 +226,12 @@ export const uiCompetitors: Competitor[] = [
       { feature: 'App code', durabull: 'Not for inspection', competitor: 'None' },
       {
         feature: 'Connections',
-        durabull: 'Unlimited connections claimed during beta',
+        durabull: 'Many connections per org. Hosted is free to start.',
         competitor: '1 / 5 / 15 on hosted plans',
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, webhooks, Linear',
+        durabull: sharedRows.alerts,
         competitor: 'Email, Slack, PagerDuty',
       },
       {
@@ -258,7 +259,7 @@ export const uiCompetitors: Competitor[] = [
       {
         question: 'Does Durabull replace Taskforce.sh?',
         answer:
-          'For Redis auto-discovery, job inspection, and MCP, yes you can compare them directly. Taskforce still has native Slack/PagerDuty monitors, published SOC 2 Type II, and first-party BullMQ Pro group views. Durabull is source-available and free during beta.',
+          'For Redis auto-discovery, job inspection, and MCP, yes you can compare them directly. Taskforce still has native Slack/PagerDuty monitors, published SOC 2 Type II, and first-party BullMQ Pro group views. Durabull is source-available and free to start. Slack and PagerDuty alerts are coming soon.',
       },
     ],
     sources: [
@@ -332,7 +333,7 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, webhooks, Linear',
+        durabull: sharedRows.alerts,
         competitor: 'Slack, Discord, webhook',
       },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Local stdio proxy, 18 tools' },
@@ -373,7 +374,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: false,
     title: 'Durabull vs QueueDash',
     description:
-      'QueueDash OSS can discover BullMQ from Redis. QueueDash hosted attaches an SDK and bills by recorded jobs. Durabull inspects Redis directly, with no published job quota during beta.',
+      'QueueDash OSS can discover BullMQ from Redis. QueueDash hosted attaches an SDK and bills by recorded jobs. Durabull inspects Redis directly. Hosted Durabull is free to start.',
     keywords: ['QueueDash alternative', 'QueueDash vs Durabull', 'BullMQ hosted dashboard'],
     intro:
       'QueueDash is two products. The MIT embed can list Queue instances or enable Bull/BullMQ discovery. The hosted app listens through `@queuedash/sdk` and charges for recorded jobs.',
@@ -394,7 +395,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose QueueDash OSS as another embed/discovery UI. Choose hosted if you want SaaS recording of job events and can stay inside the job and queue caps.',
     whenToChooseDurabull:
-      'Choose Durabull when you do not want an SDK in the hot path, you already have jobs in Redis you need to see immediately, or you need MCP. Durabull does not meter recorded jobs during beta.',
+      'Choose Durabull when you do not want an SDK in the hot path, you already have jobs in Redis you need to see immediately, or you need MCP. Hosted Durabull is free to start and does not bill per recorded job.',
     rows: [
       {
         feature: 'See existing jobs',
@@ -408,7 +409,7 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Env / queue caps',
-        durabull: 'No published caps in beta',
+        durabull: 'Free to start',
         competitor: 'Free 1×5, Pro 3×20, Business 10×100',
       },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Not documented' },
@@ -440,7 +441,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: false,
     title: 'Durabull vs Bullpane',
     description:
-      'Bullpane is a self-hosted BullMQ UI. Free has unlimited connections and no login. Pro is $39/mo per installation with MCP. Durabull includes hosted MCP and org auth in the beta.',
+      'Bullpane is a self-hosted BullMQ UI. Free has unlimited connections and no login. Pro is $39/mo per installation with MCP. Durabull includes hosted MCP and org auth, and is free to start.',
     keywords: ['Bullpane alternative', 'Bullpane vs Durabull', 'self-hosted BullMQ dashboard'],
     intro:
       'Bullpane sits next to Durabull on the self-hosted axis. You add Redis (or BullMQ 6 Postgres) in the UI. The Free edition has no login. Pro adds roles, SSO, alerts, audit, and MCP.',
@@ -457,7 +458,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose Bullpane when you want a self-hosted box with a simple Free/Pro split and you accept a per-install Pro license for MCP and SSO.',
     whenToChooseDurabull:
-      'Choose Durabull for a hosted cloud option, org invitations without buying Pro, and MCP included during beta. Durabull’s license is ELv2 for the whole project, not a Free/Pro split.',
+      'Choose Durabull for a hosted cloud option, org invitations without buying Pro, and MCP included. Hosted is free to start. Durabull’s license is ELv2 for the whole project, not a Free/Pro split.',
     rows: [
       {
         feature: 'See queues',
@@ -629,7 +630,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'We cannot recommend Upqueue from a live page load. If you can open upqueue.io, compare their current docs to Durabull yourself.',
     whenToChooseDurabull:
-      'Choose Durabull when you need a product whose dashboard, docs, MCP URL, and beta pricing are publicly verifiable today.',
+      'Choose Durabull when you need a product whose dashboard, docs, MCP URL, and free-to-start hosted pricing are publicly verifiable today.',
     rows: [
       {
         feature: 'Live docs',
@@ -667,7 +668,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: false,
     title: 'Durabull vs Bullstudio',
     description:
-      'Bullstudio OSS can auto-detect queues from a Redis URL. Cloud workspace limits exist in docs; public dollar prices were not found. Durabull publishes beta pricing and MCP.',
+      'Bullstudio OSS can auto-detect queues from a Redis URL. Cloud workspace limits exist in docs; public dollar prices were not found. Durabull publishes MCP and hosted pricing that is free to start.',
     keywords: ['Bullstudio alternative', 'Bullstudio vs Durabull'],
     intro:
       'Bullstudio’s GitHub README is a self-hosted dashboard: `npx bullstudio -r redis://…` auto-detects Bull or BullMQ. Embed mode only shows queues you supply. Cloud docs describe workspaces and alerts; the docs index returned HTTP 500 on 2026-10-20.',
@@ -684,7 +685,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose the OSS binary when you want a one-command look at Redis and you do not need MCP.',
     whenToChooseDurabull:
-      'Choose Durabull for documented MCP, org-scoped environments without unpublished cloud SKUs, and a hosted beta.',
+      'Choose Durabull for documented MCP, org-scoped environments, and a hosted app that is free to start.',
     rows: [
       {
         feature: 'Standalone discovery',
