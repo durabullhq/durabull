@@ -21,8 +21,3 @@ Sitemap: https://durabull.io/sitemap.xml
 # LLM-friendly site overview (https://llmstxt.org/)
 # https://durabull.io/llms.txt
 # https://durabull.io/llms-full.txt
-
-Allow: /compare
-Allow: /alternatives
-Allow: /blog
-Allow: /mcp

@@ -36,18 +36,18 @@ If a vendor is **not** per-job, the table says so and uses that vendor’s own p
 |---|---|---|---|---|
 | **Inngest Cloud** | Replaces the queue. Durable functions + event bus you host or they invoke. | Plans + metered **executions** (run + each step) | https://www.inngest.com/pricing | Official Cloud + Dev Server MCP |
 | **Trigger.dev Cloud** | Replaces the queue. They run your task code on managed machines. | Plan + **compute-seconds** + **$0.000025/run** | https://trigger.dev/pricing | Official MCP |
-| **Temporal Cloud** | Replaces the queue. You run Workers; they run the orchestration service. | **$50/million Actions** starting + storage + support % | https://temporal.io/pricing · https://docs.temporal.io/cloud/pricing | Docs MCP. Workflow-ops MCP is community, not Temporal-supported |
-| **Hatchet Cloud** | Replaces the queue. You run workers; they run the engine. | First **1M runs + 1M events** free/mo, then **$30/M runs**, **$5/M events** | https://hatchet.run/pricing | Official CLI MCP |
-| **Defer** | Was a TypeScript background-job SaaS | **Shut down 2024-05-01.** Domain now a DNS tool. | No live pricing | n/a |
-| **Quirrel** | Was a serverless job queue SaaS | Hosted service **ended 2022**. OSS in maintenance mode. | No live hosted pricing | n/a |
-| **Upstash QStash** | Replaces the queue (HTTP push). Not Redis/BullMQ. | **$1 / 100K messages** PAYG; fixed daily-quota plans | https://upstash.com/pricing/qstash | Not documented as an ops MCP |
+| **Temporal Cloud** | Replaces the queue. You run Workers; they run the orchestration service. Server is MIT OSS. | **$50/million Actions** starting + storage + support % | https://temporal.io/pricing · https://docs.temporal.io/cloud/pricing | Docs MCP. Workflow-ops MCP is community, not Temporal-supported |
+| **Hatchet Cloud** | Replaces the queue. You run workers; they run the engine. | With a card on file: first **1M runs + 1M events** free/mo, then **$30/M runs**, **$5/M events** | https://hatchet.run/pricing | Official CLI MCP |
+| **Defer** | Was a TypeScript background-job SaaS | **No current service.** Customer-posted email gives end of service as 2024-05-01 (secondary; no first-party announcement found). Domain redirects to an unrelated DNS tool. | No live pricing | n/a |
+| **Quirrel** | Was a serverless job queue SaaS | Hosted service **ended 2022**. OSS in maintenance mode (last commit June 2023). | No live hosted pricing | n/a |
+| **Upstash QStash** | Replaces the queue (HTTP push). Not Redis/BullMQ. | **$1 / 100K messages** PAYG (each delivery attempt bills per the HTML FAQ); fixed daily-quota plans | https://upstash.com/pricing/qstash | Not documented as an ops MCP |
 | **Upstash Workflow** | Durable workflows on QStash | **$1 / 100K steps** PAYG | https://upstash.com/pricing/workflow | Not documented as an ops MCP |
-| **Amazon SQS** | Replaces Redis-backed queue (API requests, not jobs) | **$0.40 / million Standard requests** (us-east-1, first 100B) + 1M free req/mo | https://aws.amazon.com/sqs/pricing/ | No BullMQ-style ops MCP |
-| **AWS Step Functions** | Replaces the orchestrator | Standard: **$0.000025 / state transition** (us-east-1). Express: **$1/M requests** + duration | https://aws.amazon.com/step-functions/pricing/ | No BullMQ-style ops MCP |
-| **Google Cloud Tasks** | Replaces the queue (HTTP/App Engine push) | First **1M billable ops/mo free**, then **$0.40 / million** | https://cloud.google.com/tasks/pricing | No BullMQ-style ops MCP |
-| **Cloudflare Queues** | Replaces the queue on Workers | Workers Paid: **1M ops/mo included + $0.40/M**. Typically **3 ops/message** | https://developers.cloudflare.com/queues/platform/pricing/ | Not a queue-ops MCP in published Queues docs |
+| **Amazon SQS** | Replaces Redis-backed queue (API requests, not jobs) | **$0.40 / million Standard requests** (us-east-1, first 100B) + 1M free req/mo | https://aws.amazon.com/sqs/pricing/ | AWS Labs OSS SNS/SQS MCP server (queue/message management). Does not read BullMQ |
+| **AWS Step Functions** | Replaces the orchestrator | Standard: **$0.000025 / state transition** (us-east-1). Express: **$1/M requests** + duration | https://aws.amazon.com/step-functions/pricing/ | AWS Labs OSS Step Functions tool MCP server (runs state machines). Does not read BullMQ |
+| **Google Cloud Tasks** | Replaces the queue (HTTP/App Engine push) | First **1M billable ops/mo free**, then **$0.40 / million** | https://cloud.google.com/tasks/pricing | No official MCP found; community servers only |
+| **Cloudflare Queues** | Replaces the queue on Workers | Workers Paid: **1M ops/mo included + $0.40/M**. Typically **3 ops/message** | https://developers.cloudflare.com/queues/platform/pricing/ | Official Cloudflare MCP servers exist; none dedicated to Queues operations |
 | **Graphile Worker** | Postgres job queue. Alternative runtime, not a BullMQ monitor | OSS MIT. Worker Pro **$100/mo** (launch **$25+/mo** via sponsorship) | https://worker.graphile.org/pricing | Not documented |
-| **pg-boss** | Postgres job queue. Alternative runtime | OSS MIT. No product fee | https://pgboss.io/introduction | Not documented |
+| **pg-boss** | Postgres job queue with official dashboard (`@pg-boss/dashboard`). Alternative runtime | OSS MIT. No product fee | https://pgboss.io/introduction · https://pgboss.io/dashboard | Not documented |
 | **River** | Postgres/SQLite job queue (Go/Ruby/Rust/TS) | OSS MPL-2.0. River Pro **$125**/period (monthly or annual; seats cap 20) | https://riverqueue.com/pro · https://riverqueue.com/llms.txt | Not documented |
 | **Sidekiq Pro / Enterprise** | Redis job runtime for **Ruby** (closest cousin to BullMQ) | Pro **$99/mo or $995/yr** unlimited. Enterprise **from $269/mo per 100 threads** | https://sidekiq.org/ | Not documented |
 | **Faktory** | Polyglot job server (Redis-backed) | OSS AGPL. Enterprise **from $299/mo** (100-connection pack) | https://contribsys.com/faktory/ · https://billing.contribsys.com/fent/new.cgi | Not documented |
@@ -66,9 +66,9 @@ Units are **not interchangeable**. Read the unit column.
 
 | Vendor | Billed unit | 1M | 10M | 100M | Notes |
 |---|---|---|---|---|---|
-| **Inngest Cloud** | Execution = 1 function run **or** 1 step | **$99** (Pro includes 1M) | **$499** (Business includes 10M). Pro overage exists but exact tier table is not a static published grid — FAQ only states **$0.000050 down to $0.000015**/execution | **Not fully published.** At the FAQ’s high rate, 90M Pro overage would be **$4,500 + $99**; at the low rate **$1,350 + $99**. Business would be $499 + overage at unpublished Business rates | Free pauses at 50k. See §1 |
+| **Inngest Cloud** | Execution = 1 function run **or** 1 step | **$99** (Pro includes 1M) | **$499** (Business includes 10M). Pro overage exists but exact tier table is not a static published grid — FAQ only states **$0.000050 down to $0.000015**/execution | **Not fully published.** Pro includes 1M, so 100M means 99M overage: **$5,049** at the FAQ’s high rate ($99 + 99M × $0.000050), **$1,584** at the low rate ($99 + 99M × $0.000015). Business would be $499 + overage at unpublished Business rates | Free pauses at 50k. See §1 |
 | **Temporal Cloud (Developer)** | Action | **$55** = $50 Actions + 10% support | **$550** | **$5,500** | Storage extra. No volume discount on Developer. https://docs.temporal.io/cloud/pricing |
-| **Temporal Cloud (Business, excess after 2.5M included)** | Action | **$500** floor (2.5M Actions included) | **~$838** Actions overage on 7.5M excess using published tiers + **max($500, 10% of usage)** support | **~$3,350** Actions on 97.5M excess + **$500** support floor ≈ **$3,850** before storage | Worked in §3 |
+| **Temporal Cloud (Business, excess after 2.5M included)** | Action | **$500** floor (2.5M Actions included) | **$362.50** Actions overage on 7.5M excess using published tiers + **$500** floor = **$862.50** before storage | **$3,350** Actions on 97.5M excess + **$500** floor = **$3,850** before storage | Worked in §3 |
 | **Hatchet Cloud (card on file)** | Task run | **$0** (1M included) | **$270** (9M × $30) | **$2,970** list (99M × $30). Custom/volume discounts unpublished | Events extra at $5/M. Retries not billed. https://hatchet.run/pricing |
 | **Upstash Workflow PAYG** | Step | **$10** | **$100** | **$1,000** | $1 / 100K steps. Fixed 1M/10M plans are **per day**, not per month. https://upstash.com/pricing/workflow.md |
 | **Restate Cloud** | Durable action | **$75** (Starter includes 5M; Free only 100k) | **$200** on Starter (5M incl. + 5M × $25) **or $300** Business (20M included) | **$1,750** on Premium ($1,000 + 50M × $15) | Each call is **2 actions** (invoke + complete) plus intermediates. https://restate.dev/pricing |
@@ -80,7 +80,7 @@ Units are **not interchangeable**. Read the unit column.
 | Vendor | Billed unit | 1M | 10M | 100M | Notes |
 |---|---|---|---|---|---|
 | **Trigger.dev Cloud** | Run invocation **plus** compute | Invocation floor **$25**. Official 10s / small-1x example: **~$363** usage; Pro $50 plan includes $50 credit so ~**$363** total if usage ≥ credit | Invocation **$250**. Same 10s shape: **~$3,630** | Invocation **$2,500**. 10s shape: **~$36,300** | Compute-based. Duration dominates. Dev runs free. https://trigger.dev/pricing |
-| **Upstash QStash PAYG** | Message (see retry contradiction in §7) | **$10** | **$100** | **$1,000** | $1 / 100K. Fixed 1M plan is **1M messages/day** at $180/mo, not 1M/month |
+| **Upstash QStash PAYG** | Message = delivery attempt per the HTML FAQ (see §7) | **$10** | **$100** | **$1,000** | $1 / 100K. Fixed 1M plan is **1M messages/day** at $180/mo, not 1M/month |
 | **Amazon SQS Standard** (us-east-1) | API request | **$0.80** if 3 req/job (send+receive+delete), 3M−1M free × $0.40/M | **$11.60** (29M paid) | **$119.60** (299M paid) | Batching of 10 cuts this ~10×. Polling empty receives still bill. See §8 |
 | **Google Cloud Tasks** | Billable operation (API call or push attempt, 32 KB chunks) | **$0.40** if 2 ops/task (enqueue + 1 delivery), 2M−1M free | **$7.60** | **$79.60** | Network extra for HTTP targets. https://cloud.google.com/tasks/pricing |
 | **Cloudflare Queues** (Workers Paid) | Operation (write/read/delete per 64 KB) | **$5.80** = $5 Workers Paid + $0.80 queue ops (3M−1M × $0.40/M) | **$16.60** | **$124.60** | Official formula `((N × 3) − 1,000,000) / 1,000,000 × $0.40`. https://developers.cloudflare.com/queues/platform/pricing/ |
@@ -188,7 +188,7 @@ Sandbox compute is **additional** if you use Inngest sandboxes. If functions run
 
 ### Lock-in / uptime
 
-Cloud: Inngest must be up to start and resume runs. Function code can live on your infra (serverless or workers) or in their sandboxes. Self-host: `inngest start` (SQLite default, Postgres for production). Server/CLI license is **SSPL + Apache 2.0 after 3 years**, not OSI-approved open source. SDKs are Apache 2.0.  
+Cloud: Inngest must be up to start and resume runs. Function code can live on your infra (serverless or workers) or in their sandboxes. Self-host: `inngest start` (SQLite default; external Postgres required to scale beyond a single node). Server/CLI license is **SSPL + Apache 2.0 after 3 years**, not OSI-approved open source. SDKs are Apache 2.0.  
 https://www.inngest.com/docs/self-hosting · https://github.com/inngest/inngest/blob/main/LICENSE.md
 
 Vs Redis + BullMQ: you give up owning the broker. You gain durable steps without Redis. Self-host still replaces Redis with Inngest’s store.
@@ -243,8 +243,8 @@ Visited https://trigger.dev/pricing on 2026-10-20:
 | Plan | Price | Usage credit | Concurrent runs | Team | Schedules | Log retention | Notes |
 |---|---|---|---|---|---|---|---|
 | Free | $0/mo, no card | **$5**/mo | 20 | 5 | 10 | 1 day | Community support. 10 realtime connections. 1 alert destination |
-| Hobby | **$10**/mo | **$10**/mo | 50 | 5 | 100 | 7 days | HIPAA BAA add-on **$500/mo** |
-| Pro | **$50**/mo | **$50**/mo | 200+, then **$10/mo per 50** | 25+, then **$20/mo per seat** | 1000+, then **$10/mo per 1,000** | 30 days | Slack support. 20+ preview branches then $10/branch. 5+ dashboards then $10/dashboard. 1000+ realtime then $10 per 1,000. AWS PrivateLink. HIPAA BAA **$500/mo** |
+| Hobby | **$10**/mo | **$10**/mo | 50 | 5 | 100 | 7 days | 3 alert destinations. HIPAA BAA add-on **$500/mo** |
+| Pro | **$50**/mo | **$50**/mo | 200+, then **$10/mo per 50** | 25+, then **$20/mo per seat** | 1000+, then **$10/mo per 1,000** | 30 days | 100+ alert destinations. Slack support. 20+ preview branches then $10/branch. 5+ dashboards then $10/dashboard. 1000+ realtime then $10 per 1,000. AWS PrivateLink. HIPAA BAA **$500/mo** |
 | Enterprise | Custom | Custom | Custom | Custom | Custom | Custom | SOC 2 report, pen test, SSO, RBAC |
 
 **Run pricing:** **$0.000025 per run** ($0.25 per 10,000). DEV environment runs are not charged.
@@ -301,11 +301,11 @@ Concurrency at 1M fast runs may force Pro add-on bundles ($10 per 50 concurrent 
 
 ### Lock-in / uptime
 
-Cloud: Trigger.dev must be up; **they** run your code. Self-host Apache 2.0 via Docker Compose or Kubernetes (pricing FAQ). Waits are checkpointed so you do not pay idle time, but the control plane is still theirs on Cloud.
+Cloud: Trigger.dev must be up; **they** run your code. Self-host Apache 2.0 via Docker Compose or Kubernetes (pricing FAQ; https://trigger.dev/docs/self-hosting/overview). Waits are checkpointed so you do not pay idle time, but the control plane is still theirs on Cloud.
 
 ### MCP / AI agents
 
-Official MCP: `npx trigger.dev@latest mcp` / `install-mcp`. Docs list: search docs, init projects, list orgs/projects, get task info, **trigger runs**, deploy, monitor runs, TRQL.  
+Official MCP: `npx trigger.dev@latest install-mcp`. Docs list: search docs, init projects, list orgs/projects, get task info, **trigger runs**, deploy, monitor runs, TRQL.  
 https://trigger.dev/docs/mcp-introduction
 
 ### When you’d still choose them
@@ -333,7 +333,7 @@ You want managed compute for long-running TypeScript (and Python-from-TS) agents
 ### Official name + URL
 
 - **Temporal Cloud** — https://temporal.io/pricing  
-- Docs: https://docs.temporal.io/cloud/pricing · https://docs.temporal.io/cloud/actions · https://docs.temporal.io/evaluate/cloud  
+- Docs: https://docs.temporal.io/cloud/pricing · https://docs.temporal.io/evaluate/cloud/actions · https://docs.temporal.io/evaluate/cloud  
 - AI/docs MCP: https://docs.temporal.io/with-ai
 
 ### What it is vs BullMQ
@@ -355,7 +355,7 @@ Developer (Pay-As-You-Go):
 - Support = **10% of usage**
 - 99.9% SLA, 99.99% HA options
 - SSO via SAML included; SCIM add-on
-- New PAYGO: **$150 credits for 90 days**
+- New PAYGO: **$150 credits for 90 days** (temporal.io/pricing; the docs pricing page mentions promotional credits without an amount)
 
 Business:
 
@@ -380,7 +380,7 @@ Enterprise / Mission Critical: contact sales. Includes **10M Actions, 10 GB Acti
 
 Docs example: 11.25M *excess* Actions on Business = $250 + $225 + $50 = **$525**.
 
-**What is an Action** (https://docs.temporal.io/cloud/actions): start Workflow, start/retry Activity, Activity Heartbeat that reaches the server, Timer start (including implicit SDK timeouts), Signal, Query (including UI call-stack), Update accept/reject, Schedule (each Schedule execution accrues **three** Actions), Nexus operations, Export, Fairness (0.1 extra Action per Action per hour enabled), Capacity TRUs. Local Activities in one Workflow Task count as one Action. Replay does not bill. Heartbeats are throttled (default 80% of Heartbeat Timeout).
+**What is an Action** (https://docs.temporal.io/evaluate/cloud/actions): start Workflow, start/retry Activity, Activity Heartbeat that reaches the server, Timer start (including implicit SDK timeouts), Signal, Query (including UI call-stack), Update accept/reject, Schedule (each Schedule execution accrues **three** Actions), Nexus operations, Export, Fairness (0.1 extra Action per Action per hour enabled), Capacity TRUs. Local Activities in one Workflow Task count as one Action. Replay does not bill. Heartbeats are throttled (default 80% of Heartbeat Timeout).
 
 ### Worked cost
 
@@ -409,11 +409,11 @@ If a Workflow is `start + 1 Activity` with no heartbeat, 1M such workflows ≈ *
 
 ### Lock-in / uptime
 
-Cloud: Temporal Cloud must be reachable for starts, signals, and Worker polls. Workers you operate can keep running only while they can poll. Self-host Temporal is possible (not priced here). Namespaces, search attributes, and Event History are the lock-in. 99.9% SLA advertised on the pricing page.
+Cloud: Temporal Cloud must be reachable for starts, signals, and Worker polls. Workers you operate can keep running only while they can poll. Self-host Temporal is possible: the server is MIT-licensed (https://github.com/temporalio/temporal/blob/main/LICENSE), not priced here. Namespaces, search attributes, and Event History are the lock-in. 99.9% SLA advertised on the pricing page.
 
 ### MCP / AI agents
 
-- **Official docs/knowledge MCP:** `https://temporal.mcp.kapa.ai` (OAuth). https://docs.temporal.io/with-ai  
+- **Official docs/knowledge MCP:** `https://temporal.mcp.kapa.ai` (Google or GitHub sign-in). https://docs.temporal.io/with-ai  
 - **Python SDK can call MCP tools as Activities** (`temporalio-mcp`, pre-release). https://docs.temporal.io/develop/python/integrations/mcp  
 - **Workflow-ops MCP** on Temporal Code Exchange is **community-donated**; Temporal says it does **not** formally support or endorse it. https://temporal.io/code-exchange/temporal-mcp-server  
 
@@ -427,7 +427,7 @@ Polyglot, long-running, strictly consistent workflows; you already think in Work
 
 - https://temporal.io/pricing
 - https://docs.temporal.io/cloud/pricing
-- https://docs.temporal.io/cloud/actions
+- https://docs.temporal.io/evaluate/cloud/actions
 - https://docs.temporal.io/evaluate/cloud
 - https://temporal.io/blog/paygo-developer-support
 - https://docs.temporal.io/with-ai
@@ -453,7 +453,7 @@ Polyglot, long-running, strictly consistent workflows; you already think in Work
 
 ### What it is vs BullMQ
 
-An orchestration engine. You run **workers** that connect to Hatchet and execute tasks. Hatchet Cloud (or self-hosted Hatchet) is the broker. It **replaces** Redis + BullMQ. MIT OSS self-host is advertised on the marketing site (“Open-source. Use…”). It does not monitor BullMQ.
+An orchestration engine. You run **workers** that connect to Hatchet and execute tasks. Hatchet Cloud (or self-hosted Hatchet) is the broker. It **replaces** Redis + BullMQ. Pricing FAQ: “Hatchet is 100% open-source and MIT licensed” (GitHub `hatchet-dev/hatchet` reports MIT). It does not monitor BullMQ.
 
 ### Pricing model (exact published numbers)
 
@@ -461,7 +461,7 @@ Visited https://hatchet.run/pricing on 2026-10-20.
 
 **Pay-as-you-go (card on file):**
 
-- **$0 to start**
+- **$0 to start** (“No card needed to get started”; the 1M/mo allowance is in the card-on-file column)
 - **1M task runs and 1M events free, every month**
 - Then **$30 per million runs**, **$5 per million events**
 - 100 workers, 10 tenants, 50 users (then **$10/user**)
@@ -470,7 +470,7 @@ Visited https://hatchet.run/pricing on 2026-10-20.
 - Log/trace ingestion: 10 GB included then **$0.0004/GB-hr**
 - SOC 2 Type II, community/Discord support
 
-**No card:** 2,000 runs/day, 2,000 events/day, 10 workers, 2,000 worker slots, 10k queue backlog, 10 webhooks, 10 crons, 500 MB active storage, 500 MB logs, 3 users.
+**No card:** 2,000 runs/day, 2,000 events/day, 1-day retention, 1 tenant, 10 workers, 2,000 worker slots, 10k queue backlog, 10 webhooks, 10 crons, 500 MB active storage, 500 MB logs, 3 users.
 
 **Card-on-file other limits:** 1,000,000 scheduled runs, 10,000 worker slots, 1,000,000 queue backlog, 100 webhooks, 1,000 crons.
 
@@ -510,7 +510,7 @@ https://docs.hatchet.run/reference/cli/mcp
 
 ### When you’d still choose them
 
-You want Temporal-like orchestration with cheaper published per-run list prices, retries not billed, and you will run workers. TypeScript/Python mentioned in migrations (Celery, Temporal).
+You want Temporal-like orchestration with published per-run list prices, retries not billed, and you will run workers. (A Hatchet run and a Temporal Action are different units; do not compare their per-million prices directly.) TypeScript/Python mentioned in migrations (Celery, Temporal).
 
 ### Sources
 
@@ -532,11 +532,12 @@ You want Temporal-like orchestration with cheaper published per-run list prices,
 ### Official name + URL
 
 - Was **Defer** at https://www.defer.run  
-- **Visited 2026-10-20:** that hostname now serves **Domain Digger** (digger.tools), a DNS/WHOIS lookup product. No Defer product, docs, or pricing remain.
+- **Visited 2026-10-20:** that hostname redirects to **Domain Digger** (`https://digger.tools/?ref=defer.run`), a DNS/WHOIS lookup product. No Defer product, docs, or pricing remain.  
+- GitHub org https://github.com/defer-run is still up; last client release activity March 2024, docs repo last pushed July 2024.
 
 ### Current status
 
-**Shut down.** Customer email reported on Hacker News (2024-03-25): service unavailable as of **May 1, 2024**. Dealroom lists the company as closed with the same date.  
+**No current service.** A customer posted Defer’s end-of-service email on Hacker News (2024-03-25), signed by the CTO/co-founder: “As of May 1, 2024, Defer will no longer be available.” Dealroom (AI-generated summary) lists the same date. No first-party announcement found, so the date is **secondary evidence**; the public page keeps `researchStatus: 'limited'` (noindexed).  
 https://news.ycombinator.com/item?id=39817493  
 https://app.dealroom.co/companies/defer
 
@@ -562,7 +563,8 @@ You would not. Historical footnote only.
 
 ### Sources
 
-- https://www.defer.run (visited 2026-10-20 — not Defer)
+- https://www.defer.run (visited 2026-10-20 — redirects to digger.tools, not Defer)
+- https://github.com/defer-run
 - https://news.ycombinator.com/item?id=39817493
 - https://app.dealroom.co/companies/defer
 
@@ -579,14 +581,14 @@ You would not. Historical footnote only.
 - **Quirrel** — https://quirrel.dev (visited 2026-10-20: imprint-only page, “Job Queueing for Serverless,” Berlin address)  
 - Docs FAQ: https://docs.quirrel.dev/netlify-acquisition-faq/  
 - GitHub: https://github.com/quirrel-dev/quirrel  
-- Status page still exists: https://status.quirrel.dev/ — banner: hosted instance “currently shutting down”
+- Status page still exists: https://status.quirrel.dev/ — banner: hosted instance “currently shutting down”; overall status still “All services are online” (2026-10-20)
 
 ### Current status
 
-Netlify acquired Quirrel. Hosted **quirrel.dev stopped accepting customers**; access through **July 31, 2022**, billing ended August 1, 2022.  
+Netlify acquired Quirrel. Hosted Quirrel **stopped accepting new customers**; existing accounts could log in through **July 31, 2022**, and the service terminated on **August 1, 2022**. No charges after the last July bill.  
 https://docs.quirrel.dev/netlify-acquisition-faq/
 
-OSS: MIT, self-host with Redis. Author described it as **maintenance mode** after the acquisition (GitHub discussion #1169). OpenSSF scorecard (Aug 2026) **Maintained 0/10** (0 commits / 0 issue activity in 90 days).
+OSS: MIT, self-host with Redis. Author described it as **maintenance mode** after the acquisition (GitHub discussion #1169, 2024-02). Last commit to `main`: 2023-06-26. OpenSSF scorecard (Aug 2026) **Maintained 0/10** (0 commits / 0 issue activity in 90 days).
 
 ### What it is vs BullMQ
 
@@ -629,7 +631,7 @@ You would not start a new hosted project on it. Existing self-hosters should pla
 - **Upstash QStash** — https://upstash.com/pricing/qstash · machine-readable https://upstash.com/pricing/qstash.md  
 - **Upstash Workflow** — https://upstash.com/pricing/workflow.md  
 - Prod Pack docs: https://upstash.com/docs/qstash/overall/enterprise  
-- GA blog (2025-10-03): https://upstash.com/blog/qstash-ga
+- GA blog (2025-10-03): https://upstash.com/blog/qstash-ga — **404 on 2026-10-20**; Prod Pack price now cited from the pricing page
 
 ### What it is vs BullMQ
 
@@ -649,22 +651,22 @@ From https://upstash.com/pricing/qstash.md (visited 2026-10-20):
 
 PAYG other: max delay 1 year, HTTP response 2 hours, DLQ 7 days, 1000 active schedules (beyond 1,000: **$0.01 per active schedule**), 100 URL groups, 100 queues, parallelism 100.
 
-**Prod Pack** (blog + docs): **$200/month** add-on for uptime SLA, Prometheus, Datadog, encryption-at-rest, SOC-2 on PAYG/Fixed.  
-https://upstash.com/blog/qstash-ga
+**Prod Pack** (HTML pricing page shows “+$200/month”; docs list features without a price): add-on for 99.99% uptime SLA, Prometheus, Datadog, encryption at rest, SOC 2 Type 2 on PAYG/Fixed.  
+https://upstash.com/pricing/qstash · https://upstash.com/docs/qstash/overall/enterprise
 
 **Workflow** (https://upstash.com/pricing/workflow.md): same plan prices; unit is **steps** at **$1 per 100K steps**. “A step is a single call from the QStash server to the Workflow URL or an external URL. Retries count as extra steps. Parallel steps count as two steps.” `context.run` / sleep / waitForEvent = 1 billed step; `context.call` / `context.invoke` = 2; parallel adds 1 extra per step.
 
 ### Retry billing contradiction (do not paper over this)
 
-On the **same** official markdown:
+On the official markdown (`qstash.md`, re-checked 2026-10-20):
 
 - Header: “You are only charged for messages — **retries are free.**”
 - PAYG bullets: “Retries: **Free** (only published messages count)”
 - FAQ: “**Each delivery attempt counts as one message.** … If QStash retries and succeeds, the message is billed as **2 messages.**”
 
-**Unverified which sentence is currently billed.** Marketing copy must either quote both or omit a “retries are free” claim.
+The **HTML pricing page** (https://upstash.com/pricing/qstash, 2026-10-20) carries only the FAQ wording: each delivery attempt, including each retry, is billed. The markdown still contains both. **Budget retries as billable**; never claim “retries are free.” Public copy states the FAQ rule and notes the markdown line.
 
-### Worked cost (QStash PAYG, treating 1 published message = 1 bill, **if** retries free)
+### Worked cost (QStash PAYG, one endpoint, successful first delivery, no retries)
 
 | Published messages / mo | PAYG | Notes |
 |---|---|---|
@@ -672,7 +674,7 @@ On the **same** official markdown:
 | 10,000,000 | **$100** | Or Fixed 1M at **$180** if you need 1M **per day** (~30M/mo) |
 | 100,000,000 | **$1,000** | Or Fixed 10M at **$420** if you need 10M **per day** (~300M/mo) |
 
-If the FAQ is the billed rule and mean attempts = 1.2× publishes, multiply PAYG by 1.2.
+Retries add billable messages under the FAQ rule: if mean attempts = 1.2× publishes, multiply PAYG by 1.2.
 
 **Workflow PAYG** at 1M / 10M / 100M **steps**: **$10 / $100 / $1,000**.
 
@@ -693,13 +695,13 @@ Serverless/edge HTTP workers, cron, fan-out to URLs, you do not want Redis. Chea
 - https://upstash.com/pricing/qstash.md
 - https://upstash.com/pricing/workflow.md
 - https://upstash.com/docs/qstash/overall/enterprise
-- https://upstash.com/blog/qstash-ga
+- https://upstash.com/pricing/qstash
 - https://upstash.com/llms.txt
 
 ### Unverified
 
-- Which retry rule is actually invoiced (see contradiction).
-- Exact SLA percentage (Prod Pack says “uptime SLA” without a number in the pages fetched).
+- Whether the markdown’s “retries are free” line reflects any current billing (the HTML FAQ says retries bill).
+- Exact SLA terms beyond the docs’ “99.99% uptime” statement.
 
 ---
 
@@ -798,7 +800,7 @@ AWS regional service. IAM, VPC, and account limits. Highest lock-in of this list
 
 ### MCP / AI agents
 
-No official SQS/Step Functions ops MCP equivalent to Durabull/Hatchet. AWS has generic assistant products; not verified here as queue MCP.
+AWS Labs publishes open-source MCP servers: **Amazon SNS / SQS MCP Server** (create/list/manage queues, send/receive messages; mutates only resources it tagged) and **AWS Step Functions Tool MCP Server** (exposes state machines as tools). https://github.com/awslabs/mcp. Neither reads BullMQ.
 
 ### When you’d still choose them
 
@@ -869,7 +871,7 @@ GCP account, IAM, location. Cloud Tasks is the broker; you still run the HTTP ha
 
 ### MCP
 
-Not documented as a Cloud Tasks MCP server.
+No official Google Cloud Tasks MCP server found (2026-10-20). Community servers exist (for example on Glama); not evaluated.
 
 ### When you’d still choose them
 
@@ -919,7 +921,7 @@ Official: “In most cases, it takes **3 operations** to deliver a message: 1 wr
 ((Number of Messages * 3) - 1,000,000) / 1,000,000 * $0.40
 ```
 
-Retries: extra **read** per retry. DLQ write extra. Expired unread: write + delete only.
+Retries: “Each retry incurs a read operation.” DLQ write extra. Expired unread: write + delete only.
 
 Workers Paid subscription: **$5.00 / month** minimum.  
 https://developers.cloudflare.com/workers/platform/pricing/
@@ -942,7 +944,7 @@ Cloudflare account. Best fit if consumers are Workers. Pull consumers can run el
 
 ### MCP
 
-Queues pricing docs do not describe a Queues ops MCP. Cloudflare has other AI/docs surfaces; not verified as queue control.
+Cloudflare publishes official MCP servers (https://github.com/cloudflare/mcp-server-cloudflare: Workers Bindings, Workers Builds, Workers Observability, docs, and others). None is dedicated to Queues operations as of 2026-10-20.
 
 ### When you’d still choose them
 
@@ -1021,7 +1023,9 @@ Node + Postgres already, want transactional enqueue with the business write, do 
 
 ### What it is vs BullMQ
 
-Postgres job queue for Node. `SKIP LOCKED`, optional `LISTEN/NOTIFY`, cron/RRULE, queues with policies, pub/sub, OpenTelemetry. Alternative runtime. Official intro: “no per-job charges.”
+Postgres job queue for Node. `SKIP LOCKED`, optional `LISTEN/NOTIFY`, cron/RRULE, queues with policies, pub/sub, OpenTelemetry. Alternative runtime. Official intro: “there are no per-job charges.”
+
+**Official dashboard:** `@pg-boss/dashboard` (https://pgboss.io/dashboard) — overview, queues, job filtering, create/cancel/retry/resume/delete jobs, schedules, persisted warnings, multiple databases, optional basic auth and read-only mode. Monitors pg-boss only, not BullMQ.
 
 ### Pricing
 
@@ -1046,6 +1050,7 @@ Same as Graphile Worker: Node + Postgres, no Redis, no vendor.
 ### Sources
 
 - https://pgboss.io/introduction
+- https://pgboss.io/dashboard
 - https://github.com/timgit/pg-boss
 
 ### Unverified
@@ -1062,7 +1067,7 @@ Same as Graphile Worker: Node + Postgres, no Redis, no vendor.
 - **What:** Transactional job queue for **Go, Ruby, Rust, TypeScript** on Postgres or SQLite. Alternative runtime, not a BullMQ monitor.  
 - **OSS:** MPL 2.0. Core jobs, UI, queues, periodic jobs, unique jobs.  
 - **River Pro:** workflows, batching, sequences, concurrency limits, DLQ table, durable periodic jobs, encrypted jobs, ephemeral jobs.  
-  - Page: “$125” with monthly or annual subscriptions; **up to 20 developer seats**; Enterprise custom (`team@riverqueue.com`).  
+  - Page (2026-10-20): “$125 USD per month” with a “Save $300” annual option; **up to 20 developer seats**; Enterprise custom (`team@riverqueue.com`).  
   - llms.txt (stronger wording): “**$125/month paid annually** for teams up to 20 developers.”  
 - **Worked cost:** license, not per job.  
 - **MCP:** not documented.  
@@ -1166,9 +1171,9 @@ Not fully priced in this pass. Celery and RQ are OSS (you pay Redis/RabbitMQ/SQS
 
 1. **Do not compare Durabull’s price to Inngest/Temporal per-million rates.** Different SKU. Durabull does not execute jobs.  
 2. **Fair cost comparison for a team that already has BullMQ:** Redis + workers + Durabull (or Taskforce.sh) vs **migrating off BullMQ** onto a managed orchestrator. Migration cost is not in any vendor’s table.  
-3. **Cheapest hosted “dumb queue” at 100M small messages** among verified per-message meters: Cloud Tasks (~$80), SQS (~$120 without polling waste), Cloudflare Queues (~$125 with Workers Paid), QStash PAYG ($1,000). Orchestrators (Inngest/Temporal/Hatchet/Restate/Trigger) are **1–2 orders of magnitude more** at that volume if you count steps/actions.  
-4. **Hatchet’s 1M free runs** is the most generous *orchestrator* free slice in this set (with a card). Inngest Free is 50k executions and **pauses**. Trigger Free is $5 compute credit. Temporal Developer has no included Actions (credits are a 90-day intro).  
-5. **Dead products:** Defer, hosted Quirrel. Do not put them on a live comparison grid except as “discontinued.”  
+3. **Cheapest hosted “dumb queue” at 100M small messages** among verified per-message meters: Cloud Tasks (~$80), SQS (~$120 without polling waste), Cloudflare Queues (~$125 with Workers Paid), QStash PAYG ($1,000). Orchestrators (Inngest/Temporal/Hatchet/Restate/Trigger) cost roughly **20× to several hundred times more** at that volume if you count steps/actions/compute (Hatchet $2,970 vs Cloud Tasks ~$80; Trigger.dev 10s scenario ~$36,300). They also do more than a queue.  
+4. **Hatchet’s 1M free runs** (with a card on file) is the largest free *orchestrator* allowance by unit count in this set; units differ across vendors. Inngest Free is 50k executions and **pauses**. Trigger Free is $5 compute credit. Temporal Developer has no included Actions (credits are a 90-day intro).  
+5. **Dead products:** Defer, hosted Quirrel. Do not put them on a live comparison grid except as “discontinued” (Quirrel) or limited-evidence/noindexed (Defer).  
 6. **License-shaped cousins** (Sidekiq, Oban, River, Faktory, Graphile): same economic shape as self-hosted BullMQ — you pay Redis/Postgres + a seat/org license, not per job.
 
 ---
@@ -1200,15 +1205,15 @@ Prices move. Re-visit, in this order:
 | Trigger.dev | https://trigger.dev/pricing | 2026-10-20 |
 | Temporal | https://temporal.io/pricing · https://docs.temporal.io/cloud/pricing | 2026-10-20 |
 | Hatchet | https://hatchet.run/pricing | 2026-10-20 |
-| Defer | https://www.defer.run (not Defer anymore) | 2026-10-20 |
+| Defer | https://www.defer.run (redirects to digger.tools) · https://github.com/defer-run · HN 39817493 | 2026-10-20 |
 | Quirrel | https://docs.quirrel.dev/netlify-acquisition-faq/ | 2026-10-20 |
-| Upstash QStash/Workflow | https://upstash.com/pricing/qstash.md · workflow.md | 2026-10-20 |
+| Upstash QStash/Workflow | https://upstash.com/pricing/qstash · qstash.md · workflow.md | 2026-10-20 |
 | Amazon SQS | https://aws.amazon.com/sqs/pricing/ + Price List API | 2026-10-20 / list pub 2026-09-11 |
 | AWS Step Functions | https://aws.amazon.com/step-functions/pricing/ | 2026-10-20 |
 | Google Cloud Tasks | https://cloud.google.com/tasks/pricing | 2026-10-20 |
 | Cloudflare Queues | https://developers.cloudflare.com/queues/platform/pricing/ | docs dated 2026-04-21, visited 2026-10-20 |
 | Graphile Worker | https://worker.graphile.org/pricing | 2026-10-20 |
-| pg-boss | https://pgboss.io/introduction | 2026-10-20 |
+| pg-boss | https://pgboss.io/introduction · https://pgboss.io/dashboard | 2026-10-20 |
 | River | https://riverqueue.com/pro · llms.txt | 2026-10-20 |
 | Sidekiq | https://sidekiq.org/ | 2026-10-20 |
 | Faktory | https://contribsys.com/faktory/ · billing.contribsys.com | 2026-10-20 |

@@ -4,7 +4,7 @@ import type { Competitor } from './types'
 const sharedRows = {
   inspect: 'Inspect payloads, logs, stack traces; retry, promote, pause from the dashboard',
   mcp: `Hosted MCP with OAuth, ${MCP_FACTS.tools} tools, redaction, opt-in writes`,
-  price: 'Free during beta ($0/mo). Self-host ELv2.',
+  price: 'Free during beta ($0/mo). Self-host under Apache-2.0.',
   multi: 'Many Redis connections per org, grouped by environment',
   discover: 'Redis SCAN for `<prefix>:*:meta`. No app SDK for inspection.',
 } as const
@@ -44,13 +44,13 @@ export const uiCompetitors: Competitor[] = [
       'The CLI targets one Redis deployment, with multiple prefixes supported. Embedded Queue instances can use different connections, and separate dashboards can share one server. You implement connection configuration and access control in your application.',
     alerts:
       'No built-in notification delivery. Official recipes show how to add alerts with BullMQ worker events or QueueEvents. Optional historical metrics are separate from alerting.',
-    mcp: 'No official MCP server documented in the reviewed guide. A JSON HTTP API supports custom integrations.',
+    mcp: 'No official MCP server. The board exposes a JSON HTTP API with an OpenAPI description, and the docs include an AI-agent setup guide for scripting against it.',
     pricing: 'MIT, free. No paid tier on GitHub, npm, or the docs site.',
     license: 'MIT.',
     whenToChooseThem:
       'Choose Bull Board when you already have a Node server, you are fine registering queues in that process, and you want a free in-process UI with no extra service. The CLI is also a reasonable one-shot look at a single Redis.',
     whenToChooseDurabull:
-      'Choose Durabull when queues live across staging and production Redis instances, you do not want to change application code just to get a UI, you need alerts, or you want Claude, ChatGPT, or Cursor to inspect and retry jobs through MCP.',
+      'Choose Durabull when queues live across staging and production Redis instances, you do not want to change application code just to get a UI, you need alerts, or you want Claude, ChatGPT, or Codex to inspect and retry jobs through MCP.',
     rows: [
       {
         feature: 'See queues',
@@ -72,11 +72,16 @@ export const uiCompetitors: Competitor[] = [
         durabull: 'Email, signed webhooks, Linear',
         competitor: 'Custom worker / QueueEvents integration',
       },
-      { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'No. CLI has a JSON HTTP API.' },
+      {
+        feature: 'MCP',
+        durabull: sharedRows.mcp,
+        competitor: 'No MCP server; JSON HTTP API (OpenAPI)',
+      },
       {
         feature: 'Job ops',
         durabull: sharedRows.inspect,
-        competitor: 'Retry, clean, and inspect in the UI',
+        competitor:
+          'Retry, promote, remove, clean, pause/resume, edit job data, add jobs, run schedulers',
       },
       { feature: 'Price', durabull: sharedRows.price, competitor: 'Free (MIT)' },
     ],
@@ -94,7 +99,7 @@ export const uiCompetitors: Competitor[] = [
       {
         question: 'Does Bull Board have an MCP server?',
         answer:
-          'The reviewed documentation does not list an official MCP endpoint. Bull Board exposes an HTTP API that you can integrate with scripts or a custom MCP server; Durabull provides a hosted MCP endpoint.',
+          'No. Bull Board does not ship an MCP server. It exposes a JSON HTTP API (with an OpenAPI description) and documents how to point AI agents at it; Durabull provides a hosted MCP endpoint with OAuth scopes.',
       },
     ],
     sources: [
@@ -123,13 +128,13 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: true,
     title: 'Durabull vs Arena (bull-arena)',
     description:
-      'Arena is an Express UI for Bee Queue, Bull, and BullMQ that requires naming each queue. Durabull discovers BullMQ queues from Redis and adds multi-environment ops plus MCP.',
+      'Arena is an Express UI for Bee Queue, Bull, and BullMQ that needs each queue named in config. Durabull discovers BullMQ queues from Redis and adds MCP.',
     keywords: ['bull-arena alternative', 'Arena vs Durabull', 'Bee Queue dashboard', 'BullMQ UI'],
     alternativesTitle: 'Arena alternatives',
     alternativesDescription:
       'Alternatives to Arena (bull-arena) if you have outgrown naming every queue in an Express config and need BullMQ discovery, alerts, or an MCP server.',
     intro:
-      'Arena (npm `bull-arena`) is Mixmax’s Express GUI for Bee Queue, Bull, and later BullMQ. It is still useful for mixed Bee/Bull estates. Official README still calls BullMQ support “preliminary.”',
+      'Arena (npm `bull-arena`) is an Express GUI for Bee Queue, Bull, and BullMQ, originally built by Mixmax and now maintained in the `bee-queue` GitHub organization (latest release v4.10.0, July 2026). It remains useful for mixed Bee/Bull estates. The README still describes BullMQ support as “preliminary.”',
     howItConnects:
       'You construct `Arena({ BullMQ: Queue, queues: [{ type: "bullmq", name, hostId, redis }] })`. The `name` must match the BullMQ queue exactly. Standalone and Docker still use that config. Fetching names from AWS yourself is custom code, not built-in discovery.',
     codeChanges:
@@ -161,7 +166,11 @@ export const uiCompetitors: Competitor[] = [
         durabull: sharedRows.multi,
         competitor: 'Manual host list, no org model',
       },
-      { feature: 'Alerts', durabull: 'Email, webhooks, Linear', competitor: 'Not documented' },
+      {
+        feature: 'Alerts',
+        durabull: 'Email, signed webhooks, Linear',
+        competitor: 'Not documented',
+      },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Not documented' },
       { feature: 'Price', durabull: sharedRows.price, competitor: 'Free (MIT)' },
     ],
@@ -195,7 +204,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: true,
     title: 'Durabull vs Taskforce.sh',
     description:
-      'Compare Taskforce.sh and Durabull for BullMQ discovery, alerts, MCP, self-hosting, and pricing. Taskforce has native Slack/PagerDuty; Durabull has email, webhooks, and Linear.',
+      'Compare Taskforce.sh and Durabull on BullMQ discovery, alerts, MCP, self-hosting, and price. Taskforce adds Slack/PagerDuty; Durabull uses email and webhooks.',
     keywords: [
       'Taskforce.sh alternative',
       'Taskforce vs Durabull',
@@ -209,7 +218,7 @@ export const uiCompetitors: Competitor[] = [
     intro:
       'Taskforce.sh is the closest commercial peer. The BullMQ authors built it. It connects with a Redis URL or the Taskforce Connector, scans for queues, and includes monitors plus a hosted MCP. The honest question is where you want the control plane to live, and what you pay per Redis.',
     howItConnects:
-      'Connect to reachable Redis directly or run taskforce-connector for private infrastructure. No worker SDK is needed. The connector also supports BullMQ v6 queues on PostgreSQL; Durabull currently targets Redis-backed queues.',
+      'Connect to reachable Redis directly or run taskforce-connector for private infrastructure. No worker SDK is needed. Taskforce’s pricing FAQ says BullMQ v6 queues stored in PostgreSQL are added through the connector; Durabull currently targets Redis-backed queues.',
     codeChanges: 'None in the app. Optional connector process next to Redis.',
     autoDiscovery:
       'Yes. Taskforce scans the Redis database. Missing queues are usually a prefix other than `bull`, or the 40s scan timeout on a huge keyspace.',
@@ -217,14 +226,14 @@ export const uiCompetitors: Competitor[] = [
       'Plans are sold by Redis connections: Starter 1, Growing 5, Enterprise 15. All queues on one instance count as one connection. On-prem claims unlimited connections; list price is unpublished.',
     alerts:
       'Connection, failed jobs, missing workers, max memory, backlog. Email, Slack, or PagerDuty. Monitors default off and must be enabled per connection.',
-    mcp: 'Yes. Hosted `https://api.taskforce.sh/mcp`, on-prem `https://<host>/mcp`, bearer `tfa_…`. Agents are org members with roles and an audit log. Hosted limits include 120 req / 60s per token.',
+    mcp: 'Yes. Hosted `https://api.taskforce.sh/mcp`, on-prem `https://<host>/mcp`, bearer `tfa_…`. Agents are org members with roles and an audit log. Hosted limits include 120 requests per 60 seconds per token and up to 3 agents per organization.',
     pricing:
       'Visited 2026-10-20: Starter $19.95/mo (1 connection), Growing $49.95/mo (5), Enterprise $99.95/mo (15). 15-day trial, no card. Yearly: $195 / $495 / $995. On-prem price is not published. BullMQ Pro is a separate subscription and is not included.',
     license: 'Commercial SaaS / on-prem. Connector is separately installable.',
     whenToChooseThem:
-      'Choose Taskforce when you want the BullMQ authors’ dashboard, native Slack/PagerDuty monitors, Pro group views, or PostgreSQL-backed BullMQ support through its connector. Taskforce publishes SOC 2 Type II certification; request its report for your procurement review.',
+      'Choose Taskforce when you want the BullMQ authors’ dashboard, native Slack/PagerDuty monitors, Pro group views, or PostgreSQL-backed BullMQ support through its connector. Taskforce publishes a SOC 2 Type II report, available on request, for procurement review.',
     whenToChooseDurabull:
-      'Choose Durabull when you want the same Redis-scan model plus MCP, without a connection cap on a published price list, with source you can self-host under ELv2, and while the hosted app is free during beta. Durabull alerts are email, signed webhooks, and Linear — not native Slack or PagerDuty.',
+      'Choose Durabull when you want the same Redis-scan model plus MCP with no published connection cap, Apache-2.0 source you can self-host, and a hosted app that is free during beta. Durabull alerts are email, signed webhooks, and Linear — not native Slack or PagerDuty.',
     rows: [
       {
         feature: 'See queues',
@@ -239,7 +248,7 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, webhooks, Linear',
+        durabull: 'Email, signed webhooks, Linear',
         competitor: 'Email, Slack, PagerDuty',
       },
       {
@@ -254,7 +263,7 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Self-host',
-        durabull: 'Docker / source, ELv2',
+        durabull: 'Docker / source, Apache-2.0',
         competitor: 'Commercial on-prem image; contact sales',
       },
     ],
@@ -267,11 +276,12 @@ export const uiCompetitors: Competitor[] = [
       {
         question: 'Does Durabull replace Taskforce.sh?',
         answer:
-          'For Redis auto-discovery, job inspection, and MCP, yes you can compare them directly. Taskforce still has native Slack/PagerDuty monitors, published SOC 2 Type II, and first-party BullMQ Pro group views. Durabull is source-available and free during beta.',
+          'For Redis auto-discovery, job inspection, and MCP, the two compare directly. Taskforce adds native Slack/PagerDuty monitors, a SOC 2 Type II report, and first-party BullMQ Pro group views. Durabull is open source under Apache-2.0 and free during beta.',
       },
     ],
     sources: [
       { label: 'Taskforce.sh pricing', url: 'https://taskforce.sh/pricing' },
+      { label: 'Taskforce.sh security', url: 'https://taskforce.sh/security' },
       { label: 'Getting started', url: 'https://docs.taskforce.sh/getting-started' },
       {
         label: 'Connector discovery',
@@ -316,13 +326,13 @@ export const uiCompetitors: Competitor[] = [
       'Published config is one Redis per Workbench process. Docs do not describe a multi-connection environment workspace.',
     alerts:
       'Slack, Discord, generic webhook. Triggers include job_failed, job_stalled, retries_exhausted, failed_backlog, no_workers_with_backlog. Rules live in Redis. Nothing sends until you configure contact points.',
-    mcp: 'Yes. `@getworkbench/mcp` is a local stdio proxy to one running dashboard (`WORKBENCH_URL`). 18 tools. Not a hosted multi-tenant MCP URL.',
+    mcp: 'Yes. `@getworkbench/mcp` is a local stdio proxy to one running dashboard (`WORKBENCH_URL`). Roughly 20 inspect/operate tools (docs list 18; package 0.5.1 ships 23). Not a hosted multi-tenant MCP URL.',
     pricing: 'MIT, free. Vendor blog: no paid tier, no telemetry, no account required.',
     license: 'MIT.',
     whenToChooseThem:
       'Choose Workbench for an MIT dashboard you can embed or open on a Mac, with Slack/Discord/webhook alerts and local MCP. Raise maxQueues when discovery needs to include more than its default 100 queues.',
     whenToChooseDurabull:
-      'Choose Durabull when you operate many connections, you do not want to mount a dashboard in the app, or you want Claude/ChatGPT/Cursor to use a hosted MCP URL with OAuth scopes rather than a local proxy.',
+      'Choose Durabull when you operate many connections, you do not want to mount a dashboard in the app, or you want Claude, ChatGPT, or Codex to use a hosted MCP URL with OAuth scopes rather than a local proxy.',
     rows: [
       {
         feature: 'See queues',
@@ -341,10 +351,14 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, webhooks, Linear',
+        durabull: 'Email, signed webhooks, Linear',
         competitor: 'Slack, Discord, webhook',
       },
-      { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Local stdio proxy, 18 tools' },
+      {
+        feature: 'MCP',
+        durabull: sharedRows.mcp,
+        competitor: 'Local stdio proxy to one dashboard',
+      },
       { feature: 'Price', durabull: sharedRows.price, competitor: 'Free (MIT)' },
     ],
     faqs: [
@@ -382,7 +396,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: false,
     title: 'Durabull vs QueueDash',
     description:
-      'QueueDash OSS can discover BullMQ from Redis. QueueDash hosted attaches an SDK and bills by recorded jobs. Durabull inspects Redis directly, with no published job quota during beta.',
+      'QueueDash OSS can discover BullMQ from Redis; its hosted app uses an SDK and bills by recorded jobs. Durabull reads Redis directly, with no job quota.',
     keywords: ['QueueDash alternative', 'QueueDash vs Durabull', 'BullMQ hosted dashboard'],
     intro:
       'QueueDash is two products. The MIT embed can list Queue instances or enable Bull/BullMQ discovery. The hosted app listens through `@queuedash/sdk` and charges for recorded jobs.',
@@ -393,9 +407,9 @@ export const uiCompetitors: Competitor[] = [
     autoDiscovery:
       'OSS: Bull/BullMQ discovery. Hosted: event stream from the SDK, not a Redis SCAN of existing jobs.',
     multiEnv:
-      'Hosted plan caps (2026-10-20): Free 1 env / 5 queues; Pro 3 env / 20 queues; Business 10 env / 100 queues. Redis connections 1 / 5 / unlimited.',
+      'Hosted plan caps (2026-10-20): projects 1 / 5 / unlimited; environments per project 1 / 3 / 10; queues per environment 5 / 20 / 100; Redis connections 1 / 5 / unlimited (Free / Pro / Business).',
     alerts:
-      'Hosted: failure rate, queue depth, stuck jobs, processing time. Email/webhook on all plans; Slack on Pro/Business.',
+      'Hosted: failure rate, queue depth, stuck jobs, processing time, and job success checks. Email/webhook on all plans; Slack on Pro/Business.',
     mcp: 'Not documented on the pages reviewed.',
     pricing:
       'OSS free. Hosted 2026-10-20: Free $0 (1,000 jobs/mo), Pro $29 (100,000), Business $99 (1,000,000). History 7 / 30 / 90 days.',
@@ -418,7 +432,7 @@ export const uiCompetitors: Competitor[] = [
       {
         feature: 'Env / queue caps',
         durabull: 'No published caps in beta',
-        competitor: 'Free 1×5, Pro 3×20, Business 10×100',
+        competitor: 'Per project: 1 / 3 / 10 envs; 5 / 20 / 100 queues per env',
       },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Not documented' },
       { feature: 'Price', durabull: sharedRows.price, competitor: '$0 / $29 / $99 hosted' },
@@ -432,6 +446,10 @@ export const uiCompetitors: Competitor[] = [
     ],
     sources: [
       { label: 'QueueDash pricing', url: 'https://www.queuedash.com/pricing' },
+      {
+        label: 'QueueDash quickstart',
+        url: 'https://www.queuedash.com/docs/getting-started/quickstart',
+      },
       { label: 'BullMQ integration', url: 'https://www.queuedash.com/docs/integrations/bullmq' },
       { label: 'OSS README', url: 'https://github.com/alexbudure/queuedash' },
     ],
@@ -449,7 +467,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: false,
     title: 'Durabull vs Bullpane',
     description:
-      'Bullpane is a self-hosted BullMQ UI. Free has unlimited connections and no login. Pro is $39/mo per installation with MCP. Durabull includes hosted MCP and org auth in the beta.',
+      'Bullpane is a self-hosted BullMQ UI: Free has no login, Pro is $39/mo per install with MCP. Durabull includes hosted MCP and org auth during beta.',
     keywords: ['Bullpane alternative', 'Bullpane vs Durabull', 'self-hosted BullMQ dashboard'],
     intro:
       'Bullpane sits next to Durabull on the self-hosted axis. You add Redis (or BullMQ 6 Postgres) in the UI. The Free edition has no login. Pro adds roles, SSO, alerts, audit, and MCP.',
@@ -458,15 +476,15 @@ export const uiCompetitors: Competitor[] = [
     codeChanges: 'None in the worker.',
     autoDiscovery: 'Yes.',
     multiEnv: 'Vendor copy: unlimited connections and queues on Free.',
-    alerts: 'Pro: Slack/webhook. Free: not in the paid-feature list.',
+    alerts: 'Pro only: Slack and webhook. The Free edition has no alerts.',
     mcp: 'Pro only. URL + OAuth, acts as the signed-in user.',
     pricing:
-      'Free. Pro $39/month per installation, or $390/year (bullpane.com and llms.txt, 2026-10-20). 14-day refund on first payment. Pro license validation requires periodic connectivity; review the vendor’s offline terms.',
+      'Free. Pro $39/month per installation, or $390/year (bullpane.com and llms.txt, 2026-10-20). 14-day refund on first payment. Pro subscription keys re-validate daily with a 7-day offline grace period; offline keys are available for air-gapped installs.',
     license: 'MIT core + commercial Pro.',
     whenToChooseThem:
       'Choose Bullpane when you want a self-hosted box with a simple Free/Pro split and you accept a per-install Pro license for MCP and SSO.',
     whenToChooseDurabull:
-      'Choose Durabull for a hosted cloud option, org invitations without buying Pro, and MCP included during beta. Durabull’s license is ELv2 for the whole project, not a Free/Pro split.',
+      'Choose Durabull for a hosted cloud option, org invitations without buying Pro, and MCP included during beta. Durabull is Apache-2.0 for the whole project, not a Free/Pro split.',
     rows: [
       {
         feature: 'See queues',
@@ -564,7 +582,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: false,
     title: 'Durabull vs Redis Insight',
     description:
-      'Redis Insight is the official Redis GUI. It does not understand BullMQ queues, job states, or retries. Durabull is the BullMQ operations layer on top of the same Redis.',
+      'Redis Insight is the official Redis GUI but does not model BullMQ queues, job states, or retries. Durabull adds BullMQ operations on the same Redis.',
     keywords: ['Redis Insight BullMQ', 'Redis GUI vs BullMQ dashboard', 'monitor BullMQ'],
     intro:
       'Redis Insight is the right tool for memory, keys, streams, and slow commands. BullMQ state is just keys (`bull:<queue>:…`) until a dashboard speaks queue semantics.',
@@ -589,7 +607,7 @@ export const uiCompetitors: Competitor[] = [
         durabull: 'Queues, jobs, schedulers, workers',
         competitor: 'No. Keys and Redis features only.',
       },
-      { feature: 'Retry a job', durabull: 'Yes', competitor: 'Not published' },
+      { feature: 'Retry a job', durabull: 'Yes', competitor: 'No BullMQ job actions' },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Redis Copilot, not queue ops' },
       {
         feature: 'Price',
@@ -625,7 +643,7 @@ export const uiCompetitors: Competitor[] = [
     researchStatus: 'limited',
     title: 'Durabull vs Upqueue',
     description:
-      'Upqueue’s current features and pricing could not be verified from official documentation. This limited-evidence comparison explains what to check before evaluating either product.',
+      'Upqueue’s features and pricing could not be verified from official documentation. This limited-evidence page lists what to check before choosing.',
     keywords: ['Upqueue alternative', 'Upqueue vs Durabull', 'Upqueue.io'],
     intro:
       'We could not retrieve usable official product documentation for Upqueue during this review. A failed research fetch is not evidence that the service is unavailable. Feature and pricing claims remain unverified until official documentation is accessible.',
@@ -707,7 +725,7 @@ export const uiCompetitors: Competitor[] = [
       {
         feature: 'Cloud price',
         durabull: sharedRows.price,
-        competitor: 'Not published on fetched pages',
+        competitor: 'Not verified',
       },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Not documented' },
     ],
@@ -736,7 +754,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: false,
     title: 'Durabull vs muleta',
     description:
-      'muleta is a pre-1.0 Apache-2.0 BullMQ UI launched from a Redis URL. Durabull adds auth, alerts, environments, and MCP.',
+      'muleta is a pre-1.0, Apache-2.0 BullMQ dashboard launched from a Redis URL. Durabull adds team auth, alerts, environments, and MCP.',
     keywords: ['muleta alternative', 'muleta vs Durabull'],
     intro:
       'muleta is an early dashboard (`0.x` may break). Standalone Docker uses `MULETA_REDIS_URL`. Embed examples pass a Redis URL, not a Queue list.',
@@ -777,24 +795,24 @@ export const uiCompetitors: Competitor[] = [
     website: 'https://github.com/imatefx/bullmq-control-dashboard',
     category: 'bullmq-ui',
     oneLiner:
-      'Wrapper around Bull Board: multiple Redis connections in the UI, SCAN discovery, basic auth.',
+      'Wrapper around Bull Board: multiple Redis connections in the UI, SCAN discovery, basic auth. No license file published.',
     featured: false,
     alternativesPage: false,
     title: 'Durabull vs BullMQ Control Dashboard',
     description:
-      'BullMQ Control Dashboard extends Bull Board with Redis discovery and multiple connections. Durabull adds alerts, fleet analytics, and MCP on top of the same Redis-scan idea.',
+      'BullMQ Control Dashboard wraps Bull Board with Redis discovery and multiple connections. Durabull adds alerts, worker views, and MCP to Redis scanning.',
     keywords: ['bullmq-control-dashboard', 'bull-board wrapper', 'multiple Redis BullMQ'],
     intro:
       'BullMQ Control Dashboard adds a connection-management interface around Bull Board: SCAN discovery, per-connection boards, a combined /board/all view, and HTTP basic auth. Bull Board itself also supports framework-integrated authentication and a standalone discovery CLI.',
     howItConnects: 'Add Redis connections in the UI. No worker SDK.',
     codeChanges: 'None in the app.',
-    autoDiscovery: 'Yes, `SCAN:*:meta`.',
+    autoDiscovery: 'Yes, `SCAN <prefix>:*:meta`.',
     multiEnv: 'Multiple Redis from the UI. No org product beyond basic auth roles (admin/reader).',
     alerts: 'Not documented.',
     mcp: 'Not documented.',
     pricing:
-      'Free. License string was not quoted on the README; confirm the LICENSE file before claiming MIT.',
-    license: 'Not confirmed on the README. Check the repository LICENSE file.',
+      'No price is listed. The repository has no LICENSE file, so no reuse license is granted; confirm terms with the author before deploying.',
+    license: 'None published (no LICENSE file; GitHub reports no license).',
     whenToChooseThem:
       'Choose it if you already standardized on Bull Board and only need a discovery/auth shell around it.',
     whenToChooseDurabull:
@@ -805,7 +823,7 @@ export const uiCompetitors: Competitor[] = [
         durabull: 'Durabull dashboard',
         competitor: 'bull-board, with a discovery shell',
       },
-      { feature: 'Discovery', durabull: sharedRows.discover, competitor: 'SCAN `*:meta`' },
+      { feature: 'Discovery', durabull: sharedRows.discover, competitor: 'SCAN `<prefix>:*:meta`' },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Not documented' },
     ],
     faqs: [
@@ -828,12 +846,12 @@ export const uiCompetitors: Competitor[] = [
     website: 'https://docs.bullmq.io/bullmq-pro/introduction',
     category: 'bullmq-ui',
     oneLiner:
-      'Commercial BullMQ library (groups, batches). Not a dashboard. Taskforce.sh is the official UI.',
+      'Commercial BullMQ library (groups, batches) from $139/month. Not a dashboard; Taskforce.sh is the official UI.',
     featured: false,
     alternativesPage: false,
     title: 'Durabull vs BullMQ Pro',
     description:
-      'BullMQ Pro is a commercial queue library, not a UI. Durabull operates Redis-backed BullMQ; Pro-specific capabilities need separate validation. Current Pro dollar prices are not published on public pricing pages.',
+      'BullMQ Pro is a commercial queue library (Standard from $139/month), not a dashboard. Durabull operates Redis-backed BullMQ; validate Pro-specific features.',
     keywords: ['BullMQ Pro pricing', 'BullMQ Pro vs Durabull', 'Taskforce Pro'],
     intro:
       'BullMQ Pro (`@taskforcesh/bullmq-pro`) is a drop-in library: groups, batches, observables, email support. It is not a dashboard. Comparing it to Durabull is a category error unless you are choosing whether to pay for library features versus paying for operations tooling.',
@@ -845,8 +863,9 @@ export const uiCompetitors: Competitor[] = [
     alerts: 'N/A (library).',
     mcp: 'N/A. Taskforce.sh MCP can operate Pro queues if you also buy Taskforce.',
     pricing:
-      'Taskforce’s dashboard pricing explicitly excludes BullMQ Pro. A current Pro subscription price was not verified from the reviewed public pages; confirm it through the vendor’s account or sales flow.',
-    license: 'Per-organization commercial license.',
+      'bullmq.io lists Standard at $139/month or $1,395/year per deployment for organizations with fewer than 100 employees; Enterprise is custom-priced (visited 2026-10-20). Taskforce’s dashboard plans do not include BullMQ Pro.',
+    license:
+      'Commercial subscription. bullmq.io prices Standard per deployment; the BullMQ Pro docs describe the license as per organization. Confirm scope with the vendor.',
     whenToChooseThem:
       'Buy Pro when you need groups, batches, or first-party library support. That decision is independent of which dashboard you use.',
     whenToChooseDurabull:
@@ -860,7 +879,7 @@ export const uiCompetitors: Competitor[] = [
       {
         feature: 'Public price',
         durabull: sharedRows.price,
-        competitor: 'Not published on public pricing pages',
+        competitor: 'Standard $139/mo or $1,395/yr; Enterprise custom',
       },
       { feature: 'UI', durabull: 'Durabull', competitor: 'Taskforce.sh (separate product)' },
     ],
@@ -868,12 +887,12 @@ export const uiCompetitors: Competitor[] = [
       {
         question: 'How much is BullMQ Pro?',
         answer:
-          'Taskforce’s dashboard plans do not include BullMQ Pro, and its reviewed public pricing page does not quote the separate Pro library subscription. Confirm current terms through a Taskforce account or the vendor.',
+          'bullmq.io lists BullMQ Pro Standard at $139/month or $1,395/year per deployment for organizations with fewer than 100 employees, with custom Enterprise pricing (visited 2026-10-20). It is separate from Taskforce.sh dashboard plans. Confirm license scope with the vendor.',
       },
     ],
     sources: [
       { label: 'BullMQ Pro intro', url: 'https://docs.bullmq.io/bullmq-pro/introduction' },
-      { label: 'Taskforce on Pro', url: 'https://docs.taskforce.sh/bullmq-pro' },
+      { label: 'BullMQ Pro pricing', url: 'https://bullmq.io/#bullmq-pro' },
       { label: 'Taskforce pricing', url: 'https://taskforce.sh/pricing' },
     ],
     related: ['taskforce', 'bull-board'],

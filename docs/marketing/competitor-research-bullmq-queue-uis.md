@@ -14,19 +14,19 @@
 
 | Product | Type | Code change to see queues? | Auto-discovery | Multi-env / multi-Redis | Alerts | MCP | Public price | License |
 |---|---|---|---|---|---|---|---|---|
-| **Bull Board** | OSS embed + CLI/Docker | Embed: yes, register adapters. CLI/Docker: no | CLI/Docker: yes. Embed: no | One process; CLI one Redis URL | No built-in | No MCP. CLI exposes JSON HTTP API | Free | MIT |
+| **Bull Board** | OSS embed + CLI/Docker | Embed: yes, register adapters. CLI/Docker: no | CLI/Docker: yes. Embed: no | One process; CLI one Redis URL | No built-in | No MCP server. JSON HTTP API (OpenAPI) + AI-agent guide | Free | MIT |
 | **Arena** | OSS Express UI | Yes — name each queue | No | `hostId` groups hosts; you still list queues | Not documented | Not documented | Free | MIT |
-| **Taskforce.sh** | Hosted SaaS + on-prem | No app SDK. Redis URL or Connector | Yes (scan; 40s timeout) | Plans priced by connections (1 / 5 / 15) | Email, Slack, PagerDuty | Yes, hosted MCP | $19.95 / $49.95 / $99.95 mo | Commercial (connector OSS) |
-| **Workbench** | OSS embed + Docker + macOS | Embed: queues **or** `redis`. Docker: `QUEUE_NAMES`. Desktop: Redis URL | Yes if `redis` set; cap default **100**. Docker lists names | One Redis per instance in published docs | Slack, Discord, webhook | Yes, `@getworkbench/mcp` | Free | MIT |
-| **BullMQ Pro** | Commercial **library**, not a dashboard | Replace `bullmq` with `@taskforcesh/bullmq-pro` | N/A | N/A | N/A (library) | N/A | **Not published** on public pricing pages | Per-org commercial |
+| **Taskforce.sh** | Hosted SaaS + on-prem | No app SDK. Redis URL or Connector | Yes (scan; 40s timeout) | Plans priced by connections (1 / 5 / 15) | Email, Slack, PagerDuty | Yes, hosted MCP | $19.95 / $49.95 / $99.95 per month | Commercial (connector OSS) |
+| **Workbench** | OSS embed + Docker + macOS | Embed: queues **or** `redis`. Docker: `QUEUE_NAMES`. Desktop: Redis URL | Yes if `redis` set; cap default **100**. Docker lists names | One Redis per instance in published docs | Slack, Discord, webhook | Yes, `@getworkbench/mcp` (local stdio) | Free | MIT |
+| **BullMQ Pro** | Commercial **library**, not a dashboard | Replace `bullmq` with `@taskforcesh/bullmq-pro` | N/A | N/A | N/A (library) | N/A | Standard **$139/mo** or $1,395/yr per deployment (<100 employees); Enterprise custom | Commercial subscription |
 | **bull-monitor** | Archived OSS | Yes — pass Queue instances / CLI `-q` names | No | Not documented | Optional metrics collector, not alerts | Not documented | Free (unmaintained) | MIT |
 | **Redis Insight** | Official Redis GUI | No. Connect a Redis DB | Discovers Redis keys/DBs, **not BullMQ queues** | Multiple Redis DBs | Not a queue alerter | Redis Copilot (not queue MCP) | Free to use | SSPL v1 (≥2.0) |
 | **Upqueue** | Hosted BullMQ platform | Claims zero-code Redis connect | Claims auto-detect | Plans described by connection count | Claims alerts/monitors | Not found | **Dollar prices not verified** | Unknown |
-| **QueueDash OSS** | OSS embed + Docker | Embed: list queues **or** discovery. Hosted: SDK `attach()` | OSS: Bull/BullMQ discovery | Hosted: envs/projects with plan limits | Hosted: email/webhook; Slack on paid | Not documented | OSS free. Hosted $0 / $29 / $99 | MIT (OSS) |
-| **Bullstudio OSS** | OSS standalone + embed | Standalone: no. Embed: supply queues | Standalone: yes. Embed: no | Cloud docs: workspaces/envs. OSS: one process | Cloud: Pro/Enterprise. OSS: not in GitHub feature list | Not documented | OSS free. Cloud **$ not published** | MIT (OSS) |
-| **Bullpane** | Self-hosted OSS core + Pro | No. Add Redis/Postgres in UI | Yes | Unlimited connections (stated for Free) | Pro: Slack/webhook | Pro: MCP + OAuth | Free; Pro **$39/mo** per install | MIT core + commercial Pro |
+| **QueueDash OSS** | OSS embed + Docker | Embed: list queues **or** discovery. Hosted: SDK `attach()` | OSS: Bull/BullMQ discovery | Hosted: projects, envs per project, plan limits | Hosted: email/webhook; Slack on paid | Not documented | OSS free. Hosted $0 / $29 / $99 | MIT (OSS) |
+| **Bullstudio OSS** | OSS standalone + embed | Standalone: no. Embed: supply queues | Standalone: yes. Embed: no | Cloud: unverified. OSS: one process | Cloud: unverified. OSS: not in GitHub feature list | Not documented | OSS free. Cloud **$ not published** | MIT (OSS) |
+| **Bullpane** | Self-hosted OSS core + Pro | No. Add Redis/Postgres in UI | Yes | Unlimited connections (stated for Free) | Pro only: Slack/webhook | Pro: MCP + OAuth | Free; Pro **$39/mo** per install | MIT core + commercial Pro |
 | **muleta** | OSS, pre-1.0 | Standalone: Redis URL. Embed: `createMuleta({ redis })` | Redis URL; no per-queue register in examples | Not documented as multi-env | Not documented | Not documented | Free | Apache-2.0 |
-| **BullMQ Control Dashboard** | OSS wrapper around bull-board | No. Add Redis from UI | Yes (`SCAN:*:meta`) | Multiple Redis from UI | Not documented | Not documented | Free | Not confirmed on README |
+| **BullMQ Control Dashboard** | OSS wrapper around bull-board | No. Add Redis from UI | Yes (`SCAN <prefix>:*:meta`) | Multiple Redis from UI | Not documented | Not documented | No price listed | **No license** (no LICENSE file) |
 | **nestjs-bullpen** | NestJS OSS embed | Mount module; discovers Nest queues | Nest DI, not Redis SCAN | Nest app only | Not documented | Not documented | Free | MIT |
 
 ---
@@ -41,11 +41,11 @@
 - **npm:** https://www.npmjs.com/package/@bull-board/api (and scoped adapters)
 - **Live demo:** https://felixmosh.github.io/bull-board/demo/
 
-GitHub (visited 2026-10-20): MIT, TypeScript, topics `bull` / `redis` / `bullmq-pro`. npm `@bull-board/api` **9.10.4**, updated 2026-10-05, MIT, ~1.08M weekly downloads. `@bull-board/ui` listed ~2.0M weekly downloads. GitHub “Latest release” metadata also showed **v6.20.6** (2026-03-19); **the npm version is newer**. Do not mix those version numbers in copy.
+GitHub (visited 2026-10-20): MIT, TypeScript, topics `bull` / `redis` / `bullmq-pro`. npm `@bull-board/api` **9.10.4**, updated 2026-10-05, MIT, ~1.08M weekly downloads. `@bull-board/ui` listed ~2.0M weekly downloads. GitHub latest release is **v9.10.4** (2026-10-05), matching npm.
 
 ### What it is
 
-An open-source dashboard UI for **Bull and BullMQ** that you mount in a Node/Bun HTTP server, or run standalone via CLI/Docker. It visualizes queues and jobs and offers operator actions (retry, clean, etc.). It does not process jobs.
+An open-source dashboard UI for **Bull and BullMQ** that you mount in a Node/Bun HTTP server, or run standalone via CLI/Docker. It visualizes queues and jobs and offers operator actions: retry, promote, remove, clean, edit job data/delay/priority, pause/resume, add jobs, empty/obliterate queues, and run/edit job schedulers. It does not process jobs.
 
 ### How you connect / whether app code changes are required
 
@@ -100,7 +100,7 @@ https://felixmosh.github.io/bull-board/guide/cli
 
 ### Alerts?
 
-No built-in alerting in official docs. Confirmed by first-party BullMQ comparison:
+No built-in alerting in official docs. A Taskforce-authored comparison on bullmq.io (a competitor’s page, not neutral) says the same:
 
 > “Alerts | None” for Bull Board  
 > https://bullmq.io/articles/guides/bull-board-vs-taskforce/
@@ -111,9 +111,9 @@ Optional `@bull-board/metrics` (beta) is **historical metrics storage**, not ale
 
 ### MCP / AI agent integration?
 
-No MCP server documented. CLI documents a JSON HTTP API for scripts/agents (`curl http://127.0.0.1:3000/api/queues`), which is **not MCP**.
+No MCP server. The board exposes a JSON HTTP API with an OpenAPI description (shown in the CLI docs as `curl http://127.0.0.1:3000/api/queues`), and the docs include an AI-agent setup guide for using it. That is **not MCP**.
 
-Taskforce comparison: “AI agents (MCP) | No” for Bull Board. https://bullmq.io/articles/guides/bull-board-vs-taskforce/
+Taskforce-authored comparison: “AI agents (MCP) | No” for Bull Board. https://bullmq.io/articles/guides/bull-board-vs-taskforce/
 
 ### Pricing
 
@@ -153,7 +153,6 @@ MIT: https://github.com/felixmosh/bull-board/blob/master/LICENSE
 ### Unverified / could not confirm
 
 - Exact GitHub star count fluctuated across visits (search snippets 3,269 vs 3,513). Use live GitHub at publish time.
-- Whether GitHub Releases will catch up to npm 9.10.4.
 
 ---
 
@@ -165,9 +164,9 @@ MIT: https://github.com/felixmosh/bull-board/blob/master/LICENSE
 - **GitHub:** https://github.com/bee-queue/arena
 - **npm:** https://www.npmjs.com/package/bull-arena
 - **Docker:** https://github.com/bee-queue/docker-arena and https://hub.docker.com/r/mixmaxhq/arena/
-- No separate product marketing site. Mixmax intro post (historical): https://www.mixmax.com/blog/introducing-bull-arena
+- No separate product marketing site. Originally built by Mixmax (intro post, historical): https://www.mixmax.com/blog/introducing-bull-arena; now maintained in the `bee-queue` GitHub organization.
 
-npm **4.10.0**, updated 2026-10-16, MIT, ~24k weekly downloads. GitHub search snippet: **938 stars**, latest release **v4.9.2** (2025-11-18) — npm 4.10.0 is newer than that GitHub release tag.
+npm **4.10.0**, MIT, ~24k weekly downloads. GitHub latest release **v4.10.0** (2026-07-31). Star count: check live GitHub at publish time.
 
 ### What it is
 
@@ -313,7 +312,7 @@ https://docs.taskforce.sh/getting-started
 
 > “A connection is one Redis instance that Taskforce.sh connects to, either directly with a Redis URL or through the Taskforce Connector. BullMQ v6 queues stored in PostgreSQL are added through the Taskforce Connector, one connection per database. All the queues in that Redis instance or database are included.”
 
-https://taskforce.sh/pricing
+https://taskforce.sh/pricing (PostgreSQL support is also described at https://taskforce.sh/security; the connector docs page does not mention it.)
 
 Hosted limits: Starter **1**, Growing **5**, Enterprise **15** connections. More than 15: `contact@taskforce.sh`. On-prem: unlimited connections and teams.
 
@@ -331,7 +330,7 @@ https://docs.taskforce.sh/monitoring
 
 Yes. Hosted endpoint `https://api.taskforce.sh/mcp`; on-prem `https://<your-host>/mcp`. Bearer token `tfa_…`. Agents are non-human org members with roles, read-only or full tokens, audit log.
 
-Limits on hosted MCP (docs): 120 req / 60s per token; 256 KB body; 30s duration; 100 job ids per bulk call; 50 jobs per page.
+Limits on hosted MCP (docs): 120 requests per 60 seconds per token; 256 KB body; 30-second duration; 100 job IDs per bulk call; 50 jobs per page. Hosted plans allow up to 3 agents per organization.
 
 https://docs.taskforce.sh/agents/  
 https://docs.taskforce.sh/agents/connecting-an-mcp-client  
@@ -339,7 +338,7 @@ https://docs.taskforce.sh/agents/tokens
 https://docs.taskforce.sh/agents/permissions  
 https://docs.taskforce.sh/agents/audit-log
 
-Homepage: “Does a plan include a BullMQ Pro license? No.” MCP is listed as included on every hosted plan’s “what every plan includes” section: https://taskforce.sh/pricing
+Pricing FAQ: “Does a plan include a BullMQ Pro license? No.” MCP is listed as included on every hosted plan’s “what every plan includes” section: https://taskforce.sh/pricing
 
 ### Pricing (quoted from official page, visited 2026-10-20)
 
@@ -359,7 +358,7 @@ Yearly (quoted): “$195 instead of $239.40 for Starter, $495 instead of $599.40
 
 Metrics: “up to two weeks of history at one-minute resolution.”
 
-SOC 2 Type II and GDPR claimed on homepage/pricing.
+Taskforce states SOC 2 Type II and GDPR compliance (it uses the word “certified”); it publishes a SOC 2 Type II report, available on request: https://taskforce.sh/security. In copy, say “publishes a SOC 2 Type II report”, not “certification”.
 
 **On-premises:** same features, unlimited connections/teams. **No public dollar price.** “Subscribe to an on-premises license from the Subscriptions page of your Taskforce.sh account.” License check phones home every 15 minutes; 5 failed checks stops the container. Needs PostgreSQL, Redis 7+, Auth0, Mailgun, HTTPS. https://taskforce.sh/on-premises
 
@@ -367,7 +366,7 @@ BullMQ Pro is a **separate** subscription.
 
 ### License
 
-Commercial SaaS / on-prem. Connector is installable from npm (`taskforce-connector`) and GitHub. Taskforce’s own comparison table: “License | Commercial. The connector is open source.” https://bullmq.io/articles/guides/bull-board-vs-taskforce/
+Commercial SaaS / on-prem. Connector is installable from npm (`taskforce-connector`) and GitHub. Taskforce-authored comparison table on bullmq.io: “License | Commercial. The connector is open source.” https://bullmq.io/articles/guides/bull-board-vs-taskforce/
 
 ### Strengths and when you'd choose it
 
@@ -398,7 +397,7 @@ On this axis Taskforce.sh **already is** that category. Remaining gaps vs a self
 - https://docs.taskforce.sh/monitoring
 - https://docs.taskforce.sh/agents/
 - https://docs.taskforce.sh/agents/connecting-an-mcp-client
-- https://docs.taskforce.sh/bullmq-pro
+- https://taskforce.sh/security
 - https://bullmq.io/articles/guides/bull-board-vs-taskforce/
 
 ### Unverified / could not confirm
@@ -509,7 +508,7 @@ https://getworkbench.dev/docs/guides/alerts
 
 ### MCP / AI agent integration?
 
-Yes. `@getworkbench/mcp` is a **local stdio proxy** to a running dashboard (`WORKBENCH_URL`). 18 tools (inspect + operate). Not a hosted multi-tenant MCP URL. Inherits dashboard `readonly` and basic auth.
+Yes. `@getworkbench/mcp` is a **local stdio proxy** to a running dashboard (`WORKBENCH_URL`). Docs list 18 tools (inspect + operate); npm `@getworkbench/mcp` 0.5.1 ships 23. Avoid quoting an exact count in copy. Not a hosted multi-tenant MCP URL. Inherits dashboard `readonly` and basic auth.
 
 https://getworkbench.dev/docs/packages/mcp
 
@@ -569,7 +568,7 @@ MIT © Pontus Abrahamsson. https://github.com/pontusab/workbench/blob/main/READM
 - **Name:** BullMQ Pro
 - **Docs:** https://docs.bullmq.io/bullmq-pro/introduction
 - **Install:** https://docs.bullmq.io/bullmq-pro/install
-- **Taskforce page:** https://docs.taskforce.sh/bullmq-pro
+- **Pricing:** https://bullmq.io/ (BullMQ Pro section)
 - **Package:** `@taskforcesh/bullmq-pro` from `https://npm.taskforce.sh/` (token required)
 - **Support tracker:** https://github.com/taskforcesh/bullmq-pro-support (release comments issue #86)
 
@@ -579,8 +578,7 @@ This is a **commercial queue library**, not a dashboard. Taskforce.sh is the off
 
 Drop-in commercial edition of BullMQ with extra features and email support from the authors (`support@taskforce.sh`). Per-organization license, unlimited use across that org’s projects.
 
-https://docs.bullmq.io/bullmq-pro/introduction  
-https://docs.taskforce.sh/bullmq-pro
+https://docs.bullmq.io/bullmq-pro/introduction
 
 Verified Pro-only capabilities from official docs (non-exhaustive of the full Pro TOC):
 
@@ -607,13 +605,15 @@ Taskforce.sh dashboard: “Taskforce.sh works with BullMQ Pro queues, including 
 
 ### Auto-discovery / multi-env / alerts / MCP?
 
-N/A for the library. Use Taskforce.sh (or another UI that understands Pro groups, e.g. Bullpane claims groups — see §10).
+N/A for the library. Use Taskforce.sh (or another UI that understands Pro groups, e.g. Bullpane claims groups — see §7e).
 
 ### Pricing
 
-**No current public dollar price on taskforce.sh/pricing or docs.bullmq.io.**
+**Public price (bullmq.io, visited 2026-10-20):** Standard **$139/month** or **$1,395/year** per deployment, for organizations with fewer than 100 employees. Enterprise: custom pricing. https://bullmq.io/ (BullMQ Pro section)
 
-Official wording:
+Note the wording conflict: bullmq.io prices Standard **per deployment**, while the Pro docs describe a **per-organization** license. In copy, quote the price with “per deployment” and do not restate the license scope.
+
+Other official wording:
 
 > “You can request a free trial token on this page… consider subscribing under the 'Subscriptions' tab.”  
 > https://docs.bullmq.io/bullmq-pro/introduction
@@ -621,7 +621,7 @@ Official wording:
 > “Does a plan include a BullMQ Pro license? No. BullMQ Pro is a separate subscription.”  
 > https://taskforce.sh/pricing
 
-Historical / unofficial (do **not** use in marketing as current price):
+Historical (superseded by the bullmq.io price above):
 
 - Taskforce blog “introductory price of 95$/mo (or 995$ yearly)”: https://blog.taskforce.sh/bullmq-pro-edition/
 - Indie Hackers post by the founder mentioning $139/month: https://www.indiehackers.com/post/charging-enterprise-customers-3f1fe4823a
@@ -630,7 +630,7 @@ Support overview (not a price): aim to respond within one business day. https://
 
 ### License
 
-Per-organization commercial. Tokens must not be shared outside the paying org. https://docs.taskforce.sh/bullmq-pro
+Commercial subscription. The Pro docs describe a per-organization license and say tokens must not be shared outside the paying org; bullmq.io prices Standard per deployment. https://docs.bullmq.io/bullmq-pro/introduction
 
 ### Strengths and when you'd choose it
 
@@ -641,7 +641,7 @@ Per-organization commercial. Tokens must not be shared outside the paying org. h
 ### Weaknesses vs a full auto-discovery multi-env dashboard with MCP
 
 - It is not a dashboard. Comparing it to Durabull as a UI is a category error.
-- Price is gated behind the Taskforce account UI.
+- Separate paid subscription from any dashboard (Standard $139/month per deployment).
 
 ### Sources
 
@@ -652,13 +652,13 @@ Per-organization commercial. Tokens must not be shared outside the paying org. h
 - https://docs.bullmq.io/bullmq-pro/observables/
 - https://docs.bullmq.io/bullmq-pro/telemetry
 - https://docs.bullmq.io/bullmq-pro/support
-- https://docs.taskforce.sh/bullmq-pro
+- https://bullmq.io/
 - https://taskforce.sh/pricing
 - https://github.com/taskforcesh/bullmq
 
 ### Unverified / could not confirm
 
-- **Current BullMQ Pro list price.** Do not publish $95 or $139 without a live Subscriptions-page screenshot.
+- Whether the Standard price is per deployment or per organization in practice (bullmq.io and the Pro docs differ). Do not publish the historical $95 figure.
 - Full Pro feature checklist vs OSS (roadmap URL 404’d: https://docs.bullmq.io/bullmq-pro/roadmap).
 
 ---
@@ -668,7 +668,7 @@ Per-organization commercial. Tokens must not be shared outside the paying org. h
 ### Official name + website + GitHub
 
 - **Name:** bull-monitor
-- **GitHub:** https://github.com/s-r-x/bull-monitor — **Status: ARCHIVED**
+- **GitHub:** https://github.com/s-r-x/bull-monitor — **Status: ARCHIVED (2023-12-07)**
 - **Homepage:** https://s-r-x.github.io/bull-monitor/
 - **npm:** `@bull-monitor/ui`, `@bull-monitor/express`, `@bull-monitor/cli`, etc.
 - Last GitHub feature release in changelog: **5.4.0 (2023-08-27)**. npm `@bull-monitor/ui` updated **2023-12-07**. `@bull-monitor/cli` 5.4.0 published Aug 27, 2023.
@@ -777,7 +777,7 @@ qd.attach(queue);
 > BullMQ **5+**. Attach `Queue`, not `Worker`.  
 > https://www.queuedash.com/docs/integrations/bullmq
 
-Optional Redis connection on hosted for retry/promote/remove.
+Optional Redis connection on hosted for retry/promote/remove: https://www.queuedash.com/pricing and https://www.queuedash.com/docs/getting-started/quickstart
 
 **Multi-env (hosted, quoted):**
 
@@ -787,14 +787,14 @@ Optional Redis connection on hosted for retry/promote/remove.
 | History | 7 days | 30 days | 90 days |
 | Members | 3 | 10 | 50 |
 | Projects | 1 | 5 | Unlimited |
-| Environments per project | 1 | 3 | 10 |
+| Environments (per project) | 1 | 3 | 10 |
 | Queues per environment | 5 | 20 | 100 |
 | Redis connections | 1 | 5 | Unlimited |
 | Alerts by Slack | No | Yes | Yes |
 
 https://www.queuedash.com/pricing
 
-**Alerts (hosted):** failure rate, queue depth, stuck jobs, processing time, success checks; email or webhook on all plans; Slack on Pro/Business.
+**Alerts (hosted):** failure rate, queue depth, stuck jobs, processing time, job success checks; email or webhook on all plans; Slack on Pro/Business.
 
 **MCP:** not documented on pages visited.
 
@@ -813,7 +813,7 @@ https://www.queuedash.com/pricing
 https://github.com/emirce/bullstudio/blob/main/README.md  
 https://bullstudio.dev/
 
-**Cloud docs** describe workspaces (dev/staging/prod), auto-discovery on a Redis connection, alerts on Pro/Enterprise:
+**Cloud docs (UNVERIFIED — could not be re-confirmed on 2026-10-20; do not use in copy).** Earlier fetches of the Cloud docs described workspaces (dev/staging/prod), auto-discovery on a Redis connection, and alerts on Pro/Enterprise:
 
 | Feature | Free | Pro | Enterprise |
 |---|---|---|---|
@@ -822,7 +822,9 @@ https://bullstudio.dev/
 | Alerts | No | Yes | Yes |
 | Members | Unlimited | Unlimited | Unlimited |
 
-https://docs.bullstudio.dev/platform/organizations
+https://docs.bullstudio.dev/platform/organizations (unverified)
+
+The comparison page (`uis.ts`) treats Cloud plans as unverified and compares only the OSS repository.
 
 **Dollar prices for cloud: not published on pages successfully fetched.** Do not invent them.
 
@@ -853,11 +855,11 @@ Embed: `createMuleta({ redis: { url } })` — Redis URL, not a Queue list in the
 - **GitHub:** https://github.com/imatefx/bullmq-control-dashboard
 - **Docker Hub:** `imatefx/bullmq-control-dashboard`
 
-Central UI **built on bull-board**. Add multiple Redis connections in the UI. Auto-discover via `SCAN:*:meta`. Per-connection boards + combined `/board/all`. HTTP basic auth admin/reader required to start.
+Central UI **built on bull-board**. Add multiple Redis connections in the UI. Auto-discover via `SCAN <prefix>:*:meta`. Per-connection boards + combined `/board/all`. HTTP basic auth admin/reader required to start.
 
 > “bull-board renders live Queue objects — it has no Redis discovery, config, or auth of its own. This app supplies all three around it.”
 
-No alerts/MCP in README. License string not quoted in README (confirm LICENSE file before claiming MIT).
+No alerts/MCP in README. **No license:** the repository has no LICENSE file and GitHub reports no license, so no reuse rights are granted. Do not call it free or open source.
 
 ### 7e. Bullpane (`bullpane.com` / `madmorett/bullpane`)
 
@@ -866,7 +868,7 @@ No alerts/MCP in README. License string not quoted in README (confirm LICENSE fi
 - **GitHub:** https://github.com/madmorett/bullpane
 - **npm:** `npx bullpane --redis redis://localhost:6379`
 
-Self-hosted dashboard for BullMQ and BullMQ Pro on Redis or BullMQ 6 Postgres. Free edition: no login. Pro: roles, SSO, alerts, folders, flow graph, audit log, MCP.
+Self-hosted dashboard for BullMQ and BullMQ Pro on Redis or BullMQ 6 Postgres. Free edition: no login, no alerts. Pro: roles, SSO, alerts (Slack/webhook), folders, flow graph, audit log, MCP.
 
 **Pricing (quoted from bullpane.com, 2026-10-20):**
 
@@ -876,7 +878,7 @@ llms.txt: “Pro (USD 39/month or USD 390/year, one installation, unlimited user
 
 Free: “Unlimited connections and queues”, jobs/search/bulk, Pro groups, read-only mode, no login.
 
-Pro MCP: URL + OAuth, acts as the signed-in user. Homepage also: 14-day refund on first payment; license phones home daily, 7-day offline grace.
+Pro MCP: URL + OAuth, acts as the signed-in user. Homepage also: 14-day refund on first payment. Subscription keys re-validate daily with a 7-day offline grace; offline keys exist for air-gapped installs.
 
 **Category:** closest OSS-core self-hosted competitor with Pro MCP. Not a hosted SaaS.
 
@@ -1083,8 +1085,8 @@ Official and web searches executed for this memo:
 1. **Taskforce.sh** — hosted/on-prem, auto-discovery, connections as environments, alerts, first-party MCP. Publish their **current** $19.95 / $49.95 / $99.95 figures with date + URL.
 2. **Bullpane Pro** — self-hosted, unlimited connections (vendor claim), Pro MCP at **$39/mo per install**. Free tier has no login/MCP.
 3. **Workbench** — OSS MCP + optional auto-discovery, but **one Redis**, **maxQueues default 100**, Docker wants named queues, no org multi-env.
-4. **QueueDash hosted** — multi-env exists, but **SDK attach**, job quotas, queue caps; MCP not found.
-5. **Bullstudio cloud** — workspaces/envs in docs; **no public $**; MCP not found.
+4. **QueueDash hosted** — environments per project exist, but **SDK attach**, job quotas, queue caps; MCP not found.
+5. **Bullstudio Cloud** — plans unverified; **no public $**; MCP not found.
 
 **Do not call these “Taskforce alternatives” without the caveats above:** Bull Board (embed), Arena (named queues), Redis Insight (not BullMQ), bull-monitor (archived), BullMQ Pro (library).
 
@@ -1094,7 +1096,7 @@ Official and web searches executed for this memo:
 - *How many queues?* Auto-discovery **default cap 100** (`maxQueues`). Not an advertised unlimited hosted plan.
 - *Multi-env?* **Not documented** as a first-class multi-connection workspace.
 
-**Never publish without re-checking on the day of launch:** Taskforce prices, QueueDash limits, Bullpane Pro price, BullMQ Pro price (still hidden), Upqueue anything, Bullstudio cloud dollars.
+**Never publish without re-checking on the day of launch:** Taskforce prices, QueueDash limits, Bullpane Pro price, BullMQ Pro price, Upqueue anything, Bullstudio Cloud dollars.
 
 ---
 
@@ -1106,4 +1108,4 @@ Durabull’s own docs (not competitors) already claim Redis-key discovery (`<pre
 - Contrast **SDK telemetry** (QueueDash hosted) vs **Redis inspection**.
 - Quote competitor prices only from URLs in this file, with access date.
 - Do not claim Product Hunt awards.
-- Do not use the unofficial $95 / $139 BullMQ Pro figures.
+- Quote BullMQ Pro only from bullmq.io with access date ($139/month per deployment, Standard). Do not use the historical $95 figure.

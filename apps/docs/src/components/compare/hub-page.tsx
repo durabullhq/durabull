@@ -88,7 +88,7 @@ export function CompareHubPage() {
           </div>
           <div className="guide-grid">
             {articles.slice(0, 3).map((article, index) => (
-              <GuideCard key={article.slug} article={article} index={index} />
+              <GuideCard key={article.slug} article={article} index={index} headingLevel={3} />
             ))}
           </div>
         </section>

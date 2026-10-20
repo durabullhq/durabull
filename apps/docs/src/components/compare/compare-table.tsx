@@ -56,7 +56,7 @@ export function CostTable({ caption, rows }: { caption: string; rows: CostRow[] 
       <section
         // biome-ignore lint/a11y/noNoninteractiveTabindex: Horizontal overflow must be keyboard-scrollable.
         tabIndex={0}
-        aria-label="Scrollable comparison table"
+        aria-label="Scrollable cost table"
         className="overflow-x-auto border border-[var(--v2-line)]"
       >
         <table className="w-full min-w-[640px] border-collapse text-left text-sm">

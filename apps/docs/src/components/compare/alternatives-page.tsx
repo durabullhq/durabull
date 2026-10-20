@@ -10,6 +10,12 @@ import { CompareFaqList } from './faq-list'
 import { JsonLd } from './json-ld'
 import { CompareCta, SectionIntro, SourceList } from './prose-blocks'
 
+const shortlistNoun: Record<Competitor['category'], string> = {
+  'bullmq-ui': 'BullMQ dashboards',
+  'managed-platform': 'runtimes and workflow platforms',
+  observability: 'observability platforms',
+}
+
 export function AlternativesPage({ competitor: c }: { competitor: Competitor }) {
   const peers = alternativesFor(c)
   const isDashboard = c.category === 'bullmq-ui'
@@ -94,7 +100,7 @@ export function AlternativesPage({ competitor: c }: { competitor: Competitor }) 
             {criteria.map(([heading, body], index) => (
               <div key={heading} className="border-r border-[var(--v2-line)] p-7 last:border-r-0">
                 <span className="editorial-eyebrow">0{index + 1} / Evaluate</span>
-                <h2>{heading}</h2>
+                <h3>{heading}</h3>
                 <p>{body}</p>
               </div>
             ))}
@@ -120,7 +126,7 @@ export function AlternativesPage({ competitor: c }: { competitor: Competitor }) 
         <section className="editorial-section">
           <SectionIntro
             label="Your shortlist"
-            title={`Other ${categoryLabels[c.category].toLowerCase()} to evaluate`}
+            title={`Other ${shortlistNoun[c.category]} to evaluate`}
           >
             Related tools appear first. This is an editorial shortlist, not a performance ranking.
             Editions and deployment modes matter; follow each vendor reference before choosing.

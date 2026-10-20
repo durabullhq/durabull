@@ -35,7 +35,7 @@ const entries: {
   ...alternativeTargets().map((item) => ({
     kind: 'alternatives' as const,
     slug: item.slug,
-    title: `${item.name} alternatives`,
+    title: item.alternativesTitle ?? `${item.name} alternatives`,
     label: 'A practical, sourced shortlist',
   })),
   ...articles.map((item) => ({

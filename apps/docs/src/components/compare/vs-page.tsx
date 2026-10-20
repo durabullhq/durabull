@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { SiteLayout } from '@/components/v2/site-layout'
 import { articlePath, articles } from '@/lib/compare/articles'
 import { relatedCompetitors } from '@/lib/compare/catalog'
+import { DURABULL } from '@/lib/compare/durabull'
 import { categoryLabels } from '@/lib/compare/editorial'
 import type { Competitor } from '@/lib/compare/types'
 import { SITE_URL } from '@/lib/config'
@@ -105,14 +106,25 @@ export function VsPage({ competitor: c }: { competitor: Competitor }) {
             <strong>Different products, different cost boundaries.</strong> Durabull’s hosted beta
             fee covers its dashboard. Redis, worker compute, storage, networking, and operational
             work remain yours. A runtime’s usage charges may cover orchestration or compute. The
-            amounts below are not a total-cost or savings benchmark.
+            prices here are not a total-cost or savings benchmark.
           </div>
-          <p className="mb-4 max-w-4xl text-[15px] leading-7 text-[var(--v2-muted)]">
-            <InlineText text={c.pricing} />
-          </p>
-          <p className="mb-6 max-w-4xl text-[15px] leading-7 text-[var(--v2-muted)]">
-            <InlineText text={c.license} />
-          </p>
+          <dl className="mb-6 max-w-4xl space-y-4 text-[15px] leading-7 text-[var(--v2-muted)]">
+            {[
+              { label: `${c.shortName} pricing`, text: c.pricing },
+              { label: `${c.shortName} license`, text: c.license },
+              {
+                label: 'Durabull',
+                text: `${DURABULL.pricing} ${DURABULL.license}`,
+              },
+            ].map(({ label, text }) => (
+              <div key={label}>
+                <dt className="editorial-eyebrow">{label}</dt>
+                <dd className="mt-1">
+                  <InlineText text={text} />
+                </dd>
+              </div>
+            ))}
+          </dl>
           {c.costs ? <CostTable caption={c.costs.caption} rows={c.costs.rows} /> : null}
         </section>
         <section id="faq" className="editorial-section">

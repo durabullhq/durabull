@@ -68,8 +68,7 @@ const MARKETING_LINKS: MarketingLink[] = [
   {
     path: '/mcp',
     title: 'Durabull MCP',
-    description:
-      'Operate BullMQ from Claude, ChatGPT, Cursor, and any MCP client. 30 tools, OAuth scopes, Queue Explorer.',
+    description: `Operate BullMQ from Claude, ChatGPT, Cursor, and any MCP client. ${MCP_FACTS.tools} tools, OAuth scopes, Queue Explorer.`,
   },
   {
     path: '/compare',
@@ -385,7 +384,7 @@ function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: Meta
     '',
     '## Comparison coverage',
     '',
-    `Durabull discovers BullMQ queues by scanning Redis meta keys. Redis-backed BullMQ inspection needs no Durabull worker SDK. Historical BullMQ completion metrics require worker metrics configuration; live counts are separate. Hosted pricing is free during beta. License is Elastic License 2.0 (source-available, not OSI open source). MCP lives at the app origin /mcp with ${MCP_FACTS.tools} tools and opt-in writes.`,
+    `Durabull discovers BullMQ queues by scanning Redis meta keys. Redis-backed BullMQ inspection needs no Durabull worker SDK. Historical BullMQ completion metrics require worker metrics configuration; live counts are separate. Hosted pricing is free during beta. License is Apache-2.0 (OSI-approved open source). MCP lives at the app origin /mcp with ${MCP_FACTS.tools} tools and opt-in writes.`,
     ''
   )
 

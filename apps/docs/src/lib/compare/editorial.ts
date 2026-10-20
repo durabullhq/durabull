@@ -8,6 +8,18 @@ export const categoryLabels: Record<CompetitorCategory, string> = {
   observability: 'Observability',
 }
 
+const dateFormat = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+/** Formats an ISO date (YYYY-MM-DD) as "20 October 2026". */
+export function formatDate(iso: string): string {
+  return dateFormat.format(new Date(`${iso}T00:00:00Z`))
+}
+
 export function sectionId(heading: string): string {
   return heading
     .toLowerCase()

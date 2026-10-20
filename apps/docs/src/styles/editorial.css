@@ -215,7 +215,8 @@
     monospace;
   color: #787269;
 }
-.category-choices h2 {
+.category-choices h2,
+.category-choices h3 {
   font-size: 22px;
   line-height: 1.25;
   font-weight: 550;
@@ -665,7 +666,7 @@
   padding: 24px;
   margin-top: 28px;
 }
-.cost-calculator h3 {
+.cost-calculator h2 {
   font-size: 20px;
   font-weight: 550;
   letter-spacing: -0.03em;
@@ -780,7 +781,8 @@
   .category-choices > a:last-child {
     border-bottom: 0;
   }
-  .category-choices h2 {
+  .category-choices h2,
+  .category-choices h3 {
     margin-top: 18px;
   }
   .directory-list {

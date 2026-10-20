@@ -9,11 +9,14 @@ export function GuideCard({
   article,
   index = 0,
   featured = false,
+  headingLevel = 2,
 }: {
   article: Article
   index?: number
   featured?: boolean
+  headingLevel?: 2 | 3
 }) {
+  const Heading = headingLevel === 3 ? 'h3' : 'h2'
   return (
     <Link href={articlePath(article.slug)} className={featured ? 'featured-guide' : 'guide-card'}>
       <ArticleArt variant={index} />
@@ -22,7 +25,7 @@ export function GuideCard({
           {featured ? 'Start here / ' : ''}
           {article.category}
         </span>
-        <h2>{article.title}</h2>
+        <Heading>{article.title}</Heading>
         <p>{article.description}</p>
         <span className="guide-card-meta">
           <span>

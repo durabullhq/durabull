@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { SiteLayout } from '@/components/v2/site-layout'
 import { articles } from '@/lib/compare/articles'
 import { getCompetitor } from '@/lib/compare/catalog'
-import { editorialImagePath, readingMinutes, sectionId } from '@/lib/compare/editorial'
+import { editorialImagePath, formatDate, readingMinutes, sectionId } from '@/lib/compare/editorial'
 import type { Article } from '@/lib/compare/types'
 import { SITE_URL } from '@/lib/config'
 import { createArticleSchema, createBreadcrumbSchema, createFAQSchema } from '@/lib/seo'
@@ -53,8 +53,15 @@ export function ArticlePage({ article }: { article: Article }) {
         <div className="editorial-meta">
           <Link href="/about">By Durabull</Link>
           <span>
-            Published <time dateTime={article.datePublished}>{article.datePublished}</time>
+            Published{' '}
+            <time dateTime={article.datePublished}>{formatDate(article.datePublished)}</time>
           </span>
+          {article.dateModified && article.dateModified !== article.datePublished ? (
+            <span>
+              Updated{' '}
+              <time dateTime={article.dateModified}>{formatDate(article.dateModified)}</time>
+            </span>
+          ) : null}
           <span>{readingMinutes(article)} min read</span>
           <a href="#sources">{article.sources.length} primary sources</a>
         </div>
@@ -133,7 +140,7 @@ export function ArticlePage({ article }: { article: Article }) {
             <p>
               Written by Durabull. Reviewed{' '}
               <time dateTime={article.dateModified ?? article.datePublished}>
-                {article.dateModified ?? article.datePublished}
+                {formatDate(article.dateModified ?? article.datePublished)}
               </time>{' '}
               against the references below and Durabull’s implementation. Pricing examples are
               documented models, not measured benchmarks or vendor quotes.
@@ -160,7 +167,7 @@ export function ArticlePage({ article }: { article: Article }) {
         <h2 className="v2-h mb-8 text-3xl">Keep reading</h2>
         <div className="guide-grid">
           {nextArticles.map((item, index) => (
-            <GuideCard key={item.slug} article={item} index={index + 1} />
+            <GuideCard key={item.slug} article={item} index={index + 1} headingLevel={3} />
           ))}
         </div>
       </section>

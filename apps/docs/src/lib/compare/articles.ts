@@ -14,6 +14,10 @@ const references = {
     label: 'BullMQ: retries and backoff',
     url: 'https://docs.bullmq.io/guide/retrying-failing-jobs',
   },
+  manualRetry: {
+    label: 'BullMQ: retrying a finished job',
+    url: 'https://docs.bullmq.io/guide/jobs/retrying-job',
+  },
   idempotency: {
     label: 'BullMQ: idempotent jobs',
     url: 'https://docs.bullmq.io/patterns/idempotent-jobs',
@@ -61,7 +65,7 @@ const references = {
   temporal: { label: 'Temporal: platform architecture', url: 'https://docs.temporal.io/temporal' },
   mcpSpec: {
     label: 'MCP specification: tool behavior',
-    url: 'https://modelcontextprotocol.io/specification/2025-06-18/server/tools',
+    url: 'https://modelcontextprotocol.io/specification/2026-07-28/server/tools',
   },
   connections: {
     label: 'Durabull: connection management',
@@ -95,7 +99,7 @@ export const articles: Article[] = [
     slug: 'how-to-monitor-bullmq-in-production',
     title: 'How to monitor BullMQ in production',
     description:
-      'A practical BullMQ monitoring runbook: queue inventory, native metrics, backlog diagnosis, Redis alerts, and safe recovery with working TypeScript examples.',
+      'A practical BullMQ monitoring runbook: queue inventory, native metrics, backlog diagnosis, Redis alerts, and safe recovery, with a working TypeScript example.',
     category: 'Operations',
     takeaway:
       'Monitor customer waiting time, processing progress, failures, and Redis health together. A queue count alone cannot tell you whether work is on time.',
@@ -115,7 +119,7 @@ export const articles: Article[] = [
         body: [
           'Start with an inventory: environment, Redis endpoint and logical database, queue prefix, queue name, owning service, and expected workload. Include quiet queues and periodic work. An empty overnight queue may be healthy; a daily report queue that never receives its expected job may represent an incident.',
           'Durabull discovers queue metadata in Redis using the configured prefix. Match that prefix to the producer and worker configuration, and check network access before interpreting an empty list. Discovery covers the connected database; it is not proof that every service or environment has been connected.',
-          'BullMQ now also documents an optional PostgreSQL backend. This runbook and Durabull’s Redis discovery do not establish support for PostgreSQL-backed queues. Confirm the backend and library version before selecting a dashboard.',
+          'BullMQ v6 also ships an optional PostgreSQL backend. This runbook covers Redis only, and Durabull does not currently support PostgreSQL-backed queues. Confirm the backend and library version before selecting a dashboard.',
         ],
         sourceUrls: urls('connections', 'postgres'),
       },
@@ -135,20 +139,20 @@ export const articles: Article[] = [
       {
         heading: '3. Diagnose backlog before adding workers',
         body: [
-          'Choose a customer-facing target, such as transactional mail beginning within a minute. Track queue age alongside waiting, active, delayed, and completed counts. A large scheduled workload is different from ready work that cannot start. Record the observation window so a brief traffic spike is not confused with persistent overload.',
+          'Choose a customer-facing target, such as transactional mail beginning within a minute. Track the age of the oldest waiting job alongside waiting, active, delayed, and completed counts. A large scheduled workload is different from ready work that cannot start. Record the observation window so a brief traffic spike is not confused with persistent overload.',
           'Use a short decision sequence: confirm the queue is not intentionally paused; inspect worker availability; check rate limits and concurrency; inspect representative active and failed jobs; then compare Redis health with application logs. If completions continue but arrivals are faster, capacity may be the issue. If downstream requests time out, adding workers can increase pressure on the dependency.',
-          'For repeated stalls, inspect CPU-heavy processing and event-loop blocking. BullMQ needs to renew job locks, and a stalled job can be processed again or eventually fail. Increasing a timeout without finding the cause can hide the symptom while extending recovery time.',
+          'For repeated stalls, inspect CPU-heavy processing and event-loop blocking. A worker must keep renewing its job lock; a stalled job returns to waiting and is processed again, and moves to failed once it exceeds the stall limit. Close workers with `await worker.close()` on SIGTERM so routine deploys do not create stalls. Increasing a timeout without finding the cause can hide the symptom while extending recovery time.',
         ],
-        sourceUrls: urls('nativeMetrics', 'stalled'),
+        sourceUrls: urls('nativeMetrics', 'stalled', 'production'),
       },
       {
         heading: '4. Alert on actionable conditions and missing evidence',
         body: [
-          'Pair a backlog or failure alert with an owner, a runbook, and a relevant environment. Start with thresholds based on your workload, observe normal peaks, then tune. An example policy is sustained waiting work with no completions during an expected processing window; it is a policy to implement and validate, not a universal threshold.',
-          'Durabull Redis health rules evaluate memory, client capacity, eviction rates, and other INFO-derived signals. Missing INFO fields remain unavailable; they do not prove recovery. Percentage memory alerts need an explicit Redis memory limit. Use an absolute allocation threshold when that denominator is unavailable.',
+          'Pair a backlog or failure alert with an owner, a runbook, and a relevant environment. Start with thresholds based on your workload, observe normal peaks, then tune. An example policy is sustained waiting work with no completions during an expected processing window. Durabull’s queue-stalled rule implements that pattern, but the window is yours to choose and validate; there is no universal threshold.',
+          'BullMQ requires Redis `maxmemory-policy` set to `noeviction`; evicting BullMQ keys can break queue state, so treat any key eviction as an incident. Durabull Redis health rules evaluate memory, client capacity, eviction rates, and other INFO-derived signals. Missing INFO fields remain unavailable; they do not prove recovery. Percentage memory alerts need an explicit Redis `maxmemory` limit; use an absolute allocation threshold when that denominator is unavailable.',
           'Test the entire notification path with a controlled staging failure. Verify the recipient, delivery result, incident resolution, and what happens when monitoring itself stops. A configured destination is not evidence that somebody receives the alert.',
         ],
-        sourceUrls: urls('health'),
+        sourceUrls: urls('production', 'health'),
       },
       {
         heading: '5. Close the loop with controlled recovery',
@@ -156,7 +160,7 @@ export const articles: Article[] = [
           'Before a retry, identify the failed side effect and check whether it may already have succeeded. Payment, email, and provisioning jobs need business-level idempotency. Fix the cause, retry one representative job, and inspect its terminal result before widening recovery.',
           'Retain enough failed-job evidence to investigate, while bounding completed and failed history to your storage budget. Record a recovery note with the original failure, deployed fix, affected job IDs, and observed outcome. A job returning to waiting means it was re-enqueued; only a later result establishes that processing succeeded.',
         ],
-        sourceUrls: urls('idempotency', 'retry', 'retention'),
+        sourceUrls: urls('idempotency', 'manualRetry', 'retention'),
       },
     ],
     faqs: [
@@ -184,7 +188,7 @@ export const articles: Article[] = [
       'connections',
       'health',
       'stalled',
-      'retry',
+      'manualRetry',
       'idempotency',
       'retention',
       'postgres'
@@ -208,7 +212,7 @@ export const articles: Article[] = [
     datePublished: '2026-10-20',
     dateModified: '2026-10-20',
     intro:
-      'Bull Board, Workbench, Taskforce.sh, and Durabull address overlapping needs with different deployment and operational choices. This shortlist uses official product documentation reviewed on October 20, 2026. It is written by Durabull, so we explain where other tools fit and distinguish documented features from our evaluation advice.',
+      'Bull Board, Workbench, Taskforce.sh, and Durabull address overlapping needs with different deployment and operational choices. This shortlist uses official product documentation reviewed on 20 October 2026. It is written by Durabull, so we explain where other tools fit and distinguish documented features from our evaluation advice.',
     sections: [
       {
         heading: 'Start with three requirements',
@@ -222,7 +226,7 @@ export const articles: Article[] = [
       {
         heading: 'Bull Board: a strong choice for an existing admin application',
         body: [
-          'Bull Board offers framework adapters and a CLI path for standalone use. Its current documentation covers queue controls, flow inspection, and an optional historical metrics package. It also documents BullMQ v6 PostgreSQL compatibility. Evaluate the current release rather than assuming the feature set of an older embedded installation.',
+          'Bull Board offers framework adapters and a CLI path for standalone use. Its current documentation covers queue controls, flow graphs, and an optional historical metrics package, currently in beta. It also documents support for BullMQ v6 queues stored in PostgreSQL. Evaluate the current release rather than assuming the feature set of an older embedded installation.',
           'Choose it when your team already owns authentication, deployment, and the surrounding admin experience. In a trial, check whether the UI can be exposed only to the intended users and whether the configured queue inventory covers all the work they need to operate. Embedding can be an advantage when you want queue inspection alongside your own customer-support tools.',
         ],
         sourceUrls: urls('board'),
@@ -238,7 +242,7 @@ export const articles: Article[] = [
       {
         heading: 'Taskforce.sh: evaluate a dedicated managed dashboard',
         body: [
-          'Taskforce.sh is a commercial dashboard from the BullMQ team. Its product documentation includes queue management, monitoring, and MCP access. It deserves consideration when you want a vendor-supported operational interface without maintaining an embedded dashboard yourself.',
+          'Taskforce.sh is a commercial dashboard from the BullMQ team. Its product documentation includes queue management, monitoring, MCP access, alerts by email, Slack, or PagerDuty, and a connector that reaches Redis without exposing it publicly. It deserves consideration when you want a vendor-supported operational interface without maintaining an embedded dashboard yourself.',
           'Evaluate connectivity from your actual network, plan limits, notification routing, and the workflow for inviting another operator. Include staging and regional databases when estimating your connection requirements. A plan sized for one production Redis may not match the number of environments an on-call rotation needs to inspect.',
         ],
         sourceUrls: urls('taskforce'),
@@ -246,8 +250,8 @@ export const articles: Article[] = [
       {
         heading: 'Durabull: evaluate fleet visibility and agent-assisted operations',
         body: [
-          'Durabull connects to Redis-backed BullMQ queues and groups connections by environment. It combines queue inspection, Redis health history, alerts, and scoped MCP tools. Historical BullMQ throughput still requires worker metrics, and some Redis providers restrict worker or INFO introspection.',
-          'Choose it for evaluation when multiple Redis environments and a shared human-and-agent workflow are central requirements. Test missing permissions and incomplete metrics as well as the happy path. Its hosted pricing is free during beta; budget against current terms, not an assumption that beta pricing lasts indefinitely. Self-hosting brings deployment and monitoring responsibilities.',
+          'Durabull is Apache-2.0 open source. It connects to Redis-backed BullMQ queues and groups connections by environment. It combines queue inspection, Redis health history, alerts, and scoped MCP tools. Alerts are delivered by email, signed webhooks, or Linear; native Slack and PagerDuty delivery are not included. Historical BullMQ throughput still requires worker metrics, and some Redis providers restrict worker or INFO introspection.',
+          'Choose it for evaluation when multiple Redis environments and a shared human-and-agent workflow are central requirements. Test missing permissions and incomplete metrics as well as the happy path. The hosted app is free during beta; budget against current terms rather than assuming beta pricing lasts indefinitely. Self-hosting brings deployment and monitoring responsibilities.',
         ],
         sourceUrls: urls('connections', 'nativeMetrics', 'mcp', 'health', 'pricing', 'deployment'),
       },
@@ -303,7 +307,7 @@ export const articles: Article[] = [
     keywords: [
       'BullMQ MCP',
       'MCP server BullMQ',
-      'Cursor BullMQ',
+      'ChatGPT BullMQ',
       'Claude queue monitoring',
       'Durabull MCP',
     ],
@@ -315,7 +319,7 @@ export const articles: Article[] = [
       {
         heading: 'Connect to the queue operations boundary',
         body: [
-          'Durabull exposes remote MCP at `https://app.durabull.io/mcp`. For a self-hosted deployment, use `/mcp` on that deployment’s public application origin. Add the endpoint using your client’s remote MCP configuration, complete sign-in and consent, and begin by listing the connections available to your account.',
+          'Durabull exposes remote MCP at `https://app.durabull.io/mcp`. For a self-hosted deployment, use `/mcp` on that deployment’s public application origin. Add the endpoint using your client’s remote MCP configuration, complete sign-in and consent, and begin by listing the connections available to your account. Request write scopes only when you intend to authorize a specific change.',
           'Keep connection IDs explicit in subsequent requests. Queue names such as `emails` are often reused across staging and production, so a name alone is an unsafe identifier for an operational change. A successful connection test establishes transport and authorization; it does not establish that every queue, log, or diagnostic is visible.',
         ],
         sourceUrls: urls('mcp', 'mcpSpec'),
@@ -325,7 +329,7 @@ export const articles: Article[] = [
         body: [
           'Durabull documents 30 tools: 21 reads and nine writes. Reads cover connections, queues, jobs, logs, stacktraces, recurring schedules, metrics, Redis health, and alert evidence. The default OAuth consent bundle includes read scopes; retry, promote, queue pause/resume, and alert-state actions require explicit write scopes.',
           'The MCP surface does not expose arbitrary Redis commands, job payload editing, deletion, queue purging, worker scaling, scheduler editing, or alert-rule configuration. These are real capability boundaries, not instructions that a model is merely expected to obey.',
-          'A read tool can still reveal sensitive business information. Scope selection should follow the data access the operator actually needs. Tool annotations describe intended behavior; they do not replace authentication, authorization, or your client’s action-approval controls.',
+          'A read tool can still reveal sensitive business information. Scope selection should follow the data access the operator actually needs. Tool annotations describe intended behavior, and the MCP specification tells clients to treat them as untrusted; they do not replace authentication, authorization, or your client’s action-approval controls.',
         ],
         sourceUrls: urls('mcp', 'mcpSpec'),
       },
@@ -349,7 +353,7 @@ export const articles: Article[] = [
           'Authorize a specific job and action, then read the job again. A successful retry request means the job was re-enqueued, not that it completed. If state changed between inspection and action, reassess rather than repeatedly invoking a write. For a large incident, establish a reviewed recovery procedure before repeating the action across many jobs.',
           'Pausing a queue is also operationally significant: it changes when work can start. Define the reason and resume condition, and verify those conditions before resuming. Omitting delete operations reduces one class of risk, but does not make all remaining writes harmless.',
         ],
-        sourceUrls: urls('mcp', 'idempotency', 'retry'),
+        sourceUrls: urls('mcp', 'idempotency', 'manualRetry'),
       },
       {
         heading: 'Treat redaction and audit as bounded protections',
@@ -378,14 +382,14 @@ export const articles: Article[] = [
           'No. It establishes that the recovery action was accepted. Inspect the job afterward to confirm its state and application outcome.',
       },
     ],
-    sources: sources('mcp', 'mcpSpec', 'idempotency', 'retry'),
+    sources: sources('mcp', 'mcpSpec', 'idempotency', 'manualRetry'),
     relatedCompare: ['taskforce', 'workbench', 'bullpane', 'inngest'],
   },
   {
     slug: 'inngest-vs-bullmq-durabull-cost',
     title: 'Inngest vs BullMQ + Durabull: model the actual cost',
     description:
-      'Translate Inngest runs and steps into executions, compare published plan allowances, and build a fair cost model that includes BullMQ infrastructure and operations.',
+      'Translate Inngest runs and steps into executions, compare published plan allowances, and build a fair cost model that includes BullMQ infrastructure.',
     category: 'Cost analysis',
     takeaway:
       'A business job is not an Inngest execution. Count runs and steps first, then compare full operating costs rather than a SaaS invoice against a free dashboard.',
@@ -393,7 +397,7 @@ export const articles: Article[] = [
     datePublished: '2026-10-20',
     dateModified: '2026-10-20',
     intro:
-      'Inngest and BullMQ are runtime choices; Durabull is an operations interface for Redis-backed BullMQ. A useful cost comparison starts with an equivalent workload and makes each billing unit visible. The examples below use public USD prices reviewed on October 20, 2026, exclude taxes and negotiated discounts, and are estimates rather than vendor quotes.',
+      'Inngest and BullMQ are runtime choices; Durabull is an operations interface for Redis-backed BullMQ. A useful cost comparison starts with an equivalent workload and makes each billing unit visible. The examples below use public USD prices reviewed on 20 October 2026, exclude taxes and negotiated discounts, and are estimates rather than vendor quotes.',
     sections: [
       {
         heading: 'Translate business work into billed executions',
@@ -405,7 +409,7 @@ export const articles: Article[] = [
         code: {
           language: 'typescript',
           caption: 'A baseline execution model, excluding retries and other metered dimensions.',
-          value: `const workload = [\n  { name: 'notifications', runs: 800_000, steps: 1 },\n  { name: 'account-onboarding', runs: 200_000, steps: 5 },\n]\n\nconst executions = workload.reduce(\n  (total, item) => total + item.runs * (item.steps + 1),\n  0,\n)\nconsole.log(executions) // 2_800_000`,
+          value: `const workload = [\n  { name: 'notifications', runs: 800_000, steps: 1 },\n  { name: 'account-onboarding', runs: 200_000, steps: 5 },\n]\n\nconst executions = workload.reduce(\n  (total, item) => total + item.runs * (item.steps + 1),\n  0,\n)\nconsole.log(executions) // 2800000`,
         },
         sourceUrls: urls('inngest', 'inngestExecution'),
       },
@@ -413,15 +417,15 @@ export const articles: Article[] = [
         heading: 'Separate known plan prices from unknown overages',
         body: [
           'The published Pro plan starts at $99/month with one million executions. Business starts at $499/month with ten million. Those are plan allowances, not prices per million business jobs. At those exact execution volumes, the base plans cover the execution count, subject to their other limits.',
-          'For 100 million executions, this guide does not publish a definitive bill. Inngest describes tiered Pro overage rates, but the reviewed page does not expose the full tier breakpoints needed to reproduce that invoice. Use the current calculator or obtain a quote; do not multiply the lowest advertised marginal rate across every execution.',
-          'Keep events, concurrency, workers, observability, and any sandbox compute as separate estimate lines. A workload fitting an execution allowance can still exceed another resource limit. Save the dated plan assumptions next to the estimate so a future reader can update them without reconstructing the model.',
+          'For 100 million executions, this guide does not publish a definitive bill. Inngest describes tiered Pro overage rates that fall from $0.000050 to $0.000015 per execution as volume grows, but the reviewed page does not publish the tier breakpoints needed to reproduce that invoice. Use the current calculator or obtain a quote; do not multiply the lowest advertised marginal rate across every execution.',
+          'Keep events, concurrent steps, workers, seats, observability, and any sandbox compute as separate estimate lines. A workload fitting an execution allowance can still exceed another resource limit. Save the dated plan assumptions next to the estimate so a future reader can update them without reconstructing the model.',
         ],
         sourceUrls: urls('inngest'),
       },
       {
         heading: 'Build the BullMQ side from measured resources',
         body: [
-          'For Redis-backed BullMQ, estimate Redis capacity and availability, worker compute, network traffic, backups, telemetry, and engineering operations. Durabull’s hosted dashboard is free during beta, but that does not make the underlying workload free. Self-hosting Durabull adds its own deployment costs.',
+          'For Redis-backed BullMQ, estimate Redis capacity and availability, worker compute, network traffic, backups, telemetry, and engineering operations. Durabull’s hosted dashboard is free during beta, but that does not make the underlying workload free. Durabull is Apache-2.0 open source; self-hosting it adds its own deployment costs.',
           'Use the same job mix, payload sizes, retention, peak arrival pattern, and recovery target on both sides. Measure CPU time and memory for your processors; a large idle worker fleet and a highly utilized fleet produce very different costs per completed job. Include retained failed jobs when sizing Redis, especially after a prolonged dependency outage.',
           'Distinguish incremental cost from total cost. An existing BullMQ fleet may have spare capacity, making the next workload inexpensive to add. A greenfield comparison must include provisioning and maintaining that fleet. Both are valid questions, but they cannot share one unlabeled savings percentage.',
         ],
@@ -440,7 +444,7 @@ export const articles: Article[] = [
         heading: 'Choose based on the work you need to own',
         body: [
           'Keeping BullMQ is attractive when you already have reliable processors and want better operational visibility. Inngest is attractive when its workflow model removes work your team would otherwise build and maintain. The right outcome can be to retain existing queue workloads while evaluating a new orchestration model for a separate feature.',
-          'Before a migration decision, implement one representative workflow, cause a controlled failure, recover it, and review the resulting usage and operational effort. A small observed comparison is more decision-useful than projecting a headline unit price across a hundred million undefined jobs.',
+          'Before a migration decision, implement one representative workflow, cause a controlled failure, recover it, and review the resulting usage and operational effort. A small observed comparison is more decision-useful than projecting a headline unit price across a hundred million hypothetical jobs.',
         ],
         sourceUrls: urls('inngestExecution', 'deployment'),
       },
@@ -495,7 +499,7 @@ export const articles: Article[] = [
         heading: 'Separate the datastore, processor, and workflow layers',
         body: [
           'For a Redis-backed BullMQ deployment, the datastore holds queue state and the application workers perform the work. Redis may be managed by a provider even when the worker fleet belongs to your team. Durabull adds an operations interface; it does not become the processor or remove the need to operate Redis and workers.',
-          'Inngest coordinates durable functions and steps. Trigger.dev Cloud runs task code on managed workers. Temporal separates its service from workers that execute workflow and activity code. These distinctions determine where deployment, scaling, and network troubleshooting happen.',
+          'Inngest orchestrates durable functions and steps whose code typically runs in your own application, on serverless endpoints or workers. Trigger.dev Cloud runs task code on managed workers. Temporal separates its service from workers that execute workflow and activity code. These distinctions determine where deployment, scaling, and network troubleshooting happen.',
           'Write down the owner of each layer in your proposed architecture. If two teams each believe the other owns worker availability or recovery testing, a platform purchase will not close that gap.',
         ],
         sourceUrls: urls('production', 'deployment', 'inngestExecution', 'trigger', 'temporal'),
@@ -572,7 +576,7 @@ export const articles: Article[] = [
     slug: 'replace-bull-board',
     title: 'How to replace Bull Board without migrating your jobs',
     description:
-      'A staged migration checklist for a Redis-backed Bull Board installation: inventory queues, validate the replacement, test recovery, and remove the old admin route safely.',
+      'A staged checklist for replacing a Redis-backed Bull Board install: inventory queues, validate the replacement, test recovery, and remove the old route.',
     category: 'Migration guides',
     takeaway:
       'For a compatible Redis-backed installation, replace the operational interface in stages. Keep queue identities, producers, workers, and job data unchanged.',
@@ -580,7 +584,7 @@ export const articles: Article[] = [
     datePublished: '2026-10-20',
     dateModified: '2026-10-20',
     intro:
-      'Bull Board is an interface to your queues, so replacing it usually does not require moving jobs. The practical work is preserving visibility, access controls, and recovery behavior while switching interfaces. This guide covers Redis-backed BullMQ; verify backend compatibility separately for BullMQ v6 PostgreSQL installations.',
+      'Bull Board is an interface to your queues, so replacing it usually does not require moving jobs. The practical work is preserving visibility, access controls, and recovery behavior while switching interfaces. This guide covers Redis-backed BullMQ. Durabull does not currently support BullMQ v6’s PostgreSQL backend, so it is not a replacement for Bull Board on PostgreSQL-backed queues.',
     sections: [
       {
         heading: '1. Identify the problem you are solving',
@@ -593,7 +597,7 @@ export const articles: Article[] = [
       {
         heading: '2. Inventory the configuration you must preserve',
         body: [
-          'Record every queue’s Redis endpoint, logical database, prefix, queue name, and BullMQ version. Include TLS settings and network access. Check whether the same queue name appears in more than one environment. Confirm the replacement supports the features you use, including flows and recurring schedulers.',
+          'Record every queue’s Redis endpoint, logical database, prefix, queue name, and BullMQ version. Include TLS settings and network access. Check whether the same queue name appears in more than one environment. Confirm the replacement supports the features you use, including flows and recurring schedulers. Durabull shows job schedulers and waiting-children counts but does not draw flow graphs; if your operators rely on Bull Board’s flow view, treat that as a gap to evaluate.',
           'Inspect how your application creates queue instances. An instance passed to Bull Board may also be exported to producers or used by scheduler initialization. Removing that instance simply because the dashboard no longer needs it can break application behavior. Remove dashboard-only wiring, not shared queue construction.',
           'Keep this inventory free of credentials in tickets and screenshots. Store secrets through your deployment’s normal secret mechanism and give each connection a clear environment label.',
         ],
@@ -603,7 +607,7 @@ export const articles: Article[] = [
         heading: '3. Connect the replacement in staging',
         body: [
           'For Durabull, configure the Redis connection and matching BullMQ prefix. Environment-managed connections can declare the same information in deployment variables. The example shows the shape of that configuration with a placeholder hostname; inject credentials securely if the instance requires them.',
-          'A successful Redis connection is only the first check. Confirm the expected queues are discovered, open a known job ID, and inspect a scheduled job and a flow if your application uses them. When discovery is empty, check database, prefix, and permissions before changing any queue state.',
+          'A successful Redis connection is only the first check. Confirm the expected queues are discovered, open a known job ID, and inspect a scheduled job and a parent job waiting on children if your application uses them. When discovery is empty, check database, prefix, and permissions before changing any queue state.',
         ],
         code: {
           language: 'bash',
@@ -629,7 +633,7 @@ export const articles: Article[] = [
           'After the acceptance checks pass, remove the old dashboard route and imports. Remove packages only if no other code uses them. Preserve shared queues, producers, workers, and scheduler setup. Update runbooks, bookmarks, reverse-proxy rules, and any alert links that point to the old interface.',
           'Prepare rollback as a UI deployment change: restore the old route and its access controls if necessary. You should not need a job-data migration for this dashboard switch. Keep a record of the verified backend and version so a later runtime upgrade does not silently invalidate compatibility assumptions.',
         ],
-        sourceUrls: urls('idempotency', 'retry', 'board', 'postgres'),
+        sourceUrls: urls('idempotency', 'manualRetry', 'board', 'postgres'),
       },
     ],
     faqs: [
@@ -656,7 +660,7 @@ export const articles: Article[] = [
       'nativeMetrics',
       'mcp',
       'idempotency',
-      'retry',
+      'manualRetry',
       'postgres'
     ),
     relatedCompare: ['bull-board', 'workbench', 'taskforce', 'arena'],
@@ -668,12 +672,12 @@ export const articles: Article[] = [
       'Reproduce Trigger.dev invocation and compute costs, account for credits and concurrency, and compare them fairly with the full cost of a BullMQ worker fleet.',
     category: 'Cost analysis',
     takeaway:
-      'At ten executing seconds on small-1x, one million runs generates $363 of listed usage. That is a modeled usage charge, not a complete invoice or a savings claim.',
+      'On small-1x at ten executing seconds per run, Trigger.dev usage is about $363 per million runs, plus concurrency add-ons at high volume. Compare it with BullMQ’s full worker and Redis cost, not a dashboard fee.',
     keywords: ['Trigger.dev pricing', 'Trigger.dev vs BullMQ', 'Trigger.dev cost'],
     datePublished: '2026-10-20',
     dateModified: '2026-10-20',
     intro:
-      'Trigger.dev Cloud includes managed task execution; BullMQ leaves worker deployment with your team. Compare the same workload, including compute on both sides. These examples use public USD prices reviewed on October 20, 2026, a 30-day month, and no retries, taxes, discounts, or optional add-ons unless stated.',
+      'Trigger.dev Cloud includes managed task execution; BullMQ leaves worker deployment with your team. Compare the same workload, including compute on both sides. These examples use public USD prices reviewed on 20 October 2026, a 30-day month, and no retries, taxes, discounts, or optional add-ons unless stated.',
     sections: [
       {
         heading: 'Reproduce the usage calculation',
@@ -684,7 +688,7 @@ export const articles: Article[] = [
         code: {
           language: 'typescript',
           caption: 'Reproducible usage estimate; excludes plan adjustments and add-ons.',
-          value: `const invocationUsd = 0.000025\nconst small1xUsdPerSecond = 0.0000338\nconst executingSecondsPerRun = 10\n\nfor (const runs of [1_000_000, 10_000_000, 100_000_000]) {\n  const usage = runs * (\n    invocationUsd + executingSecondsPerRun * small1xUsdPerSecond\n  )\n  console.log(runs, usage.toFixed(2))\n}\n// 1000000   363.00\n// 10000000  3630.00\n// 100000000 36300.00`,
+          value: `const invocationUsd = 0.000025\nconst small1xUsdPerSecond = 0.0000338\nconst executingSecondsPerRun = 10\n\nfor (const runs of [1_000_000, 10_000_000, 100_000_000]) {\n  const usage = runs * (\n    invocationUsd + executingSecondsPerRun * small1xUsdPerSecond\n  )\n  console.log(runs, usage.toFixed(2))\n}\n// 1000000 363.00\n// 10000000 3630.00\n// 100000000 36300.00`,
         },
         sourceUrls: urls('trigger'),
       },
@@ -708,7 +712,7 @@ export const articles: Article[] = [
       {
         heading: 'Measure execution time and checkpointed waiting separately',
         body: [
-          'Trigger.dev supports durable waits that checkpoint a run. Checkpointed waiting does not consume executing compute in the same way as active task code. Do not multiply the entire calendar duration of a multi-day workflow by the machine rate. Conversely, an ordinary awaited network request is not automatically the same thing as a durable wait.',
+          'Trigger.dev checkpoints a run during durable waits. Waiting on subtasks, and `wait.for` or `wait.until` waits longer than five seconds, do not count toward compute usage. Freed compute is not freed concurrency: a time-based wait keeps its concurrency slot for roughly its first 60 seconds. Do not multiply the entire calendar duration of a multi-day workflow by the machine rate. Conversely, an ordinary awaited network request is not automatically the same thing as a durable wait.',
           'The default small-1x machine has 0.5 vCPU and 0.5 GB RAM. A larger machine can cost more per second and still be cheaper for a CPU-bound operation if it finishes sufficiently faster. Benchmark representative payloads and failures rather than choosing a machine solely from its unit price.',
           'Repeat the estimate for short, typical, and slow runs. Track observed retries and replayed work separately. The ten-second example excludes them; it should not be stretched into a claim about the cost of a long-running AI agent or a memory-heavy media pipeline.',
         ],
@@ -717,7 +721,7 @@ export const articles: Article[] = [
       {
         heading: 'Compare with your full BullMQ operating cost',
         body: [
-          'On the BullMQ side, include worker compute, Redis, storage retention, availability, network transfer, observability, and operations. Durabull’s beta dashboard fee does not replace those costs. Existing spare worker capacity can reduce incremental cost, but a greenfield fleet needs its full cost included.',
+          'On the BullMQ side, include worker compute, Redis, storage retention, availability, network transfer, observability, and operations. Durabull’s $0 beta dashboard does not offset any of those costs; it is an operations interface, not a runtime. Existing spare worker capacity can reduce incremental cost, but a greenfield fleet needs its full cost included.',
           'For I/O-heavy work, a BullMQ worker can handle multiple concurrent jobs subject to application resources and downstream limits. Do not equate one Trigger.dev machine with one permanently dedicated BullMQ process without measuring the workload. The compute architectures are different.',
           'Choose Trigger.dev when its managed execution and developer workflow justify the cost for your team. Keep BullMQ when its runtime already meets your needs and the gap is operational visibility. Use a representative pilot to compare recovery, deployment effort, and cost together; a dashboard is not a drop-in replacement for a task runtime.',
         ],
@@ -755,7 +759,7 @@ export const articles: Article[] = [
     slug: 'redis-insight-is-not-a-bullmq-dashboard',
     title: 'Redis Insight and BullMQ dashboards: when to use each',
     description:
-      'Use Redis Insight for database investigation and a BullMQ-aware dashboard for job recovery. A practical guide to separating datastore symptoms from queue behavior.',
+      'Use Redis Insight for database investigation and a BullMQ-aware dashboard for job recovery: a practical guide to separating datastore and queue symptoms.',
     category: 'Operations',
     takeaway:
       'Inspect Redis when the datastore is the question. Use BullMQ APIs and a compatible dashboard when job state, retries, or schedules are the question.',
@@ -769,7 +773,7 @@ export const articles: Article[] = [
         heading: 'Start with the question you need to answer',
         body: [
           '“Which keys consume memory?” is a database question. “Why has this customer’s export not completed?” is a job question. Starting at the right level saves time: the first needs storage evidence, while the second needs queue identity, job state, attempts, and application context.',
-          'Redis Insight documents a key browser, database analysis, command tools, a profiler, and Slow Log. Those capabilities are useful even when the database serves several applications. Its documented core feature set does not establish a native BullMQ retry and scheduler workflow. Extensions or custom commands should be evaluated separately.',
+          'Redis Insight documents a key browser, database analysis, command tools, a profiler, and Slow Log. Those capabilities are useful even when the database serves several applications. Its documented core feature set does not include a native BullMQ retry or scheduler workflow. Visualization plugins and custom commands should be evaluated separately.',
           'A queue dashboard should be assessed on the corresponding job workflow: locate an ID, inspect failure evidence, identify dependencies or scheduling, and carry out a supported recovery. A graph of Redis memory cannot by itself tell you whether a particular business operation succeeded.',
         ],
         sourceUrls: urls('insight', 'nativeMetrics'),
@@ -781,14 +785,14 @@ export const articles: Article[] = [
           'For diagnosis, narrow your inspection to the relevant connection and prefix. Redis SCAN is incremental and can return duplicate entries; a changing keyspace is not a transactionally consistent inventory. Avoid turning one scan result into a definitive claim about every queue or job.',
           'Preserve the distinction between “not found in this observation” and “does not exist.” Wrong database selection, a custom prefix, restricted access, and concurrent cleanup are different explanations that need different next steps.',
         ],
-        sourceUrls: urls('scan', 'connections', 'retry', 'retention'),
+        sourceUrls: urls('scan', 'connections', 'manualRetry', 'retention'),
       },
       {
         heading: 'Example: retained history is consuming Redis memory',
         body: [
-          'Suppose memory grows while completed work continues normally. Use database analysis to identify the large key families, then inspect the application’s job-retention policy. If the evidence points to retained completed or failed jobs, change retention deliberately rather than deleting matching keys ad hoc.',
+          'Suppose memory grows while completed work continues normally. Use database analysis to identify the large key families (it analyzes up to 10,000 keys and extrapolates beyond that), then inspect the application’s job-retention policy. If the evidence points to retained completed or failed jobs, change retention deliberately rather than deleting matching keys ad hoc.',
           'BullMQ supports bounded retention using age and count. The example is a policy illustration, not a universal recommendation: keep completed jobs for up to one day and 10,000 entries, and failed jobs for up to seven days and 50,000 entries. Choose limits from incident response needs and observed job sizes.',
-          'Automatic removal is lazy and is evaluated as jobs finish. Changing a policy does not promise immediate cleanup of all historical data. Also review job-ID deduplication behavior before shortening retention: removing a prior job changes whether that retained identifier can prevent a future addition.',
+          'Automatic removal is lazy: it runs only when another job finishes in the same state. Queue `defaultJobOptions` apply to jobs added after the change, while jobs already in Redis keep the options they were added with, so a new policy does not promise immediate cleanup of historical data. Also review job-ID deduplication behavior before shortening retention: removing a prior job changes whether that retained identifier can prevent a future addition.',
         ],
         code: {
           language: 'typescript',
@@ -838,7 +842,7 @@ export const articles: Article[] = [
       'connections',
       'nativeMetrics',
       'health',
-      'retry',
+      'manualRetry',
       'retention',
       'stalled'
     ),

@@ -36,7 +36,7 @@ export function ComparisonDirectory({
         />
       </div>
       <output className="directory-results" aria-live="polite">
-        {filtered.length} of {items.length} tools
+        {filtered.length} of {items.length} {items.length === 1 ? 'tool' : 'tools'}
         {query ? ` matching “${query}”` : ' · grouped by the job they do'}
       </output>
       {categories.map((category) => {
@@ -50,7 +50,7 @@ export function ComparisonDirectory({
                 <p>{category.blurb}</p>
               </div>
               <span className="editorial-count">
-                {String(matches.length).padStart(2, '0')} tools
+                {String(matches.length).padStart(2, '0')} {matches.length === 1 ? 'tool' : 'tools'}
               </span>
             </div>
             <ul className="directory-list">

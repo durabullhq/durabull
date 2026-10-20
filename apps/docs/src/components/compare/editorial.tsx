@@ -49,7 +49,7 @@ export function EditorialHero({
         <nav aria-label="Breadcrumb" className="editorial-breadcrumb">
           <Link href="/">Durabull</Link>
           <span aria-hidden>/</span>
-          <Link href={`/${parent}`}>{parent === 'blog' ? 'Field guides' : 'Compare'}</Link>
+          <Link href={`/${parent}`}>{parent === 'blog' ? 'Guides' : 'Compare'}</Link>
         </nav>
         <div className={`editorial-hero-grid ${visual ? '' : 'editorial-hero-wide'}`}>
           <div>
@@ -148,13 +148,13 @@ export function DecisionSummary({
   return (
     <section aria-label="Which tool fits your team" className="decision-summary">
       <div>
-        <span className="editorial-eyebrow">Choose {name} when</span>
+        <span className="editorial-eyebrow">The case for {name}</span>
         <p>
           <InlineText text={theirs} />
         </p>
       </div>
       <div>
-        <span className="editorial-eyebrow">Choose Durabull when</span>
+        <span className="editorial-eyebrow">The case for Durabull</span>
         <p>
           <InlineText text={ours} />
         </p>

@@ -35,7 +35,7 @@ Unsafe claims (do not use):
 | **Datadog** | Redis INFO metrics; APM traces of `bullmq` producers/consumers; optional Data Streams Monitoring | No Redis-key discovery. APM/DSM see **instrumented** `bullmq` library calls | **Not published.** No job retry, pause, or payload browser in Redis/APM docs | Yes — Datadog observability MCP, not BullMQ ops | APM host + custom metrics + optional DSM; Redis check is part of the Agent | Use for Redis health + end-to-end traces. Not a queue console |
 | **Grafana + Prometheus** | Whatever you scrape: Redis exporter and/or BullMQ metrics | Only if the exporter scans Redis or you hard-code queue names | Built-in Grafana: **no**. Some community exporters bundle a queue UI | Grafana Cloud / OSS MCP query Grafana data, not Redis jobs | OSS Grafana is free (AGPLv3). Grafana Cloud is usage-based | Use for time series and alerts. Not job operations |
 | **New Relic** | Redis server integration (`INFO` / key lengths); Node APM Redis/ioredis; generic background transactions | **No.** `bullmq` is not in the Node.js instrumented-modules list | **Not published** | Yes — New Relic MCP | Usage-based: data ingest + users (not per host) | Use for Redis + app APM. Instrument workers yourself |
-| **Sentry** | Errors in workers; optional Queues dashboard from custom spans; Crons check-ins for **scheduled** jobs | Destinations appear from instrumented spans, not Redis scan | **Not published.** No retry/inspect of BullMQ jobs | Yes — Sentry MCP | Paid plans include 1 cron monitor; extra monitors PAYG | Use for job **errors** and missed crons. Not a queue dashboard |
+| **Sentry** | Errors in workers; optional Queues dashboard from custom spans; Crons check-ins for **scheduled** jobs | Destinations appear from instrumented spans, not Redis scan | **Not published.** No retry/inspect of BullMQ jobs | Yes — Sentry MCP | All plans include 1 cron monitor; extra monitors PAYG on paid plans | Use for job **errors** and missed crons. Not a queue dashboard |
 | **BullMQ official metrics** | Per-queue job counts and completed/failed counters | You must construct a `Queue` per name | Metrics only | No (not in docs.bullmq.io) | Free (library feature) | Feed Grafana/Prometheus. Still need a dashboard for ops |
 | **Redis Cloud observability** | Redis Cloud database metrics (ops, latency, memory, keys, connections) | **No** BullMQ awareness | **No** | Not published as Redis Cloud MCP | Included in Cloud plans; Prometheus/Datadog export is **Pro** | Use for the Redis hosting layer only |
 | **OpenTelemetry (`bullmq-otel`)** | Traces of job lifecycle; optional OTel metrics | Only queues/workers you attach telemetry to | **No** | N/A (export to any OTLP backend) | Free library; backend cost is the vendor you export to | Use when you already standardized on OTel |
@@ -55,7 +55,7 @@ Setup is Agent config (`redisdb.d/conf.yaml`: host, port, optional username/pass
 **Metrics (high level):** hundreds of Redis INFO-derived gauges (`redis.mem.used`, `redis.keys`, `redis.net.instantaneous_ops_per_sec`, slowlog percentiles, replication, cluster, Redis Search, Sentinel, …). Optional:
 
 - `command_stats` → `redis.command.calls` / `redis.command.usec_per_call` tagged by command
-- `keys` → `redis.key.length` for **named keys you list** (not automatic BullMQ queue discovery)
+- `keys` → `redis.key.length` for the keys you list. Entries may be glob patterns, which the check expands with `SCAN` ([conf.yaml.example](https://github.com/DataDog/integrations-core/blob/master/redisdb/datadog_checks/redisdb/data/conf.yaml.example)). A pattern such as `bull:*:wait` therefore yields per-key lengths, but the check does not interpret keys as BullMQ queues, states, or jobs
 
 **Logs:** Redis log file tailing, disabled until `logs_enabled: true`.
 
@@ -65,7 +65,7 @@ Setup is Agent config (`redisdb.d/conf.yaml`: host, port, optional username/pass
 
 **Trace collection:** “Datadog APM integrates with Redis” — that is **client tracing** of Redis commands from instrumented apps (`redis` and `ioredis` are fully supported data stores), not BullMQ job APIs.
 
-**Does it discover BullMQ queues?** No. Listing specific Redis keys can give list lengths, but BullMQ state is not a single LIST key, and Datadog does not document scanning `bull:*` prefixes.
+**Does it discover BullMQ queues?** No. A `keys` pattern can report lengths of matching BullMQ keys (lists, sorted sets, hashes), but BullMQ state spans several keys per queue, and Datadog does not document any BullMQ-aware interpretation of them.
 
 **Retry / inspect payloads?** Not in the Redis integration docs. The check collects metrics and service checks only.
 
@@ -85,7 +85,7 @@ Datadog **does** have first-party BullMQ support in `dd-trace`.
 **Code changes required:**
 
 1. Install `dd-trace` and initialize it **before** importing BullMQ (`NODE_OPTIONS='--require dd-trace/init'` or equivalent).
-2. For DSM, set `DD_DATA_STREAMS_ENABLED=true` (and Datadog recommends `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED=true`).
+2. For DSM, set `DD_DATA_STREAMS_ENABLED=true` (the setup example also sets `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED=true`).
 3. No Redis sidecar required for tracing; this is in-process library instrumentation.
 
 **What this is not:** DSM setup copy describes measuring end-to-end latencies and relationships between queues and services via auto-instrumentation. It does not describe browsing waiting/failed jobs, reading payloads, or retrying. DSM is **not supported** on Datadog gov sites (`app.ddog-gov.com`, `us2.ddog-gov.com`) per the product callout.
@@ -100,14 +100,14 @@ APM treats BullMQ as a **worker/messaging library**: producer and consumer spans
 
 **Official:** [https://docs.datadoghq.com/mcp_server/](https://docs.datadoghq.com/mcp_server/) and [setup](https://docs.datadoghq.com/mcp_server/setup/)
 
-- Remote endpoint example: `https://mcp.datadoghq.com/v1/mcp` (site-specific hosts exist, e.g. EU `mcp.datadoghq.eu`).
-- Purpose: query Datadog (logs, metrics, traces, monitors, dashboards, security signals).
-- Auth: OAuth 2.0 preferred; PAT/SAT bearer as fallback.
+- Remote endpoint: `https://mcp.datadoghq.com/v1/mcp` for US1 (the setup page fills it in from its site selector; per-site values are in Datadog’s docs source, [regions.config.js](https://github.com/DataDog/documentation/blob/master/hugo/assets/scripts/config/regions.config.js), e.g. EU `https://mcp.datadoghq.eu/v1/mcp`). Not supported on the gov sites.
+- Purpose: query Datadog (logs, metrics, traces, monitors, dashboards, incidents, and more, grouped into toolsets). Some toolsets include **write tools** (e.g. `create_datadog_monitor`), gated by the `mcp_write` permission and an org-level MCP Write Access setting. Datadog describes the server as under significant development.
+- Auth: OAuth 2.0 recommended; personal/service access token as bearer, or API + application key headers.
 - **Not a BullMQ operations API.** No published tools to retry jobs or read Redis payloads.
 
 ### Pricing (published)
 
-Sources: [pricing list](https://www.datadoghq.com/pricing/list/), [APM billing](https://docs.datadoghq.com/account_management/billing/apm_distributed_tracing/), [custom metrics billing](https://docs.datadoghq.com/account_management/billing/custom_metrics/).
+Sources: [pricing list](https://www.datadoghq.com/pricing/list/), [APM billing](https://docs.datadoghq.com/account_management/billing/apm_tracing_profiler/), [custom metrics billing](https://docs.datadoghq.com/account_management/billing/custom_metrics/).
 
 Figures below are **list prices as published on those pages on 20 Oct 2026**. Contracts can differ. Existing customers are told to use their billing agreement.
 
@@ -202,7 +202,7 @@ GitHub search for `bullmq prometheus exporter` (20 Oct 2026). Star counts change
 | --- | --- | --- | --- | --- |
 | [igrek8/bullmq-prometheus](https://github.com/igrek8/bullmq-prometheus) | Node Docker exporter | No. Env: `REDIS_*`, `BULL_PREFIX`, optional `BULL_QUEUES` | If `BULL_QUEUES` is unset it scans Redis (README warns scans are costly). If set, uses that list | Metrics: `active_total`, `wait_total`, `waiting_children_total`, `prioritized_total`, `delayed_total`, `failed_total`, `completed_total` (completed = last 1 minute). `/health` |
 | [antonmd/bullmq-exporter](https://github.com/antonmd/bullmq-exporter) | Go exporter + Docker | No | README: auto-discovery **or** specific queues | Gauges/counters for waiting/active/completed/failed/delayed/paused/prioritized; scrape success/duration. TLS, Sentinel, Cluster. **Very new / low adoption on fetch** — do not market as “standard” |
-| [okerx/bullmq-metrics](https://github.com/okerx/bullmq-metrics) | Sidecar; Docker `okerx/bullmq-monitor` | No | Auto-discovers from Redis | Metrics include `bullmq_job_count{queue,state}`, completed/failed totals and last-minute, `bullmq_exporter_queues_discovered`. Grafana dashboard ID **[25072](https://grafana.com/grafana/dashboards/25072-bullmq-overview/)** (“BullMQ Overview”, published by **okerx**, 26 Mar 2026, Prometheus datasource). Community dashboard, not Grafana Labs |
+| [okerx/bullmq-metrics](https://github.com/okerx/bullmq-metrics) | Sidecar; Docker `okerx/bullmq-monitor` | No | Auto-discovers from Redis | Metrics include `bullmq_job_count{queue,state}`, completed/failed totals and last-minute, `bullmq_exporter_queues_discovered`. Grafana dashboard ID **[25072](https://grafana.com/grafana/dashboards/25072-bullmq-overview/)** (“BullMQ Overview”, Prometheus datasource, built for this exporter). Community dashboard, not Grafana Labs |
 | [ron96g/bullmq-exporter](https://github.com/ron96g/bullmq-exporter) | Prometheus **plus** a BullMQ dashboard behind login | No (separate service using `bullmq`) | Per configured queues; uses `QueueEvents` | Histograms `bullmq_processed_duration`, `bullmq_completed_duration`; gauges for completed/active/delayed/failed/waiting. Influenced by `bull_exporter`. **This is the rare exporter that also offers a queue UI** — still a community project, not Grafana |
 
 **Not BullMQ** (easy marketing mistake):
@@ -216,11 +216,11 @@ Generic Redis Prometheus: [oliver006/redis_exporter](https://github.com/oliver00
 
 Source: [https://grafana.com/pricing/](https://grafana.com/pricing/) and [metrics pricing docs](https://grafana.com/docs/grafana-cloud/platform/pricing-and-usage/metrics/) (docs explain the meter; **rates** are on the pricing page).
 
-**Free:** $0. Includes (among other free-tier caps) **10k active series / month**, 14-day metrics retention, community support. Also advertised: 50 GB logs, 50 GB traces, 50 GB profiles, 50k frontend sessions, 500 VUh k6, 3 users — from the OSS/Cloud marketing pages.
+**Free:** $0. Includes (among other free-tier caps) **10k active series / month**, 14-day metrics retention, community support. Also listed on the pricing page: 50 GB logs, 50 GB traces, 50 GB profiles (14-day retention each), 50k frontend sessions, 500 k6 virtual user hours, 3 active Grafana users.
 
-**Pro:** **From $19 / month + usage**. Platform fee **$19 / month includes 10k active series**, then PAYG. Metrics **starts at $6.50 / 1k series** with volume discounts ($5.90 then $5.50 in the on-page calculator bands). 13-month metrics retention; 8×5 email support.
+**Pro:** **From $19 / month + usage**. Platform fee **$19 / month includes 10k active series**, then PAYG. Metrics **starts at $6.50 / 1k series** with automatic volume discounts (the page does not list the band prices; use its calculator). 13-month metrics retention; 8×5 email support.
 
-**Enterprise:** **Starts at $25,000 / year** spend commit. Metrics “as low as $3 / 1k series.”
+**Enterprise:** **minimum $25,000 / year** commitment. Metrics “as low as $3 / 1k series.”
 
 **Application Observability** (if you send OTel traces of workers): Pro **starts at $0.025 / host hour (~$18 / host)**; free tier limited to **2,232 host hours / month**. Telemetry is billed separately.
 
@@ -324,10 +324,12 @@ Dashboard metrics (once spans exist): avg time in queue, processing time, error 
 **NestJS + BullMQ auto-instrumentation — verify carefully:**
 
 - Product Queues page (fetched 20 Oct 2026): still **Celery-only** auto instrumentation.
-- GitHub [getsentry/sentry-javascript#19759](https://github.com/getsentry/sentry-javascript/commit/84a9768a3d72ebb31241a23caadda674ab84adbc) (released in **10.44.0** per issue automation): wraps `@Processor()` from `@nestjs/bullmq` with `queue.process` transactions and exception capture.
+- GitHub [getsentry/sentry-javascript#19759](https://github.com/getsentry/sentry-javascript/commit/84a9768a3d72ebb31241a23caadda674ab84adbc), shipped in [**10.44.0**](https://github.com/getsentry/sentry-javascript/releases/tag/10.44.0) (release notes): wraps `@Processor()` classes from `@nestjs/bullmq` (v10.0.0+) with `queue.process` transactions and exception capture.
 - NestJS platform docs mention BullMQ only for **isolation scopes** ([async context](https://docs.sentry.io/platforms/javascript/guides/nestjs/features/async-context/)), not as a Queues auto-instrumentation product feature.
 
-**Marketing rule:** do not say “Sentry auto-instruments BullMQ” globally. You may say NestJS `@nestjs/bullmq` processor wrapping shipped in sentry-javascript 10.44.0, while the Queues product page still lists Celery as the auto-instrumented system.
+**Marketing rule:** do not say “Sentry auto-instruments BullMQ” globally. You may say the NestJS SDK wraps `@nestjs/bullmq` processors as of sentry-javascript 10.44.0, while the Queues product page still lists Celery as the auto-instrumented system.
+
+**Error capture note:** BullMQ catches processor errors and marks the job failed, so plain Node.js workers do not produce unhandled exceptions for Sentry’s default handlers. Outside the NestJS integration, call `Sentry.captureException` yourself (inference from BullMQ and Sentry defaults; not stated on a single vendor page).
 
 **Discover queues?** Only destinations that emit correctly attributed spans.
 
@@ -370,7 +372,7 @@ Queue tracing consumes **spans**, billed under Tracing, not under Cron monitors.
 
 ### MCP
 
-[https://mcp.sentry.dev/](https://mcp.sentry.dev/) — `https://mcp.sentry.dev/mcp`, optional org/project scope. OAuth. Search errors, performance, issues, docs — **not** Redis/BullMQ job mutation.
+[https://mcp.sentry.dev/](https://mcp.sentry.dev/) (docs.sentry.io/product/sentry-mcp/ redirects here) — `https://mcp.sentry.dev/mcp`, optional org/project scope. OAuth. Search errors, analyze performance, triage issues, read docs, manage projects — **not** Redis/BullMQ job mutation. The pricing page lists MCP access on all plans, including Developer.
 
 ### When to use vs a dedicated dashboard
 
@@ -444,9 +446,9 @@ Alerts (plan-dependent): dataset size (Pro), plan dataset size (Essentials), thr
 
 Install “Redis Cloud by Redis, Inc.”; Agent `redis_cloud.d` + VPC. Namespace `rdsc` (example metric `rdsc.bdb_up`). Dashboards: Overview, Database, Network. Still Redis Cloud metrics, not BullMQ.
 
-KB: [Monitoring Redis Cloud with Prometheus and Datadog](https://support.redislabs.com/hc/en-us/articles/27439035939730-Monitoring-Redis-Cloud-with-Prometheus-and-Datadog) — Essentials cannot reach the internal metrics endpoint.
+KB (returned HTTP 403 to automated fetches on 20 Oct 2026; not re-verified): [Monitoring Redis Cloud with Prometheus and Datadog](https://support.redislabs.com/hc/en-us/articles/27439035939730-Monitoring-Redis-Cloud-with-Prometheus-and-Datadog) — Essentials cannot reach the internal metrics endpoint.
 
-Plan matrix from Redis KB [Monitoring Setup](https://support.redislabs.com/hc/en-us/articles/28281114508178-Monitoring-Setup-in-Redis-Cloud):
+Plan matrix from Redis KB [Monitoring Setup](https://support.redislabs.com/hc/en-us/articles/28281114508178-Monitoring-Setup-in-Redis-Cloud) (KB returned HTTP 403 to automated fetches on 20 Oct 2026; the Prometheus row is independently confirmed by the [Redis docs](https://redis.io/docs/latest/integrate/prometheus-with-redis-cloud/), the rest is not re-verified):
 
 | Feature | Essentials | Pro |
 | --- | --- | --- |
@@ -540,7 +542,7 @@ These are **out of scope** as “generic observability” but answer the search 
 
 | Server | Who | Mechanism | Notes |
 | --- | --- | --- | --- |
-| [taskforce.sh/mcp](https://taskforce.sh/mcp) | Taskforce.sh (BullMQ company) | `https://api.taskforce.sh/mcp` Bearer token | List queues/jobs, read data/logs/flow, retry/promote, pause, clean (permissions + audit). **Hosted product MCP**, not docs.bullmq.io |
+| [taskforce.sh/mcp](https://taskforce.sh/mcp) | Taskforce.sh (BullMQ company) | `https://api.taskforce.sh/mcp` Bearer token | List queues/jobs/schedulers, read data/logs/flow, retry/promote, add jobs, pause/resume, remove/clean (dry run for destructive ops; role-based permissions, read-only tokens, exportable audit log). **Hosted product MCP**, not docs.bullmq.io |
 | [Durabull MCP](https://durabull.io/mcp/) | Durabull | `https://app.durabull.io/mcp` (OAuth 2.1) | First-party Durabull; inspect/operate with redaction. Use Durabull docs for tool counts — do not mix into competitor feature lists |
 | [adamhancock/bullmq-mcp](https://github.com/adamhancock/bullmq-mcp) (`@adamhancock/bullmq-mcp`) | Community | Local `npx`; talks **directly to Redis** | Connect, list queues, add/retry/promote, logs. **Third-party; not Taskforce.sh.** Security/audit are yours |
 | [Workbench `@getworkbench/mcp`](https://getworkbench.dev/blog/bullmq-mcp-server) | Workbench | stdio → HTTP to a running Workbench dashboard | Does not open its own Redis connection |
@@ -587,10 +589,11 @@ Flag these internally; do not put them on marketing pages as facts.
 | Datadog child spans for BullMQ’s **internal ioredis** commands | `ioredis` is supported; whether BullMQ’s client is wrapped is not documented |
 | Datadog DSM **queue inventory** matching Redis `KEYS bull:*` | DSM is library instrumentation of produce/consume, not a Redis scanner |
 | Exact Datadog **indexed-span overage** on a given contract | Billing docs vs pricing-list retention SKUs differ; use “see current list / contract” |
-| Grafana dashboard **25072 panel inventory** | Community JSON; not opened panel-by-panel in Grafana Cloud |
+| Grafana dashboard **25072 panel inventory, author, and publish date** | Community JSON; not opened panel-by-panel. The listing page shows no author or created date |
 | Community exporter **star counts / maintenance** | Snapshots from GitHub search; antonmd repo is new; igrek8 fetch vs search disagreed on stars |
 | New Relic **CCU list price** | FAQ describes Advanced Compute, no public per-CCU number on the fetched page |
-| Sentry **product** auto-instrumentation of OSS `bullmq` (non-NestJS) | Not on Queues docs. NestJS work is SDK changelog/GitHub |
+| Sentry **product** auto-instrumentation of OSS `bullmq` (non-NestJS) | Not on Queues docs. NestJS support is documented only in the SDK release notes/GitHub |
+| Redis Cloud KB articles (support.redislabs.com) | Returned HTTP 403 to automated fetches on 20 Oct 2026 |
 | Redis Cloud **per-metric Datadog ingest cost** | Redis documents the integration; Datadog bills the destination metrics as Datadog usage — split not published as a Redis SKU |
 | OpenTelemetry semantic conventions stability for BullMQ span names | Official guide shows usage; no spec URL claiming OTel semantic-convention registration |
 | “Official BullMQ MCP” on docs.bullmq.io | Not present. Taskforce.sh MCP is a separate product page |
@@ -608,13 +611,15 @@ Flag these internally; do not put them on marketing pages as facts.
 - https://docs.datadoghq.com/tracing/trace_collection/dd_libraries/nodejs/
 - https://docs.datadoghq.com/data_streams/setup/technologies/bullmq.md
 - https://docs.datadoghq.com/data_streams/setup/language/nodejs.md
-- https://docs.datadoghq.com/account_management/billing/apm_distributed_tracing/
+- https://docs.datadoghq.com/account_management/billing/apm_tracing_profiler/
 - https://docs.datadoghq.com/account_management/billing/custom_metrics/
 - https://www.datadoghq.com/pricing/
 - https://www.datadoghq.com/pricing/list/
 - https://docs.datadoghq.com/mcp_server/
 - https://docs.datadoghq.com/mcp_server/setup/
 - https://datadoghq.dev/dd-trace-js/interfaces/plugins.bullmq.html
+- https://github.com/DataDog/integrations-core/blob/master/redisdb/datadog_checks/redisdb/data/conf.yaml.example
+- https://github.com/DataDog/documentation/blob/master/hugo/assets/scripts/config/regions.config.js
 - https://github.com/DataDog/dd-trace-js/pull/7123
 
 ### Grafana / Prometheus / exporters
@@ -659,6 +664,7 @@ Flag these internally; do not put them on marketing pages as facts.
 - https://sentry.io/pricing/
 - https://mcp.sentry.dev/
 - https://github.com/getsentry/sentry-javascript/commit/84a9768a3d72ebb31241a23caadda674ab84adbc
+- https://github.com/getsentry/sentry-javascript/releases/tag/10.44.0
 
 ### BullMQ official
 

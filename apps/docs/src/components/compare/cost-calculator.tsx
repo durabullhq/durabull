@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { inngestExecutions, triggerUsage } from '@/lib/compare/cost-model'
+import { inngestExecutions, TRIGGER_SMALL_1X, triggerUsage } from '@/lib/compare/cost-model'
+import { REVIEWED_LABEL } from '@/lib/compare/editorial'
 
 const money = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -34,19 +35,19 @@ export function CostCalculator({ mode }: { mode: 'trigger' | 'inngest' }) {
         mode === 'trigger' ? 'Trigger.dev usage calculator' : 'Inngest execution calculator'
       }
     >
-      <h3>
+      <h2>
         {mode === 'trigger'
           ? 'Model the work, then price it.'
           : 'How many executions is your workload?'}
-      </h3>
+      </h2>
       <p className="calculator-caption">
         {mode === 'trigger'
-          ? 'small-1x · $0.0000338 per executing second + $0.000025 per run'
+          ? `small-1x · $${TRIGGER_SMALL_1X.perSecond} per executing second + $${TRIGGER_SMALL_1X.perRun} per run`
           : 'Executions = function runs × (steps per run + 1)'}
       </p>
       <div className="calculator-inputs">
         <label>
-          Monthly function runs
+          {mode === 'trigger' ? 'Monthly runs' : 'Monthly function runs'}
           <input
             type="number"
             min="0"
@@ -117,7 +118,7 @@ export function CostCalculator({ mode }: { mode: 'trigger' | 'inngest' }) {
         >
           Official pricing ↗
         </a>{' '}
-        · Reviewed 20 October 2026.
+        · Reviewed {REVIEWED_LABEL}.
       </p>
     </section>
   )
