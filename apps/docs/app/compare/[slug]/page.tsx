@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { VsPage } from '@/components/compare/vs-page'
 import { competitors, getCompetitor } from '@/lib/compare/catalog'
+import { editorialImagePath } from '@/lib/compare/editorial'
 import { createAbsoluteMetadata } from '@/lib/seo'
 
 export function generateStaticParams() {
@@ -15,6 +16,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     {
       title: competitor.title,
       description: competitor.description,
+      ogImage: editorialImagePath('compare', competitor.slug),
+      noIndex: competitor.researchStatus === 'limited',
       keywords: competitor.keywords,
     },
     `/compare/${competitor.slug}`

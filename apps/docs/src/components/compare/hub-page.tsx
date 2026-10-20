@@ -1,126 +1,117 @@
 import Link from 'next/link'
-import { PageHeading } from '@/components/v2/page-heading'
 import { SiteLayout } from '@/components/v2/site-layout'
-import { articles, articlePath } from '@/lib/compare/articles'
-import { categoryOrder, competitorsInCategory } from '@/lib/compare/catalog'
+import { articles } from '@/lib/compare/articles'
+import { categoryOrder, competitors } from '@/lib/compare/catalog'
 import { SITE_URL } from '@/lib/config'
-import { createBreadcrumbSchema, createFAQSchema, createSoftwareApplicationSchema } from '@/lib/seo'
+import { createBreadcrumbSchema, createFAQSchema } from '@/lib/seo'
+import { ComparisonDirectory } from './directory'
+import { ArchitectureDiagram, CategoryChoices, EditorialHero, ResearchNote } from './editorial'
 import { CompareFaqList } from './faq-list'
+import { GuideCard } from './guide-card'
 import { JsonLd } from './json-ld'
-import { CompareCta, McpBand } from './prose-blocks'
+import { CompareCta } from './prose-blocks'
 
 const hubFaqs = [
   {
-    question: 'What is the best BullMQ dashboard?',
+    question: 'Which BullMQ dashboard should I choose?',
     answer:
-      'If you want Redis auto-discovery, multiple environments, and an MCP server, Durabull or Taskforce.sh. If you want a free embed in a Node app, Bull Board or Workbench. Redis Insight is not a BullMQ dashboard.',
+      'Choose by deployment and operational needs. Bull Board and Workbench offer embedded interfaces. Durabull and Taskforce.sh offer Redis-connected operations with discovery, team workflows, and MCP. Check backend support, alert delivery, permissions, and pricing against your own environment.',
   },
   {
     question: 'Is Durabull a Bull Board alternative?',
     answer:
-      'Yes. Bull Board embed registers queues in application code. Durabull scans Redis, so workers do not change for inspection.',
+      'Yes, for Redis-backed BullMQ operations. Durabull connects to Redis without mounting a route in your application. Bull Board offers embedded and standalone modes, including CLI discovery. Compare those modes separately rather than assuming an embedded UI is the only option.',
   },
   {
-    question: 'Does Durabull replace Inngest or Trigger.dev?',
+    question: 'Can Durabull replace Inngest, Trigger.dev, or Temporal?',
     answer:
-      'No. Those platforms replace the queue runtime and bill per execution or compute. Durabull monitors BullMQ on Redis you already run.',
+      'Durabull manages existing Redis-backed BullMQ queues. These other products provide execution or orchestration runtimes. Replacing a runtime means changing application code and infrastructure; adding a dashboard does not provide workflow compatibility.',
   },
   {
-    question: 'Who else has a BullMQ MCP?',
+    question: 'How are these comparisons researched?',
     answer:
-      'Taskforce.sh (hosted), Workbench (local proxy), and Bullpane Pro. APM vendors have telemetry MCPs. They do not retry BullMQ jobs.',
+      'Durabull publishes these comparisons using vendor documentation, pricing pages, repositories, and its own source code. We distinguish documented capabilities from unverified details and list source links on every comparison. This is a documentation review, not a performance benchmark.',
   },
 ]
-
 export function CompareHubPage() {
   return (
     <SiteLayout>
       <JsonLd
         data={[
-          createSoftwareApplicationSchema(),
           createBreadcrumbSchema([
             { name: 'Home', url: SITE_URL },
-            { name: 'Compare', url: `${SITE_URL}/compare` },
+            { name: 'Compare', url: `${SITE_URL}/compare/` },
           ]),
           createFAQSchema(hubFaqs),
         ]}
       />
-
-      <PageHeading label="Compare" title="Durabull versus the rest of the queue shelf.">
-        <p>
-          Fair, sourced comparisons. BullMQ UIs, managed job platforms, and generic observability.
-          Durabull MCP is the difference when the question is “can my agent operate the queue?”
-        </p>
-      </PageHeading>
-
-      <div className="mx-auto max-w-7xl space-y-16 px-5 py-14 sm:px-8 sm:py-20">
-        <McpBand />
-
-        {categoryOrder.map((category) => {
-          const items = competitorsInCategory(category.id)
-          return (
-            <section key={category.id}>
-              <p className="v2-mono text-[var(--v2-accent)]">{category.label}</p>
-              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[var(--v2-muted)]">
-                {category.blurb}
-              </p>
-              <ul className="mt-8 divide-y divide-[var(--v2-line)] border-y border-[var(--v2-line)]">
-                {items.map((item) => (
-                  <li key={item.slug}>
-                    <Link
-                      href={`/compare/${item.slug}`}
-                      className="group grid gap-2 py-5 sm:grid-cols-[220px_minmax(0,1fr)_auto] sm:items-baseline sm:gap-8"
-                    >
-                      <span className="v2-h text-lg group-hover:text-[var(--v2-accent)]">
-                        {item.name}
-                        {item.discontinued ? (
-                          <span className="v2-mono ml-2 text-[10px] text-[var(--v2-faint)]">
-                            Sunset
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="text-[14.5px] leading-6 text-[var(--v2-muted)]">
-                        {item.oneLiner}
-                      </span>
-                      <span className="v2-mono text-[var(--v2-faint)] group-hover:text-[var(--v2-accent)]">
-                        vs Durabull
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )
-        })}
-
-        <section>
-          <p className="v2-mono text-[var(--v2-accent)]">Guides</p>
-          <h2 className="v2-h mt-2 text-2xl sm:text-3xl">Long-form answers</h2>
-          <ul className="mt-8 divide-y divide-[var(--v2-line)] border-y border-[var(--v2-line)]">
-            {articles.map((article) => (
-              <li key={article.slug} className="py-5">
-                <Link
-                  href={articlePath(article.slug)}
-                  className="v2-h text-lg hover:text-[var(--v2-accent)]"
-                >
-                  {article.title}
-                </Link>
-                <p className="mt-2 max-w-3xl text-[14.5px] leading-6 text-[var(--v2-muted)]">
-                  {article.description}
-                </p>
-              </li>
+      <EditorialHero
+        eyebrow="The queue tooling field guide"
+        title="The right tool for the work ahead."
+        description="Dashboards, runtimes, and observability solve different problems. Find your category, understand the tradeoffs, and choose with evidence."
+        visual={<ArchitectureDiagram />}
+      >
+        <div className="editorial-meta">
+          <span>{competitors.length} tools examined</span>
+          <span>3 distinct categories</span>
+          <a href="#directory">Find your comparison ↓</a>
+        </div>
+      </EditorialHero>
+      <div className="editorial-shell pb-16">
+        <ResearchNote />
+        <CategoryChoices />
+        <div id="directory">
+          <ComparisonDirectory
+            items={competitors.map(
+              ({ slug, name, oneLiner, category, discontinued, researchStatus }) => ({
+                slug,
+                name,
+                oneLiner,
+                category,
+                discontinued,
+                researchStatus,
+              })
+            )}
+            categories={categoryOrder}
+          />
+        </div>
+        <section className="editorial-section">
+          <div className="editorial-section-head">
+            <div>
+              <span className="editorial-eyebrow">Go deeper</span>
+              <h2 className="mt-3">Field notes for production.</h2>
+              <p>Practical guides to monitoring, recovery, and the economics of background work.</p>
+            </div>
+            <Link href="/blog" className="text-sm underline underline-offset-4">
+              All guides →
+            </Link>
+          </div>
+          <div className="guide-grid">
+            {articles.slice(0, 3).map((article, index) => (
+              <GuideCard key={article.slug} article={article} index={index} />
             ))}
-          </ul>
-        </section>
-
-        <section>
-          <h2 className="v2-h text-2xl sm:text-3xl">FAQ</h2>
-          <div className="mt-8">
-            <CompareFaqList faqs={hubFaqs} />
           </div>
         </section>
+        <section className="editorial-section">
+          <h2 className="mb-8">Before you choose</h2>
+          <CompareFaqList faqs={hubFaqs} />
+        </section>
+        <section id="sources" className="editorial-section">
+          <h2>How we compare</h2>
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-[var(--v2-muted)]">
+            We make Durabull, so this guide has a point of view. Our method is to examine official
+            documentation and source code, distinguish deployment modes, disclose unknowns, and
+            explain when another tool is the better fit. Each detail page links its primary sources.
+            Prices are snapshots, not quotes; we do not present dashboard fees as total
+            infrastructure costs or claim benchmark results we have not measured.
+          </p>
+          <p className="mt-4 text-sm">
+            <a className="underline underline-offset-4" href="mailto:hello@durabull.io">
+              Send a correction
+            </a>
+          </p>
+        </section>
       </div>
-
       <CompareCta />
     </SiteLayout>
   )

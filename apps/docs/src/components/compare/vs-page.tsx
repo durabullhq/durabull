@@ -1,151 +1,171 @@
 import Link from 'next/link'
-import { PageHeading } from '@/components/v2/page-heading'
 import { SiteLayout } from '@/components/v2/site-layout'
-import { articles, articlePath } from '@/lib/compare/articles'
+import { articlePath, articles } from '@/lib/compare/articles'
 import { relatedCompetitors } from '@/lib/compare/catalog'
+import { categoryLabels } from '@/lib/compare/editorial'
 import type { Competitor } from '@/lib/compare/types'
 import { SITE_URL } from '@/lib/config'
-import { createBreadcrumbSchema, createFAQSchema, createSoftwareApplicationSchema } from '@/lib/seo'
+import { createBreadcrumbSchema, createFAQSchema } from '@/lib/seo'
+import { CompareTable, CostTable } from './compare-table'
+import {
+  ArchitectureDiagram,
+  DecisionSummary,
+  EditorialHero,
+  InlineText,
+  ResearchNote,
+} from './editorial'
 import { CompareFaqList } from './faq-list'
 import { JsonLd } from './json-ld'
-import { CompareTable, CostTable } from './compare-table'
 import { CompareCta, McpBand, RelatedLinks, SectionIntro, SourceList } from './prose-blocks'
 
-export function VsPage({ competitor }: { competitor: Competitor }) {
-  const related = relatedCompetitors(competitor.slug)
-  const relatedArticles = articles.filter((article) =>
-    article.relatedCompare.includes(competitor.slug)
-  )
-
+export function VsPage({ competitor: c }: { competitor: Competitor }) {
+  const related = relatedCompetitors(c.slug)
+  const relatedArticles = articles.filter((article) => article.relatedCompare.includes(c.slug))
   return (
     <SiteLayout>
       <JsonLd
         data={[
-          createSoftwareApplicationSchema(),
           createBreadcrumbSchema([
             { name: 'Home', url: SITE_URL },
-            { name: 'Compare', url: `${SITE_URL}/compare` },
-            { name: competitor.name, url: `${SITE_URL}/compare/${competitor.slug}` },
+            { name: 'Compare', url: `${SITE_URL}/compare/` },
+            { name: c.name, url: `${SITE_URL}/compare/${c.slug}/` },
           ]),
-          createFAQSchema(competitor.faqs),
+          createFAQSchema(c.faqs),
         ]}
       />
-
-      <PageHeading label="Compare" title={`Durabull vs ${competitor.name}`}>
-        <p>{competitor.intro}</p>
-        <p className="mt-4">
-          <a
-            href={competitor.website}
-            className="underline decoration-[var(--v2-line-strong)] underline-offset-4 hover:decoration-[var(--v2-accent)]"
-          >
-            {competitor.name} website
-          </a>
-          {competitor.discontinued ? ' · Discontinued' : null}
-          {competitor.unverifiedLiveSite ? ' · Live site not verified' : null}
-        </p>
-      </PageHeading>
-
-      <div className="mx-auto max-w-7xl space-y-16 px-5 py-14 sm:px-8 sm:py-20">
-        <McpBand />
-
-        <section>
-          <SectionIntro title="Side by side">
-            Facts from official docs and pricing pages, reviewed 20 October 2026. If a cell says
-            unverified, we could not load a primary source.
+      <EditorialHero
+        eyebrow={categoryLabels[c.category]}
+        title={`Durabull vs ${c.name}`}
+        description={c.intro}
+        visual={<ArchitectureDiagram category={c.category} />}
+      >
+        <div className="editorial-meta">
+          <a href={c.website}>{c.name} website ↗</a>
+          <span>{c.sources.length} primary references</span>
+          {c.discontinued ? <span>Discontinued service</span> : null}
+        </div>
+      </EditorialHero>
+      <div className="editorial-shell pb-16">
+        <ResearchNote limited={c.researchStatus === 'limited'} />
+        <nav aria-label="On this page" className="editorial-jump">
+          <a href="#decision">Quick decision</a>
+          <a href="#comparison">Feature comparison</a>
+          <a href="#integration">Integration</a>
+          <a href="#pricing">Pricing & license</a>
+          <a href="#faq">FAQ</a>
+          <a href="#sources">Sources</a>
+        </nav>
+        <section id="decision" className="editorial-section">
+          <DecisionSummary
+            name={c.shortName}
+            theirs={c.whenToChooseThem}
+            ours={c.whenToChooseDurabull}
+          />
+        </section>
+        <section id="comparison" className="editorial-section">
+          <SectionIntro label="Capabilities" title="The details that change the decision">
+            Compare the documented deployment modes. “Not documented” means we did not find a vendor
+            claim, not proof that a capability is impossible.{' '}
+            <a className="underline underline-offset-4" href="#sources">
+              Check the primary sources.
+            </a>
           </SectionIntro>
-          <CompareTable competitorName={competitor.shortName} rows={competitor.rows} />
+          <CompareTable competitorName={c.shortName} rows={c.rows} />
         </section>
-
-        <section className="grid gap-10 lg:grid-cols-2">
+        <section id="integration" className="editorial-section grid gap-12 lg:grid-cols-2">
           <div>
-            <h2 className="v2-h text-2xl">How {competitor.shortName} connects</h2>
-            <p className="mt-3 text-[15px] leading-7 text-[var(--v2-muted)]">
-              {competitor.howItConnects}
+            <SectionIntro label="Setup" title={`How ${c.shortName} connects`} />
+            <p className="text-[15px] leading-7 text-[var(--v2-muted)]">
+              <InlineText text={c.howItConnects} />
             </p>
-            <p className="mt-4 text-[15px] leading-7 text-[var(--v2-muted)]">
-              <span className="font-medium text-[var(--v2-fg)]">App code. </span>
-              {competitor.codeChanges}
+            <p className="mt-5 text-[15px] leading-7 text-[var(--v2-muted)]">
+              <strong className="text-[var(--v2-fg)]">Application changes. </strong>
+              <InlineText text={c.codeChanges} />
             </p>
           </div>
-          <div>
-            <h2 className="v2-h text-2xl">Discovery, environments, alerts, MCP</h2>
-            <dl className="mt-3 space-y-4 text-[15px] leading-7 text-[var(--v2-muted)]">
-              <div>
-                <dt className="v2-mono text-[var(--v2-faint)]">Auto-discovery</dt>
-                <dd className="mt-1">{competitor.autoDiscovery}</dd>
+          <dl className="space-y-6">
+            {[
+              { label: 'Queue discovery', text: c.autoDiscovery },
+              { label: 'Environments', text: c.multiEnv },
+              { label: 'Alerts', text: c.alerts },
+              { label: 'AI & MCP', text: c.mcp },
+            ].map(({ label, text }) => (
+              <div key={label}>
+                <dt className="editorial-eyebrow">{label}</dt>
+                <dd className="mt-2 text-[15px] leading-7 text-[var(--v2-muted)]">
+                  <InlineText text={text} />
+                </dd>
               </div>
-              <div>
-                <dt className="v2-mono text-[var(--v2-faint)]">Environments</dt>
-                <dd className="mt-1">{competitor.multiEnv}</dd>
-              </div>
-              <div>
-                <dt className="v2-mono text-[var(--v2-faint)]">Alerts</dt>
-                <dd className="mt-1">{competitor.alerts}</dd>
-              </div>
-              <div>
-                <dt className="v2-mono text-[var(--v2-faint)]">MCP</dt>
-                <dd className="mt-1">{competitor.mcp}</dd>
-              </div>
-            </dl>
-          </div>
+            ))}
+          </dl>
         </section>
-
-        {competitor.costs ? (
-          <section>
-            <SectionIntro title="Published cost at volume">
-              {competitor.shortName} list prices. Durabull hosted is $0/mo during beta. Your Redis
-              and workers are separate and already yours.
-            </SectionIntro>
-            <CostTable caption={competitor.costs.caption} rows={competitor.costs.rows} />
-          </section>
-        ) : (
-          <section>
-            <h2 className="v2-h text-2xl">Pricing and license</h2>
-            <p className="mt-3 max-w-3xl text-[15px] leading-7 text-[var(--v2-muted)]">
-              {competitor.pricing}
-            </p>
-            <p className="mt-3 max-w-3xl text-[15px] leading-7 text-[var(--v2-muted)]">
-              {competitor.license}
-            </p>
-          </section>
-        )}
-
-        <section className="grid gap-10 lg:grid-cols-2">
-          <div className="border border-[var(--v2-line)] p-6">
-            <p className="v2-mono text-[var(--v2-faint)]">When to choose {competitor.shortName}</p>
-            <p className="mt-3 text-[15px] leading-7 text-[var(--v2-muted)]">
-              {competitor.whenToChooseThem}
-            </p>
+        <section id="pricing" className="editorial-section">
+          <SectionIntro label="Economics" title="Understand what you are paying for" />
+          <div className="editorial-pricing-note">
+            <strong>Different products, different cost boundaries.</strong> Durabull’s hosted beta
+            fee covers its dashboard. Redis, worker compute, storage, networking, and operational
+            work remain yours. A runtime’s usage charges may cover orchestration or compute. The
+            amounts below are not a total-cost or savings benchmark.
           </div>
-          <div className="border border-[var(--v2-line)] p-6">
-            <p className="v2-mono text-[var(--v2-accent)]">When to choose Durabull</p>
-            <p className="mt-3 text-[15px] leading-7 text-[var(--v2-muted)]">
-              {competitor.whenToChooseDurabull}
-            </p>
-          </div>
+          <p className="mb-4 max-w-4xl text-[15px] leading-7 text-[var(--v2-muted)]">
+            <InlineText text={c.pricing} />
+          </p>
+          <p className="mb-6 max-w-4xl text-[15px] leading-7 text-[var(--v2-muted)]">
+            <InlineText text={c.license} />
+          </p>
+          {c.costs ? <CostTable caption={c.costs.caption} rows={c.costs.rows} /> : null}
         </section>
-
-        <section>
-          <SectionIntro title="Questions people ask" />
-          <CompareFaqList faqs={competitor.faqs} />
+        <section id="faq" className="editorial-section">
+          <SectionIntro title={`Questions about ${c.shortName} and Durabull`} />
+          <CompareFaqList faqs={c.faqs} />
         </section>
-
-        {related.length > 0 ? (
-          <section>
-            <SectionIntro title="Related comparisons" />
+        <section id="sources" className="editorial-section">
+          <SectionIntro label="Evidence" title="Sources & methodology">
+            Reviewed against vendor documentation, public pricing, and source repositories. This is
+            a documentation comparison, not a hands-on benchmark. Vendor docs may describe different
+            editions or deployment modes; confirm those details before purchasing.
+          </SectionIntro>
+          <SourceList sources={c.sources} />
+          <p className="mt-6 text-sm text-[var(--v2-muted)]">
+            Durabull details:{' '}
+            <Link href="/documentation" className="underline underline-offset-4">
+              product documentation
+            </Link>
+            ,{' '}
+            <Link href="/pricing" className="underline underline-offset-4">
+              beta pricing
+            </Link>
+            , and{' '}
+            <Link
+              href="/documentation/integrations/mcp-server"
+              className="underline underline-offset-4"
+            >
+              MCP reference
+            </Link>
+            . Found a change?{' '}
+            <a href="mailto:hello@durabull.io" className="underline underline-offset-4">
+              Send a correction.
+            </a>
+          </p>
+        </section>
+        <section className="editorial-section">
+          <McpBand />
+        </section>
+        {related.length ? (
+          <section className="editorial-section">
+            <SectionIntro title="Continue your research" />
             <RelatedLinks items={related} />
           </section>
         ) : null}
-
-        {relatedArticles.length > 0 ? (
-          <section>
-            <SectionIntro title="Guides" />
+        {relatedArticles.length ? (
+          <section className="editorial-section">
+            <SectionIntro title="Practical guides" />
             <ul className="space-y-3">
               {relatedArticles.map((article) => (
                 <li key={article.slug}>
                   <Link
+                    className="text-sm underline underline-offset-4"
                     href={articlePath(article.slug)}
-                    className="text-[15px] font-medium text-[var(--v2-fg)] underline decoration-[var(--v2-line-strong)] underline-offset-4 hover:decoration-[var(--v2-accent)]"
                   >
                     {article.title}
                   </Link>
@@ -154,27 +174,14 @@ export function VsPage({ competitor }: { competitor: Competitor }) {
             </ul>
           </section>
         ) : null}
-
-        {competitor.alternativesPage ? (
-          <p className="text-sm text-[var(--v2-muted)]">
-            Looking for a list?{' '}
-            <Link
-              href={`/alternatives/${competitor.slug}`}
-              className="font-medium text-[var(--v2-fg)] underline underline-offset-4"
-            >
-              {competitor.shortName} alternatives
+        {c.alternativesPage ? (
+          <p className="mt-8 text-sm">
+            <Link className="underline underline-offset-4" href={`/alternatives/${c.slug}`}>
+              Explore {c.shortName} alternatives →
             </Link>
           </p>
         ) : null}
-
-        <section>
-          <SectionIntro title="Sources">
-            Official pages visited for this comparison. Re-check prices on the day you buy.
-          </SectionIntro>
-          <SourceList sources={competitor.sources} />
-        </section>
       </div>
-
       <CompareCta />
     </SiteLayout>
   )

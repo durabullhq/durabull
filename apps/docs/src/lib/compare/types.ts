@@ -35,6 +35,7 @@ export interface Competitor {
   alternativesPage: boolean
   discontinued?: boolean
   unverifiedLiveSite?: boolean
+  researchStatus?: 'limited'
   title: string
   description: string
   keywords: string[]
@@ -64,6 +65,8 @@ export interface Competitor {
 export interface ArticleSection {
   heading: string
   body: string[]
+  sourceUrls?: string[]
+  code?: { language: string; value: string; caption?: string }
 }
 
 export interface Article {
@@ -71,6 +74,10 @@ export interface Article {
   title: string
   description: string
   keywords: string[]
+  category: string
+  takeaway: string
+  sources: SourceLink[]
+  dateModified?: string
   datePublished: string
   intro: string
   sections: ArticleSection[]

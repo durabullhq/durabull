@@ -62,3 +62,17 @@ describe('guide articles', () => {
     }
   })
 })
+
+describe('editorial evidence', () => {
+  test('every guide section links to its declared sources', () => {
+    for (const article of articles) {
+      const sources = new Set(article.sources.map((source) => source.url))
+      expect(sources.size).toBe(article.sources.length)
+      expect(article.takeaway.length).toBeGreaterThan(40)
+      for (const section of article.sections) {
+        expect(section.sourceUrls?.length).toBeGreaterThan(0)
+        for (const url of section.sourceUrls ?? []) expect(sources.has(url)).toBe(true)
+      }
+    }
+  })
+})

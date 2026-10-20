@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { ArticlePage } from '@/components/compare/article-page'
 import { articles, getArticle } from '@/lib/compare/articles'
+import { editorialImagePath } from '@/lib/compare/editorial'
 import { createAbsoluteMetadata } from '@/lib/seo'
 
 export function generateStaticParams() {
@@ -15,6 +16,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     {
       title: article.title,
       description: article.description,
+      ogImage: editorialImagePath('blog', article.slug),
+      publishedTime: article.datePublished,
+      modifiedTime: article.dateModified ?? article.datePublished,
       keywords: article.keywords,
       ogType: 'article',
     },

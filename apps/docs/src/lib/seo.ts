@@ -22,6 +22,8 @@ export interface SEOConfig {
   noIndex?: boolean
   /** Additional keywords for meta tag */
   keywords?: string[]
+  publishedTime?: string
+  modifiedTime?: string
 }
 
 /**
@@ -31,9 +33,11 @@ export function createMetadata(config: SEOConfig, path: string): Metadata {
   const {
     title,
     description,
-    canonical = `${SITE_URL}${path}`,
+    canonical = `${SITE_URL}${path === '/' ? '/' : `${path.replace(/\/$/, '')}/`}`,
     ogImage = DEFAULT_OG_IMAGE,
     ogType = 'website',
+    publishedTime,
+    modifiedTime,
     noIndex = false,
     keywords = [],
   } = config
@@ -44,7 +48,9 @@ export function createMetadata(config: SEOConfig, path: string): Metadata {
     title: fullTitle,
     description,
     keywords: keywords.length > 0 ? keywords : undefined,
-    robots: noIndex ? 'noindex, nofollow' : undefined,
+    robots: noIndex
+      ? 'noindex, follow'
+      : { index: true, follow: true, googleBot: { 'max-image-preview': 'large' } },
     alternates: {
       canonical,
     },
@@ -62,6 +68,7 @@ export function createMetadata(config: SEOConfig, path: string): Metadata {
         },
       ],
       type: ogType,
+      ...(ogType === 'article' ? { publishedTime, modifiedTime, authors: [SITE_URL] } : {}),
     },
     twitter: {
       card: 'summary_large_image',
@@ -204,6 +211,8 @@ export function createArticleSchema(config: {
   url: string
   datePublished: string
   dateModified?: string
+  image?: string
+  sources?: string[]
 }) {
   return {
     '@context': 'https://schema.org',
@@ -228,6 +237,8 @@ export function createArticleSchema(config: {
         url: `${SITE_URL}/favicon-512x512.png`,
       },
     },
-    image: DEFAULT_OG_IMAGE,
+    image: config.image ?? DEFAULT_OG_IMAGE,
+    citation: config.sources,
+    inLanguage: 'en',
   }
 }

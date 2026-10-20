@@ -1,7 +1,7 @@
 import type { Competitor } from './types'
 
 const durabullOps =
-  'Stay on Redis + BullMQ. Durabull is the operations layer: discovery, alerts, MCP. No per-job vendor meter during beta.'
+  'Stay on Redis + BullMQ. Durabull is the operations layer: discovery, alerts, MCP. The hosted dashboard is free during beta; Redis, workers, and their operation remain your responsibility.'
 
 export const platformCompetitors: Competitor[] = [
   {
@@ -40,7 +40,7 @@ export const platformCompetitors: Competitor[] = [
       '2026-10-20: Free $0 / 50k executions. Pro from $99/mo includes 1M executions. Business from $499/mo includes 10M. An execution is one function run or one step (`Executions = runs × (steps + 1)`). Pro overage FAQ: $0.000050 down to $0.000015 per execution; breakpoints not published as a static table. Sandbox compute is extra. Free pauses at the quota.',
     license: 'Cloud commercial. Server SSPL + Apache 2.0 after 3 years. SDKs Apache 2.0.',
     whenToChooseThem:
-      'Choose Inngest when you do not have BullMQ, you want checkpointed steps, sleeps, and waits, and you accept execution billing plus Cloud (or SSPL self-host) as the orchestrator.',
+      'Choose Inngest when durable steps, sleeps, event-driven waits, and managed orchestration justify adopting its SDK. Existing BullMQ teams can also adopt it for workflows whose requirements exceed their current queue design.',
     whenToChooseDurabull:
       'Choose Durabull when production already runs on Redis + BullMQ. Keep the broker you operate. Add a dashboard and MCP instead of rewriting jobs onto a metered platform.',
     rows: [
@@ -52,46 +52,46 @@ export const platformCompetitors: Competitor[] = [
       },
       {
         feature: '1M billed executions',
-        durabull: '$0 during beta',
+        durabull: '$0 beta + your infrastructure',
         competitor: '$99 Pro (included 1M)',
       },
       {
         feature: '10M executions',
-        durabull: '$0 during beta',
+        durabull: '$0 beta + your infrastructure',
         competitor: '$499 Business (included 10M)',
       },
       {
         feature: '100M executions',
-        durabull: '$0 during beta',
-        competitor: 'Not fully published; Pro overage bounds ~$1,584–$5,049 after 1M',
+        durabull: '$0 beta + your infrastructure',
+        competitor: 'Use the vendor calculator or request a quote',
       },
       { feature: 'MCP', durabull: 'BullMQ queue ops', competitor: 'Inngest run ops' },
       {
-        feature: 'Lock-in',
+        feature: 'State and hosting',
         durabull: 'Your Redis',
-        competitor: 'Cloud must start/resume runs; self-host is SSPL',
+        competitor: 'Inngest stores workflow state; Cloud or self-hosted server',
       },
     ],
     costs: {
       caption:
-        'Inngest executions only (2026-10-20 pricing page). Sandbox compute, seats, and span overages excluded. 100M uses the published Pro overage range because Business overage rates are not a public table.',
+        'Inngest executions only (2026-10-20 pricing page). Sandbox compute, seats, and span overages excluded. No 100M estimate is supplied because the published range alone does not define the tier breakpoints. This is an orchestration charge, not equivalent functionality to a dashboard; execution hosting is separate.',
       rows: [
         {
           volume: '1M executions',
           competitor: '$99 (Pro included)',
-          durabull: '$0 beta',
+          durabull: '$0 beta + your infrastructure',
           unit: 'execution',
         },
         {
           volume: '10M executions',
           competitor: '$499 (Business included)',
-          durabull: '$0 beta',
+          durabull: '$0 beta + your infrastructure',
           unit: 'execution',
         },
         {
           volume: '100M executions',
-          competitor: '$1,584–$5,049 on Pro overage bounds',
-          durabull: '$0 beta',
+          competitor: 'Quote / calculator required',
+          durabull: '$0 beta + your infrastructure',
           unit: 'execution',
         },
       ],
@@ -110,7 +110,11 @@ export const platformCompetitors: Competitor[] = [
     ],
     sources: [
       { label: 'Inngest pricing', url: 'https://www.inngest.com/pricing' },
-      { label: 'Steps', url: 'https://www.inngest.com/docs/learn/inngest-steps' },
+      {
+        label: 'Inngest server license',
+        url: 'https://github.com/inngest/inngest/blob/main/LICENSE.md',
+      },
+      { label: 'Steps', url: 'https://www.inngest.com/docs/durable-execution/durable-workflows' },
       { label: 'Limits', url: 'https://www.inngest.com/docs/durable-execution/limits' },
       { label: 'MCP', url: 'https://www.inngest.com/docs/ai-dev-tools/mcp' },
     ],
@@ -170,7 +174,7 @@ export const platformCompetitors: Competitor[] = [
     ],
     costs: {
       caption:
-        'Official-shape example from trigger.dev/pricing: 10 seconds on small-1x (default) at $0.0000338/sec + $0.000025/run. Your duration will differ. DEV runs are free.',
+        'Illustrative compute scenario: 10 executing seconds per run on small-1x at $0.0000338/sec plus $0.000025/run. Excludes add-ons and discounts; plan credits apply. Trigger.dev includes execution compute here. Durabull does not: add Redis, worker compute, and operations to its dashboard fee. No throughput benchmark is implied.',
       rows: [
         {
           volume: '1M runs × 10s',
@@ -196,11 +200,12 @@ export const platformCompetitors: Competitor[] = [
       {
         question: 'Is Trigger.dev cheaper than BullMQ + Durabull?',
         answer:
-          'Trigger.dev bills compute on their machines. BullMQ bills whatever you already pay for Redis and workers. Durabull adds $0 during beta. At 10M ten-second tasks the published Trigger.dev example is about $3,630/mo before Enterprise discounts.',
+          'There is no universal cheaper option. In the stated ten-second small-1x example, 10M Trigger.dev runs generate about $3,630 in usage. Compare that with Redis, equivalent worker capacity, hosting, and engineering operations for BullMQ. Durabull’s hosted dashboard fee is $0 during beta; it does not include job execution.',
       },
     ],
     sources: [
       { label: 'Trigger.dev pricing', url: 'https://trigger.dev/pricing' },
+      { label: 'Self-hosting overview', url: 'https://trigger.dev/docs/self-hosting/overview' },
       { label: 'Limits', url: 'https://trigger.dev/docs/limits' },
       { label: 'MCP', url: 'https://trigger.dev/docs/mcp-introduction' },
     ],
@@ -229,30 +234,38 @@ export const platformCompetitors: Competitor[] = [
     alternativesDescription:
       'Temporal alternatives if you need a job queue, not a workflow engine — or you already run BullMQ and want operations tooling instead of a second orchestrator bill.',
     intro:
-      'Temporal is a durable workflow service. You run Workers; Cloud stores Event History. That is the right architecture for long-running, strictly consistent workflows. It is not a BullMQ dashboard, and a “job” is not one Action.',
+      'Temporal is a durable workflow service. You run Workers; Cloud stores Event History. That architecture supports durable workflow state, timers, and recovery across process failures. It is not a BullMQ dashboard, and a “job” is not one Action.',
     howItConnects:
       'Temporal SDK. Workers poll Task Queues. Cloud or self-hosted Temporal is the service.',
     codeChanges: 'Yes. Workflows and Activities, not Queue.add.',
     autoDiscovery: 'N/A.',
     multiEnv: 'Namespaces, not Redis environments.',
     alerts: 'Cloud observability. Not BullMQ alerts.',
-    mcp: 'Official docs MCP (`https://temporal.mcp.kapa.ai`). Workflow-ops MCP on Code Exchange is community-donated and not Temporal-supported. Do not call it an official Cloud ops MCP.',
+    mcp: 'Official docs MCP (`https://temporal.mcp.kapa.ai`). The workflow-operations example on Code Exchange is community-contributed; assess its support and permissions separately.',
     pricing:
       'Actions start at $50/million. Developer: $50/M at every volume + 10% support + storage. Business: greater of $500/mo or 10% of usage, includes 2.5M Actions. Volume discounts on Business excess. Storage GBh extra. New PAYGO: $150 credits for 90 days.',
     license: 'Cloud commercial. Self-host Temporal separately.',
     whenToChooseThem:
       'Choose Temporal when you think in Workflows/Activities, need timers/signals/queries, and will run Workers against a dedicated orchestration cluster.',
     whenToChooseDurabull:
-      'Choose Durabull when the work is already BullMQ jobs. Do not pay Action rates to re-platform a queue that Redis already handles.',
+      'Choose Durabull when BullMQ already meets your execution requirements and the missing piece is operational visibility. Choose Temporal separately if workflow durability, signals, or long-running orchestration warrant a runtime change.',
     rows: [
       { feature: 'Model', durabull: 'BullMQ jobs on Redis', competitor: 'Workflows + Activities' },
       {
         feature: '1M Actions (Developer)',
-        durabull: '$0 beta',
+        durabull: '$0 beta + your infrastructure',
         competitor: '$55 ($50 + 10% support)',
       },
-      { feature: '10M Actions (Developer)', durabull: '$0 beta', competitor: '$550' },
-      { feature: '100M Actions (Developer)', durabull: '$0 beta', competitor: '$5,500' },
+      {
+        feature: '10M Actions (Developer)',
+        durabull: '$0 beta + your infrastructure',
+        competitor: '$550',
+      },
+      {
+        feature: '100M Actions (Developer)',
+        durabull: '$0 beta + your infrastructure',
+        competitor: '$5,500',
+      },
       {
         feature: 'Official ops MCP',
         durabull: 'Yes',
@@ -261,11 +274,26 @@ export const platformCompetitors: Competitor[] = [
     ],
     costs: {
       caption:
-        'Developer plan, Actions only, no storage, no heartbeats (docs.temporal.io/cloud/pricing, 2026-10-20). A start + one Activity is already ~2 Actions.',
+        'Developer-plan illustration: $50 per million Actions plus 10% support, excluding storage and worker compute. Higher plans have different allowances and discounts. Actions are not jobs: model your workflow operations first. Durabull’s $0 beta dashboard fee excludes Redis, workers, and operations.',
       rows: [
-        { volume: '1M Actions', competitor: '$55', durabull: '$0 beta', unit: 'Action' },
-        { volume: '10M Actions', competitor: '$550', durabull: '$0 beta', unit: 'Action' },
-        { volume: '100M Actions', competitor: '$5,500', durabull: '$0 beta', unit: 'Action' },
+        {
+          volume: '1M Actions',
+          competitor: '$55',
+          durabull: '$0 beta + your infrastructure',
+          unit: 'Action',
+        },
+        {
+          volume: '10M Actions',
+          competitor: '$550',
+          durabull: '$0 beta + your infrastructure',
+          unit: 'Action',
+        },
+        {
+          volume: '100M Actions',
+          competitor: '$5,500',
+          durabull: '$0 beta + your infrastructure',
+          unit: 'Action',
+        },
       ],
     },
     faqs: [
@@ -278,7 +306,11 @@ export const platformCompetitors: Competitor[] = [
     sources: [
       { label: 'Temporal pricing', url: 'https://temporal.io/pricing' },
       { label: 'Cloud pricing docs', url: 'https://docs.temporal.io/cloud/pricing' },
-      { label: 'What is an Action', url: 'https://docs.temporal.io/cloud/actions' },
+      { label: 'What is an Action', url: 'https://docs.temporal.io/evaluate/cloud/actions' },
+      {
+        label: 'Community MCP listing',
+        url: 'https://temporal.io/code-exchange/temporal-mcp-server',
+      },
     ],
     related: ['inngest', 'hatchet', 'trigger-dev'],
   },
@@ -315,21 +347,48 @@ export const platformCompetitors: Competitor[] = [
       'Card on file: 1M task runs + 1M events free every month, then $30/M runs and $5/M events. Failed runs count; retries do not. No-card: 2,000 runs/day. Custom discounts unpublished at 100M+.',
     license: 'MIT OSS. Cloud commercial.',
     whenToChooseThem:
-      'Choose Hatchet when you want orchestration with a cheaper published per-run list price than Temporal Developer, retries not billed, and you will run workers.',
+      'Choose Hatchet when you want durable task orchestration with workers you control, Cloud or MIT self-hosting, and published per-task pricing that excludes retries. A Hatchet run and a Temporal Action are different billing units.',
     whenToChooseDurabull: durabullOps,
     rows: [
-      { feature: '1M task runs', durabull: '$0 beta', competitor: '$0 (included)' },
-      { feature: '10M task runs', durabull: '$0 beta', competitor: '$270 (9×$30)' },
-      { feature: '100M task runs', durabull: '$0 beta', competitor: '$2,970 list' },
+      {
+        feature: '1M task runs',
+        durabull: '$0 beta + your infrastructure',
+        competitor: '$0 (included)',
+      },
+      {
+        feature: '10M task runs',
+        durabull: '$0 beta + your infrastructure',
+        competitor: '$270 (9×$30)',
+      },
+      {
+        feature: '100M task runs',
+        durabull: '$0 beta + your infrastructure',
+        competitor: '$2,970 list',
+      },
       { feature: 'Monitors BullMQ', durabull: 'Yes', competitor: 'No' },
     ],
     costs: {
       caption:
-        'Hatchet Cloud PAYG, events inside the 1M free allotment, 2026-10-20. Storage/log overages excluded.',
+        'Hatchet Cloud PAYG task-run charges with a card on file; assumes events stay within 1M free. Storage, logs, worker compute, and volume discounts are excluded. Durabull’s $0 beta dashboard fee also excludes Redis, workers, and operations.',
       rows: [
-        { volume: '1M runs', competitor: '$0', durabull: '$0 beta', unit: 'task run' },
-        { volume: '10M runs', competitor: '$270', durabull: '$0 beta', unit: 'task run' },
-        { volume: '100M runs', competitor: '$2,970 list', durabull: '$0 beta', unit: 'task run' },
+        {
+          volume: '1M runs',
+          competitor: '$0',
+          durabull: '$0 beta + your infrastructure',
+          unit: 'task run',
+        },
+        {
+          volume: '10M runs',
+          competitor: '$270',
+          durabull: '$0 beta + your infrastructure',
+          unit: 'task run',
+        },
+        {
+          volume: '100M runs',
+          competitor: '$2,970 list',
+          durabull: '$0 beta + your infrastructure',
+          unit: 'task run',
+        },
       ],
     },
     faqs: [
@@ -368,41 +427,41 @@ export const platformCompetitors: Competitor[] = [
     alerts: 'Not a BullMQ alerter. Prod Pack ($200/mo) adds Prometheus/Datadog export.',
     mcp: 'No official QStash ops MCP found. Machine-readable pricing markdown exists for agents.',
     pricing:
-      'PAYG $1 / 100K messages. Free 1,000 messages/day. Fixed 1M/day $180/mo, 10M/day $420/mo. Official markdown contradicts itself on retries (header “retries are free” vs FAQ “each delivery attempt counts”). Do not claim retries are free.',
+      'PAYG $1 / 100K messages. Free 1,000 messages/day. Fixed 1M/day $180/mo, 10M/day $420/mo. The reviewed pricing markdown gives conflicting retry-billing descriptions; confirm that term with Upstash before budgeting retry-heavy workloads.',
     license: 'Managed service.',
     whenToChooseThem: 'Serverless/edge HTTP workers, cron, fan-out to URLs, no Redis.',
     whenToChooseDurabull:
-      'You already run BullMQ. Keep Redis. Add operations, do not move traffic onto an HTTP broker.',
+      'Your existing BullMQ runtime meets your needs and you want queue inspection, alerts, and MCP without changing the delivery model.',
     rows: [
       { feature: 'Broker', durabull: 'Your Redis + BullMQ', competitor: 'Upstash HTTP push' },
       {
         feature: '1M messages PAYG',
-        durabull: '$0 beta',
+        durabull: '$0 beta + your infrastructure',
         competitor: '$10 (if 1 publish = 1 bill)',
       },
-      { feature: '10M messages', durabull: '$0 beta', competitor: '$100' },
-      { feature: '100M messages', durabull: '$0 beta', competitor: '$1,000' },
+      { feature: '10M messages', durabull: '$0 beta + your infrastructure', competitor: '$100' },
+      { feature: '100M messages', durabull: '$0 beta + your infrastructure', competitor: '$1,000' },
     ],
     costs: {
       caption:
-        'QStash PAYG at $1 / 100K published messages. Retry billing is contradictory on the same official markdown — table assumes one bill per publish.',
+        'QStash PAYG at $1 per 100K billable messages, one endpoint and successful first delivery, no fan-out or retries. Bandwidth, handler compute, and add-ons excluded. Durabull’s $0 beta dashboard fee excludes Redis, workers, and operations. Confirm retry billing with Upstash because the reviewed pricing text is inconsistent.',
       rows: [
         {
           volume: '1M messages',
           competitor: '$10',
-          durabull: '$0 beta',
+          durabull: '$0 beta + your infrastructure',
           unit: 'published message',
         },
         {
           volume: '10M messages',
           competitor: '$100',
-          durabull: '$0 beta',
+          durabull: '$0 beta + your infrastructure',
           unit: 'published message',
         },
         {
           volume: '100M messages',
           competitor: '$1,000',
-          durabull: '$0 beta',
+          durabull: '$0 beta + your infrastructure',
           unit: 'published message',
         },
       ],
@@ -411,11 +470,12 @@ export const platformCompetitors: Competitor[] = [
       {
         question: 'Are QStash retries free?',
         answer:
-          'The official pricing markdown says both “retries are free” and “each delivery attempt counts as one message.” We will not pick one. Read the current page before you model cost.',
+          'The official pricing markdown reviewed for this comparison contains conflicting statements about retry charges. Ask Upstash to confirm the applicable billing terms. Our illustration assumes successful first delivery to one endpoint and therefore does not depend on a retry rate.',
       },
     ],
     sources: [
-      { label: 'QStash pricing.md', url: 'https://upstash.com/pricing/qstash.md' },
+      { label: 'QStash pricing', url: 'https://upstash.com/pricing/qstash' },
+      { label: 'QStash pricing markdown', url: 'https://upstash.com/pricing/qstash.md' },
       { label: 'Workflow pricing.md', url: 'https://upstash.com/pricing/workflow.md' },
     ],
     related: ['inngest', 'cloudflare-queues', 'aws-sqs'],
@@ -435,7 +495,7 @@ export const platformCompetitors: Competitor[] = [
       'SQS is $0.40 per million Standard requests in us-east-1 after 1M free. Step Functions adds $25 per million state transitions. Neither monitors BullMQ.',
     keywords: ['SQS vs BullMQ', 'Step Functions pricing', 'AWS queue vs Durabull'],
     intro:
-      'SQS and Step Functions can replace Redis + BullMQ. They do not inspect BullMQ jobs. SQS looks cheap until you count send/receive/delete, empty long-polls, and state transitions.',
+      'SQS and Step Functions can replace Redis + BullMQ. They do not inspect BullMQ jobs. Estimate SQS using send, receive, and delete requests, including empty receives; add Step Functions only if you use it for orchestration. Batching can reduce request costs.',
     howItConnects: 'AWS APIs. Workers poll SQS or are invoked by Step Functions.',
     codeChanges: 'Yes to leave BullMQ.',
     autoDiscovery: 'N/A.',
@@ -452,36 +512,36 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M jobs, 3 SQS req each',
-        durabull: '$0 beta + Redis',
+        durabull: '$0 beta + Redis / workers',
         competitor: '$0.80 after free tier',
       },
       {
         feature: 'Same + 4 SF transitions',
-        durabull: '$0 beta + Redis',
+        durabull: '$0 beta + Redis / workers',
         competitor: '~$100.70 + Lambda',
       },
       { feature: 'Understands BullMQ', durabull: 'Yes', competitor: 'No' },
     ],
     costs: {
       caption:
-        'us-east-1, payload < 64 KB, no batching, 3 requests/job, no empty receives (aws.amazon.com/sqs/pricing + Step Functions page). Empty long-polls are extra.',
+        'SQS Standard in us-east-1: payload under 64 KB, no batching, three requests per job, no retries or empty receives, and the full 1M monthly free-request allowance available. Excludes compute, data transfer, KMS, and Step Functions. Durabull’s fee excludes Redis, workers, and operations.',
       rows: [
         {
           volume: '1M jobs (SQS only)',
           competitor: '$0.80',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '3 API requests/job',
         },
         {
           volume: '10M jobs (SQS only)',
           competitor: '$11.60',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '3 API requests/job',
         },
         {
           volume: '100M jobs (SQS only)',
           competitor: '$119.60',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '3 API requests/job',
         },
       ],
@@ -490,7 +550,7 @@ export const platformCompetitors: Competitor[] = [
       {
         question: 'Is SQS cheaper than BullMQ?',
         answer:
-          'Per published request rates, yes the queue API is cheap. You still pay workers, Lambda, empty receives, and Step Functions if you need orchestration. BullMQ cost is Redis + your compute. Durabull does not add a per-job AWS bill.',
+          'It depends on workload and infrastructure. SQS charges for requests; BullMQ uses Redis and workers you provision. Include polling, payload sizes, batching, compute, and operational effort. Step Functions is an optional additional service, not a required SQS charge. Durabull adds a dashboard, free during beta.',
       },
     ],
     sources: [
@@ -528,32 +588,32 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M tasks, 2 ops each',
-        durabull: '$0 beta + Redis',
+        durabull: '$0 beta + Redis / workers',
         competitor: '$0.40 after 1M free',
       },
-      { feature: '10M tasks, 2 ops', durabull: '$0 beta + Redis', competitor: '$7.60' },
-      { feature: '100M tasks, 2 ops', durabull: '$0 beta + Redis', competitor: '$79.60' },
+      { feature: '10M tasks, 2 ops', durabull: '$0 beta + Redis / workers', competitor: '$7.60' },
+      { feature: '100M tasks, 2 ops', durabull: '$0 beta + Redis / workers', competitor: '$79.60' },
     ],
     costs: {
       caption:
-        'Official $0.40/M after 1M free. Assumption: 2 ops/task (enqueue + one delivery), 32 KB chunks.',
+        'Cloud Tasks at $0.40 per million billable operations after the full 1M free allowance: two operations per task (enqueue and one delivery), payload no larger than 32 KB, no retries or extra API calls. Network and handler compute excluded. Durabull’s fee excludes Redis, workers, and operations.',
       rows: [
         {
           volume: '1M tasks',
           competitor: '$0.40',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '2 ops/task',
         },
         {
           volume: '10M tasks',
           competitor: '$7.60',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '2 ops/task',
         },
         {
           volume: '100M tasks',
           competitor: '$79.60',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '2 ops/task',
         },
       ],
@@ -597,31 +657,32 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M messages (3 ops)',
-        durabull: '$0 beta + Redis',
+        durabull: '$0 beta + Redis / workers',
         competitor: '$5.80 ($5 plan + $0.80 ops)',
       },
-      { feature: '10M messages', durabull: '$0 beta + Redis', competitor: '$16.60' },
-      { feature: '100M messages', durabull: '$0 beta + Redis', competitor: '$124.60' },
+      { feature: '10M messages', durabull: '$0 beta + Redis / workers', competitor: '$16.60' },
+      { feature: '100M messages', durabull: '$0 beta + Redis / workers', competitor: '$124.60' },
     ],
     costs: {
-      caption: 'Official Cloudflare formula with 3 ops/message + $5 Workers Paid (2026-10-20).',
+      caption:
+        'Cloudflare example: three operations per message, payload no larger than 64 KB, full 1M monthly operation allowance, plus $5 Workers Paid. Excludes retries and additional Worker compute; an existing paid subscription changes the incremental cost. Durabull’s fee excludes Redis, workers, and operations.',
       rows: [
         {
           volume: '1M messages',
           competitor: '$5.80',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '3 ops/message',
         },
         {
           volume: '10M messages',
           competitor: '$16.60',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '3 ops/message',
         },
         {
           volume: '100M messages',
           competitor: '$124.60',
-          durabull: '$0 beta + Redis',
+          durabull: '$0 beta + Redis / workers',
           unit: '3 ops/message',
         },
       ],
@@ -670,7 +731,11 @@ export const platformCompetitors: Competitor[] = [
       'You already chose Redis + BullMQ and need operations, not a second queue library.',
     rows: [
       { feature: 'Store', durabull: 'Redis (BullMQ)', competitor: 'PostgreSQL' },
-      { feature: 'Product fee', durabull: '$0 beta', competitor: '$0 OSS or $100/mo Pro' },
+      {
+        feature: 'Product fee',
+        durabull: '$0 beta + your infrastructure',
+        competitor: '$0 OSS or $100/mo Pro',
+      },
       {
         feature: 'Scales with job count',
         durabull: 'No product meter',
@@ -720,7 +785,7 @@ export const platformCompetitors: Competitor[] = [
       {
         question: 'Should I replace BullMQ with pg-boss to get a UI?',
         answer:
-          'No. Changing brokers to get a dashboard is backwards. Add Durabull to Redis, or pick a Postgres-native UI if you already use pg-boss.',
+          'A dashboard alone rarely justifies migrating queue storage and worker APIs. Add a BullMQ dashboard if your current runtime meets your needs. Evaluate pg-boss when PostgreSQL transactions, infrastructure consolidation, or its execution model are the actual requirement.',
       },
     ],
     sources: [{ label: 'pg-boss introduction', url: 'https://pgboss.io/introduction' }],
@@ -728,49 +793,54 @@ export const platformCompetitors: Competitor[] = [
   },
   {
     slug: 'defer',
+    researchStatus: 'limited',
     name: 'Defer',
     shortName: 'Defer',
     website: 'https://www.defer.run',
     category: 'managed-platform',
-    oneLiner: 'Shut down 1 May 2024. Domain is no longer the product.',
+    oneLiner:
+      'Historical TypeScript job platform. Current availability could not be verified from official sources.',
     featured: false,
     alternativesPage: false,
-    discontinued: true,
     title: 'Durabull vs Defer',
     description:
-      'Defer shut down on 1 May 2024. If you are searching for a TypeScript background-job platform, BullMQ + Durabull is a self-hosted path that does not depend on a SaaS remaining online.',
+      'Defer’s current service availability could not be verified from official sources. Evaluate active job runtimes separately from the dashboard you use to operate them.',
     keywords: ['Defer alternative', 'defer.run shutdown', 'Defer vs BullMQ'],
     intro:
-      'Defer was a managed TypeScript job platform aimed at Next.js. The company closed. On 2026-10-20, defer.run served an unrelated DNS tool. This page exists because people still search the name.',
-    howItConnects: 'Service gone.',
+      'Defer was a managed TypeScript background-job platform. We could not verify a current service or a primary-source shutdown announcement. Customer reports of a 2024 closure are secondary evidence, so this page does not present an exact shutdown date as verified fact.',
+    howItConnects: 'Current service availability unverified.',
     codeChanges: 'n/a',
     autoDiscovery: 'n/a',
     multiEnv: 'n/a',
     alerts: 'n/a',
     mcp: 'n/a',
-    pricing: 'No live official pricing. Do not quote aggregator leftovers.',
+    pricing: 'Current official pricing could not be verified.',
     license: 'n/a',
-    whenToChooseThem: 'You would not. The product is gone.',
+    whenToChooseThem:
+      'Confirm current availability and support directly before considering a new deployment.',
     whenToChooseDurabull:
-      'If Defer’s shutdown is why you are here: run jobs on Redis you control, and put Durabull beside them. The dashboard can be self-hosted.',
+      'Choose Durabull after selecting Redis-backed BullMQ as your runtime. It adds a self-hostable operations dashboard; it does not migrate Defer jobs or implement Defer’s execution model.',
     rows: [
-      { feature: 'Status', durabull: 'Shipped', competitor: 'Shut down 2024-05-01' },
+      {
+        feature: 'Status',
+        durabull: 'Hosted beta and self-hosting',
+        competitor: 'Current service unverified',
+      },
       {
         feature: 'Your jobs if the vendor leaves',
         durabull: 'Still in Redis',
-        competitor: 'Platform gone',
+        competitor: 'Unverified; depends on the deployment model',
       },
     ],
     faqs: [
       {
         question: 'Is Defer still available?',
         answer:
-          'No. Customer email reported on Hacker News: unavailable as of 1 May 2024. The old hostname is not the product.',
+          'We could not confirm a currently available hosted product from official sources. Historical customer reports describe a shutdown, but we have not independently verified its precise date with a primary announcement.',
       },
     ],
     sources: [
-      { label: 'HN thread', url: 'https://news.ycombinator.com/item?id=39817493' },
-      { label: 'Dealroom', url: 'https://app.dealroom.co/companies/defer' },
+      { label: 'Former product website (availability unverified)', url: 'https://www.defer.run/' },
     ],
     related: ['inngest', 'trigger-dev', 'quirrel'],
   },
@@ -781,16 +851,16 @@ export const platformCompetitors: Competitor[] = [
     website: 'https://docs.quirrel.dev/netlify-acquisition-faq/',
     category: 'managed-platform',
     oneLiner:
-      'Hosted Quirrel ended in 2022. OSS is in maintenance mode. Author pointed self-hosters at BullMQ.',
+      'Hosted Quirrel ended in 2022. Self-hosting and migration require a separate assessment of the open-source project.',
     featured: false,
     alternativesPage: false,
     discontinued: true,
     title: 'Durabull vs Quirrel',
     description:
-      'Hosted Quirrel stopped accepting customers in 2022. The MIT OSS is maintenance-mode. Durabull is the operations layer if you followed the author’s advice and moved to BullMQ.',
+      'Quirrel’s hosted service ended in 2022. If you migrate to Redis-backed BullMQ, Durabull adds queue inspection, alerts, and MCP without executing the jobs itself.',
     keywords: ['Quirrel alternative', 'Quirrel vs BullMQ', 'quirrel.dev'],
     intro:
-      'Netlify acquired Quirrel. Hosted quirrel.dev stopped new customers; access through 31 July 2022. The author told self-hosters that BullMQ is a better fit. OpenSSF Maintained score 0/10 as of the August 2026 scorecard.',
+      'Quirrel’s official acquisition FAQ says hosted access continued through July 31, 2022 and service terminated August 1. It lists Netlify Scheduled Functions, self-hosted Quirrel, and Zeplo as migration options. Moving to BullMQ is another architecture decision; Durabull only applies after your jobs run on Redis-backed BullMQ.',
     howItConnects: 'OSS still uses Redis if you self-host. Hosted is over.',
     codeChanges: 'n/a for a new hosted project.',
     autoDiscovery: 'n/a',
@@ -798,16 +868,16 @@ export const platformCompetitors: Competitor[] = [
     alerts: 'n/a',
     mcp: 'Not documented.',
     pricing: 'No hosted product to buy. OSS MIT plus your Redis.',
-    license: 'MIT OSS, maintenance mode.',
+    license: 'MIT for the open-source project; assess current maintenance separately.',
     whenToChooseThem: 'Do not start a new hosted project on Quirrel.',
     whenToChooseDurabull:
       'If you moved those jobs to BullMQ, Durabull is the dashboard and MCP for that Redis.',
     rows: [
       { feature: 'Hosted', durabull: 'Free during beta', competitor: 'Ended 2022' },
       {
-        feature: 'Author guidance',
+        feature: 'Migration path',
         durabull: 'Built for BullMQ',
-        competitor: 'Author pointed at BullMQ',
+        competitor: 'FAQ lists Netlify, self-hosting, and Zeplo',
       },
     ],
     faqs: [

@@ -1,11 +1,13 @@
 import { CompareHubPage } from '@/components/compare/hub-page'
+import { editorialImagePath } from '@/lib/compare/editorial'
 import { createAbsoluteMetadata } from '@/lib/seo'
 
 export const metadata = createAbsoluteMetadata(
   {
+    ogImage: editorialImagePath('compare'),
     title: 'Compare Durabull to BullMQ dashboards and job platforms',
     description:
-      'Durabull versus Bull Board, Taskforce.sh, Workbench, Inngest, Trigger.dev, Temporal, Datadog, and every other queue tool we could verify. MCP featured throughout.',
+      'Compare BullMQ dashboards, job runtimes, and observability tools by deployment, features, pricing, and tradeoffs. Official sources linked on every comparison.',
     keywords: [
       'BullMQ dashboard comparison',
       'Bull Board alternative',

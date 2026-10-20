@@ -36,3 +36,7 @@ public/llms-full.txt
 
 # Production MCP app bundle, copied from packages/mcp by tooling/copy-mcp-app.ts
 public/mcp-app.html
+
+# Generated editorial catalog assets
+public/sitemap.xml
+public/images/editorial/

@@ -16,19 +16,19 @@ export const categoryOrder: Array<{ id: CompetitorCategory; label: string; blurb
     id: 'bullmq-ui',
     label: 'BullMQ and Redis dashboards',
     blurb:
-      'UIs that sit beside Bull, BullMQ, or Redis. This is the like-for-like set: discovery, environments, alerts, MCP.',
+      'Embedded interfaces, standalone dashboards, and Redis tools. Compare deployment modes, discovery, job operations, and team access.',
   },
   {
     id: 'managed-platform',
-    label: 'Managed job and workflow platforms',
+    label: 'Job runtimes and workflow platforms',
     blurb:
-      'These replace Redis + BullMQ. They do not monitor your existing queues. Costs are their published meters, not Durabull’s.',
+      'Systems that execute or orchestrate background work. Some are managed services; others are self-hosted libraries. Compare their execution models and billing units.',
   },
   {
     id: 'observability',
-    label: 'Generic observability',
+    label: 'Observability platforms',
     blurb:
-      'APM and metrics stacks teams already pay for. They watch Redis or traces. They do not publish job retry consoles.',
+      'Metrics, traces, logs, and error tracking. These can complement a queue dashboard when you need to connect job failures to wider system behavior.',
   },
 ]
 

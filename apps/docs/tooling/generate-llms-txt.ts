@@ -2,6 +2,10 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { articles } from '../src/lib/compare/articles'
 import { alternativeTargets, competitors } from '../src/lib/compare/catalog'
+import { REVIEWED_DATE } from '../src/lib/compare/editorial'
+import { MCP_FACTS } from '../src/lib/mcp-facts'
+
+const verifiedCompetitors = competitors.filter((item) => item.researchStatus !== 'limited')
 
 const docsRoot = resolve(import.meta.dir, '../content/documentation')
 const metaPath = resolve(docsRoot, 'meta.json')
@@ -178,45 +182,38 @@ function stripMdxForPlainText(content: string): string {
 /** Recursively discover MDX sources beneath the documentation directory. */
 async function collectMdxFiles(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true })
-  const files: string[] = []
-
-  for (const entry of entries) {
-    const fullPath = resolve(dir, entry.name)
-    if (entry.isDirectory()) {
-      files.push(...(await collectMdxFiles(fullPath)))
-      continue
-    }
-    if (entry.isFile() && entry.name.endsWith('.mdx')) {
-      files.push(fullPath)
-    }
-  }
-
-  return files
+  const groups = await Promise.all(
+    entries.map(async (entry) => {
+      const path = resolve(dir, entry.name)
+      if (entry.isDirectory()) return collectMdxFiles(path)
+      return entry.isFile() && entry.name.endsWith('.mdx') ? [path] : []
+    })
+  )
+  return groups.flat().sort()
 }
 
 /** Load document metadata and bodies, keyed by source slug. */
 async function loadDocPages(): Promise<Map<string, DocPageMeta>> {
   const files = await collectMdxFiles(docsRoot)
-  const pages = new Map<string, DocPageMeta>()
-
-  for (const fullPath of files) {
-    const relativePath = fullPath.replace(`${docsRoot}/`, '')
-    const slug = relativePath.replace(/\.mdx$/, '')
-    const raw = await readFile(fullPath, 'utf8')
-    const { frontmatter, body } = parseFrontmatter(raw)
-    const fallbackTitle = toTitleCase(slug.split('/').pop() || slug)
-
-    pages.set(slug, {
-      slug,
-      title: frontmatter.title || fallbackTitle,
-      description:
-        frontmatter.description ||
-        `Durabull documentation: ${fallbackTitle.replace(/ And /g, ' and ')}.`,
-      body,
+  const pages = await Promise.all(
+    files.map(async (fullPath) => {
+      const slug = fullPath.replace(`${docsRoot}/`, '').replace(/\.mdx$/, '')
+      const { frontmatter, body } = parseFrontmatter(await readFile(fullPath, 'utf8'))
+      const fallbackTitle = toTitleCase(slug.split('/').pop() || slug)
+      return [
+        slug,
+        {
+          slug,
+          title: frontmatter.title || fallbackTitle,
+          description:
+            frontmatter.description ||
+            `Durabull documentation: ${fallbackTitle.replace(/ And /g, ' and ')}.`,
+          body,
+        },
+      ] as const
     })
-  }
-
-  return pages
+  )
+  return new Map(pages)
 }
 
 /** Format one public link and description for the curated index. */
@@ -283,7 +280,7 @@ function buildLlmsTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSect
     '',
     'Durabull is a BullMQ operations dashboard with Redis auto-discovery, multiple environments, alerts (email, signed webhooks, Linear), and a hosted MCP server. It does not replace Inngest, Trigger.dev, or Temporal. Those platforms replace the queue runtime.',
     '',
-    ...competitors.map((item) =>
+    ...verifiedCompetitors.map((item) =>
       formatLink(`/compare/${item.slug}`, item.title, item.description)
     ),
     '',
@@ -344,16 +341,16 @@ function buildLlmsTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSect
 
 /** Export document bodies as plain text, appending pages absent from navigation. */
 function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSection[]): string {
-  const orderedSlugs: string[] = []
+  const orderedSlugs = new Set<string>()
 
   for (const section of metaSections) {
     for (const slug of section.slugs) {
-      if (!orderedSlugs.includes(slug)) orderedSlugs.push(slug)
+      orderedSlugs.add(slug)
     }
   }
 
   for (const slug of [...docPages.keys()].sort()) {
-    if (!orderedSlugs.includes(slug)) orderedSlugs.push(slug)
+    orderedSlugs.add(slug)
   }
 
   const chunks: string[] = [
@@ -388,11 +385,11 @@ function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: Meta
     '',
     '## Comparison coverage',
     '',
-    'Durabull discovers BullMQ queues by scanning Redis meta keys. No worker SDK is required for inspection. Throughput charts need BullMQ metrics on workers. Hosted pricing is free during beta. License is Elastic License 2.0 (source-available, not OSI open source). MCP lives at the app origin /mcp with 30 tools and opt-in writes.',
+    `Durabull discovers BullMQ queues by scanning Redis meta keys. Redis-backed BullMQ inspection needs no Durabull worker SDK. Historical BullMQ completion metrics require worker metrics configuration; live counts are separate. Hosted pricing is free during beta. License is Elastic License 2.0 (source-available, not OSI open source). MCP lives at the app origin /mcp with ${MCP_FACTS.tools} tools and opt-in writes.`,
     ''
   )
 
-  for (const item of competitors) {
+  for (const item of verifiedCompetitors) {
     chunks.push(
       `## ${item.title}`,
       '',
@@ -401,6 +398,19 @@ function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: Meta
       item.description,
       '',
       item.intro,
+      `Reviewed: ${REVIEWED_DATE}. Published by Durabull; documentation comparison, not a benchmark.`,
+      `Sources: ${item.sources.map((source) => `${source.label}: ${source.url}`).join('; ')}`,
+      `Pricing: ${item.pricing}`,
+      `License: ${item.license}`,
+      ...(item.costs
+        ? [
+            item.costs.caption,
+            ...item.costs.rows.map(
+              (row) =>
+                `${row.volume}: ${row.competitor}. Unit: ${row.unit}. Durabull dashboard fee: ${row.durabull}; infrastructure is separate.`
+            ),
+          ]
+        : []),
       '',
       `How it connects: ${item.howItConnects}`,
       '',
@@ -422,14 +432,24 @@ function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: Meta
       article.description,
       '',
       article.intro,
+      `Short answer: ${article.takeaway}`,
+      `Published: ${article.datePublished}. Reviewed: ${article.dateModified ?? article.datePublished}. Author: Durabull.`,
+      `Sources: ${article.sources.map((source) => `${source.label}: ${source.url}`).join('; ')}`,
       '',
-      ...article.sections.flatMap((section) => [section.heading, '', ...section.body, '']),
+      ...article.sections.flatMap((section) => [
+        section.heading,
+        '',
+        ...section.body,
+        ...(section.code ? [section.code.value, section.code.caption ?? ''] : []),
+        ...(section.sourceUrls ?? []),
+        '',
+      ]),
       '---',
       ''
     )
   }
 
-  return chunks.join('\n').trimEnd() + '\n'
+  return `${chunks.join('\n').trimEnd()}\n`
 }
 
 /** Generate the curated link index and full plain-text export in public/. */

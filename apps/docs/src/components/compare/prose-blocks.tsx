@@ -1,21 +1,20 @@
 import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
+import type { Competitor, SourceLink } from '@/lib/compare/types'
 import { WEB_APP_URL } from '@/lib/config'
 import { MCP_FACTS } from '@/lib/mcp-facts'
-import type { Competitor, SourceLink } from '@/lib/compare/types'
 
 export function McpBand() {
   return (
     <aside className="border border-[var(--v2-line)] bg-[var(--v2-bg-2)] px-5 py-6 sm:px-7">
       <p className="v2-mono text-[var(--v2-accent)]">Durabull MCP</p>
-      <p className="v2-h mt-2 text-xl sm:text-2xl">
-        The headline difference: operate BullMQ from the agent.
-      </p>
+      <p className="v2-h mt-2 text-xl sm:text-2xl">Bring the same queue context to your agent.</p>
       <p className="mt-3 max-w-3xl text-[15px] leading-7 text-[var(--v2-muted)]">
         {MCP_FACTS.tools} tools for Claude, ChatGPT, Cursor, and any MCP client. Inspect queues,
         explain failures, retry or promote jobs, pause a queue, and manage alerts. Write scopes are
-        opt-in. Destructive Redis commands are not exposed.
+        opt-in. Raw Redis commands are not exposed. Retries can repeat side effects; review the job
+        before approving a write.
       </p>
       <Link
         href="/mcp"
@@ -35,7 +34,8 @@ export function CompareCta() {
         <div>
           <h2 className="v2-h text-xl">Connect Redis. Queues appear.</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--v2-muted)]">
-            Hosted Durabull is free during beta. Then connect your agent at /mcp.
+            Inspect your Redis-backed BullMQ queues in one place. Hosted Durabull is free during
+            beta.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -44,7 +44,7 @@ export function CompareCta() {
             className="v2-btn-primary inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-semibold"
           >
             Start Free
-            <ArrowUpRight className="size-4" />
+            <ArrowUpRight aria-hidden className="size-4" />
           </Link>
           <Link
             href="/mcp"
