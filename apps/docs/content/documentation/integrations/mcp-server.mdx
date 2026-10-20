@@ -1,6 +1,6 @@
 ---
 title: BullMQ & Redis MCP Server
-description: Manage BullMQ queues and monitor Redis from ChatGPT, Claude and Codex with Durabull. Inspect jobs, workers, cron schedules, alerts and failure evidence, then recover work with scoped tools.
+description: Manage BullMQ queues and monitor Redis from ChatGPT, Claude, Cursor and Codex with Durabull. Inspect jobs, workers, cron schedules, alerts and failure evidence, then recover work with scoped tools.
 ---
 
 Durabull exposes a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server on the same origin as the web app and API. The default consent bundle contains read scopes; a small set of non-destructive write tools sits behind dedicated scopes you approve explicitly.
@@ -25,9 +25,9 @@ In Durabull Cloud, use `https://app.durabull.io/mcp`. For a self-hosted instance
 app origin. Clients that support remote OAuth can handle discovery and registration; the
 [authentication section](#authentication) describes the protocol for custom clients.
 
-## Claude, ChatGPT, and Codex
+## Claude, ChatGPT, Cursor, and Codex
 
-Connect the HTTPS endpoint above through Claude's connector settings or ChatGPT's **Plugins → Add custom MCP server**, then complete OAuth. Start with “Show my Durabull connections.” In MCP Apps hosts, `list_connections` opens the queue explorer with connection health, queues, jobs, logs, alerts and metrics. It supports light/dark themes, pagination, refresh and fullscreen when the host allows it. ChatGPT Work also exposes sidebar and conversation-panel entrypoints on supported surfaces. **Claude Code is text-only**; the tools and bundled skills work there without the embedded UI.
+Connect the HTTPS endpoint above through Claude's connector settings, ChatGPT's **Plugins → Add custom MCP server**, or Cursor's `mcp.json`, then complete OAuth. Cursor is a first-class Durabull MCP client. Other MCP clients that support remote MCP with OAuth use the same URL. Start with “Show my Durabull connections.” In MCP Apps hosts, `list_connections` opens the queue explorer with connection health, queues, jobs, logs, alerts and metrics. It supports light/dark themes, pagination, refresh and fullscreen when the host allows it. ChatGPT Work also exposes sidebar and conversation-panel entrypoints on supported surfaces. **Claude Code is text-only**; the tools and bundled skills work there without the embedded UI.
 
 The portable plugin and Claude compatibility package live together at `plugins/durabull`. Install locally in Claude Code with `claude --plugin-dir ./plugins/durabull`. For Codex/ChatGPT desktop, use the repository marketplace at `.agents/plugins/marketplace.json`. These files are source packages, not claims of public-directory approval.
 

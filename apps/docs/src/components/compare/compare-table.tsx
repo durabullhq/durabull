@@ -70,7 +70,7 @@ export function CostTable({ caption, rows }: { caption: string; rows: CostRow[] 
                 Runtime / product charges
               </th>
               <th scope="col" className="v2-mono px-4 py-3 font-medium text-[var(--v2-accent)]">
-                Durabull beta fee
+                Durabull hosted fee
               </th>
               <th scope="col" className="v2-mono px-4 py-3 font-medium text-[var(--v2-muted)]">
                 Unit

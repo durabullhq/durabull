@@ -8,7 +8,7 @@ export const mcpFaqs = [
   },
   {
     question: 'Which AI agents does it work with?',
-    answer: `Claude, Cowork, and ChatGPT connect with the URL and show the interactive Queue Explorer. Claude Code and Codex can install the Durabull plugin with ${MCP_FACTS.skills} skills. Other clients that support remote MCP with OAuth, such as Cursor, can use the same URL and get the tools as text; we haven't tested every client yet.`,
+    answer: `Claude, Cowork, and ChatGPT connect with the URL and show the interactive Queue Explorer. Claude Code and Codex can install the Durabull plugin with ${MCP_FACTS.skills} skills. Cursor is a first-class client: add the same URL to mcp.json and sign in. Other clients that support remote MCP with OAuth use the same URL and get the tools as text.`,
   },
   {
     question: 'What can my agent change?',
