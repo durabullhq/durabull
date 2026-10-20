@@ -1,5 +1,7 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { articles } from '../src/lib/compare/articles'
+import { alternativeTargets, competitors } from '../src/lib/compare/catalog'
 
 const docsRoot = resolve(import.meta.dir, '../content/documentation')
 const metaPath = resolve(docsRoot, 'meta.json')
@@ -59,6 +61,18 @@ const MARKETING_LINKS: MarketingLink[] = [
     title: 'API reference landing',
     description: 'Overview of Durabull HTTP API resources with links to detailed docs.',
   },
+  {
+    path: '/mcp',
+    title: 'Durabull MCP',
+    description:
+      'Operate BullMQ from Claude, ChatGPT, Cursor, and any MCP client. 30 tools, OAuth scopes, Queue Explorer.',
+  },
+  {
+    path: '/compare',
+    title: 'Comparison hub',
+    description:
+      'Durabull versus Bull Board, Taskforce.sh, Workbench, Inngest, Trigger.dev, Temporal, Datadog, and other queue tools.',
+  },
 ]
 
 const OPTIONAL_LINKS: MarketingLink[] = [
@@ -74,8 +88,8 @@ const OPTIONAL_LINKS: MarketingLink[] = [
   },
   {
     path: '/blog',
-    title: 'Blog',
-    description: 'Product updates and engineering notes.',
+    title: 'Guides',
+    description: 'BullMQ monitoring, dashboards, MCP, and managed-platform cost breakdowns.',
   },
   {
     path: '/changelog',
@@ -264,6 +278,28 @@ function buildLlmsTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSect
     `- [Durabull web app](${WEB_APP_URL}): Sign in to managed queues, jobs, workers, and alerts.`,
     `- [GitHub repository](${GITHUB_REPO_URL}): Source, issues, and desktop release downloads.`,
     `- [Latest GitHub release](${GITHUB_REPO_URL}/releases/latest): Desktop installers and release artifacts.`,
+    '',
+    '## Comparisons',
+    '',
+    'Durabull is a BullMQ operations dashboard with Redis auto-discovery, multiple environments, alerts (email, signed webhooks, Linear), and a hosted MCP server. It does not replace Inngest, Trigger.dev, or Temporal. Those platforms replace the queue runtime.',
+    '',
+    ...competitors.map((item) =>
+      formatLink(`/compare/${item.slug}`, item.title, item.description)
+    ),
+    '',
+    '## Alternatives pages',
+    '',
+    ...alternativeTargets().map((item) =>
+      formatLink(
+        `/alternatives/${item.slug}`,
+        item.alternativesTitle ?? `${item.name} alternatives`,
+        item.alternativesDescription ?? item.description
+      )
+    ),
+    '',
+    '## Guides',
+    '',
+    ...articles.map((item) => formatLink(`/blog/${item.slug}`, item.title, item.description)),
   ]
 
   const listedSlugs = new Set<string>()
@@ -343,6 +379,51 @@ function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: Meta
       '',
       plainBody,
       '',
+      '---',
+      ''
+    )
+  }
+
+  chunks.push(
+    '',
+    '## Comparison coverage',
+    '',
+    'Durabull discovers BullMQ queues by scanning Redis meta keys. No worker SDK is required for inspection. Throughput charts need BullMQ metrics on workers. Hosted pricing is free during beta. License is Elastic License 2.0 (source-available, not OSI open source). MCP lives at the app origin /mcp with 30 tools and opt-in writes.',
+    ''
+  )
+
+  for (const item of competitors) {
+    chunks.push(
+      `## ${item.title}`,
+      '',
+      `URL: ${absoluteUrl(`/compare/${item.slug}`)}`,
+      '',
+      item.description,
+      '',
+      item.intro,
+      '',
+      `How it connects: ${item.howItConnects}`,
+      '',
+      `When to choose them: ${item.whenToChooseThem}`,
+      '',
+      `When to choose Durabull: ${item.whenToChooseDurabull}`,
+      '',
+      '---',
+      ''
+    )
+  }
+
+  for (const article of articles) {
+    chunks.push(
+      `## ${article.title}`,
+      '',
+      `URL: ${absoluteUrl(`/blog/${article.slug}`)}`,
+      '',
+      article.description,
+      '',
+      article.intro,
+      '',
+      ...article.sections.flatMap((section) => [section.heading, '', ...section.body, '']),
       '---',
       ''
     )

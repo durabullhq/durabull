@@ -183,3 +183,51 @@ export function createBreadcrumbSchema(items: Array<{ name: string; url: string 
     })),
   }
 }
+
+/**
+ * Next.js root layout appends `| Durabull` via `title.template`.
+ * Use this for marketing pages so the visible title is not doubled.
+ */
+export function createAbsoluteMetadata(config: SEOConfig, path: string): Metadata {
+  const metadata = createMetadata(config, path)
+  const fullTitle = path === '/' ? config.title : `${config.title} | ${SITE_NAME}`
+  return {
+    ...metadata,
+    title: { absolute: fullTitle },
+  }
+}
+
+/** JSON-LD Article for long-form guides. */
+export function createArticleSchema(config: {
+  headline: string
+  description: string
+  url: string
+  datePublished: string
+  dateModified?: string
+}) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: config.headline,
+    description: config.description,
+    url: config.url,
+    mainEntityOfPage: config.url,
+    datePublished: config.datePublished,
+    dateModified: config.dateModified ?? config.datePublished,
+    author: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      url: SITE_URL,
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: {
+        '@type': 'ImageObject',
+        url: `${SITE_URL}/favicon-512x512.png`,
+      },
+    },
+    image: DEFAULT_OG_IMAGE,
+  }
+}
