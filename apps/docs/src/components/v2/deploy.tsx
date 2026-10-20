@@ -103,8 +103,8 @@ export function V2Deploy() {
             Cloud, desktop, or self-hosted.
           </h2>
           <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-[var(--v2-muted)]">
-            Durabull is source-available under the Elastic License 2.0. Run it where your security
-            model says it should run.
+            Durabull is open source under the Apache License 2.0. Run it where your security model
+            says it should run.
           </p>
         </Reveal>
 
@@ -212,11 +212,10 @@ export function V2Pricing() {
             </h2>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-[var(--v2-muted)]">
               The hosted app is currently free during beta. You can also run Durabull on your own
-              infrastructure under the Elastic License 2.0. Check published terms for future
-              pricing.
+              infrastructure under the Apache License 2.0. Check published terms for future pricing.
             </p>
             <p className="v2-mono mt-7 text-[var(--v2-faint)]">
-              Elastic License 2.0 · Self-host anytime · No vendor lock-in
+              Apache License 2.0 · Self-host anytime · No vendor lock-in
             </p>
           </Reveal>
 

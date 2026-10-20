@@ -44,6 +44,8 @@ describe('Durabull plugin distribution', () => {
     const claude = await json(resolve(root, '.claude-plugin/plugin.json'))
     expect(claude.version).toBe(portable.version)
     expect(claude.name).toBe(portable.name)
+    expect(portable.license).toBe('Apache-2.0')
+    expect(claude.license).toBe(portable.license)
     expect(claude.extensions).toBeUndefined()
     const presentation = portable.extensions['com.openai'].interface
     for (const asset of [presentation.logo, ...presentation.screenshots]) {
@@ -104,6 +106,11 @@ describe('Durabull plugin distribution', () => {
       expect(await readFile(resolve(output, 'skills/setup/SKILL.md'), 'utf8')).toContain(
         'list_connections'
       )
+      for (const name of ['LICENSE', 'NOTICE']) {
+        expect(await readFile(resolve(output, name), 'utf8')).toBe(
+          await readFile(resolve(root, '../..', name), 'utf8')
+        )
+      }
       for (const entry of await readdir(resolve(output, 'skills'), { withFileTypes: true })) {
         if (!entry.isDirectory()) continue
         const config = await readFile(resolve(output, 'skills', entry.name, 'agents/openai.yaml'), 'utf8')

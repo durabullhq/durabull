@@ -74,8 +74,13 @@ export async function buildPlugin(
     await mkdir(destination, { recursive: true })
     await cp(canonical, destination, { recursive: true })
   }
-  for (const [path, value] of Object.entries(files)) {
-    const output = `${JSON.stringify(value, null, 2)}\n`
+  const outputs: Record<string, string> = Object.fromEntries(
+    Object.entries(files).map(([path, value]) => [path, `${JSON.stringify(value, null, 2)}\n`])
+  )
+  for (const name of ['LICENSE', 'NOTICE']) {
+    outputs[name] = await readFile(resolve(repo, name), 'utf8')
+  }
+  for (const [path, output] of Object.entries(outputs)) {
     const file = resolve(destination, path)
     if (options.check) {
       if ((await readFile(file, 'utf8')) !== output)

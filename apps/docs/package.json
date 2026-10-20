@@ -2,6 +2,7 @@
   "name": "@durabull/docs",
   "version": "1.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "bun run search:index && next dev --port 3002",

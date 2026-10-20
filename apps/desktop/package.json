@@ -3,6 +3,7 @@
   "productName": "Durabull",
   "version": "1.2.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Durabull native desktop shell",
   "author": "Durabull",
   "repository": {

@@ -2,6 +2,7 @@
   "name": "@durabull/docker",
   "version": "1.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "up": "docker compose up -d",
     "down": "docker compose down",

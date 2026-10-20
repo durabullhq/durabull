@@ -117,7 +117,7 @@ export default function PricingPage() {
                   icon: Sparkles,
                   title: 'Self-Hosted',
                   description:
-                    'Source is available under ELv2. Self-host with PostgreSQL or PGlite; both persist data.',
+                    'Open source under Apache-2.0. Self-host with PostgreSQL or PGlite; both persist data.',
                 },
               ].map((item) => (
                 <div

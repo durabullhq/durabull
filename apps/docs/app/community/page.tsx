@@ -26,8 +26,9 @@ export default function CommunityPage() {
             description: "Share questions and feedback through the project's GitHub repository.",
           },
           {
-            title: 'Source Available',
-            description: 'Explore the codebase, self-host under ELv2, and contribute on GitHub.',
+            title: 'Open Source',
+            description:
+              'Explore the codebase, self-host under Apache-2.0, and contribute on GitHub.',
           },
           {
             title: 'Community Stories',

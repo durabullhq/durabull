@@ -32,7 +32,7 @@ Use these guides as the source of truth. Check current implementation before add
 
 - Queue and job inspection connects directly to Redis without a worker SDK. Throughput charts
   require BullMQ metrics enabled on workers; do not promise every feature needs zero code changes.
-- ELv2 is source-available. Link the [license](../../LICENSE); do not call it OSI-approved open source.
+- Durabull is open source under Apache-2.0. Link the [license](../../LICENSE).
 - The API and browser process job data for inspection. Self-hosting keeps that processing within
   the operator's deployment. Redis transport uses TLS only with `rediss://`.
 - Built-in sanitized Durabull usage telemetry and optional operator-configured PostHog are separate;

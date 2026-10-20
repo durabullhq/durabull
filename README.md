@@ -20,7 +20,7 @@
 
 Durabull connects to the Redis instances used by your BullMQ applications. Monitor queue health,
 inspect jobs and logs, retry failures, manage schedulers, and understand worker connectivity
-across environments. The source is available under [Elastic License 2.0](LICENSE).
+across environments. Durabull is open source under the [Apache License 2.0](LICENSE).
 
 ## Get started
 
@@ -110,5 +110,6 @@ for details.
 
 ## License
 
-[Elastic License 2.0 (ELv2)](LICENSE). Review the license terms before redistributing Durabull or
-providing it as a hosted service.
+[Apache License 2.0](LICENSE). You may use, modify, redistribute, and self-host Durabull, including
+commercially, under its terms. See [NOTICE](NOTICE) for attribution. Third-party components retain
+their own licenses.

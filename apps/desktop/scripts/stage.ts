@@ -58,6 +58,8 @@ async function main() {
 
   await copyDirectory(apiDistSource, stagedApiDist)
   await copyDirectory(webDistSource, join(bundleRoot, 'apps', 'web', 'dist'))
+  await copyFile(join(workspaceRoot, 'LICENSE'), join(bundleRoot, 'LICENSE'))
+  await copyFile(join(workspaceRoot, 'NOTICE'), join(bundleRoot, 'NOTICE'))
   await copyDirectory(migrationsSource, join(stagedApiDist, 'migrations'))
   await copyFile(join(pgliteDistSource, 'pglite.data'), join(stagedApiDist, 'pglite.data'))
   await copyFile(join(pgliteDistSource, 'pglite.wasm'), join(stagedApiDist, 'pglite.wasm'))

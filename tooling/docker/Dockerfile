@@ -50,6 +50,7 @@ RUN cd apps/web && bun x vite build
 # Release: Minimal production image
 # -----------------------------------------------------------------------------
 FROM base AS release
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 ARG DURABULL_APP_VERSION
 ARG DURABULL_BUILD_ID
@@ -68,6 +69,7 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 # Root config files (from prune stage since they're not in out/full)
 COPY --from=prune /app/package.json ./
 COPY --from=prune /app/tsconfig.json ./
+COPY --from=prune /app/LICENSE /app/NOTICE ./
 
 # API and workspace packages
 COPY --from=build /app/apps/api ./apps/api
