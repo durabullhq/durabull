@@ -11,6 +11,9 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 export const Default: Story = {}
+export const Dependencies: Story = {
+  args: { path: '/acme/c/demo-redis/queues/email%3Areceipts/jobs/job-1042?tab=dependencies' },
+}
 export const Empty: Story = { parameters: { fixtureState: 'empty' } }
 export const Loading: Story = { parameters: { fixtureState: 'loading' } }
 export const Unavailable: Story = { parameters: { fixtureState: 'error' } }
