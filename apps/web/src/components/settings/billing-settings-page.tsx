@@ -53,9 +53,11 @@ const SOURCE_LABELS: Record<
   free: { label: 'Free', variant: 'secondary' },
 }
 
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+
 function formatDate(value: string | null | undefined): string | null {
   if (!value) return null
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
+  return DATE_FORMAT.format(new Date(value))
 }
 
 function formatLimit(value: number | null, unit: string): string {
@@ -70,6 +72,18 @@ function formatHistoryDays(days: number | null): string {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+type CheckoutReturnState = 'confirming' | 'canceled' | null
+
+/** What the hosted Checkout redirect says about the purchase, read once on mount. */
+function readCheckoutReturn(): CheckoutReturnState {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const checkout = params.get('checkout')
+  if (checkout === 'canceled') return 'canceled'
+  if (checkout === 'success' && params.get('session_id')) return 'confirming'
+  return null
 }
 
 export function BillingSettingsPage() {
@@ -124,7 +138,7 @@ function SelfHostedBilling() {
 function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
   const confirmCheckout = useConfirmCheckout()
   const refreshBilling = useRefreshBilling()
-  const [returnState, setReturnState] = useState<'confirming' | 'canceled' | null>(null)
+  const [returnState, setReturnState] = useState<CheckoutReturnState>(readCheckoutReturn)
   const handledReturn = useRef(false)
 
   // The return from hosted Checkout only starts a server-side confirmation;
@@ -135,9 +149,7 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
     const params = new URLSearchParams(window.location.search)
     const checkout = params.get('checkout')
     const sessionId = params.get('session_id')
-    if (checkout === 'canceled') setReturnState('canceled')
     if (checkout === 'success' && sessionId) {
-      setReturnState('confirming')
       // mutateAsync settles independently of the observer, so a StrictMode
       // remount cannot leave the page stuck in the confirming state.
       void confirmCheckout
@@ -714,9 +726,11 @@ function AllocationDialog({
   onClose: () => void
 }) {
   const save = useSaveCapacityAllocation()
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(options.filter((o) => !o.suspended || o.pinned).map((o) => o.id))
-  )
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    const kept = new Set<string>()
+    for (const o of options) if (!o.suspended || o.pinned) kept.add(o.id)
+    return kept
+  })
   const pinnedCount = useMemo(() => options.filter((o) => o.pinned).length, [options])
   const max = limit === null ? options.length : Math.max(limit, pinnedCount)
   const tooMany = selected.size > max

@@ -51,9 +51,11 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+
 function formatDate(value: string | null): string {
   if (!value) return 'never'
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
+  return DATE_FORMAT.format(new Date(value))
 }
 
 export function ServiceAccountsPage() {
