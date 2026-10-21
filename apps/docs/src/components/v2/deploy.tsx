@@ -191,13 +191,14 @@ function DrawnCheck({ delay }: { delay: number }) {
   )
 }
 
-const included = [
-  'Multiple Redis connections',
-  'Queue and job inspection',
-  'Fleet Analytics',
-  'Alerts: email, webhooks, Linear',
-  'Team & organizations',
-  'Desktop apps included',
+const tiers = [
+  { name: 'Free', price: '$0', detail: '1 connection · 1 person · email alerts' },
+  {
+    name: 'Team',
+    price: '$9',
+    detail: '5 connections · 10 members · webhooks, Linear, MCP writes',
+  },
+  { name: 'Business', price: '$29', detail: '15 connections · 50 members · 30-day history' },
 ]
 
 export function V2Pricing() {
@@ -208,11 +209,12 @@ export function V2Pricing() {
           <Reveal>
             <Eyebrow>Honest pricing</Eyebrow>
             <h2 className="v2-h mt-4 text-balance text-3xl leading-tight text-[var(--v2-fg)] sm:text-4xl">
-              Free to start.
+              One price per team. No per-job fees.
             </h2>
             <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-[var(--v2-muted)]">
-              The hosted app is free to start. You can also run Durabull on your own infrastructure
-              under the Apache License 2.0. Check the pricing page for published terms.
+              Durabull Cloud is billed per organization, not per person or per job. Start free, and
+              move up when you collaborate or connect more Redis databases. Self-hosting under the
+              Apache License 2.0 stays free.
             </p>
             <p className="v2-mono mt-7 text-[var(--v2-faint)]">
               Apache License 2.0 · Self-host anytime · No vendor lock-in
@@ -221,23 +223,29 @@ export function V2Pricing() {
 
           <Reveal delay={0.12}>
             <div className="rounded-2xl border border-[var(--v2-line-strong)] bg-[var(--v2-card)] p-8 sm:p-9">
-              <div className="flex items-baseline justify-between">
-                <p className="v2-mono text-[var(--v2-accent)]">Free to start</p>
-                <p className="v2-h text-5xl text-[var(--v2-fg)]">
-                  $0<span className="text-lg font-medium text-[var(--v2-muted)]">/mo</span>
-                </p>
-              </div>
-              <ul className="mt-8 grid gap-3 sm:grid-cols-2">
-                {included.map((item, i) => (
-                  <li
-                    key={item}
-                    className="flex items-center gap-2.5 text-[13.5px] text-[var(--v2-fg)]"
-                  >
+              <ul className="grid gap-5">
+                {tiers.map((tier, i) => (
+                  <li key={tier.name} className="flex items-start gap-3">
                     <DrawnCheck delay={0.3 + i * 0.07} />
-                    {item}
+                    <div className="flex-1">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="v2-mono text-[var(--v2-accent)]">{tier.name}</span>
+                        <span className="v2-h text-2xl text-[var(--v2-fg)]">
+                          {tier.price}
+                          <span className="text-sm font-medium text-[var(--v2-muted)]">/mo</span>
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[13px] text-[var(--v2-muted)]">{tier.detail}</p>
+                    </div>
                   </li>
                 ))}
               </ul>
+              <Link
+                href="/pricing"
+                className="mt-6 inline-flex text-sm text-[var(--v2-accent)] hover:underline"
+              >
+                Compare all plans, including Enterprise
+              </Link>
               <Link
                 href={`${WEB_APP_URL}/signup`}
                 className="v2-btn-accent mt-8 inline-flex w-full items-center justify-center rounded-lg px-6 py-3 text-[15px] font-semibold"
@@ -245,7 +253,7 @@ export function V2Pricing() {
                 Get started free
               </Link>
               <p className="mt-3.5 text-center text-xs text-[var(--v2-faint)]">
-                No credit card required.
+                No credit card required for Free or the 14-day Business trial.
               </p>
             </div>
           </Reveal>

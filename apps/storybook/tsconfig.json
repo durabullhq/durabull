@@ -24,6 +24,8 @@
       "@/components/v2/*": ["../docs/src/components/v2/*"],
       "@/components/mcp/*": ["../docs/src/components/mcp/*"],
       "@/lib/seo": ["../docs/src/lib/seo.ts"],
+      "@/lib/pricing": ["../docs/src/lib/pricing.ts"],
+      "@/components/pricing/*": ["../docs/src/components/pricing/*"],
       "@/components/compare/*": ["../docs/src/components/compare/*"],
       "@/lib/compare/*": ["../docs/src/lib/compare/*"]
     }

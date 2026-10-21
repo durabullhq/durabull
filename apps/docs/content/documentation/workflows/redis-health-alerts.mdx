@@ -80,6 +80,11 @@ than a spike.
   per-run safety limit. If it finds a larger backlog, it schedules another bounded catch-up run after
   five seconds instead of waiting for the next hourly sweep or creating one large blocking
   transaction.
+- On Durabull Cloud, the organization's plan sets the visible history window (24 hours on Free,
+  14 days on Team, 30 days on Business). Requests for a longer range, including over MCP, are clamped
+  on the server. After a downgrade, samples already collected are retained for a seven-day recovery
+  period before cleanup prunes them to the new window. See
+  [Plans and Billing](/documentation/deployment/plans-and-billing#history-retention).
 - The Redis user must be allowed to run `INFO`. Managed services can restrict the command or omit
   fields; a rule stays quiet when its selected metric is unavailable.
 - When `maxmemory` is zero, percentage-based memory usage is unavailable because host memory can
