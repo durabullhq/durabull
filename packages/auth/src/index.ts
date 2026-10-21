@@ -2,23 +2,23 @@ import {
   authSchema,
   eq,
   getDb,
+  type NewOauthAccessToken,
   oauthAccessToken,
   oauthApplication,
   oauthConsent,
   organizationSchema,
   user,
-  type NewOauthAccessToken,
 } from '@durabull/dal'
 import { env } from '@durabull/env'
-import { betterAuth } from 'better-auth'
-import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { mcp, organization } from 'better-auth/plugins'
 import {
   getCanonicalMcpResourceUri,
   MCP_ALL_SCOPES,
   MCP_OAUTH_SCOPES_SUPPORTED,
   normalizeResourceUri,
 } from '@durabull/mcp/auth'
+import { betterAuth } from 'better-auth'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { mcp, organization } from 'better-auth/plugins'
 import { MCP_OAUTH_CONSENT_PATH } from './mcp-consent'
 
 const isProduction = env.NODE_ENV === 'production'
@@ -122,6 +122,25 @@ export interface CreateAuthOptions {
   trustedOrigins?: string[]
   /** Callback to send invitation emails when a user is invited to an organization */
   sendInvitationEmail?: (data: InvitationEmailData, request?: Request) => Promise<void>
+  /**
+   * Deployment policy hooks for organization membership. Durabull Cloud uses
+   * them to enforce plan seat reservations and billing ownership at the auth
+   * plugin boundary, because invitations bypass the custom team routes.
+   * Hooks reject by throwing a Better Auth APIError.
+   */
+  organizationPolicy?: OrganizationPolicyHooks
+}
+
+export interface OrganizationPolicyHooks {
+  beforeCreateInvitation?: (input: { organizationId: string; email: string }) => Promise<void>
+  beforeAcceptInvitation?: (input: {
+    organizationId: string
+    invitationId: string
+    userId: string
+  }) => Promise<void>
+  beforeDeleteOrganization?: (input: { organizationId: string; userId: string }) => Promise<void>
+  /** Return true when the user may not create another organization (abuse control). */
+  hasReachedOrganizationLimit?: (user: { id: string }) => Promise<boolean>
 }
 
 /**
@@ -217,9 +236,7 @@ export async function createAuth(options?: CreateAuthOptions) {
           },
           after: async (token: { id: string; resource: string | null }) => {
             const canonicalResource = normalizeResourceUri(
-              getCanonicalMcpResourceUri(
-                options?.baseURL ?? env.APP_BASE_URL
-              )
+              getCanonicalMcpResourceUri(options?.baseURL ?? env.APP_BASE_URL)
             )
 
             // Better Auth may occasionally persist null `resource` on MCP tokens; patch only that case.
@@ -242,9 +259,38 @@ export async function createAuth(options?: CreateAuthOptions) {
     plugins: [
       organization({
         allowUserToCreateOrganization: true,
+        // Seat and invitation capacity is enforced by the deployment policy
+        // (database triggers plus organizationPolicy hooks), not by the
+        // plugin's fixed defaults of 100.
+        membershipLimit: 100_000,
+        invitationLimit: 100_000,
+        ...(options?.organizationPolicy?.hasReachedOrganizationLimit && {
+          organizationLimit: options.organizationPolicy.hasReachedOrganizationLimit,
+        }),
         ...(options?.sendInvitationEmail && {
           sendInvitationEmail: options.sendInvitationEmail,
         }),
+        organizationHooks: {
+          beforeCreateInvitation: async ({ invitation }) => {
+            await options?.organizationPolicy?.beforeCreateInvitation?.({
+              organizationId: invitation.organizationId,
+              email: invitation.email,
+            })
+          },
+          beforeAcceptInvitation: async ({ invitation, user }) => {
+            await options?.organizationPolicy?.beforeAcceptInvitation?.({
+              organizationId: invitation.organizationId,
+              invitationId: invitation.id,
+              userId: user.id,
+            })
+          },
+          beforeDeleteOrganization: async ({ organization, user }) => {
+            await options?.organizationPolicy?.beforeDeleteOrganization?.({
+              organizationId: organization.id,
+              userId: user.id,
+            })
+          },
+        },
       }),
       mcp({
         loginPage: '/login',

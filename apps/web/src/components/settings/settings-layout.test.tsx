@@ -4,6 +4,7 @@ import { SettingsLayout } from '@/components/settings/settings-layout'
 
 const appModeState = vi.hoisted(() => ({
   isAuthless: false,
+  billingEnabled: false,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -60,5 +61,29 @@ describe('SettingsLayout', () => {
     )
 
     expect(screen.queryByRole('link', { name: /team/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /service accounts/i })).not.toBeInTheDocument()
+  })
+
+  it('shows billing only when Cloud billing is enabled', () => {
+    appModeState.isAuthless = false
+    appModeState.billingEnabled = false
+    const { unmount } = render(
+      <SettingsLayout orgSlug="acme">
+        <div>Content</div>
+      </SettingsLayout>
+    )
+    expect(screen.queryByRole('link', { name: /billing/i })).not.toBeInTheDocument()
+    unmount()
+
+    appModeState.billingEnabled = true
+    render(
+      <SettingsLayout orgSlug="acme">
+        <div>Content</div>
+      </SettingsLayout>
+    )
+    expect(screen.getByRole('link', { name: /billing/i })).toHaveAttribute(
+      'href',
+      '/acme/settings/billing'
+    )
   })
 })

@@ -29,3 +29,7 @@ apps/api/data/
 
 # Playwright CLI console and page snapshots
 .playwright-cli/
+
+# Editor swap files (can contain copies of .env)
+*.swp
+*.swo

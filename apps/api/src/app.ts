@@ -9,16 +9,19 @@ import { HTTPException } from 'hono/http-exception'
 import { logger } from 'hono/logger'
 import { secureHeaders } from 'hono/secure-headers'
 
+import { assertBillingDeploymentSafe, getBillingConfig } from './billing/config'
+import { toBillingHttpError } from './billing/errors'
 import { getAuth } from './lib/auth'
 import { isAuthlessMode } from './lib/authless'
-import { bootstrapServerAnalytics } from './lib/configure-server-analytics'
 import { getAppVersionPayload } from './lib/build-info'
+import { bootstrapServerAnalytics } from './lib/configure-server-analytics'
+import { RedisUnavailableError } from './lib/redis'
 import { mountMcpWellKnownRoutes } from './mcp/auth/mount-well-known'
+import { mountMcpIngress } from './mcp/mount'
 import { createMcpOAuthAnalyticsMiddleware } from './mcp/observability/mcp-oauth-analytics'
 import { createMcpRequestAnalyticsMiddleware } from './mcp/observability/mcp-request-analytics'
-import { mountMcpIngress } from './mcp/mount'
-import { RedisUnavailableError } from './lib/redis'
 import { createSessionMiddleware } from './middleware/auth'
+import { suspendedMemberAuthGuard } from './middleware/billing-auth-guard'
 import { createConnectionMiddleware } from './middleware/connection'
 import {
   apiRateLimiter,
@@ -27,23 +30,25 @@ import {
   mcpRateLimiter,
   telemetryCollectRateLimiter,
 } from './middleware/rate-limit'
+import alertDestinationsRoutes from './routes/alert-destinations'
+import alertWebhookDestinationsRoutes from './routes/alert-webhook-destinations'
 import alertsRoutes from './routes/alerts'
 import alertsGlobalRoutes from './routes/alerts-global'
 import authRoutes from './routes/auth'
+import billingRoutes, { billingWebhookRoutes } from './routes/billing'
 import connectionsRoutes from './routes/connections'
-import mcpOAuthRoutes from './routes/mcp-oauth'
 import invitationsRoutes from './routes/invitations'
 import jobsRoutes from './routes/jobs'
+import mcpOAuthRoutes from './routes/mcp-oauth'
 import metricsRoutes from './routes/metrics'
 import queuesRoutes from './routes/queues'
 import redisKeysRoutes from './routes/redis-keys'
 import scheduledJobsRoutes from './routes/scheduled-jobs'
+import serviceAccountsRoutes from './routes/service-accounts'
 import teamRoutes from './routes/team'
 import telemetryRoutes, { getTelemetryStatus } from './routes/telemetry'
 import userSettingsRoutes from './routes/user-settings'
 import workersRoutes from './routes/workers'
-import alertDestinationsRoutes from './routes/alert-destinations'
-import alertWebhookDestinationsRoutes from './routes/alert-webhook-destinations'
 
 bootstrapServerAnalytics()
 
@@ -145,6 +150,11 @@ export interface CreateApiAppOptions {
    * CORS origins to allow (default: common dev/prod origins)
    */
   corsOrigins?: string[]
+  /**
+   * Refuse unsafe Cloud billing deployments at startup (default: true).
+   * Only route tests that exercise billing in authless mode disable it.
+   */
+  enforceBillingDeploymentSafety?: boolean
 }
 
 function getAppConfig() {
@@ -165,6 +175,10 @@ function getAppConfig() {
     },
     telemetry: getTelemetryStatus(),
     version: getAppVersionPayload(),
+    billing: {
+      enabled: getBillingConfig().enabled,
+      enforcement: getBillingConfig().enforcement,
+    },
   }
 }
 
@@ -223,6 +237,9 @@ const apiRoutes = new Hono()
   // Connections endpoint
   .route('/connections', connectionsRoutes)
   .route('/team', teamRoutes)
+  .route('/billing/webhook', billingWebhookRoutes)
+  .route('/billing', billingRoutes)
+  .route('/service-accounts', serviceAccountsRoutes)
   // User settings
   .route('/user-settings', userSettingsRoutes)
   .route('/alerts/destinations', alertDestinationsRoutes)
@@ -268,13 +285,24 @@ const getDefaultCorsOrigins = () => {
 }
 
 export async function createApiApp(options: CreateApiAppOptions = {}) {
-  const { enableLogging = true, corsOrigins = getDefaultCorsOrigins() } = options
+  const {
+    enableLogging = true,
+    corsOrigins = getDefaultCorsOrigins(),
+    enforceBillingDeploymentSafety = true,
+  } = options
 
   const app = new Hono()
 
   app.onError((error, c) => {
     if (error instanceof HTTPException) {
       return error.getResponse()
+    }
+
+    // Entitlement denials and capacity-trigger rejections share one shape
+    // across every route, so handlers can simply let them propagate.
+    const billingError = toBillingHttpError(error)
+    if (billingError) {
+      return c.json(billingError.body, billingError.status)
     }
 
     if (isRedisConnectionError(error)) {
@@ -335,6 +363,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
 
   // Rate limiting
   app.use('/api/auth/*', createMcpOAuthAnalyticsMiddleware())
+  app.use('/api/auth/organization/*', suspendedMemberAuthGuard)
 
   // Skip rate limiting for session checks - these are read-only and shouldn't break user sessions
   // Only rate limit actual auth actions (sign-in, sign-up, etc.)
@@ -352,8 +381,9 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
 
   // General rate limiting for non-auth API endpoints
   app.use('/api/*', async (c, next) => {
-    // Skip auth routes (handled above)
-    if (c.req.path.startsWith('/api/auth')) {
+    // Skip auth routes (handled above) and signed Stripe deliveries, which
+    // arrive in bursts from Stripe's shared egress addresses.
+    if (c.req.path.startsWith('/api/auth') || c.req.path === '/api/billing/webhook') {
       return next()
     }
     return apiRateLimiter(c, next)
@@ -379,6 +409,10 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     })
   )
 
+  // Cloud billing is a managed-deployment policy; refuse unsafe combinations
+  // (such as billing with authless access) before serving any request.
+  if (enforceBillingDeploymentSafety) assertBillingDeploymentSafe()
+
   // Initialize auth and create middleware
   const auth = isAuthlessMode() ? undefined : await getAuth()
   const sessionMiddleware = createSessionMiddleware(auth)
@@ -401,6 +435,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     })
     .get('/mode', (c) => c.json(getAppMode()))
     .route('/telemetry', telemetryRoutes)
+    .route('/billing/webhook', billingWebhookRoutes)
 
   // Apply session middleware to routes that need it
   api.use('/session', sessionMiddleware)
@@ -410,6 +445,11 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
   api.use('/user-settings/*', sessionMiddleware)
   api.use('/mcp/*', sessionMiddleware)
   api.use('/alerts/*', sessionMiddleware)
+  api.use('/billing/*', async (c, next) => {
+    if (c.req.path.endsWith('/billing/webhook')) return next()
+    return sessionMiddleware(c, next)
+  })
+  api.use('/service-accounts/*', sessionMiddleware)
   // Connection middleware includes session handling - no need for both
   api.use('/c/:connectionId/*', connectionMiddleware)
 
@@ -427,6 +467,8 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     })
     .route('/connections', connectionsRoutes)
     .route('/team', teamRoutes)
+    .route('/billing', billingRoutes)
+    .route('/service-accounts', serviceAccountsRoutes)
     .route('/user-settings', userSettingsRoutes)
     .route('/mcp', mcpOAuthRoutes)
     .route('/alerts/destinations', alertDestinationsRoutes)

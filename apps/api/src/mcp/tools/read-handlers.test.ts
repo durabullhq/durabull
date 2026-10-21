@@ -466,6 +466,7 @@ describe('get_redis_health', () => {
       sampleIntervalMs: () => 60_000,
       historyEnabled: () => true,
       retentionDays: () => 30,
+      visibleHistoryDays: async () => null,
       now: () => now,
     })
 
@@ -478,6 +479,44 @@ describe('get_redis_health', () => {
     expect(result.series).toHaveLength(2)
     expect(result.range.aggregation).toBe('max')
     expect(getRedisHealthOutputSchema.safeParse(result).success).toBe(true)
+  })
+})
+
+describe('get_redis_health plan window', () => {
+  it('clamps the requested window to the organization plan', async () => {
+    const now = Date.parse('2026-09-09T12:00:00.000Z')
+    const requested: { from?: Date } = {}
+    const handler = createGetRedisHealthHandler({
+      requireConnectionForPrincipal,
+      findCursor: async () => null as never,
+      findRules: async () => [] as never,
+      getHistory: async (_connectionId, options) => {
+        requested.from = options.from
+        return {
+          latest: null,
+          range: {
+            from: options.from.toISOString(),
+            to: options.to.toISOString(),
+            bucketMinutes: 60,
+            expectedSampleIntervalMinutes: 1,
+            aggregation: 'max' as const,
+            totalBuckets: 0,
+            sampledBuckets: 0,
+            coveragePercent: 0,
+          },
+          series: [],
+        } as never
+      },
+      sampleIntervalMs: () => 60_000,
+      historyEnabled: () => true,
+      retentionDays: () => 30,
+      visibleHistoryDays: async () => 1,
+      now: () => now,
+    })
+
+    const result = await handler({ principal, connectionId: 'conn-1', windowMinutes: 43_200 })
+    expect(requested.from?.getTime()).toBe(now - 24 * 60 * 60 * 1000)
+    expect(result.retentionDays).toBe(1)
   })
 })
 

@@ -22,6 +22,7 @@
       "dependencies": {
         "@durabull/analytics": "workspace:*",
         "@durabull/auth": "workspace:*",
+        "@durabull/billing": "workspace:*",
         "@durabull/dal": "workspace:*",
         "@durabull/email": "workspace:*",
         "@durabull/env": "workspace:*",
@@ -33,6 +34,7 @@
         "hono": "^4.6.14",
         "ioredis": "^5.4.2",
         "pg": "^8.13.1",
+        "stripe": "^23.0.0",
         "zod": "^3.24.1",
       },
       "devDependencies": {
@@ -200,6 +202,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@durabull/api": "workspace:*",
+        "@durabull/billing": "workspace:*",
         "hono": "^4.6.14",
       },
       "devDependencies": {
@@ -217,6 +220,15 @@
         "better-auth": "^1.4.9",
       },
       "devDependencies": {
+        "@types/node": "^22.10.5",
+        "typescript": "^5.7.2",
+      },
+    },
+    "packages/billing": {
+      "name": "@durabull/billing",
+      "version": "1.0.0",
+      "devDependencies": {
+        "@types/bun": "^1.3.8",
         "@types/node": "^22.10.5",
         "typescript": "^5.7.2",
       },
@@ -490,6 +502,8 @@
     "@durabull/api-client": ["@durabull/api-client@workspace:packages/api"],
 
     "@durabull/auth": ["@durabull/auth@workspace:packages/auth"],
+
+    "@durabull/billing": ["@durabull/billing@workspace:packages/billing"],
 
     "@durabull/dal": ["@durabull/dal@workspace:packages/dal"],
 
@@ -3130,6 +3144,8 @@
     "strip-indent": ["strip-indent@4.1.1", "", {}, "sha512-SlyRoSkdh1dYP0PzclLE7r0M9sgbFKKMFXpFRUMNuKhQSbC6VQIGzq3E0qsfvGJaUFJPGv6Ws1NZ/haTAjfbMA=="],
 
     "strip-literal": ["strip-literal@3.1.0", "", { "dependencies": { "js-tokens": "^9.0.1" } }, "sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg=="],
+
+    "stripe": ["stripe@23.0.0", "", { "peerDependencies": { "@types/node": ">=20" }, "optionalPeers": ["@types/node"] }, "sha512-MDE2A5ZVVluYURORaZEVghSmnLJc3w6aHAlZSxDQMsOjOb3V0O6ro/CiaeFlJS4N7uIVmsg98ocRsPmUK6YfyA=="],
 
     "stubborn-fs": ["stubborn-fs@2.0.0", "", { "dependencies": { "stubborn-utils": "^1.0.1" } }, "sha512-Y0AvSwDw8y+nlSNFXMm2g6L51rBGdAQT20J3YSOqxC53Lo3bjWRtr2BKcfYoAf352WYpsZSTURrA0tqhfgudPA=="],
 

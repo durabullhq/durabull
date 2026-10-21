@@ -2,7 +2,9 @@ import type { Auth } from '@durabull/auth'
 import { redisConnectionRepository, shouldUseEnvConnections } from '@durabull/dal'
 import type { Session } from 'better-auth/types'
 import { createMiddleware } from 'hono/factory'
+import { isMemberSuspended, isResourceSuspended } from '../billing/entitlements'
 import { getAuthlessContext, isAuthlessMode } from '../lib/authless'
+import { MEMBER_SUSPENDED_BODY } from './auth'
 
 // Extend Hono's context to include the connection info
 declare module 'hono' {
@@ -77,6 +79,10 @@ export function createConnectionMiddleware(auth?: Auth) {
       c.set('session', sessionWithOrg)
       c.set('organizationId', organizationId)
       c.set('organization', null)
+
+      if (organizationId && (await isMemberSuspended(organizationId, session.user.id))) {
+        return c.json(MEMBER_SUSPENDED_BODY, 403)
+      }
     }
 
     const organizationId = c.get('organizationId')
@@ -140,6 +146,31 @@ export function createConnectionMiddleware(auth?: Auth) {
           message: `Connection '${connectionId}' not found. Use GET /api/connections to see available connections.`,
         },
         404
+      )
+    }
+
+    // Disabled and plan-suspended connections reject operational access.
+    // Neither state touches the customer's Redis data.
+    if (!connection.enabled) {
+      return c.json(
+        {
+          error: 'Connection disabled',
+          code: 'connection_disabled',
+          message: 'This connection is disabled. Enable it in Settings → Connections to use it.',
+        },
+        409
+      )
+    }
+    if (await isResourceSuspended(organizationId, 'connection', connection.id)) {
+      return c.json(
+        {
+          error: 'Connection suspended',
+          code: 'connection_suspended',
+          message:
+            'This connection is above your plan’s connection limit and is paused. Choose which connections stay enabled in Settings → Billing, or upgrade.',
+          billingUrl: '/settings/billing',
+        },
+        403
       )
     }
 

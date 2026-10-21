@@ -2,6 +2,7 @@ import type { Auth } from '@durabull/auth'
 import { env } from '@durabull/env'
 import type { Session, User } from 'better-auth/types'
 import { createMiddleware } from 'hono/factory'
+import { isMemberSuspended } from '../billing/entitlements'
 import { getAuthlessContext, isAuthlessMode } from '../lib/authless'
 
 // Extended session type that includes organization plugin fields
@@ -22,7 +23,30 @@ declare module 'hono' {
     session: SessionWithOrg | null
     organizationId: string | null
     organization: OrganizationContext | null
+    /** The member's seat in the active organization is suspended by its plan. */
+    memberSuspended: boolean
   }
+}
+
+export const MEMBER_SUSPENDED_BODY = {
+  error: 'Forbidden',
+  code: 'member_suspended',
+  message:
+    'Your access to this organization is paused because it is above its plan’s member limit. Ask the organization owner to restore your seat or upgrade.',
+} as const
+
+/**
+ * Seat suspension applies to existing sessions and tokens immediately: the
+ * active organization is withheld rather than trusting a stale session.
+ */
+async function resolveActiveOrganization(
+  userId: string,
+  organizationId: string | null
+): Promise<{ organizationId: string | null; memberSuspended: boolean }> {
+  if (organizationId && (await isMemberSuspended(organizationId, userId))) {
+    return { organizationId: null, memberSuspended: true }
+  }
+  return { organizationId, memberSuspended: false }
 }
 
 /**
@@ -84,7 +108,9 @@ export function createSessionMiddleware(auth?: Auth) {
     }
     c.set('user', session.user)
     c.set('session', sessionWithOrg)
-    c.set('organizationId', organizationId)
+    const active = await resolveActiveOrganization(session.user.id, organizationId)
+    c.set('memberSuspended', active.memberSuspended)
+    c.set('organizationId', active.organizationId)
     c.set('organization', null)
     return next()
   })
@@ -133,7 +159,12 @@ export function createRequireAuthMiddleware(auth?: Auth) {
     const sessionWithOrg = session.session as SessionWithOrg
     c.set('user', session.user)
     c.set('session', sessionWithOrg)
-    c.set('organizationId', sessionWithOrg.activeOrganizationId ?? null)
+    const active = await resolveActiveOrganization(
+      session.user.id,
+      sessionWithOrg.activeOrganizationId ?? null
+    )
+    c.set('memberSuspended', active.memberSuspended)
+    c.set('organizationId', active.organizationId)
     c.set('organization', null)
     return next()
   })
@@ -169,6 +200,10 @@ export const requireSession = createMiddleware(async (c, next) => {
  */
 export const requireOrganization = createMiddleware(async (c, next) => {
   const organizationId = c.get('organizationId')
+
+  if (c.get('memberSuspended')) {
+    return c.json(MEMBER_SUSPENDED_BODY, 403)
+  }
 
   if (!organizationId) {
     return c.json(

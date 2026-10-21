@@ -28,6 +28,10 @@ const FALLBACK_APP_CONFIG: AppConfigResponse = {
     dedupeIdentifiedPosthogEvents: false,
     disclosureUrl: 'https://durabull.io/privacy',
   },
+  billing: {
+    enabled: false,
+    enforcement: 'off',
+  },
   version: {
     version: APP_BUILD_INFO.version,
     buildId: APP_BUILD_INFO.buildId,

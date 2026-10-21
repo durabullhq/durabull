@@ -11,6 +11,17 @@ export { alertEvent } from './alert-event/schema'
 export { alertRule } from './alert-rule/schema'
 // Auth schema tables
 export { authAccount, authSession, authVerification } from './auth/schema'
+// Billing schema tables
+export {
+  billingCheckoutAttempt,
+  billingEntitlementOverride,
+  billingOperatorAction,
+  billingResourceSuspension,
+  billingSubscription,
+  billingWebhookEvent,
+  organizationBillingAccount,
+  organizationEntitlement,
+} from './billing/schema'
 export { linearIntegration } from './linear-integration/schema'
 export { linearJobIssue } from './linear-job-issue/schema'
 export { linearJobIssueEvent } from './linear-job-issue-event/schema'

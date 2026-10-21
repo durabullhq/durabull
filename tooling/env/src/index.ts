@@ -111,6 +111,35 @@ const envSchema = z.object({
   LINEAR_OAUTH_REDIRECT_URI: optionalString,
   LINEAR_OAUTH_ACTOR: linearOauthActorSchema,
   DEMO_HEALTH_MAX_AGE_HOURS: optionalNonNegativeInt,
+  /** Durabull Cloud subscriptions. Never enable for desktop or self-hosted installs. */
+  DURABULL_BILLING_ENABLED: optionalBoolean,
+  /** off | shadow | pilot | on. Defaults to shadow when billing is enabled. */
+  DURABULL_BILLING_ENFORCEMENT: optionalString,
+  /** Comma-separated organization ids enforced while DURABULL_BILLING_ENFORCEMENT=pilot. */
+  DURABULL_BILLING_PILOT_ORG_IDS: optionalString,
+  /** Rollback switch: false stops new purchases while webhooks keep reconciling. */
+  DURABULL_BILLING_PURCHASES_ENABLED: optionalBoolean,
+  DURABULL_BILLING_TRIALS_ENABLED: optionalBoolean,
+  /** Organizations created before this ISO instant receive the beta migration grant. */
+  DURABULL_BILLING_LAUNCH_AT: optionalString,
+  /** ISO instant at which the beta migration grant ends (at least 30 days after notice). */
+  DURABULL_BILLING_MIGRATION_GRANT_UNTIL: optionalString,
+  /** Stripe secret API key (sk_test_… for sandboxes). */
+  STRIPE_API_KEY: optionalString,
+  /** Accepted alias for STRIPE_API_KEY. */
+  STRIPE_SECRET_KEY: optionalString,
+  STRIPE_WEBHOOK_SECRET: optionalString,
+  STRIPE_PORTAL_CONFIGURATION_ID: optionalString,
+  /** Card-only payment method configuration for Checkout (created by billing-ops stripe-setup). */
+  STRIPE_PAYMENT_METHOD_CONFIGURATION_ID: optionalString,
+  STRIPE_PRICE_TEAM_MONTHLY: optionalString,
+  STRIPE_PRICE_TEAM_ANNUAL: optionalString,
+  STRIPE_PRICE_BUSINESS_MONTHLY: optionalString,
+  STRIPE_PRICE_BUSINESS_ANNUAL: optionalString,
+  /** Comma-separated Stripe Product ids whose contract Prices map to Enterprise. */
+  STRIPE_ENTERPRISE_PRODUCT_IDS: optionalString,
+  /** JSON object of retained Price ids: {"price_x": "team:month"}. */
+  DURABULL_STRIPE_LEGACY_PRICES: optionalString,
 })
 
 export type Env = z.infer<typeof envSchema>
