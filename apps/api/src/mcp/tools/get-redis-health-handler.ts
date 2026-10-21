@@ -1,6 +1,7 @@
+import { clampHistoryRange } from '@durabull/billing'
 import { alertCheckCursorRepository, alertRuleRepository } from '@durabull/dal'
 import type { GetRedisHealthHandlerInput, GetRedisHealthHandlerOutput } from '@durabull/mcp'
-
+import { getVisibleHistoryDays } from '../../billing/entitlements'
 import {
   REDIS_HEALTH_CURSOR_SCOPE,
   type RedisHealthSnapshot,
@@ -28,6 +29,8 @@ interface GetRedisHealthHandlerDeps {
   sampleIntervalMs: () => number
   historyEnabled: () => boolean
   retentionDays: () => number
+  /** Plan-visible history window for the connection's organization (null = unclamped). */
+  visibleHistoryDays: (organizationId: string) => Promise<number | null>
   now: () => number
 }
 
@@ -39,6 +42,7 @@ const defaultDeps: GetRedisHealthHandlerDeps = {
   sampleIntervalMs: getRedisHealthSampleIntervalMs,
   historyEnabled: isRedisHealthHistoryEnabled,
   retentionDays: getRedisHealthRetentionDays,
+  visibleHistoryDays: getVisibleHistoryDays,
   now: () => Date.now(),
 }
 
@@ -89,7 +93,14 @@ export function createGetRedisHealthHandler(deps: GetRedisHealthHandlerDeps = de
 
     const nowMs = deps.now()
     const to = new Date(nowMs)
-    const from = new Date(nowMs - windowMinutes * 60_000)
+    // MCP history queries honor the same plan window as the UI; an agent
+    // cannot read further back than the organization's plan allows.
+    const visibleDays = await deps.visibleHistoryDays(connection.organizationId)
+    const { from } = clampHistoryRange(
+      { from: new Date(nowMs - windowMinutes * 60_000), to },
+      visibleDays,
+      to
+    )
     const sampleIntervalMs = deps.sampleIntervalMs()
     const staleAfterMs = Math.max(180_000, sampleIntervalMs * 3)
 
@@ -158,7 +169,8 @@ export function createGetRedisHealthHandler(deps: GetRedisHealthHandlerDeps = de
     return {
       connectionId: connection.id,
       collectionEnabled: deps.historyEnabled(),
-      retentionDays: deps.retentionDays(),
+      retentionDays:
+        visibleDays === null ? deps.retentionDays() : Math.min(visibleDays, deps.retentionDays()),
       staleAfterMs,
       latest,
       thresholds,

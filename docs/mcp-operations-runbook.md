@@ -48,7 +48,7 @@ Optional MCP-related toggles:
 
 ## Tenancy and policy bindings
 
-Service accounts are **org-scoped**. Tool calls still pass `connectionId` in arguments; policy enforces that the connection belongs to the principal's org.
+Service accounts are **org-scoped**. Owners and admins create them in **Settings → Service accounts** (`/api/service-accounts`): each gets a confidential OAuth client, per-scope bindings and a `dbsa_…` bearer token shown once (rotate or delete from the same page; revocation is effective within the 60-second token cache). On Durabull Cloud the plan limits enabled service accounts (Free 0, Team 1, Business 5) and MCP write tools require Team or higher; see [billing-operations-runbook.md](./billing-operations-runbook.md). Tool calls still pass `connectionId` in arguments; policy enforces that the connection belongs to the principal's org.
 
 - Grant **least-privilege** `mcp_policy_binding` rows per **`toolName` + `scope`** (service accounts are always org-scoped).
 - Avoid `toolName: null` bindings — they grant the scope for **all** tools.

@@ -50,6 +50,39 @@ export type {
   NewAuthSession,
   NewAuthVerification,
 } from './auth/types'
+// Billing schema exports
+export {
+  type BillingCheckoutAttemptStatus,
+  type BillingLimitsJson,
+  type BillingResourceKind,
+  type BillingWebhookEventStatus,
+  billingCheckoutAttempt,
+  billingCheckoutAttemptStatuses,
+  billingEntitlementOverride,
+  billingResourceKinds,
+  billingResourceSuspension,
+  billingSubscription,
+  billingWebhookEvent,
+  billingWebhookEventStatuses,
+  organizationBillingAccount,
+  organizationEntitlement,
+} from './billing/schema'
+export type {
+  BillingCheckoutAttempt,
+  BillingEntitlementOverride,
+  BillingResourceSuspension,
+  BillingSubscription,
+  BillingWebhookEvent,
+  NewBillingCheckoutAttempt,
+  NewBillingEntitlementOverride,
+  NewBillingResourceSuspension,
+  NewBillingSubscription,
+  NewBillingWebhookEvent,
+  NewOrganizationBillingAccount,
+  NewOrganizationEntitlement,
+  OrganizationBillingAccount,
+  OrganizationEntitlement,
+} from './billing/types'
 // Linear integration schema exports
 export {
   type LinearIntegrationValidationStatus,

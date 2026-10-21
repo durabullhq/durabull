@@ -1,7 +1,9 @@
+import { clampHistoryRange } from '@durabull/billing'
 import { alertCheckCursorRepository, alertRuleRepository } from '@durabull/dal'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { getVisibleHistoryDays } from '../billing/entitlements'
 import {
   collectQueueNativeMetrics,
   DEFAULT_METRICS_WINDOW_MINUTES,
@@ -70,7 +72,15 @@ const app = new Hono()
 
     const query = c.req.valid('query')
     const to = new Date()
-    const from = new Date(to.getTime() - query.windowMinutes * 60_000)
+    // The plan's visible history window is enforced on the server; a longer
+    // requested range is clamped rather than served from retained samples.
+    const visibleDays = await getVisibleHistoryDays(organizationId)
+    const range = clampHistoryRange(
+      { from: new Date(to.getTime() - query.windowMinutes * 60_000), to },
+      visibleDays,
+      to
+    )
+    const from = range.from
     const sampleIntervalMs = getRedisHealthSampleIntervalMs()
     const cursor = await alertCheckCursorRepository.findByConnectionQueue(
       connectionId,
@@ -123,7 +133,12 @@ const app = new Hono()
       latest,
       thresholds,
       collectionEnabled: isRedisHealthHistoryEnabled(),
-      retentionDays: getRedisHealthRetentionDays(),
+      retentionDays:
+        visibleDays === null
+          ? getRedisHealthRetentionDays()
+          : Math.min(visibleDays, getRedisHealthRetentionDays()),
+      planHistoryDays: visibleDays,
+      rangeClamped: range.clamped,
       staleAfterMs: Math.max(180_000, sampleIntervalMs * 3),
     })
   })

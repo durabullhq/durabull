@@ -5,6 +5,8 @@ export const redisHealth: RedisHealthHistoryResponse = {
   collectionEnabled: true,
   retentionDays: 30,
   staleAfterMs: 120000,
+  planHistoryDays: null,
+  rangeClamped: false,
   latest: {
     capturedAt: '2026-10-08T12:00:00Z',
     memoryCapacitySource: 'maxmemory',

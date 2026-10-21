@@ -11,6 +11,7 @@ import {
   parseMcpJsonRpcPayloadId,
   parseMcpPolicyOperation,
 } from '../json-rpc-tool-call'
+import { evaluateMcpBillingPolicy } from './mcp-billing-guard'
 import { evaluateMcpToolPolicy } from './policy-engine'
 import { resolveMcpPrincipal } from './principal-resolver'
 import type { McpPolicyDecision, McpPrincipal } from './types'
@@ -209,6 +210,39 @@ export function createMcpPolicyMiddleware(appBaseUrl?: string) {
       if (resolvedConnection) {
         c.set('mcpResolvedConnection', resolvedConnection)
       }
+    }
+
+    // Plan entitlements narrow (never widen) what scope policy allowed.
+    const billing = await evaluateMcpBillingPolicy({
+      principal,
+      operationName: toolCall.toolName,
+      connectionId: toolCall.connectionId,
+      connectionOrganizationId: c.get('mcpResolvedConnection')?.organizationId ?? null,
+    })
+    if (!billing.allowed) {
+      writeMcpAuditEventNonBlocking({
+        correlationId: decision.correlationId,
+        principalType: decision.principalType,
+        principalId: decision.principalId,
+        userId: principal.type === 'delegated_user' ? principal.userId : null,
+        organizationId:
+          decision.organizationId ?? c.get('mcpResolvedConnection')?.organizationId ?? null,
+        connectionId: decision.connectionId,
+        toolName: decision.toolName,
+        requiredScopes: decision.requiredScopes,
+        granted: false,
+        denialReason: billing.denialReason,
+        inputHash,
+        responseClass: 'policy_denied',
+      })
+      return jsonRpcErrorResponse(
+        c,
+        403,
+        -32_003,
+        'Forbidden: this organization’s plan does not allow this operation.',
+        payloadId,
+        billing.data
+      )
     }
 
     c.set('mcpPrincipal', principal)

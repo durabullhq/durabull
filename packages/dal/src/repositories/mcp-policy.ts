@@ -269,6 +269,8 @@ export const mcpPolicyRepository = {
         member,
         and(eq(member.organizationId, redisConnection.organizationId), eq(member.userId, userId))
       )
+      // Disabled connections reject operational access, so they are not listed.
+      .where(eq(redisConnection.enabled, true))
     return rows
   },
 

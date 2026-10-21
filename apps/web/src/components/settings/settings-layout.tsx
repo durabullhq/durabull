@@ -1,5 +1,16 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { Database, Info, Link2, Palette, Send, Settings, Shield, Users } from 'lucide-react'
+import {
+  Bot,
+  CreditCard,
+  Database,
+  Info,
+  Link2,
+  Palette,
+  Send,
+  Settings,
+  Shield,
+  Users,
+} from 'lucide-react'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { cn } from '@/lib/utils'
 
@@ -16,7 +27,7 @@ interface SettingsNavItem {
 }
 
 export function SettingsLayout({ orgSlug, children }: SettingsLayoutProps) {
-  const { isAuthless } = useAppMode()
+  const { isAuthless, billingEnabled } = useAppMode()
   const location = useLocation()
   const basePath = `/${orgSlug}/settings`
 
@@ -51,6 +62,18 @@ export function SettingsLayout({ orgSlug, children }: SettingsLayoutProps) {
       to: `${basePath}/team`,
       icon: Users,
       hidden: isAuthless,
+    },
+    {
+      label: 'Service accounts',
+      to: `${basePath}/service-accounts`,
+      icon: Bot,
+      hidden: isAuthless,
+    },
+    {
+      label: 'Billing',
+      to: `${basePath}/billing`,
+      icon: CreditCard,
+      hidden: !billingEnabled,
     },
     {
       label: 'About',

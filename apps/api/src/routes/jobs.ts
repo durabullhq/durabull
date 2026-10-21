@@ -1,6 +1,7 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { requireFeature } from '../billing/entitlements'
 import { buildQueueAddOptions, jobOptionsSchema } from '../lib/job-options'
 import { getQueueFromContext } from '../lib/queue-context'
 import type { getQueue } from '../lib/redis'
@@ -638,6 +639,11 @@ const app = new Hono()
     async (c) => {
       const queueName = c.req.param('queueName')
       const { jobIds, statuses } = c.req.valid('json')
+      // Retrying one job stays available on every plan; retrying many at once
+      // (selected jobs or a whole status) is the plan's bulk recovery feature.
+      if ((statuses?.length ?? 0) > 0 || (jobIds?.length ?? 0) > 1) {
+        await requireFeature(c.get('organizationId')!, 'jobs.bulk_recovery')
+      }
 
       const queue = await getQueueFromContext(c, queueName)
       let success = 0

@@ -1,3 +1,6 @@
+import { redisConnectionRepository, redisHealthSampleRepository } from '@durabull/dal'
+import { isBillingEnabled } from '../billing/config'
+import { getEntitlement, getStorageRetentionDays } from '../billing/entitlements'
 import { getRedisHealthRetentionDays, pruneRedisHealthHistory } from './redis-health-history'
 
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000
@@ -42,6 +45,13 @@ async function runRedisHealthCleanup(): Promise<void> {
     if (result.deleted > 0) {
       console.log(`[redis-health-cleanup] Removed ${result.deleted} expired samples`)
     }
+    const planResult = await prunePlanRetention()
+    if (planResult.deleted > 0) {
+      console.log(
+        `[redis-health-cleanup] Removed ${planResult.deleted} samples beyond organization plan retention`
+      )
+    }
+    if (planResult.limitReached) scheduleCatchup()
     if (result.limitReached) {
       console.warn(
         `[redis-health-cleanup] Reached the ${CLEANUP_BATCH_SIZE * CLEANUP_MAX_BATCHES} row per-run safety limit; scheduling a catch-up pass`
@@ -53,6 +63,48 @@ async function runRedisHealthCleanup(): Promise<void> {
   } finally {
     cleanupInProgress = false
   }
+}
+
+/**
+ * Organization-aware retention for Cloud plans. Samples are kept for the
+ * plan's visible window, or the previous window during the seven-day
+ * recovery period after a history downgrade. Deletion is indexed and bounded
+ * per run. Billing never deletes customer Redis data; these are Durabull's
+ * own stored health samples.
+ */
+async function prunePlanRetention(): Promise<{ deleted: number; limitReached: boolean }> {
+  if (!isBillingEnabled()) return { deleted: 0, limitReached: false }
+  const deploymentMaxDays = getRedisHealthRetentionDays()
+  const connectionIds = await redisConnectionRepository.findAllIdsUnsafe()
+  const byOrganization = new Map<string, string[]>()
+  for (const id of connectionIds) {
+    const connection = await redisConnectionRepository.findByIdUnsafe(id)
+    if (!connection) continue
+    const list = byOrganization.get(connection.organizationId) ?? []
+    list.push(id)
+    byOrganization.set(connection.organizationId, list)
+  }
+
+  let deleted = 0
+  let budget = CLEANUP_BATCH_SIZE * CLEANUP_MAX_BATCHES
+  for (const [organizationId, ids] of byOrganization) {
+    const entitlement = await getEntitlement(organizationId)
+    const retentionDays = getStorageRetentionDays(entitlement, deploymentMaxDays)
+    if (retentionDays >= deploymentMaxDays) continue
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
+    while (budget > 0) {
+      const batch = await redisHealthSampleRepository.deleteOlderThanForConnections(
+        ids,
+        cutoff,
+        Math.min(CLEANUP_BATCH_SIZE, budget)
+      )
+      deleted += batch
+      budget -= batch
+      if (batch < CLEANUP_BATCH_SIZE) break
+    }
+    if (budget <= 0) return { deleted, limitReached: true }
+  }
+  return { deleted, limitReached: false }
 }
 
 function scheduleCatchup(): void {

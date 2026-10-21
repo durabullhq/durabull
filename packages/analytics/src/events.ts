@@ -113,6 +113,19 @@ export const AnalyticsEvents = {
   // App Lifecycle Events
   APP_UPDATE_CLICKED: 'app_update_clicked',
 
+  // Billing Events (Durabull Cloud subscriptions)
+  PRICING_VIEWED: 'pricing_viewed',
+  UPGRADE_PROMPT_SHOWN: 'upgrade_prompt_shown',
+  CHECKOUT_STARTED: 'checkout_started',
+  CHECKOUT_COMPLETED: 'checkout_completed',
+  TRIAL_STARTED: 'trial_started',
+  TRIAL_ENDED: 'trial_ended',
+  SUBSCRIPTION_ACTIVATED: 'subscription_activated',
+  PLAN_CHANGED: 'plan_changed',
+  PAYMENT_FAILED: 'payment_failed',
+  SUBSCRIPTION_CANCELED: 'subscription_canceled',
+  FEATURE_DENIED: 'feature_denied',
+
   // Canonical MCP wire values; server captures use @posthog/mcp constants.
   // Shared literals keep the server SDK out of browser bundles (contract tested).
   MCP_RPC_REQUESTED: 'mcp_rpc_requested',

@@ -39,7 +39,8 @@ export async function resolveConnectionForPrincipal(
       connectionId,
       principal.organizationId
     )
-    return connection ? toResolvedConnection(connection) : null
+    // Disabled connections reject operational access over MCP as well.
+    return connection?.enabled ? toResolvedConnection(connection) : null
   }
 
   if (!options.skipDelegatedAccessCheck) {
@@ -53,5 +54,5 @@ export async function resolveConnectionForPrincipal(
   }
 
   const connection = await redisConnectionRepository.findByIdUnsafe(connectionId)
-  return connection ? toResolvedConnection(connection) : null
+  return connection?.enabled ? toResolvedConnection(connection) : null
 }

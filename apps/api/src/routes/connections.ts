@@ -1,5 +1,6 @@
 import {
   and,
+  billingRepository,
   eq,
   getDb,
   member,
@@ -12,6 +13,8 @@ import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { Redis } from 'ioredis'
 import { z } from 'zod'
+import { isBillingEnabled, isEnforcedFor } from '../billing/config'
+import { assertCapacity } from '../billing/entitlements'
 import { buildIoRedisConnectionOptions } from '../lib/connection-options'
 import { resetQueueDiscoveryState } from '../lib/queue-discovery'
 import { validateRedisUrlForEnvironment } from '../lib/url-validation'
@@ -31,6 +34,11 @@ async function isOrgAdmin(userId: string, organizationId: string): Promise<boole
 
 const connectionPrefixSchema = z.string().trim().min(1)
 
+async function loadSuspendedConnectionIds(organizationId: string): Promise<Set<string>> {
+  if (!isBillingEnabled() || !isEnforcedFor(organizationId)) return new Set()
+  return billingRepository.suspendedIds(organizationId, 'connection')
+}
+
 const app = new Hono()
   // Apply organization middleware to all routes
   .use('*', requireOrganization)
@@ -38,7 +46,10 @@ const app = new Hono()
   // List all available Redis connections for the organization
   .get('/', async (c) => {
     const organizationId = c.get('organizationId')!
-    const dbConnections = await redisConnectionRepository.findAll(organizationId)
+    const [dbConnections, suspended] = await Promise.all([
+      redisConnectionRepository.findAll(organizationId),
+      loadSuspendedConnectionIds(organizationId),
+    ])
 
     // Map database connections to API response format
     const connections = dbConnections.map((conn) => ({
@@ -48,6 +59,9 @@ const app = new Hono()
       environment: conn.environment,
       prefix: conn.prefix,
       allowSelfSignedCerts: conn.allowSelfSignedCerts,
+      enabled: conn.enabled,
+      // Paused by the plan's connection limit; reversible from Settings → Billing.
+      suspended: suspended.has(conn.id),
     }))
 
     return c.json({ connections })
@@ -75,6 +89,8 @@ const app = new Hono()
         environment: conn.environment,
         prefix: conn.prefix,
         allowSelfSignedCerts: conn.allowSelfSignedCerts,
+        enabled: conn.enabled,
+        suspended: (await loadSuspendedConnectionIds(organizationId)).has(conn.id),
         createdAt: conn.createdAt.toISOString(),
         updatedAt: conn.updatedAt.toISOString(),
       },
@@ -93,6 +109,7 @@ const app = new Hono()
         isDefault: z.boolean().optional(),
         prefix: connectionPrefixSchema.default('bull'),
         allowSelfSignedCerts: z.boolean().optional(),
+        enabled: z.boolean().optional(),
       })
     ),
     async (c) => {
@@ -114,6 +131,10 @@ const app = new Hono()
       if (!validation.valid) {
         return c.json({ error: validation.error ?? 'Invalid Redis URL' }, 400)
       }
+
+      // Enabled connections are the plan's capacity boundary. The database
+      // trigger re-checks atomically, so concurrent creates cannot overshoot.
+      if (body.enabled !== false) await assertCapacity(organizationId, 'connections.enabled')
 
       // Check if name already exists within the organization
       const existsByName = await redisConnectionRepository.existsByName(body.name, organizationId)
@@ -138,6 +159,7 @@ const app = new Hono()
         isDefault: body.isDefault ?? false,
         prefix: body.prefix,
         allowSelfSignedCerts: body.allowSelfSignedCerts ?? false,
+        enabled: body.enabled ?? true,
         organizationId,
       })
 
@@ -150,6 +172,7 @@ const app = new Hono()
             environment: conn.environment,
             prefix: conn.prefix,
             allowSelfSignedCerts: conn.allowSelfSignedCerts,
+            enabled: conn.enabled,
           },
         },
         201
@@ -169,6 +192,7 @@ const app = new Hono()
         isDefault: z.boolean().optional(),
         prefix: connectionPrefixSchema.optional(),
         allowSelfSignedCerts: z.boolean().optional(),
+        enabled: z.boolean().optional(),
       })
     ),
     async (c) => {
@@ -189,6 +213,9 @@ const app = new Hono()
       const existing = await redisConnectionRepository.findById(id, organizationId)
       if (!existing) {
         return c.json({ error: 'Connection not found' }, 404)
+      }
+      if (body.enabled === true && !existing.enabled) {
+        await assertCapacity(organizationId, 'connections.enabled')
       }
 
       // Validate Redis URL if being updated
@@ -226,6 +253,7 @@ const app = new Hono()
       if (body.allowSelfSignedCerts !== undefined) {
         updateData.allowSelfSignedCerts = body.allowSelfSignedCerts
       }
+      if (body.enabled !== undefined) updateData.enabled = body.enabled
 
       const conn = await redisConnectionRepository.update(id, organizationId, updateData)
       if (!conn) {
@@ -245,6 +273,7 @@ const app = new Hono()
           environment: conn.environment,
           prefix: conn.prefix,
           allowSelfSignedCerts: conn.allowSelfSignedCerts,
+          enabled: conn.enabled,
         },
       })
     }

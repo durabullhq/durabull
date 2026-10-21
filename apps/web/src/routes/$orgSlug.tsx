@@ -1,6 +1,7 @@
 import { createFileRoute, Navigate, Outlet, useNavigate } from '@tanstack/react-router'
 import { ShieldX } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { UpgradePromptHost } from '@/components/billing/upgrade-prompt-host'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
 import { useOrganizations, useSetActiveOrganization } from '@/hooks/use-organization'
@@ -95,5 +96,10 @@ function OrgSlugLayout() {
   }
 
   // Valid organization - render children
-  return <Outlet />
+  return (
+    <>
+      <Outlet />
+      <UpgradePromptHost orgSlug={orgSlug} />
+    </>
+  )
 }

@@ -6,6 +6,8 @@ import { env } from '@durabull/env'
 import { serveStatic } from 'hono/bun'
 
 import { createApiApp } from './app'
+import { getBillingConfig } from './billing/config'
+import { startBillingLifecycle, stopBillingLifecycle } from './billing/lifecycle'
 import { startAlertMonitor, stopAlertMonitor } from './lib/alert-monitor'
 import { isAuthlessMode } from './lib/authless'
 import { startRedisHealthCleanupJob, stopRedisHealthCleanupJob } from './lib/redis-health-cleanup'
@@ -34,6 +36,7 @@ async function shutdown(reason: NodeJS.Signals): Promise<void> {
     try {
       stopAlertMonitor()
       stopRedisHealthCleanupJob()
+      stopBillingLifecycle()
       console.log('[shutdown] Alert monitor stopped.')
       await shutdownMcpAnalytics()
 
@@ -69,6 +72,7 @@ if (!process.stdin.isTTY) {
 const { app } = await createApiApp()
 startAlertMonitor()
 startRedisHealthCleanupJob()
+startBillingLifecycle()
 
 // Serve static files from web app build (for production)
 const webDistPath = join(import.meta.dir, '../../web/dist')
@@ -136,6 +140,10 @@ const alertBanner =
 const redisHealthBanner = isRedisHealthHistoryEnabled()
   ? `📈 Redis health: History active (${getRedisHealthRetentionDays()}d retention)`
   : '📈 Redis health: History disabled'
+const billingConfig = getBillingConfig()
+const billingBanner = billingConfig.enabled
+  ? `💳 Billing: Stripe ${billingConfig.stripe.livemode ? 'live' : 'sandbox'} (enforcement: ${billingConfig.enforcement}${billingConfig.purchasesEnabled ? '' : ', purchases paused'})`
+  : '💳 Billing: Disabled (self-hosted: all local features available)'
 const authlessProductionWarning =
   isAuthlessMode() && env.NODE_ENV === 'production'
     ? '⚠️  WARNING: Authless mode is enabled in production. Restrict network access to trusted environments only.'
@@ -152,6 +160,7 @@ ${authBanner}
 ${connectionsBanner}
 ${alertBanner}
 ${redisHealthBanner}
+${billingBanner}
 ${emailBanner}
 ${authlessProductionWarning ? `${authlessProductionWarning}` : ''}
 ${hasWebBuild ? `🌐 Web:    http://localhost:${port}` : '⚠️  Web: Run "bun run build" first'}

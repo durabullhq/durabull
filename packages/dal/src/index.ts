@@ -85,6 +85,31 @@ export type {
   NewAuthVerification,
 } from './db/schemas/auth/types'
 export {
+  type BillingCheckoutAttemptStatus,
+  type BillingLimitsJson,
+  type BillingResourceKind,
+  type BillingWebhookEventStatus,
+  billingCheckoutAttempt,
+  billingCheckoutAttemptStatuses,
+  billingEntitlementOverride,
+  billingResourceKinds,
+  billingResourceSuspension,
+  billingSubscription,
+  billingWebhookEvent,
+  billingWebhookEventStatuses,
+  organizationBillingAccount,
+  organizationEntitlement,
+} from './db/schemas/billing/schema'
+export type {
+  BillingCheckoutAttempt,
+  BillingEntitlementOverride,
+  BillingResourceSuspension,
+  BillingSubscription,
+  BillingWebhookEvent,
+  OrganizationBillingAccount,
+  OrganizationEntitlement,
+} from './db/schemas/billing/types'
+export {
   type LinearIntegrationValidationStatus,
   linearIntegration,
   linearIntegrationValidationStatuses,
@@ -191,6 +216,13 @@ export {
   type OrganizationOpenAlertSummary,
 } from './repositories/alert-event'
 export { alertRuleRepository } from './repositories/alert-rule'
+export {
+  billingRepository,
+  CAPACITY_USAGE_KEYS,
+  type CapacityUsageKey,
+  type PlanLimitDbViolation,
+  parsePlanLimitDbError,
+} from './repositories/billing'
 export { linearIntegrationRepository } from './repositories/linear-integration'
 export {
   type LinearIssueResolutionClaim,
@@ -207,5 +239,10 @@ export {
   type RedisHealthSampleInput,
   redisHealthSampleRepository,
 } from './repositories/redis-health-sample'
+export {
+  SERVICE_ACCOUNT_TOKEN_PREFIX,
+  type ServiceAccountSummary,
+  serviceAccountRepository,
+} from './repositories/service-account'
 export { telemetryInstallationRepository } from './repositories/telemetry-installation'
 export { userSettingsRepository } from './repositories/user-settings'

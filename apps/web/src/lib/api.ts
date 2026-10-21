@@ -6,6 +6,7 @@
  */
 
 import type { InferResponseType } from '@durabull/api-client'
+import { type BillingErrorBody, isBillingErrorBody } from '@durabull/api-client/billing'
 import { toast } from 'sonner'
 
 export type { ApiType, InferRequestType, InferResponseType } from '@durabull/api-client'
@@ -21,12 +22,32 @@ export const REDIS_CONNECTION_ERROR_MESSAGE =
  */
 export class ApiError extends Error {
   status: number
+  /** Machine-readable error code from the response body, when present. */
+  code?: string
+  /** Structured billing denial (feature_not_entitled, plan_limit_reached, …). */
+  billing?: BillingErrorBody
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, body?: unknown) {
     super(message)
     this.status = status
     this.name = 'ApiError'
+    if (body && typeof body === 'object') {
+      const code = (body as { code?: unknown }).code
+      if (typeof code === 'string') this.code = code
+      if (isBillingErrorBody(body)) this.billing = body
+    }
   }
+}
+
+export const BILLING_DENIED_EVENT = 'durabull:billing-denied'
+
+/**
+ * Billing denials are surfaced once by the global upgrade prompt, so every
+ * call site gets a consistent explanation of the required plan.
+ */
+function announceBillingDenial(body: unknown): void {
+  if (typeof window === 'undefined' || !isBillingErrorBody(body)) return
+  window.dispatchEvent(new CustomEvent<BillingErrorBody>(BILLING_DENIED_EVENT, { detail: body }))
 }
 
 /**
@@ -48,8 +69,10 @@ export type SuccessResponse<T extends (...args: never[]) => Promise<Response>> =
 export async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = `API error: ${res.status}`
+    let body: unknown
     try {
       const errorData = (await res.clone().json()) as { error?: string; message?: string }
+      body = errorData
       if (errorData.message || errorData.error) {
         message = errorData.message ?? errorData.error ?? message
       }
@@ -63,8 +86,9 @@ export async function handleResponse<T>(res: Response): Promise<T> {
         description: message || 'Please slow down and try again in a moment.',
       })
     }
+    announceBillingDenial(body)
 
-    throw new ApiError(message, res.status)
+    throw new ApiError(message, res.status, body)
   }
   return res.json() as Promise<T>
 }
@@ -140,8 +164,10 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
 
   if (!res.ok) {
     let message = `API error: ${res.status}`
+    let body: unknown
     try {
       const errorData = await res.json()
+      body = errorData
       if (errorData.message || errorData.error) {
         message = errorData.message || errorData.error
       }
@@ -155,8 +181,9 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
         description: message || 'Please slow down and try again in a moment.',
       })
     }
+    announceBillingDenial(body)
 
-    throw new ApiError(message, res.status)
+    throw new ApiError(message, res.status, body)
   }
 
   return res.json()

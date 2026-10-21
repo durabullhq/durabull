@@ -102,6 +102,7 @@ export function useUpdateConnection() {
         isDefault?: boolean
         prefix?: string
         allowSelfSignedCerts?: boolean
+        enabled?: boolean
       }
     }) => {
       const res = await api.connections[':id'].$patch({

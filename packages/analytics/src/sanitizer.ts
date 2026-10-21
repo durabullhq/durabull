@@ -143,6 +143,16 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'redaction_count',
   'scope_count',
   'tool_name',
+  // Billing: coarse plan and feature identifiers only, never billing PII.
+  'plan',
+  'previous_plan',
+  'billing_interval',
+  'feature',
+  'limit_key',
+  'entitlement_source',
+  'enforcement_mode',
+  'shadow',
+  'trial',
 ])
 
 const PUBLIC_TOP_LEVEL_ROUTES = new Set([

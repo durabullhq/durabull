@@ -8,6 +8,8 @@ import { isEmailConfigured } from '@durabull/email'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { assertCapacity, isResourceSuspended, requireFeature } from '../billing/entitlements'
+import { toBillingHttpError } from '../billing/errors'
 import { validateWebhookUrls } from '../lib/alert-webhook-channels'
 import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
 import { LinearApiError, validateLinearAccessToken } from '../lib/linear-client'
@@ -113,6 +115,10 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
+    if (body.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
+    if (body.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
+    await assertCapacity(organizationId, 'alerts.destinations')
+
     if (body.type === 'webhook') {
       const urlError = await validateWebhookUrls([{ type: 'webhook', url: body.url }])
       if (urlError) {
@@ -139,6 +145,7 @@ const app = new Hono()
 
       return c.json({ destination: serializeDestination(destination) }, 201)
     } catch (error) {
+      if (toBillingHttpError(error)) throw error
       return c.json({ error: normalizeDestinationWriteError(error) }, 400)
     }
   })
@@ -220,6 +227,7 @@ const app = new Hono()
 
       return c.json({ destination: serializeDestination(destination) })
     } catch (error) {
+      if (toBillingHttpError(error)) throw error
       return c.json({ error: normalizeDestinationWriteError(error) }, 400)
     }
   })
@@ -262,6 +270,11 @@ const app = new Hono()
     if (!destination.enabled) {
       return c.json({ error: 'Destination is disabled.' }, 400)
     }
+    if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
+      return c.json({ error: 'Destination is paused because it is above your plan limit.' }, 409)
+    }
+    if (destination.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
+    if (destination.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
 
     switch (destination.type) {
       case 'webhook': {

@@ -25,6 +25,7 @@ describe('resolveAlertEventHandler', () => {
       url: 'redis://localhost:6379',
       prefix: 'bull',
       allowSelfSignedCerts: false,
+      enabled: true,
       isDefault: false,
       createdAt: new Date(0),
       updatedAt: new Date(0),

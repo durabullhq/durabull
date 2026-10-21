@@ -6,8 +6,10 @@ import {
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
+import { assertCapacity, requireFeature } from '../billing/entitlements'
+import { toBillingHttpError } from '../billing/errors'
 import { validateWebhookUrls } from '../lib/alert-webhook-channels'
+import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
 import { requireOrganization } from '../middleware/auth'
 
 const webhookDestinationPayloadSchema = z.object({
@@ -41,6 +43,8 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
+    await requireFeature(organizationId, 'alerts.webhook')
+    await assertCapacity(organizationId, 'alerts.destinations')
     const urlError = await validateWebhookUrls([{ type: 'webhook', url: body.url }])
     if (urlError) {
       return c.json({ error: urlError }, 400)
@@ -57,6 +61,7 @@ const app = new Hono()
 
       return c.json({ destination: serializeWebhookDestination(destination) }, 201)
     } catch (error) {
+      if (toBillingHttpError(error)) throw error
       return c.json({ error: normalizeDestinationWriteError(error) }, 400)
     }
   })
@@ -117,6 +122,7 @@ const app = new Hono()
 
       return c.json({ destination: serializeWebhookDestination(destination) })
     } catch (error) {
+      if (toBillingHttpError(error)) throw error
       return c.json({ error: normalizeDestinationWriteError(error) }, 400)
     }
   })
@@ -159,6 +165,7 @@ const app = new Hono()
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
+    await requireFeature(organizationId, 'alerts.webhook')
 
     const destination = await alertWebhookDestinationRepository.findById(
       destinationId,

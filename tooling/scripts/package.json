@@ -11,7 +11,9 @@
     "wipe": "bun run wipe.ts",
     "encrypt:redis-urls": "bun run encrypt-redis-connection-urls.ts",
     "generate-favicons": "bun run generate-favicons.ts",
-    "mcp:e2e": "bun run mcp-e2e-smoke.ts"
+    "mcp:e2e": "bun run mcp-e2e-smoke.ts",
+    "billing:ops": "bun run billing-ops.ts",
+    "billing:sandbox": "bun run billing-sandbox-lifecycle.ts"
   },
   "dependencies": {
     "@durabull/dal": "workspace:*",
