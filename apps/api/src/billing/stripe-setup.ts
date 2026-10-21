@@ -27,12 +27,16 @@ const CATALOG: Array<{
  */
 export async function setupStripeCatalog(options: {
   secretKey: string
-  allowLive: boolean
+  /** The mode the operator intends; the key must match it in both directions. */
+  mode: 'sandbox' | 'live'
   webhookUrl?: string
 }): Promise<{ env: Record<string, string>; webhookSecret: string | null }> {
   const live = options.secretKey.startsWith('sk_live_') || options.secretKey.startsWith('rk_live_')
-  if (live && !options.allowLive) {
+  if (live && options.mode !== 'live') {
     throw new Error('Refusing to create a live catalog without --live. Use a sandbox key.')
+  }
+  if (!live && options.mode === 'live') {
+    throw new Error('--live was given but STRIPE_API_KEY is not a live key (sk_live_/rk_live_).')
   }
   const stripe = new Stripe(options.secretKey, { apiVersion: STRIPE_API_VERSION })
   const env: Record<string, string> = {}

@@ -187,12 +187,13 @@ async function main() {
         env.STRIPE_API_KEY ?? env.STRIPE_SECRET_KEY,
         'STRIPE_API_KEY is required'
       )
+      const mode = args.includes('--live') ? 'live' : 'sandbox'
       const result = await setupStripeCatalog({
         secretKey,
-        allowLive: args.includes('--live'),
+        mode,
         webhookUrl: flag(args, '--webhook-url'),
       })
-      console.log('# Add to the API environment:')
+      console.log(`# Stripe ${mode} mode. Add to the API environment:`)
       for (const [key, value] of Object.entries(result.env)) console.log(`${key}=${value}`)
       if (result.webhookSecret) console.log(`STRIPE_WEBHOOK_SECRET=${result.webhookSecret}`)
       break

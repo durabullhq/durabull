@@ -40,7 +40,7 @@ mutableEnv.STRIPE_WEBHOOK_SECRET = `whsec_${randomUUID().replaceAll('-', '')}`
 const { createStripeClient, setupStripeCatalog } = await import(
   '../../apps/api/src/billing/stripe-setup'
 )
-const catalog = await setupStripeCatalog({ secretKey: apiKey, allowLive: false })
+const catalog = await setupStripeCatalog({ secretKey: apiKey, mode: 'sandbox' })
 Object.assign(mutableEnv, catalog.env)
 
 const { billingRepository, closeDb, getDb, organization } = await import('@durabull/dal')
