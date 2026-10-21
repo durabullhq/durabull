@@ -484,7 +484,9 @@ export const billingRepository = {
     const db = await getDb()
     const inserted = await db
       .insert(billingWebhookEvent)
-      .values({ ...input, status: 'pending' })
+      // Due by the application clock, which claimWebhookEvents compares
+      // against; the database default could be ahead of it.
+      .values({ ...input, status: 'pending', nextAttemptAt: new Date() })
       .onConflictDoNothing({ target: billingWebhookEvent.id })
       .returning({ id: billingWebhookEvent.id })
     return inserted.length > 0
