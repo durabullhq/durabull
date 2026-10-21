@@ -93,9 +93,6 @@ The API logs `[billing] ALERT …` lines for:
 
 Route these to the on-call alerting channel.
 
-Review weekly during the pilot: revenue and failed payments. Monthly: delivery cost and support
-demand. Quarterly: price and package changes.
-
 ## Common procedures
 
 | Task | Command |
@@ -105,8 +102,8 @@ demand. Quarterly: price and package changes.
 | Retry an event | `bun tooling/scripts/billing-ops.ts retry evt_…` |
 | Force reconciliation | `bun tooling/scripts/billing-ops.ts reconcile <org-id>` (or `--all`) |
 | Customer lookup | `bun tooling/scripts/billing-ops.ts lookup <org-id>` or `lookup cus_…` |
-| Enterprise contract limits | `bun tooling/scripts/billing-ops.ts contract <org-id> --limits '{"connections.enabled":60}'` |
-| Extend a beta grant | `bun tooling/scripts/billing-ops.ts migration-grant <org-id> 2027-01-15T00:00:00Z` |
+| Enterprise contract limits | `bun tooling/scripts/billing-ops.ts contract <org-id> --limits '{"connections.enabled":60}' --reason "<agreement ref>" --by <you>` |
+| Extend a beta grant | `bun tooling/scripts/billing-ops.ts migration-grant <org-id> 2027-01-15T00:00:00Z --reason "<why>" --by <you>` |
 
 ### Wrongly locked customer
 
@@ -117,7 +114,7 @@ demand. Quarterly: price and package changes.
 4. Only if the customer must be unblocked before the root cause is fixed, grant a time-boxed override:
    `override grant <org-id> team --reason "INC-123 portal bug" --by <you> --expires <ISO>`. Overrides
    always need an owner, reason and expiry, are kept as audit records after revocation, and must be
-   revoked (`override revoke <id> --by <you>`) once resolved. No permanent invisible exceptions.
+   revoked (`override revoke <id> --reason "<why>" --by <you>`) once resolved. Every manual change is recorded in `billing_operator_action`. No permanent invisible exceptions.
 
 ### Refunds and disputes
 
@@ -161,9 +158,19 @@ History visibility shortens immediately; stored samples are kept 7 days before p
 
 ## Known limitations
 
+- Entitlement snapshots are cached per replica for up to 15 seconds; another replica can serve the
+  previous plan for that long after a change.
+- Payment grace starts when Durabull first observes the failed payment, so webhook delay lengthens
+  grace by the same amount.
+- Checkout does not enable Stripe Tax (`automatic_tax`). Turning on tax collection needs a code
+  change and a Checkout/Portal configuration update, not only Stripe dashboard settings.
+- If a Portal upgrade's prorated payment fails, the organization keeps its paid plan through
+  payment grace and then drops to Free rather than back to the lower paid plan. Verify Stripe's
+  behaviour for failed Portal upgrades in the sandbox before relying on it.
+
 - Service-account bearer tokens and Better Auth access tokens are cached for up to 60 seconds after
   revocation or rotation (`createMcpTokenValidationCache`).
 - Commercial capacity is enforced in Postgres. The MCP/API rate limiters remain in-memory per replica
   and are not commercial quotas.
-- SAML SSO, SCIM, guaranteed audit completeness, private networking and SLAs are not built; do not
-  sell them as included.
+- SAML SSO, SCIM, guaranteed audit completeness, private networking and SLAs are not built and are
+  not part of any plan.

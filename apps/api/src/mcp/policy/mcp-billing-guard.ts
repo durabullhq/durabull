@@ -33,12 +33,8 @@ async function deniedFeature(
   return {
     allowed: false,
     denialReason: `feature_not_entitled:${feature}`,
-    data: {
-      code: 'feature_not_entitled',
-      feature,
-      requiredPlan: error.requiredPlan,
-      message: error.message,
-    },
+    // Same body as the HTTP 403, including the billing link.
+    data: { ...error.toBody() },
   }
 }
 

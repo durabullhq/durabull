@@ -59,6 +59,7 @@ export {
   billingCheckoutAttempt,
   billingCheckoutAttemptStatuses,
   billingEntitlementOverride,
+  billingOperatorAction,
   billingResourceKinds,
   billingResourceSuspension,
   billingSubscription,
@@ -70,6 +71,7 @@ export {
 export type {
   BillingCheckoutAttempt,
   BillingEntitlementOverride,
+  BillingOperatorAction,
   BillingResourceSuspension,
   BillingSubscription,
   BillingWebhookEvent,

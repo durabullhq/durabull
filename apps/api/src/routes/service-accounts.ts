@@ -10,9 +10,7 @@ import {
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { isBillingEnabled, isEnforcedFor } from '../billing/config'
-import { assertCapacity, requireFeature } from '../billing/entitlements'
-import { toBillingHttpError } from '../billing/errors'
+import { assertCapacity, requireFeature, suspendedResourceIds } from '../billing/entitlements'
 import { requireOrganization } from '../middleware/auth'
 
 const EXPIRY_DAYS = [30, 90, 365] as const
@@ -57,10 +55,7 @@ const app = new Hono()
   .get('/', async (c) => {
     const organizationId = c.get('organizationId')!
     const accounts = await serviceAccountRepository.list(organizationId)
-    const suspended =
-      isBillingEnabled() && isEnforcedFor(organizationId)
-        ? await billingRepository.suspendedIds(organizationId, 'service_account')
-        : new Set<string>()
+    const suspended = await suspendedResourceIds(organizationId, 'service_account')
     return c.json({
       serviceAccounts: accounts.map((account) => ({
         id: account.id,
@@ -89,25 +84,20 @@ const app = new Hono()
     await assertCapacity(organizationId, 'service_accounts.enabled')
 
     const scopes = [...new Set([MCP_SCOPE_DISCOVER, ...body.scopes])]
-    try {
-      const created = await serviceAccountRepository.create({
-        organizationId,
-        name: body.name,
-        description: body.description ?? null,
-        scopes,
-        resource: mcpResource(),
-        expiresAt: expiresAt(body.expiresInDays),
-        createdByUserId: user.id,
-      })
-      // The token is shown exactly once; only a hash and last four are kept.
-      return c.json({ id: created.id, token: created.token, scopes }, 201)
-    } catch (error) {
-      if (toBillingHttpError(error)) throw error
-      if (String(error).includes('unique')) {
-        return c.json({ error: 'A service account with this name already exists.' }, 400)
-      }
-      throw error
-    }
+    // The capacity trigger's rejection is mapped to 409 by the app error handler.
+    const created = await serviceAccountRepository.create({
+      organizationId,
+      name: body.name,
+      description: body.description ?? null,
+      scopes,
+      resource: mcpResource(),
+      expiresAt: expiresAt(body.expiresInDays),
+      createdByUserId: user.id,
+    })
+    // The token is shown exactly once. Like every OAuth access token it is
+    // stored for bearer lookup; the secret record keeps a scrypt hash and the
+    // last four characters for display and audit.
+    return c.json({ id: created.id, token: created.token, scopes }, 201)
   })
 
   .post('/:id/rotate', zValidator('json', rotateSchema), async (c) => {

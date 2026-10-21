@@ -90,6 +90,34 @@ describe('resolveEntitlement', () => {
     expect(result.planCode).toBe('free')
   })
 
+  it('keeps the trial plan while the first paid invoice after conversion is collected', () => {
+    // Stripe marks a converting trial active before the first invoice is paid.
+    const trialEnd = new Date(now.getTime() - 60 * 60 * 1000)
+    const converting = resolveEntitlement(
+      inputs({
+        subscription: sub({ planCode: 'business', trialEnd, latestInvoicePaid: false }),
+        lastPaidPlan: null,
+      })
+    )
+    expect(converting.planCode).toBe('business')
+    expect(converting.notices).toContain('payment_pending')
+    expect(converting.reevaluateAt).toEqual(new Date(trialEnd.getTime() + OUTAGE_TOLERANCE_MS))
+
+    const neverCollected = resolveEntitlement(
+      inputs({
+        now: new Date(trialEnd.getTime() + OUTAGE_TOLERANCE_MS + 1000),
+        subscription: sub({ planCode: 'business', trialEnd, latestInvoicePaid: false }),
+        lastPaidPlan: null,
+      })
+    )
+    expect(neverCollected.planCode).toBe('free')
+  })
+
+  it('re-evaluates an active subscription at its period end', () => {
+    const result = resolveEntitlement(inputs({ subscription: sub(), lastPaidPlan: 'team' }))
+    expect(result.reevaluateAt).toEqual(sub().currentPeriodEnd)
+  })
+
   it('does not extend an expired trial past the outage tolerance', () => {
     const trialEnd = new Date(now.getTime() - OUTAGE_TOLERANCE_MS - 1000)
     const result = resolveEntitlement(
@@ -226,6 +254,17 @@ describe('resolveEntitlement', () => {
     )
     expect(retained.planCode).toBe('business')
     expect(retained.degraded).toBe(true)
+
+    // Fresh reconciliations must not restart the tolerance window.
+    const lapsed = resolveEntitlement(
+      inputs({
+        subscription: sub({ planCode: null }),
+        lastPaidPlan: 'business',
+        verifiedAt: now,
+        unknownPriceSince: new Date(now.getTime() - OUTAGE_TOLERANCE_MS - 1000),
+      })
+    )
+    expect(lapsed.planCode).toBe('free')
   })
 
   it('honors invoiced Enterprise terms and contract limits', () => {

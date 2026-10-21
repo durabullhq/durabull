@@ -1,7 +1,7 @@
 # ADR-0001: MCP Security Architecture
 
 **Status:** Accepted
-**Date:** 2026-05-28 (phase 1); amended 2026-09-09 (phase 2 capability surface)
+**Date:** 2026-05-28 (phase 1); amended 2026-09-09 (phase 2 capability surface); amended 2026-10-20 (Cloud plan checks and self-service service accounts, see ADR-0002)
 **Supersedes:** N/A (initial ADR; deployable placement amended from early drafts that referenced standalone `apps/mcp`)
 
 ## Context
@@ -60,7 +60,7 @@ The catalog in `packages/mcp/src/tools/tool-catalog.ts` is the single source of 
 ### 4. Authentication
 
 - **Delegated users:** OAuth 2.1 access tokens via Better Auth MCP plugin; RFC 8707 `resource` must match `{APP_BASE_URL}/mcp`.
-- **Service accounts:** OAuth-linked machine principals with org-scoped `mcp_policy_binding` rows (scopes alone are insufficient).
+- **Service accounts:** OAuth-linked machine principals with org-scoped `mcp_policy_binding` rows (scopes alone are insufficient). Organization owners and admins can create them in Settings → Service accounts: each gets its own confidential OAuth client, one bearer access token with the selected scopes (shown once, stored like every OAuth access token for lookup, plus a scrypt hash and last four characters for audit) and one binding per selected scope with `tool_name` null, so the binding covers exactly the operations of the scopes the owner chose. Rotating revokes the previous token; disabling or deleting revokes all of them.
 - **401** missing/invalid token or wrong resource; **403** insufficient scope or policy deny.
 - PRM + `WWW-Authenticate` challenges on unauthenticated `/mcp` requests.
 
@@ -72,6 +72,8 @@ Every `tools/call` and `resources/read` passes through `evaluateMcpToolPolicy`:
 2. OAuth scopes must include the operation's required scopes.
 3. **Delegated users:** `connectionId` (tool argument or URI segment) must belong to the user's org membership.
 4. **Service accounts:** matching `mcp_policy_binding` for operation + org + optional connection constraint. Resource operations bind under the name `resource:<name>`.
+
+5. **Plan (Cloud billing only):** after the checks above allow a call, the billing guard can only narrow it. Write tools need the organization's `mcp.write` feature, service accounts need `automation.service_accounts`, and calls are denied while the caller's seat, the service account or the connection is paused by a plan limit. The billing organization is the connection's organization for delegated users and the bound organization for service accounts; a plan never adds scopes. Self-hosted and desktop deployments skip this step.
 
 The decision also carries **effective scopes**: token scopes for delegated users; for service accounts, token scopes that also have a binding for the operation. Tools with optional evidence (`explain_job_failure`, `get_connection_overview`) include or omit sections based on effective scopes and report what was skipped, instead of failing.
 
@@ -102,6 +104,8 @@ The five read scopes form the bundle injected into authorize requests that omit 
 - `_mcpSafety.redactionCount` metadata on responses.
 - Alert deliveries omit `target` (email address / webhook URL) and provider metadata; notification channels are reduced to routing identity (`type`, `target`, `url`, `destinationId`, `teamId`, `projectId`) with secrets and secret hints dropped.
 - Typed domain errors (`not_found`, `validation_error`, `conflict`, `forbidden`) pass their curated message through redaction to the client; anything else collapses to a generic `internal_error`.
+- Plan denials (step 5) return JSON-RPC error `-32003` (HTTP 403 for the request) with `data.code` set to the same code as the HTTP API: `feature_not_entitled` (with `feature`, `requiredPlan`, `billingUrl`), `member_suspended`, `service_account_suspended` or `connection_suspended`. They are audited like policy denies.
+- Plan state also shapes reads: `list_connections` omits disabled connections, connections paused by a plan limit and organizations where the caller's seat is paused; `get_redis_health` clamps its range and `retentionDays` to the plan's history window.
 
 ### 8. Operational controls
 

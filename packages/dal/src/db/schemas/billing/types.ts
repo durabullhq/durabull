@@ -1,6 +1,7 @@
 import type {
   billingCheckoutAttempt,
   billingEntitlementOverride,
+  billingOperatorAction,
   billingResourceSuspension,
   billingSubscription,
   billingWebhookEvent,
@@ -28,3 +29,6 @@ export type NewBillingResourceSuspension = typeof billingResourceSuspension.$inf
 
 export type BillingEntitlementOverride = typeof billingEntitlementOverride.$inferSelect
 export type NewBillingEntitlementOverride = typeof billingEntitlementOverride.$inferInsert
+
+export type BillingOperatorAction = typeof billingOperatorAction.$inferSelect
+export type NewBillingOperatorAction = typeof billingOperatorAction.$inferInsert

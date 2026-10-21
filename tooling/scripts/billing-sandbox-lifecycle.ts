@@ -1,7 +1,8 @@
 /**
  * Stripe sandbox lifecycle verification for Durabull Cloud billing.
  *
- * Runs the PRD's must-pass billing scenarios against a real Stripe sandbox
+ * Runs the billing lifecycle scenarios (trial, upgrade, failed payment, cancellation,
+ * duplicate and forged webhooks) against a real Stripe sandbox
  * (test clocks, test payment methods) and a disposable PostgreSQL database,
  * through the production gateway, reconciliation and entitlement code.
  *

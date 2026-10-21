@@ -15,6 +15,7 @@ import { z } from 'zod'
 import { recordBillingEvent } from '../billing/analytics'
 import {
   CheckoutRefusedError,
+  cancelCheckoutAttempt,
   confirmCheckoutReturn,
   createPortalSession,
   MAX_TRIALS_PER_USER,
@@ -191,7 +192,8 @@ const app = new Hono()
       config.trialsEnabled &&
       !account?.trialConsumedAt &&
       !subscription &&
-      (user
+      // Checkout refuses trials for unverified emails, so do not offer one.
+      (user?.emailVerified
         ? (await billingRepository.countTrialsStartedByUser(user.id)) < MAX_TRIALS_PER_USER
         : false)
 
@@ -304,6 +306,19 @@ const app = new Hono()
       return c.json(result)
     }
   )
+
+  .post('/checkout/cancel', async (c) => {
+    if (!isBillingEnabled()) return c.json({ error: 'Billing is not enabled' }, 404)
+    const organizationId = c.get('organizationId')!
+    const user = c.get('user')
+    if (!user || !(await requireOwner(organizationId, user.id))) {
+      return c.json(
+        { error: 'Forbidden', message: OWNER_ONLY_MESSAGE, code: 'billing_owner_required' },
+        403
+      )
+    }
+    return c.json(await cancelCheckoutAttempt(organizationId))
+  })
 
   .post('/portal', async (c) => {
     if (!isBillingEnabled()) return c.json({ error: 'Billing is not enabled' }, 404)

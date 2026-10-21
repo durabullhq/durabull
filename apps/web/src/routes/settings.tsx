@@ -17,13 +17,18 @@ function LegacySettingsRedirect() {
   const search = Object.fromEntries(
     new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).entries()
   )
-  const destination = search.linear
-    ? '/$orgSlug/settings/integrations'
-    : '/$orgSlug/settings/connections'
+  // Billing links in API errors and emails cannot know the organization slug.
+  const { section, ...rest } = search
+  const destination =
+    section === 'billing'
+      ? '/$orgSlug/settings/billing'
+      : rest.linear
+        ? '/$orgSlug/settings/integrations'
+        : '/$orgSlug/settings/connections'
 
   if (!activeOrgSlug) {
     return <Navigate to="/" replace />
   }
 
-  return <Navigate to={destination} params={{ orgSlug: activeOrgSlug }} search={search} replace />
+  return <Navigate to={destination} params={{ orgSlug: activeOrgSlug }} search={rest} replace />
 }

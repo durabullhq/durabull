@@ -170,7 +170,8 @@ export function isEnforcedFor(organizationId: string): boolean {
 
 export function getBillingUrl(orgSlug?: string | null): string {
   const base = getBillingConfig().appBaseUrl
-  return orgSlug ? `${base}/${orgSlug}/settings/billing` : `${base}/settings/billing`
+  // Without a slug, /settings redirects to the active organization's billing page.
+  return orgSlug ? `${base}/${orgSlug}/settings/billing` : `${base}/settings?section=billing`
 }
 
 /**

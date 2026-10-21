@@ -9,6 +9,11 @@ import {
 export const CAPACITY_ADJUSTMENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 /** A new adjustment window is not granted within this period of the last one. */
 export const CAPACITY_ADJUSTMENT_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000
+/** Excess existing resources that get the adjustment window; other excess is suspended at once. */
+export const ADJUSTMENT_WINDOW_LIMIT_KEYS: readonly CapacityLimitKey[] = [
+  'connections.enabled',
+  'members.reserved',
+]
 /** Previously collected history is retained this long after a history downgrade. */
 export const HISTORY_RECOVERY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -31,8 +36,10 @@ export interface CapacityTransitionResult {
   overLimit: Array<{ limit: CapacityLimitKey; usage: number; allowed: number }>
   /** Window during which excess existing resources stay enabled. */
   windowExpiresAt: Date | null
-  /** Excess resources must be suspended now. */
+  /** All excess resources must be suspended now. */
   suspendNow: boolean
+  /** Excess that never gets a window (alert rules, destinations, service accounts). */
+  suspendImmediately: CapacityLimitKey[]
 }
 
 export function overLimitEntries(limits: PlanLimits, usage: CapacityUsage) {
@@ -57,29 +64,39 @@ export function evaluateCapacityTransition(
   input: CapacityTransitionInput
 ): CapacityTransitionResult {
   const overLimit = overLimitEntries(input.nextLimits, input.usage)
-  if (overLimit.length === 0) {
-    return { overLimit, windowExpiresAt: null, suspendNow: false }
+  const windowed = overLimit.filter((entry) => ADJUSTMENT_WINDOW_LIMIT_KEYS.includes(entry.limit))
+  const suspendImmediately = overLimit
+    .filter((entry) => !ADJUSTMENT_WINDOW_LIMIT_KEYS.includes(entry.limit))
+    .map((entry) => entry.limit)
+  const suspendAll = { overLimit, windowExpiresAt: null, suspendNow: true, suspendImmediately }
+  if (overLimit.length > 0 && input.skipWindow && !input.activeWindowExpiresAt) return suspendAll
+  if (windowed.length === 0) {
+    return { overLimit, windowExpiresAt: null, suspendNow: false, suspendImmediately }
   }
 
   const nowMs = input.now.getTime()
   if (input.activeWindowExpiresAt) {
     const expiresMs = input.activeWindowExpiresAt.getTime()
     return expiresMs > nowMs
-      ? { overLimit, windowExpiresAt: input.activeWindowExpiresAt, suspendNow: false }
-      : { overLimit, windowExpiresAt: null, suspendNow: true }
+      ? {
+          overLimit,
+          windowExpiresAt: input.activeWindowExpiresAt,
+          suspendNow: false,
+          suspendImmediately,
+        }
+      : suspendAll
   }
-
-  if (input.skipWindow) return { overLimit, windowExpiresAt: null, suspendNow: true }
 
   const recentlyUsed =
     input.lastWindowEndedAt !== null &&
     nowMs - input.lastWindowEndedAt.getTime() < CAPACITY_ADJUSTMENT_COOLDOWN_MS
-  if (recentlyUsed) return { overLimit, windowExpiresAt: null, suspendNow: true }
+  if (recentlyUsed) return suspendAll
 
   return {
     overLimit,
     windowExpiresAt: new Date(nowMs + CAPACITY_ADJUSTMENT_WINDOW_MS),
     suspendNow: false,
+    suspendImmediately,
   }
 }
 

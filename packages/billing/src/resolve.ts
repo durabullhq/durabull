@@ -70,6 +70,8 @@ export interface EntitlementInputs {
   contractLimits: Partial<PlanLimits> | null
   /** Last time the projection was reconciled against Stripe. */
   verifiedAt: Date | null
+  /** When an unmapped Price was first observed; bounds how long the last paid plan is kept. */
+  unknownPriceSince?: Date | null
 }
 
 export type EntitlementSource =
@@ -219,7 +221,7 @@ function resolveFromSubscription(input: EntitlementInputs): ResolvedEntitlement 
     notices.push('unknown_price')
     if (input.lastPaidPlan && input.lastPaidPlan !== 'free') {
       const toleranceEnd = new Date(
-        (input.verifiedAt?.getTime() ?? now.getTime()) + OUTAGE_TOLERANCE_MS
+        (input.unknownPriceSince ?? now).getTime() + OUTAGE_TOLERANCE_MS
       )
       if (toleranceEnd.getTime() > now.getTime()) {
         return {
@@ -295,8 +297,25 @@ function resolveFromSubscription(input: EntitlementInputs): ResolvedEntitlement 
         sub.latestInvoicePaid === false &&
         lastPaid === null
       ) {
-        // Active but nothing has ever been paid: treat as a pending purchase.
         notices.push('payment_pending')
+        // A trial that just converted is active before Stripe collects its
+        // first invoice (about an hour later). Keep the trial plan for that
+        // bounded window; a failed charge moves the subscription to past_due.
+        const trialEnd = sub.trialEnd
+        if (trialEnd && trialEnd.getTime() <= now.getTime()) {
+          const conversionDeadline = new Date(trialEnd.getTime() + OUTAGE_TOLERANCE_MS)
+          if (conversionDeadline.getTime() > now.getTime()) {
+            return {
+              ...planEntitlement(planCode, 'trial', contractLimits),
+              subscribedPlanCode: planCode,
+              degraded: false,
+              graceExpiresAt: null,
+              reevaluateAt: conversionDeadline,
+              notices,
+            }
+          }
+        }
+        // Active but nothing has ever been paid: treat as a pending purchase.
         return free()
       }
 
@@ -309,7 +328,9 @@ function resolveFromSubscription(input: EntitlementInputs): ResolvedEntitlement 
         subscribedPlanCode: planCode,
         degraded: false,
         graceExpiresAt: null,
-        reevaluateAt: cancellationAt,
+        // Re-check at period end even without a webhook, so a Stripe outage
+        // enters the bounded outage tolerance instead of extending access.
+        reevaluateAt: earliest(cancellationAt, periodEnd),
         notices,
       }
     }

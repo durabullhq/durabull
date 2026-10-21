@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import {
@@ -7,9 +7,9 @@ import {
   mcpServiceAccountSecret,
 } from '../db/schemas/mcp-policy/schema'
 import { oauthAccessToken, oauthApplication } from '../db/schemas/oauth-mcp/schema'
+import { hashSecret, MCP_SECRET_PREFIX } from './mcp-policy'
 
-/** Prefix that makes leaked service-account tokens easy to recognize and scan for. */
-export const SERVICE_ACCOUNT_TOKEN_PREFIX = 'dbsa_'
+export const SERVICE_ACCOUNT_TOKEN_PREFIX = `${MCP_SECRET_PREFIX}_`
 
 export interface ServiceAccountSummary {
   id: string
@@ -24,10 +24,6 @@ export interface ServiceAccountSummary {
 
 function generateToken(): string {
   return `${SERVICE_ACCOUNT_TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`
-}
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
 }
 
 /**
@@ -94,6 +90,8 @@ export const serviceAccountRepository = {
   }): Promise<{ id: string; token: string }> {
     const db = await getDb()
     const token = generateToken()
+    // Same scrypt format as other service-account secrets, so one verifier reads all rows.
+    const secretHash = await hashSecret(token)
     const now = new Date()
     const clientId = `durabull-sa-${randomUUID()}`
     const id = await db.transaction(async (tx) => {
@@ -145,7 +143,7 @@ export const serviceAccountRepository = {
       await tx.insert(mcpServiceAccountSecret).values({
         serviceAccountId: account.id,
         label: 'access_token',
-        secretHash: hashToken(token),
+        secretHash,
         secretLastFour: token.slice(-4),
         createdByUserId: input.createdByUserId,
         expiresAt: input.expiresAt,
@@ -180,6 +178,8 @@ export const serviceAccountRepository = {
     const clientId = account.oauthClientId
     const db = await getDb()
     const token = generateToken()
+    // Same scrypt format as other service-account secrets, so one verifier reads all rows.
+    const secretHash = await hashSecret(token)
     const now = new Date()
     const scopes =
       (await this.list(input.organizationId)).find((a) => a.id === input.id)?.scopes ?? []
@@ -210,7 +210,7 @@ export const serviceAccountRepository = {
       await tx.insert(mcpServiceAccountSecret).values({
         serviceAccountId: input.id,
         label: 'access_token',
-        secretHash: hashToken(token),
+        secretHash,
         secretLastFour: token.slice(-4),
         createdByUserId: input.createdByUserId,
         expiresAt: input.expiresAt,

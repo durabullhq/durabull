@@ -10,13 +10,14 @@
  *   bun tooling/scripts/billing-ops.ts reconcile <organization-id>|--all
  *   bun tooling/scripts/billing-ops.ts lookup <organization-id>|<cus_...>
  *   bun tooling/scripts/billing-ops.ts override grant <organization-id> <plan> --reason "…" --by <operator> --expires <ISO> [--limits '{"connections.enabled":8}']
- *   bun tooling/scripts/billing-ops.ts override revoke <override-id> --by <operator>
- *   bun tooling/scripts/billing-ops.ts contract <organization-id> --limits '{"connections.enabled":60}'
- *   bun tooling/scripts/billing-ops.ts migration-grant <organization-id> <ISO|none>
+ *   bun tooling/scripts/billing-ops.ts override revoke <override-id> --reason "…" --by <operator>
+ *   bun tooling/scripts/billing-ops.ts contract <organization-id> --limits '{"connections.enabled":60}' --reason "…" --by <operator>
+ *   bun tooling/scripts/billing-ops.ts migration-grant <organization-id> <ISO|none> --reason "…" --by <operator>
  *   bun tooling/scripts/billing-ops.ts stripe-setup [--webhook-url https://…/api/billing/webhook] [--live]
  *
- * Every manual entitlement override needs an owner, reason and expiry; the
- * override row is the audit record and is kept after revocation.
+ * Every manual entitlement change needs an operator and a reason (overrides
+ * also an expiry). Each one is written to billing_operator_action, which is
+ * kept after revocation and after the organization is deleted.
  */
 
 import { isLimitKey, isPlanCode } from '../../packages/billing/src/catalog'
@@ -142,23 +143,40 @@ async function main() {
           console.error('--expires must be a future ISO date')
           process.exit(1)
         }
+        const limits = parseLimits(flag(rest, '--limits'))
         const row = await billingRepository.createOverride({
           organizationId,
           planCode: plan,
-          limits: parseLimits(flag(rest, '--limits')),
+          limits,
           reason,
           createdBy: by,
           expiresAt,
+        })
+        await billingRepository.recordOperatorAction({
+          organizationId,
+          action: 'override_granted',
+          actor: by,
+          reason,
+          details: { overrideId: row.id, plan, limits, expiresAt: expiresAt.toISOString() },
         })
         await materializeEntitlement(organizationId, { reason: 'operator_override' })
         console.log('Override created:', row.id)
       } else if (action === 'revoke') {
         const id = requireArg(rest[0], 'Usage: override revoke <override-id> --by <operator>')
-        const row = await billingRepository.revokeOverride(id, requireArg(flag(rest, '--by'), '--by is required'))
+        const by = requireArg(flag(rest, '--by'), '--by is required')
+        const reason = requireArg(flag(rest, '--reason'), '--reason is required')
+        const row = await billingRepository.revokeOverride(id, by)
         if (!row) {
           console.error('Override not found or already revoked')
           process.exit(1)
         }
+        await billingRepository.recordOperatorAction({
+          organizationId: row.organizationId,
+          action: 'override_revoked',
+          actor: by,
+          reason,
+          details: { overrideId: id },
+        })
         await materializeEntitlement(row.organizationId, { reason: 'operator_override_revoked' })
         console.log('Override revoked:', id)
       } else {
@@ -168,16 +186,43 @@ async function main() {
       break
     }
     case 'contract': {
-      const organizationId = requireArg(args[0], 'Usage: contract <organization-id> --limits <json>')
-      await billingRepository.setContractLimits(organizationId, parseLimits(flag(args, '--limits')))
+      const usage = 'Usage: contract <organization-id> --limits <json> --reason … --by <operator>'
+      const organizationId = requireArg(args[0], usage)
+      const reason = requireArg(flag(args, '--reason'), '--reason is required')
+      const by = requireArg(flag(args, '--by'), '--by is required')
+      const limits = parseLimits(flag(args, '--limits'))
+      await billingRepository.setContractLimits(organizationId, limits)
+      await billingRepository.recordOperatorAction({
+        organizationId,
+        action: 'contract_limits_set',
+        actor: by,
+        reason,
+        details: { limits },
+      })
       await materializeEntitlement(organizationId, { reason: 'contract_limits' })
       console.log('Contract limits updated for', organizationId)
       break
     }
     case 'migration-grant': {
-      const organizationId = requireArg(args[0], 'Usage: migration-grant <organization-id> <ISO|none>')
-      const raw = requireArg(args[1], 'Usage: migration-grant <organization-id> <ISO|none>')
-      await billingRepository.setMigrationGrant(organizationId, raw === 'none' ? null : new Date(raw))
+      const usage = 'Usage: migration-grant <organization-id> <ISO|none> --reason … --by <operator>'
+      const organizationId = requireArg(args[0], usage)
+      const raw = requireArg(args[1], usage)
+      const reason = requireArg(flag(args, '--reason'), '--reason is required')
+      const by = requireArg(flag(args, '--by'), '--by is required')
+      // "none" stores a past instant: null means "never decided" and would be re-applied.
+      const expiresAt = raw === 'none' ? new Date() : new Date(raw)
+      if (Number.isNaN(expiresAt.getTime())) {
+        console.error('The grant end must be an ISO date or "none"')
+        process.exit(1)
+      }
+      await billingRepository.setMigrationGrant(organizationId, expiresAt)
+      await billingRepository.recordOperatorAction({
+        organizationId,
+        action: raw === 'none' ? 'migration_grant_cleared' : 'migration_grant_set',
+        actor: by,
+        reason,
+        details: { expiresAt: expiresAt.toISOString() },
+      })
       await materializeEntitlement(organizationId, { reason: 'migration_grant' })
       console.log('Migration grant updated for', organizationId)
       break

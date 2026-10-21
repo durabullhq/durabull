@@ -1,6 +1,5 @@
 import {
   and,
-  billingRepository,
   eq,
   getDb,
   member,
@@ -13,8 +12,7 @@ import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { Redis } from 'ioredis'
 import { z } from 'zod'
-import { isBillingEnabled, isEnforcedFor } from '../billing/config'
-import { assertCapacity } from '../billing/entitlements'
+import { assertCapacity, isResourceSuspended, suspendedResourceIds } from '../billing/entitlements'
 import { buildIoRedisConnectionOptions } from '../lib/connection-options'
 import { resetQueueDiscoveryState } from '../lib/queue-discovery'
 import { validateRedisUrlForEnvironment } from '../lib/url-validation'
@@ -34,11 +32,6 @@ async function isOrgAdmin(userId: string, organizationId: string): Promise<boole
 
 const connectionPrefixSchema = z.string().trim().min(1)
 
-async function loadSuspendedConnectionIds(organizationId: string): Promise<Set<string>> {
-  if (!isBillingEnabled() || !isEnforcedFor(organizationId)) return new Set()
-  return billingRepository.suspendedIds(organizationId, 'connection')
-}
-
 const app = new Hono()
   // Apply organization middleware to all routes
   .use('*', requireOrganization)
@@ -48,7 +41,7 @@ const app = new Hono()
     const organizationId = c.get('organizationId')!
     const [dbConnections, suspended] = await Promise.all([
       redisConnectionRepository.findAll(organizationId),
-      loadSuspendedConnectionIds(organizationId),
+      suspendedResourceIds(organizationId, 'connection'),
     ])
 
     // Map database connections to API response format
@@ -90,7 +83,7 @@ const app = new Hono()
         prefix: conn.prefix,
         allowSelfSignedCerts: conn.allowSelfSignedCerts,
         enabled: conn.enabled,
-        suspended: (await loadSuspendedConnectionIds(organizationId)).has(conn.id),
+        suspended: await isResourceSuspended(organizationId, 'connection', conn.id),
         createdAt: conn.createdAt.toISOString(),
         updatedAt: conn.updatedAt.toISOString(),
       },

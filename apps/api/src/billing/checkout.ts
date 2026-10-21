@@ -116,9 +116,14 @@ export async function startCheckout(
         open.trial === (trialDays !== null) &&
         open.url
       if (reusable && open.url) return { url: open.url, reused: true }
-      if (open.stripeSessionId)
-        await getBillingGateway().expireCheckoutSession(open.stripeSessionId)
-      await billingRepository.setCheckoutAttemptStatus({ id: open.id }, 'expired')
+      if ((await closeOpenAttempt(open)) === 'completed') {
+        // The previous session completed while this request was starting a
+        // new one; its subscription arrives through reconciliation.
+        throw new CheckoutRefusedError(
+          'subscription_exists',
+          'A purchase for this organization just completed. Refresh to see your plan.'
+        )
+      }
     }
 
     const gateway = getBillingGateway()
@@ -212,6 +217,50 @@ export async function confirmCheckoutReturn(
     })
   }
   return { status: session.status }
+}
+
+type OpenCheckoutAttempt = NonNullable<
+  Awaited<ReturnType<typeof billingRepository.findOpenCheckoutAttempt>>
+>
+
+/**
+ * Close an open attempt. Expiring first closes the race with a customer who is
+ * completing the session right now: afterwards the session is either expired
+ * (and can no longer complete) or already complete. Call with the
+ * organization lock held.
+ */
+async function closeOpenAttempt(open: OpenCheckoutAttempt): Promise<'closed' | 'completed'> {
+  if (open.stripeSessionId) {
+    const gateway = getBillingGateway()
+    await gateway.expireCheckoutSession(open.stripeSessionId)
+    const session = await gateway.retrieveCheckoutSession(open.stripeSessionId)
+    if (session?.status === 'complete') {
+      await billingRepository.setCheckoutAttemptStatus({ id: open.id }, 'completed')
+      return 'completed'
+    }
+  }
+  await billingRepository.setCheckoutAttemptStatus({ id: open.id }, 'expired')
+  return 'closed'
+}
+
+/**
+ * The customer came back from Checkout without paying. Close the attempt so
+ * the page stops waiting for a confirmation that will never arrive.
+ */
+export async function cancelCheckoutAttempt(
+  organizationId: string
+): Promise<{ status: 'canceled' | 'complete' | 'none' }> {
+  const result = await billingRepository.withOrganizationLock(organizationId, async () => {
+    const open = await billingRepository.findOpenCheckoutAttempt(organizationId)
+    if (!open) return 'none' as const
+    return (await closeOpenAttempt(open)) === 'completed'
+      ? ('complete' as const)
+      : ('canceled' as const)
+  })
+  if (result === 'complete') {
+    await reconcileOrganization(organizationId, { reason: 'checkout_return' })
+  }
+  return { status: result }
 }
 
 /** Short-lived hosted Customer Portal session for this organization. */
