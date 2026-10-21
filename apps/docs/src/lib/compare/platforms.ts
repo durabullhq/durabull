@@ -1,7 +1,8 @@
+import { DURABULL_DASHBOARD_FEE } from '@/lib/pricing'
 import type { Competitor } from './types'
 
 const durabullOps =
-  'Stay on Redis + BullMQ. Durabull is the operations layer: queue discovery, alerts, and MCP. It is Apache-2.0 open source for self-hosting, and the hosted dashboard is free to start. Redis, workers, and their operation remain your responsibility.'
+  'Stay on Redis + BullMQ. Durabull is the operations layer: queue discovery, alerts, and MCP. It is Apache-2.0 open source for self-hosting, and the hosted dashboard has a Free plan with Team at $9/month and Business at $29/month per organization. Redis, workers, and their operation remain your responsibility.'
 
 export const platformCompetitors: Competitor[] = [
   {
@@ -53,17 +54,17 @@ export const platformCompetitors: Competitor[] = [
       },
       {
         feature: '1M billed executions',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$99 Pro (included 1M)',
       },
       {
         feature: '10M executions',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$499 Business (included 10M)',
       },
       {
         feature: '100M executions',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: 'Use the vendor calculator or request a quote',
       },
       { feature: 'MCP', durabull: 'BullMQ queue operations', competitor: 'Inngest run operations' },
@@ -80,19 +81,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M executions',
           competitor: '$99 (Pro included)',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'execution',
         },
         {
           volume: '10M executions',
           competitor: '$499 (Business included)',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'execution',
         },
         {
           volume: '100M executions',
           competitor: 'Quote / calculator required',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'execution',
         },
       ],
@@ -167,17 +168,17 @@ export const platformCompetitors: Competitor[] = [
       },
       {
         feature: '1M × 10s small-1x',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '~$363 (Pro’s $50 credit applies)',
       },
       {
         feature: '10M × 10s',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '~$3,630',
       },
       {
         feature: '100M × 10s',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '~$36,300',
       },
       { feature: 'MCP', durabull: 'BullMQ operations', competitor: 'Trigger.dev runs and deploys' },
@@ -189,19 +190,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M runs × 10s',
           competitor: '~$363',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'run + compute',
         },
         {
           volume: '10M runs × 10s',
           competitor: '~$3,630',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'run + compute',
         },
         {
           volume: '100M runs × 10s',
           competitor: '~$36,300',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'run + compute',
         },
       ],
@@ -210,7 +211,7 @@ export const platformCompetitors: Competitor[] = [
       {
         question: 'Is Trigger.dev cheaper than BullMQ + Durabull?',
         answer:
-          'There is no universal cheaper option. In the stated ten-second small-1x example, 10M Trigger.dev runs generate about $3,630 in usage. Compare that with Redis, equivalent worker capacity, hosting, and engineering operations for BullMQ. Durabull’s hosted dashboard is free to start; it does not include job execution.',
+          'There is no universal cheaper option. In the stated ten-second small-1x example, 10M Trigger.dev runs generate about $3,630 in usage. Compare that with Redis, equivalent worker capacity, hosting, and engineering operations for BullMQ. Durabull’s hosted dashboard has a Free plan and flat per-organization paid plans with no per-job fees; it does not include job execution.',
       },
     ],
     sources: [
@@ -268,17 +269,17 @@ export const platformCompetitors: Competitor[] = [
       { feature: 'Model', durabull: 'BullMQ jobs on Redis', competitor: 'Workflows + Activities' },
       {
         feature: '1M Actions (Developer)',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$55 ($50 + 10% support)',
       },
       {
         feature: '10M Actions (Developer)',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$550',
       },
       {
         feature: '100M Actions (Developer)',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$5,500',
       },
       {
@@ -294,19 +295,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M Actions',
           competitor: '$55',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'Action',
         },
         {
           volume: '10M Actions',
           competitor: '$550',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'Action',
         },
         {
           volume: '100M Actions',
           competitor: '$5,500',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'Action',
         },
       ],
@@ -374,17 +375,17 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M task runs',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$0 (included)',
       },
       {
         feature: '10M task runs',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$270 (9M × $30/M)',
       },
       {
         feature: '100M task runs',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$2,970 list',
       },
       { feature: 'Monitors BullMQ', durabull: 'Yes', competitor: 'No' },
@@ -396,19 +397,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M runs',
           competitor: '$0',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'task run',
         },
         {
           volume: '10M runs',
           competitor: '$270',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'task run',
         },
         {
           volume: '100M runs',
           competitor: '$2,970 list',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'task run',
         },
       ],
@@ -464,17 +465,17 @@ export const platformCompetitors: Competitor[] = [
       { feature: 'Broker', durabull: 'Your Redis + BullMQ', competitor: 'Upstash HTTP push' },
       {
         feature: '1M messages, pay-as-you-go',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$10 (one delivery each)',
       },
       {
         feature: '10M messages',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$100',
       },
       {
         feature: '100M messages',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$1,000',
       },
     ],
@@ -485,19 +486,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M messages',
           competitor: '$10',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'published message',
         },
         {
           volume: '10M messages',
           competitor: '$100',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'published message',
         },
         {
           volume: '100M messages',
           competitor: '$1,000',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: 'published message',
         },
       ],
@@ -548,12 +549,12 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M jobs, 3 SQS requests each',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$0.80 after free tier',
       },
       {
         feature: 'Same + 4 Step Functions transitions',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '~$100.70 + Lambda',
       },
       { feature: 'Understands BullMQ', durabull: 'Yes', competitor: 'No' },
@@ -565,19 +566,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M jobs (SQS only)',
           competitor: '$0.80',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '3 API requests/job',
         },
         {
           volume: '10M jobs (SQS only)',
           competitor: '$11.60',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '3 API requests/job',
         },
         {
           volume: '100M jobs (SQS only)',
           competitor: '$119.60',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '3 API requests/job',
         },
       ],
@@ -586,7 +587,7 @@ export const platformCompetitors: Competitor[] = [
       {
         question: 'Is SQS cheaper than BullMQ?',
         answer:
-          'It depends on workload and infrastructure. SQS charges for requests; BullMQ uses Redis and workers you provision. Include polling, payload sizes, batching, compute, and operational effort. Step Functions is an optional additional service, not a required SQS charge. Durabull adds a hosted dashboard that is free to start.',
+          'It depends on workload and infrastructure. SQS charges for requests; BullMQ uses Redis and workers you provision. Include polling, payload sizes, batching, compute, and operational effort. Step Functions is an optional additional service, not a required SQS charge. Durabull adds a hosted dashboard with a Free plan and flat per-organization paid plans.',
       },
     ],
     sources: [
@@ -628,17 +629,17 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M tasks, 2 ops each',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$0.40 after 1M free',
       },
       {
         feature: '10M tasks, 2 ops each',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$7.60',
       },
       {
         feature: '100M tasks, 2 ops each',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$79.60',
       },
     ],
@@ -649,19 +650,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M tasks',
           competitor: '$0.40',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '2 ops/task',
         },
         {
           volume: '10M tasks',
           competitor: '$7.60',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '2 ops/task',
         },
         {
           volume: '100M tasks',
           competitor: '$79.60',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '2 ops/task',
         },
       ],
@@ -709,17 +710,17 @@ export const platformCompetitors: Competitor[] = [
     rows: [
       {
         feature: '1M messages (3 ops)',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$5.80 ($5 plan + $0.80 ops)',
       },
       {
         feature: '10M messages',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$16.60',
       },
       {
         feature: '100M messages',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$124.60',
       },
     ],
@@ -730,19 +731,19 @@ export const platformCompetitors: Competitor[] = [
         {
           volume: '1M messages',
           competitor: '$5.80',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '3 ops/message',
         },
         {
           volume: '10M messages',
           competitor: '$16.60',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '3 ops/message',
         },
         {
           volume: '100M messages',
           competitor: '$124.60',
-          durabull: 'Free to start + your infrastructure',
+          durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
           unit: '3 ops/message',
         },
       ],
@@ -804,7 +805,7 @@ export const platformCompetitors: Competitor[] = [
       { feature: 'Store', durabull: 'Redis (BullMQ)', competitor: 'PostgreSQL' },
       {
         feature: 'Product fee',
-        durabull: 'Free to start + your infrastructure',
+        durabull: `${DURABULL_DASHBOARD_FEE} + your infrastructure`,
         competitor: '$0 open source or $100/mo Pro',
       },
       {
@@ -961,7 +962,7 @@ export const platformCompetitors: Competitor[] = [
     whenToChooseDurabull:
       'If you moved those jobs to BullMQ, Durabull provides the dashboard, alerts, and MCP for that Redis.',
     rows: [
-      { feature: 'Hosted', durabull: 'Free to start', competitor: 'Ended 2022' },
+      { feature: 'Hosted', durabull: 'Free plan; Team $9/mo', competitor: 'Ended 2022' },
       {
         feature: 'Migration path',
         durabull: 'Built for BullMQ',

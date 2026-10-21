@@ -103,10 +103,11 @@ export function VsPage({ competitor: c }: { competitor: Competitor }) {
         <section id="pricing" className="editorial-section">
           <SectionIntro label="Economics" title="Understand what you are paying for" />
           <div className="editorial-pricing-note">
-            <strong>Different products, different cost boundaries.</strong> Durabull’s hosted app is
-            free to start and covers its dashboard. Redis, worker compute, storage, networking, and
-            operational work remain yours. A runtime’s usage charges may cover orchestration or
-            compute. The prices here are not a total-cost or savings benchmark.
+            <strong>Different products, different cost boundaries.</strong> Durabull Cloud is billed
+            per organization with a Free plan and covers its dashboard. Redis, worker compute,
+            storage, networking, and operational work remain yours. A runtime’s usage charges may
+            cover orchestration or compute. The prices here are not a total-cost or savings
+            benchmark.
           </div>
           <dl className="mb-6 max-w-4xl space-y-4 text-[15px] leading-7 text-[var(--v2-muted)]">
             {[

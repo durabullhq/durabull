@@ -48,7 +48,8 @@ const MARKETING_LINKS: MarketingLink[] = [
   {
     path: '/pricing',
     title: 'Pricing',
-    description: 'Plans and pricing for Durabull Cloud and self-hosted usage.',
+    description:
+      'Durabull Cloud plans per organization (Free, Team $9/month, Business $29/month, Enterprise) and free self-hosting.',
   },
   {
     path: '/docs',
@@ -384,7 +385,7 @@ function buildLlmsFullTxt(docPages: Map<string, DocPageMeta>, metaSections: Meta
     '',
     '## Comparison coverage',
     '',
-    `Durabull discovers BullMQ queues by scanning Redis meta keys. Redis-backed BullMQ inspection needs no Durabull worker SDK. Historical BullMQ completion metrics require worker metrics configuration; live counts are separate. Hosted app is free to start. License is Apache-2.0 (OSI-approved open source). MCP lives at the app origin /mcp with ${MCP_FACTS.tools} tools and opt-in writes.`,
+    `Durabull discovers BullMQ queues by scanning Redis meta keys. Redis-backed BullMQ inspection needs no Durabull worker SDK. Historical BullMQ completion metrics require worker metrics configuration; live counts are separate. Durabull Cloud is billed per organization: Free, Team $9/month ($90/year), Business $29/month ($290/year), Enterprise by agreement; no per-job fees. License is Apache-2.0 (OSI-approved open source). MCP lives at the app origin /mcp with ${MCP_FACTS.tools} tools and opt-in writes.`,
     ''
   )
 

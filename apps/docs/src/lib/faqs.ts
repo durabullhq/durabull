@@ -27,7 +27,8 @@ export const faqs = [
   },
   {
     question: 'How does pricing work?',
-    answer: 'The hosted app is free to start. See the pricing page for current terms.',
+    answer:
+      'Durabull Cloud is billed per organization: Free for one connection and one person, Team at $9/month ($90/year) for five connections and ten members, Business at $29/month ($290/year) for fifteen connections and fifty members, and Enterprise by agreement. There are no per-job fees, and self-hosting is free under Apache-2.0.',
   },
   {
     question: 'How can I install Durabull?',

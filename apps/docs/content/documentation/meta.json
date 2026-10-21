@@ -18,6 +18,7 @@
     "getting-started/environment-variables",
     "operations/security-and-hardening",
     "deployment/cloud-vs-self-hosted",
+    "deployment/plans-and-billing",
     "---Using Durabull---",
     "workflows/queues-dashboard",
     "workflows/bullmq-native-metrics",

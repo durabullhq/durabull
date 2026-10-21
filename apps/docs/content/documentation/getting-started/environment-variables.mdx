@@ -89,6 +89,7 @@ so `DURABULL_REDIS_URL_ENCRYPTION_KEY` is required.
 | `DURABULL_ALERT_JOB_RESOLVE_INTERVAL_MS` | `300000` (minimum `30000`) | Interval for checking job-failure incidents for recovery. |
 | `DURABULL_REDIS_HEALTH_HISTORY_ENABLED` | `true` | Store Redis health samples for Analytics independently of alert evaluation. |
 | `DURABULL_REDIS_HEALTH_RETENTION_DAYS` | `30` (clamped to `1`–`30`) | Redis health history retention. |
+| `DURABULL_BILLING_ENABLED` | unset | Durabull Cloud subscriptions. Leave unset for desktop and self-hosted installs: every local feature is available without Stripe. The API refuses to start with billing enabled in authless or env-connection mode. |
 | `DURABULL_WEBHOOK_ALLOW_HTTP` | `false` | Allow HTTP webhook targets for testing. Does not allow private or localhost targets. Development mode also permits HTTP. |
 
 ## Email and Linear
