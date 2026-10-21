@@ -5,6 +5,7 @@ import { requireFeature } from '../billing/entitlements'
 import { buildQueueAddOptions, jobOptionsSchema } from '../lib/job-options'
 import { getQueueFromContext } from '../lib/queue-context'
 import type { getQueue } from '../lib/redis'
+import jobDependencyRoutes from './job-dependencies'
 import jobMutationRoutes from './job-mutations'
 
 // Default page size for stacktraces and logs
@@ -103,6 +104,7 @@ async function removeJobWithRetries(
 }
 
 const app = new Hono()
+  .route('/', jobDependencyRoutes)
   // List jobs in a queue
   .get('/:queueName/jobs', async (c) => {
     const queueName = c.req.param('queueName')
@@ -180,6 +182,7 @@ const app = new Hono()
       | 'delayed'
       | 'paused'
       | 'prioritized'
+      | 'waiting-children'
     let states: Array<JobState> = [
       'waiting',
       'active',
@@ -188,6 +191,7 @@ const app = new Hono()
       'delayed',
       'paused',
       'prioritized',
+      'waiting-children',
     ]
     if (status) {
       states = [status as JobState]
