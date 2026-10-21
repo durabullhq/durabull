@@ -486,6 +486,36 @@ export function useJob(queueName: string, jobId: string, options?: UsePollingQue
   })
 }
 
+export type JobDependenciesResponse = InferResponseType<JobEndpoint['dependencies']['$get'], 200>
+export type JobDependencyKind = JobDependenciesResponse['kind']
+
+export function useJobDependencies(
+  queueName: string,
+  jobId: string,
+  kind: JobDependencyKind,
+  cursor: string
+) {
+  const connectionId = useConnectionIdFromContextOrRoute()
+  return useQuery({
+    queryKey: [
+      ...queryKeys.job(connectionId ?? '', queueName, jobId),
+      'dependencies',
+      kind,
+      cursor,
+    ],
+    queryFn: async () => {
+      const res = await api.c[':connectionId'].queues[':queueName'].jobs[
+        ':jobId'
+      ].dependencies.$get({
+        param: { connectionId: connectionId!, queueName, jobId },
+        query: { kind, cursor, pageSize: '20' },
+      })
+      return handleRes<JobDependenciesResponse>(res)
+    },
+    enabled: !!connectionId && !!queueName && !!jobId,
+  })
+}
+
 export function useJobLogs(queueName: string, jobId: string) {
   const connectionId = useConnectionIdFromContextOrRoute()
 
