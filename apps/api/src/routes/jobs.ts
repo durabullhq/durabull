@@ -236,7 +236,7 @@ const app = new Hono()
 
     if (needsAllJobs) {
       // Fetch each state separately so we know the status without per-job getState() calls,
-      // then return all filtered results in one response for client-side pagination.
+      // then return one page of the filtered results.
       const jobsWithState: Array<{
         job: NonNullable<Awaited<ReturnType<typeof queue.getJobs>>[number]>
         state: JobState
@@ -291,15 +291,19 @@ const app = new Hono()
         })
       }
 
+      const total = mappedJobs.length
+      const nextStart = start + pageSize
+      const hasMore = nextStart < total
+
       return c.json({
-        jobs: mappedJobs,
-        total: filtered.length,
-        page: 1,
-        cursor: '0',
-        nextCursor: null,
-        hasMore: false,
-        pageSize: filtered.length,
-        totalPages: 1,
+        jobs: mappedJobs.slice(start, nextStart),
+        total,
+        page,
+        cursor: String(start),
+        nextCursor: hasMore ? String(nextStart) : null,
+        hasMore,
+        pageSize,
+        totalPages: total > 0 ? Math.ceil(total / pageSize) : 0,
       })
     }
 

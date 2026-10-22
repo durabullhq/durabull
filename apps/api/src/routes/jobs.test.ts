@@ -347,6 +347,32 @@ describe('jobs routes', () => {
       ])
     })
 
+    it('returns sorted jobs one page at a time with a cursor to the next page', async () => {
+      jobsByState = {
+        failed: [3, 1, 5, 2, 4].map((attempts) =>
+          listedJob({ id: `job-${attempts}`, attemptsMade: attempts })
+        ),
+      }
+      const app = await createJobsRouteApp()
+      const readPage = async (query: string) => {
+        const res = await app.request(`/emails/jobs?sortBy=attempts&sortOrder=desc&${query}`)
+        return (await res.json()) as {
+          jobs: Array<{ id: string }>
+          total: number
+          nextCursor: string | null
+          hasMore: boolean
+        }
+      }
+
+      const first = await readPage('pageSize=2')
+      const last = await readPage('pageSize=2&cursor=4')
+
+      expect(first.jobs.map((job) => job.id)).toEqual(['job-5', 'job-4'])
+      expect(first).toMatchObject({ total: 5, nextCursor: '2', hasMore: true })
+      expect(last.jobs.map((job) => job.id)).toEqual(['job-1'])
+      expect(last).toMatchObject({ total: 5, nextCursor: null, hasMore: false })
+    })
+
     it('sorts by created time inside a status filter', async () => {
       jobsByState = {
         failed: [

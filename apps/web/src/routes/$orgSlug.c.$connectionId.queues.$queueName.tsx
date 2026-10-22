@@ -258,28 +258,14 @@ function QueueDetailPage() {
   const removeMutation = useRemoveJobs()
   const invokeMutation = useInvokeJobs()
   const hideScheduledJobs = hideScheduled === 1
-  const hasClientSideJobFilter = Boolean(jobId || name || dataSearch || sortBy)
-  const [visibleJobCount, setVisibleJobCount] = useState(20)
   const allJobs = useMemo(
     () => jobsData?.pages.flatMap((pageData) => pageData.jobs) ?? [],
     [jobsData]
   )
-  const filteredVisibleJobs = useMemo(
+  const visibleJobs = useMemo(
     () => allJobs.filter((job) => (hideScheduledJobs ? !job.id.startsWith('repeat:') : true)) ?? [],
     [allJobs, hideScheduledJobs]
   )
-  const visibleJobs = useMemo(
-    () =>
-      hasClientSideJobFilter ? filteredVisibleJobs.slice(0, visibleJobCount) : filteredVisibleJobs,
-    [filteredVisibleJobs, hasClientSideJobFilter, visibleJobCount]
-  )
-  const hasMoreVisibleJobs = hasClientSideJobFilter
-    ? visibleJobs.length < filteredVisibleJobs.length
-    : hasMoreJobs
-
-  useEffect(() => {
-    setVisibleJobCount(20)
-  }, [jobId, name, dataSearch, status, hideScheduled, sortBy, sortOrder, queueName])
   const jobsScrollRef = useRef<HTMLDivElement | null>(null)
   const metricsPoints = metrics?.series.points ?? []
   const metricsTotals = metrics?.series.totals
@@ -501,14 +487,6 @@ function QueueDetailPage() {
         return
       }
 
-      if (hasClientSideJobFilter) {
-        if (visibleJobs.length >= filteredVisibleJobs.length) {
-          return
-        }
-        setVisibleJobCount((current) => Math.min(current + 20, filteredVisibleJobs.length))
-        return
-      }
-
       if (!hasMoreJobs || jobsFetchingNextPage) {
         return
       }
@@ -518,16 +496,7 @@ function QueueDetailPage() {
 
     container.addEventListener('scroll', onScroll)
     return () => container.removeEventListener('scroll', onScroll)
-  }, [
-    fetchNextJobsPage,
-    hasMoreJobs,
-    jobsFetchingNextPage,
-    section,
-    tab,
-    hasClientSideJobFilter,
-    filteredVisibleJobs.length,
-    visibleJobs.length,
-  ])
+  }, [fetchNextJobsPage, hasMoreJobs, jobsFetchingNextPage, section, tab])
 
   const handleTogglePause = useCallback(() => {
     if (queue?.isPaused) {
@@ -1789,7 +1758,7 @@ function QueueDetailPage() {
             </Card>
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>{jobsData?.pages[0]?.total ?? 0} total</span>
-              <span>{hasMoreVisibleJobs ? 'Scroll to load more' : 'All jobs loaded'}</span>
+              <span>{hasMoreJobs ? 'Scroll to load more' : 'All jobs loaded'}</span>
             </div>
           </TabsContent>
 
