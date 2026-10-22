@@ -9,8 +9,19 @@ type FakeJob = {
   retry: ReturnType<typeof mock>
 }
 
+type ListedJob = {
+  id: string
+  name: string
+  attemptsMade: number
+  timestamp: number
+  finishedOn?: number
+  data: Record<string, unknown>
+  opts: Record<string, unknown>
+}
+
 let fakeJob: FakeJob | null
 let getJobMock: ReturnType<typeof mock>
+let jobsByState: Record<string, ListedJob[]>
 let callOrder: string[]
 
 async function createJobsRouteApp() {
@@ -39,6 +50,7 @@ describe('jobs routes', () => {
       }),
     }
     getJobMock = mock(async () => fakeJob)
+    jobsByState = {}
 
     mock.module('../lib/connection-options', () => ({
       getConnectionRedisOptions: () => ({}),
@@ -46,6 +58,7 @@ describe('jobs routes', () => {
     mock.module('../lib/redis', () => ({
       getQueue: mock(async () => ({
         getJob: getJobMock,
+        getJobs: mock(async ([state]: string[]) => jobsByState[state] ?? []),
       })),
     }))
   })
@@ -275,5 +288,80 @@ describe('jobs routes', () => {
     expect(fakeJob?.updateData).not.toHaveBeenCalled()
     expect(fakeJob?.retry).toHaveBeenCalledTimes(1)
     expect(callOrder).toEqual(['retry'])
+  })
+
+  describe('list sorting', () => {
+    const listedJob = (job: Partial<ListedJob> & { id: string }): ListedJob => ({
+      name: 'send-email',
+      attemptsMade: 0,
+      timestamp: 0,
+      data: {},
+      opts: {},
+      ...job,
+    })
+
+    const listJobIds = async (query: string) => {
+      const app = await createJobsRouteApp()
+      const res = await app.request(`/emails/jobs?${query}`)
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { jobs: Array<{ id: string }> }
+      return body.jobs.map((job) => job.id)
+    }
+
+    it('sorts jobs from every state by attempts in both directions', async () => {
+      jobsByState = {
+        waiting: [listedJob({ id: '1', attemptsMade: 0 })],
+        failed: [listedJob({ id: '2', attemptsMade: 3 }), listedJob({ id: '3', attemptsMade: 1 })],
+      }
+
+      expect(await listJobIds('sortBy=attempts&sortOrder=asc')).toEqual(['1', '3', '2'])
+      expect(await listJobIds('sortBy=attempts&sortOrder=desc')).toEqual(['2', '3', '1'])
+    })
+
+    it('sorts numeric job ids by value, not as text', async () => {
+      jobsByState = {
+        completed: [listedJob({ id: '10' }), listedJob({ id: '9' }), listedJob({ id: '100' })],
+      }
+
+      expect(await listJobIds('sortBy=id&sortOrder=asc')).toEqual(['9', '10', '100'])
+    })
+
+    it('keeps unfinished jobs last when sorting by finished time', async () => {
+      jobsByState = {
+        waiting: [listedJob({ id: 'pending' })],
+        completed: [
+          listedJob({ id: 'early', finishedOn: 1_000 }),
+          listedJob({ id: 'late', finishedOn: 2_000 }),
+        ],
+      }
+
+      expect(await listJobIds('sortBy=finished&sortOrder=asc')).toEqual([
+        'early',
+        'late',
+        'pending',
+      ])
+      expect(await listJobIds('sortBy=finished&sortOrder=desc')).toEqual([
+        'late',
+        'early',
+        'pending',
+      ])
+    })
+
+    it('sorts by created time inside a status filter', async () => {
+      jobsByState = {
+        failed: [
+          listedJob({ id: 'a', timestamp: 3_000 }),
+          listedJob({ id: 'b', timestamp: 1_000 }),
+          listedJob({ id: 'c', timestamp: 2_000 }),
+        ],
+        completed: [listedJob({ id: 'other', timestamp: 0 })],
+      }
+
+      expect(await listJobIds('status=failed&sortBy=created&sortOrder=desc')).toEqual([
+        'a',
+        'c',
+        'b',
+      ])
+    })
   })
 })
