@@ -20,6 +20,9 @@ export const JOB_STATUS = {
 
 export type JobStatus = (typeof JOB_STATUS)[keyof typeof JOB_STATUS]
 
+export const JOB_SORT_FIELDS = ['id', 'name', 'status', 'attempts', 'created', 'finished'] as const
+export type JobSortField = (typeof JOB_SORT_FIELDS)[number]
+
 /**
  * Job status options for select dropdowns and filters
  */
