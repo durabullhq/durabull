@@ -111,6 +111,7 @@ vi.mock('@/hooks/use-queues', () => ({
     hasNextPage: false,
     fetchNextPage: vi.fn(),
   }),
+  useMatchingJobCount: () => ({ data: undefined }),
   usePauseQueue: () => ({
     mutate: vi.fn(),
     isPending: false,

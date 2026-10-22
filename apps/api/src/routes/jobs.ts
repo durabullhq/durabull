@@ -12,7 +12,8 @@ const DEFAULT_PAGE_SIZE = 50
 const MAX_PAGE_SIZE = 100
 const RETRY_BATCH_SIZE = 1000
 const MAX_RETRY_BATCHES_PER_STATUS = 500
-const MAX_RETRY_ERRORS_IN_RESPONSE = 100
+const MAX_ERRORS_IN_RESPONSE = 100
+const MATCH_BATCH_SIZE = 1000
 const REMOVE_JOB_MAX_ATTEMPTS = 10
 const REMOVE_JOB_RETRY_DELAY_MS = 150
 
@@ -23,6 +24,29 @@ const STACKTRACE_KEEP_FIELD = 'stacktrace'
 const CLEAR_RETENTION_SCHEMA = z.object({
   keepMostRecent: z.number().int().min(0).default(0),
 })
+
+const JOB_STATES = [
+  'waiting',
+  'active',
+  'completed',
+  'failed',
+  'delayed',
+  'paused',
+  'prioritized',
+  'waiting-children',
+] as const
+type JobState = (typeof JOB_STATES)[number]
+
+// The same filter as the jobs list, so bulk actions can act on every matching job.
+const JOB_FILTER_SCHEMA = z.object({
+  status: z.enum(JOB_STATES).optional(),
+  name: z.string().trim().optional(),
+  jobId: z.string().trim().optional(),
+  data: z.string().trim().optional(),
+  hideScheduled: z.boolean().optional(),
+})
+type JobFilter = z.infer<typeof JOB_FILTER_SCHEMA>
+type Queue = Awaited<ReturnType<typeof getQueue>>
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback
@@ -52,8 +76,75 @@ function jobDataMatches(data: unknown, search: string): boolean {
   }
 }
 
+function jobMatchesSearch(
+  job: { id?: string; name: string; data: unknown },
+  search: Pick<JobFilter, 'name' | 'jobId' | 'data'>
+): boolean {
+  const nameMatches = !search.name || job.name.toLowerCase().includes(search.name.toLowerCase())
+  const idMatches =
+    !search.jobId ||
+    String(job.id ?? '')
+      .toLowerCase()
+      .includes(search.jobId.toLowerCase())
+  const dataMatches = !search.data || jobDataMatches(job.data, search.data)
+  return nameMatches && idMatches && dataMatches
+}
+
+// Resolves IDs in batches so a large queue never loads every job at once.
+async function findMatchingJobIds(queue: Queue, filter: JobFilter): Promise<string[]> {
+  const { status, name, jobId, data, hideScheduled } = filter
+  const isHidden = (id: string) => Boolean(hideScheduled) && id.startsWith('repeat:')
+  const idMatches = (id: string) => !jobId || id.toLowerCase().includes(jobId.toLowerCase())
+
+  // Like the jobs list, an exact job ID match wins over substring matches.
+  if (jobId) {
+    const exactJob = await queue.getJob(jobId)
+    if (exactJob) {
+      const state = await exactJob.getState()
+      const statusMatches = !status || state === status
+      const matches =
+        statusMatches && jobMatchesSearch(exactJob, { name, data }) && !isHidden(jobId)
+      return matches ? [jobId] : []
+    }
+  }
+
+  const states = status ? [status] : JOB_STATES
+  // BullMQ lists paused jobs together with waiting jobs.
+  const types = new Set(
+    states.flatMap((state): JobState[] => (state === 'waiting' ? [state, 'paused'] : [state]))
+  )
+  const needsJobFields = Boolean(name || data)
+  const matchingIds = new Set<string>()
+
+  for (const type of types) {
+    let start = 0
+    while (true) {
+      const ids = await queue.getRanges([type], start, start + MATCH_BATCH_SIZE - 1)
+      const candidateIds = ids.filter((id) => !isHidden(id) && idMatches(id))
+
+      if (needsJobFields) {
+        const jobs = await Promise.all(candidateIds.map((id) => queue.getJob(id)))
+        for (const job of jobs) {
+          if (job && jobMatchesSearch(job, { name, data })) {
+            matchingIds.add(String(job.id ?? ''))
+          }
+        }
+      } else {
+        for (const id of candidateIds) {
+          matchingIds.add(id)
+        }
+      }
+
+      if (ids.length < MATCH_BATCH_SIZE) break
+      start += MATCH_BATCH_SIZE
+    }
+  }
+
+  return Array.from(matchingIds)
+}
+
 async function removeJobWithRetries(
-  queue: Awaited<ReturnType<typeof getQueue>>,
+  queue: Queue,
   jobId: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   let lastError: unknown = null
@@ -173,25 +264,7 @@ const app = new Hono()
       }
     }
 
-    type JobState =
-      | 'waiting'
-      | 'active'
-      | 'completed'
-      | 'failed'
-      | 'delayed'
-      | 'paused'
-      | 'prioritized'
-      | 'waiting-children'
-    let states: Array<JobState> = [
-      'waiting',
-      'active',
-      'completed',
-      'failed',
-      'delayed',
-      'paused',
-      'prioritized',
-      'waiting-children',
-    ]
+    let states: Array<JobState> = [...JOB_STATES]
     if (status) {
       states = [status as JobState]
     }
@@ -214,16 +287,9 @@ const app = new Hono()
         }
       }
 
-      const filtered = jobsWithState
-        .filter(({ job }) => (name ? job.name.toLowerCase().includes(name.toLowerCase()) : true))
-        .filter(({ job }) =>
-          jobId
-            ? String(job.id ?? '')
-                .toLowerCase()
-                .includes(jobId.toLowerCase())
-            : true
-        )
-        .filter(({ job }) => (dataSearch ? jobDataMatches(job.data, dataSearch) : true))
+      const filtered = jobsWithState.filter(({ job }) =>
+        jobMatchesSearch(job, { name, jobId, data: dataSearch })
+      )
 
       const mappedJobs = filtered.map(({ job, state }) => ({
         id: job.id ?? '',
@@ -608,6 +674,21 @@ const app = new Hono()
     }
   )
   .route('/', jobMutationRoutes)
+  // Count the jobs that match a filter
+  .post('/:queueName/jobs/count', zValidator('json', JOB_FILTER_SCHEMA), async (c) => {
+    const queueName = c.req.param('queueName')
+    const filter = c.req.valid('json')
+    const queue = await getQueueFromContext(c, queueName)
+
+    const hasSearch = Boolean(filter.name || filter.jobId || filter.data || filter.hideScheduled)
+    if (!hasSearch) {
+      const states = filter.status ? [filter.status] : JOB_STATES
+      return c.json({ total: await queue.getJobCountByTypes(...states) })
+    }
+
+    const matchingIds = await findMatchingJobIds(queue, filter)
+    return c.json({ total: matchingIds.length })
+  })
   // Retry jobs
   .post(
     '/:queueName/jobs/retry',
@@ -617,23 +698,26 @@ const app = new Hono()
         .object({
           jobIds: z.array(z.string()).max(100, 'Maximum 100 jobs per request').optional(),
           statuses: z.array(z.enum(RETRY_STATUS_OPTIONS)).min(1).optional(),
+          filter: JOB_FILTER_SCHEMA.optional(),
         })
         .superRefine((value, ctx) => {
           const hasJobIds = (value.jobIds?.length ?? 0) > 0
           const hasStatuses = (value.statuses?.length ?? 0) > 0
+          const hasFilter = value.filter !== undefined
+          const selectorCount = [hasJobIds, hasStatuses, hasFilter].filter(Boolean).length
 
-          if (!hasJobIds && !hasStatuses) {
+          if (selectorCount === 0) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
-              message: 'Provide either jobIds or statuses',
+              message: 'Provide jobIds, statuses, or filter',
               path: ['jobIds'],
             })
           }
 
-          if (hasJobIds && hasStatuses) {
+          if (selectorCount > 1) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
-              message: 'Provide either jobIds or statuses, not both',
+              message: 'Provide only one of jobIds, statuses, or filter',
               path: ['statuses'],
             })
           }
@@ -641,15 +725,16 @@ const app = new Hono()
     ),
     async (c) => {
       const queueName = c.req.param('queueName')
-      const { jobIds, statuses } = c.req.valid('json')
+      const { jobIds, statuses, filter } = c.req.valid('json')
 
       const queue = await getQueueFromContext(c, queueName)
       let success = 0
       let failed = 0
       const errors: Array<{ jobId: string; error: string }> = []
 
-      if (jobIds && jobIds.length > 0) {
-        for (const jobId of jobIds) {
+      if (filter || (jobIds && jobIds.length > 0)) {
+        const selectedJobIds = filter ? await findMatchingJobIds(queue, filter) : (jobIds ?? [])
+        for (const jobId of selectedJobIds) {
           try {
             const job = await queue.getJob(jobId)
             if (job && (await job.getState()) === 'failed') {
@@ -658,7 +743,7 @@ const app = new Hono()
             }
           } catch (err) {
             failed++
-            if (errors.length < MAX_RETRY_ERRORS_IN_RESPONSE) {
+            if (errors.length < MAX_ERRORS_IN_RESPONSE) {
               errors.push({ jobId, error: String(err) })
             }
           }
@@ -722,7 +807,7 @@ const app = new Hono()
               retriedByStatus[status] += 1
             } catch (err) {
               failed++
-              if (errors.length < MAX_RETRY_ERRORS_IN_RESPONSE) {
+              if (errors.length < MAX_ERRORS_IN_RESPONSE) {
                 errors.push({ jobId, error: String(err) })
               }
             }
@@ -759,23 +844,30 @@ const app = new Hono()
     '/:queueName/jobs/remove',
     zValidator(
       'json',
-      z.object({
-        jobIds: z.array(z.string()).max(100, 'Maximum 100 jobs per request'),
-        // When true, also removes the job scheduler for repeatable jobs
-        removeScheduler: z.boolean().optional(),
-      })
+      z
+        .object({
+          jobIds: z.array(z.string()).max(100, 'Maximum 100 jobs per request').optional(),
+          filter: JOB_FILTER_SCHEMA.optional(),
+          // When true, also removes the job scheduler for repeatable jobs
+          removeScheduler: z.boolean().optional(),
+        })
+        .refine((value) => (value.jobIds === undefined) !== (value.filter === undefined), {
+          message: 'Provide either jobIds or filter',
+          path: ['jobIds'],
+        })
     ),
     async (c) => {
       const queueName = c.req.param('queueName')
-      const { jobIds, removeScheduler } = c.req.valid('json')
+      const { jobIds, filter, removeScheduler } = c.req.valid('json')
 
       const queue = await getQueueFromContext(c, queueName)
       let success = 0
       let schedulersRemoved = 0
       const errors: Array<{ jobId: string; error: string }> = []
       const warnings: Array<{ jobId: string; message: string }> = []
+      const selectedJobIds = filter ? await findMatchingJobIds(queue, filter) : (jobIds ?? [])
 
-      for (const jobId of jobIds) {
+      for (const jobId of selectedJobIds) {
         try {
           // Check if this is a repeatable/scheduled job (ID starts with 'repeat:')
           const isRepeatableJob = jobId.startsWith('repeat:')
@@ -844,7 +936,7 @@ const app = new Hono()
       const response = {
         success,
         failed: errors.length,
-        errors,
+        errors: errors.slice(0, MAX_ERRORS_IN_RESPONSE),
         schedulersRemoved: schedulersRemoved > 0 ? schedulersRemoved : undefined,
         warnings: warnings.length > 0 ? warnings : undefined,
       }
@@ -861,20 +953,27 @@ const app = new Hono()
     '/:queueName/jobs/invoke',
     zValidator(
       'json',
-      z.object({
-        jobIds: z.array(z.string()).max(100, 'Maximum 100 jobs per request'),
-        jobData: z.record(z.unknown()).optional(),
-      })
+      z
+        .object({
+          jobIds: z.array(z.string()).max(100, 'Maximum 100 jobs per request').optional(),
+          filter: JOB_FILTER_SCHEMA.optional(),
+          jobData: z.record(z.unknown()).optional(),
+        })
+        .refine((value) => (value.jobIds === undefined) !== (value.filter === undefined), {
+          message: 'Provide either jobIds or filter',
+          path: ['jobIds'],
+        })
     ),
     async (c) => {
       const queueName = c.req.param('queueName')
-      const { jobIds, jobData } = c.req.valid('json')
+      const { jobIds, filter, jobData } = c.req.valid('json')
 
       const queue = await getQueueFromContext(c, queueName)
       let success = 0
       const errors: Array<{ jobId: string; error: string }> = []
+      const selectedJobIds = filter ? await findMatchingJobIds(queue, filter) : (jobIds ?? [])
 
-      for (const jobId of jobIds) {
+      for (const jobId of selectedJobIds) {
         try {
           const job = await queue.getJob(jobId)
           if (job && (await job.getState()) === 'delayed') {
@@ -890,7 +989,11 @@ const app = new Hono()
         }
       }
 
-      return c.json({ success, failed: errors.length, errors })
+      return c.json({
+        success,
+        failed: errors.length,
+        errors: errors.slice(0, MAX_ERRORS_IN_RESPONSE),
+      })
     }
   )
   // Add job
