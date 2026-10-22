@@ -188,6 +188,14 @@ export const RETRY_QUEUE_STATUSES = ['failed', 'completed'] as const
 export type RetryQueueStatus = (typeof RETRY_QUEUE_STATUSES)[number]
 export type RetryQueueStatusOption = RetryQueueStatus | 'all'
 
+export interface JobMatchFilter {
+  status?: 'waiting' | 'active' | 'delayed' | 'completed' | 'failed'
+  name?: string
+  jobId?: string
+  data?: string
+  hideScheduled?: boolean
+}
+
 // Re-export response types for consumers
 export type {
   ListQueuesResponse,
@@ -240,6 +248,8 @@ export const queryKeys = {
     queueName: string,
     filters?: { status?: string; name?: string; jobId?: string; data?: string; pageSize?: number }
   ) => ['jobs', connectionId, queueName, filters] as const,
+  matchingJobCount: (connectionId: string, queueName: string, filter: JobMatchFilter) =>
+    ['jobs', connectionId, queueName, 'count', filter] as const,
   job: (connectionId: string, queueName: string, jobId: string) =>
     ['job', connectionId, queueName, jobId] as const,
   jobLogs: (connectionId: string, queueName: string, jobId: string) =>
@@ -437,6 +447,26 @@ export function useJobs(
     },
     initialPageParam: undefined as string | undefined,
     enabled: !!queueName && !!connectionId,
+  })
+}
+
+export function useMatchingJobCount(
+  queueName: string,
+  filter: JobMatchFilter,
+  options?: { enabled?: boolean }
+) {
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useQuery({
+    queryKey: queryKeys.matchingJobCount(connectionId ?? '', queueName, filter),
+    queryFn: async () => {
+      const res = await api.c[':connectionId'].queues[':queueName'].jobs.count.$post({
+        param: { connectionId: connectionId!, queueName },
+        json: filter,
+      })
+      return handleRes<{ total: number }>(res)
+    },
+    enabled: (options?.enabled ?? true) && !!queueName && !!connectionId,
   })
 }
 
@@ -858,9 +888,15 @@ export function useRetryJobs() {
     mutationFn: async (
       payload:
         | { queueName: string; jobIds: Array<string> }
+        | { queueName: string; filter: JobMatchFilter }
         | { queueName: string; statuses: RetryQueueStatusOption[] }
     ) => {
-      const json = 'jobIds' in payload ? { jobIds: payload.jobIds } : { statuses: payload.statuses }
+      const json =
+        'jobIds' in payload
+          ? { jobIds: payload.jobIds }
+          : 'filter' in payload
+            ? { filter: payload.filter }
+            : { statuses: payload.statuses }
       const res = await api.c[':connectionId'].queues[':queueName'].jobs.retry.$post({
         param: { connectionId: connectionId!, queueName: payload.queueName },
         json,
@@ -949,15 +985,17 @@ export function useRemoveJobs() {
     mutationFn: async ({
       queueName,
       jobIds,
+      filter,
       removeScheduler,
     }: {
       queueName: string
-      jobIds: Array<string>
+      jobIds?: Array<string>
+      filter?: JobMatchFilter
       removeScheduler?: boolean
     }) => {
       const res = await api.c[':connectionId'].queues[':queueName'].jobs.remove.$post({
         param: { connectionId: connectionId!, queueName },
-        json: { jobIds, removeScheduler },
+        json: { jobIds, filter, removeScheduler },
       })
       return handleRes<{
         success: number
@@ -967,11 +1005,11 @@ export function useRemoveJobs() {
         warnings?: Array<{ jobId: string; message: string }>
       }>(res)
     },
-    onSuccess: (data, { queueName, jobIds }) => {
+    onSuccess: (data, { queueName, jobIds = [], filter }) => {
       trackEvent(AnalyticsEvents.JOBS_REMOVED, {
         queue_name: queueName,
         job_ids: jobIds,
-        job_count: jobIds.length,
+        job_count: filter ? data.success + data.failed : jobIds.length,
         success: data.failed === 0,
       })
       queryClient.invalidateQueries({ queryKey: queryKeys.queue(connectionId ?? '', queueName) })
@@ -982,7 +1020,7 @@ export function useRemoveJobs() {
       })
       queryClient.invalidateQueries({ queryKey: queryKeys.scheduledJobs(connectionId ?? '') })
     },
-    onError: (_, { queueName, jobIds }) => {
+    onError: (_, { queueName, jobIds = [] }) => {
       trackEvent(AnalyticsEvents.JOBS_REMOVED, {
         queue_name: queueName,
         job_ids: jobIds,
@@ -1078,15 +1116,17 @@ export function useInvokeJobs() {
     mutationFn: async ({
       queueName,
       jobIds,
+      filter,
       jobData,
     }: {
       queueName: string
-      jobIds: Array<string>
+      jobIds?: Array<string>
+      filter?: JobMatchFilter
       jobData?: Record<string, unknown>
     }) => {
       const res = await api.c[':connectionId'].queues[':queueName'].jobs.invoke.$post({
         param: { connectionId: connectionId!, queueName },
-        json: { jobIds, jobData },
+        json: { jobIds, filter, jobData },
       })
       return handleRes<{
         success: number
@@ -1094,17 +1134,17 @@ export function useInvokeJobs() {
         errors: Array<{ jobId: string; error: string }>
       }>(res)
     },
-    onSuccess: (data, { queueName, jobIds }) => {
+    onSuccess: (data, { queueName, jobIds = [], filter }) => {
       trackEvent(AnalyticsEvents.JOBS_INVOKED, {
         queue_name: queueName,
         job_ids: jobIds,
-        job_count: jobIds.length,
+        job_count: filter ? data.success + data.failed : jobIds.length,
         success: data.failed === 0,
       })
       queryClient.invalidateQueries({ queryKey: queryKeys.queue(connectionId ?? '', queueName) })
       queryClient.invalidateQueries({ queryKey: ['jobs', connectionId, queueName] })
     },
-    onError: (_, { queueName, jobIds }) => {
+    onError: (_, { queueName, jobIds = [] }) => {
       trackEvent(AnalyticsEvents.JOBS_INVOKED, {
         queue_name: queueName,
         job_ids: jobIds,

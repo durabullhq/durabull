@@ -78,9 +78,11 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
+  type JobMatchFilter,
   type ListScheduledJobsResponse,
   useInvokeJobs,
   useJobs,
+  useMatchingJobCount,
   usePauseQueue,
   useQueue,
   useQueueMetrics,
@@ -162,6 +164,7 @@ function QueueDetailPage() {
   const navigate = useNavigate()
   const matchRoute = useMatchRoute()
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set())
+  const [selectAllMatching, setSelectAllMatching] = useState(false)
   const [jobIdInput, setJobIdInput] = useState(jobId)
   const [nameInput, setNameInput] = useState(name)
   const [dataInput, setDataInput] = useState(dataSearch)
@@ -248,9 +251,32 @@ function QueueDetailPage() {
   const hasMoreVisibleJobs = hasClientSideJobFilter
     ? visibleJobs.length < filteredVisibleJobs.length
     : hasMoreJobs
+  const jobMatchFilter: JobMatchFilter = {
+    status: status || undefined,
+    name: name || undefined,
+    jobId: jobId || undefined,
+    data: dataSearch || undefined,
+    hideScheduled: hideScheduledJobs || undefined,
+  }
+  const hasJobFilter = Boolean(status || hasClientSideJobFilter || hideScheduledJobs)
+  const matchingJobsLabel = hasJobFilter ? 'jobs that match this filter' : 'jobs in this queue'
+  const allLoadedJobsSelected = visibleJobs.length > 0 && selectedJobs.size === visibleJobs.length
+  const canSelectAllMatching = allLoadedJobsSelected && Boolean(hasMoreVisibleJobs)
+  const showSelectAllMatchingBar = selectAllMatching || canSelectAllMatching
+  const { data: matchingJobCountData } = useMatchingJobCount(queueName, jobMatchFilter, {
+    enabled: showSelectAllMatchingBar,
+  })
+  const matchingJobCount = matchingJobCountData?.total
+  const hasSelection = selectAllMatching || selectedJobs.size > 0
+  const selectedJobCount = selectAllMatching ? (matchingJobCount ?? 0) : selectedJobs.size
+  const jobSelection = selectAllMatching
+    ? { filter: jobMatchFilter }
+    : { jobIds: Array.from(selectedJobs) }
 
   useEffect(() => {
     setVisibleJobCount(20)
+    setSelectedJobs(new Set())
+    setSelectAllMatching(false)
   }, [jobId, name, dataSearch, status, hideScheduled, queueName])
   const jobsScrollRef = useRef<HTMLDivElement | null>(null)
   const metricsPoints = metrics?.series.points ?? []
@@ -458,12 +484,14 @@ function QueueDetailPage() {
     }
   }, [pauseMutation, queue?.isPaused, queueName, resumeMutation])
 
+  const clearSelection = () => {
+    setSelectedJobs(new Set())
+    setSelectAllMatching(false)
+  }
+
   const handleRetrySelected = () => {
-    if (selectedJobs.size > 0) {
-      retryMutation.mutate(
-        { queueName, jobIds: Array.from(selectedJobs) },
-        { onSuccess: () => setSelectedJobs(new Set()) }
-      )
+    if (hasSelection) {
+      retryMutation.mutate({ queueName, ...jobSelection }, { onSuccess: clearSelection })
     }
   }
 
@@ -640,25 +668,24 @@ function QueueDetailPage() {
   }
 
   const handleRemoveSelected = (removeScheduler = false) => {
-    if (selectedJobs.size > 0) {
+    if (hasSelection) {
       removeMutation.mutate(
-        { queueName, jobIds: Array.from(selectedJobs), removeScheduler },
-        { onSuccess: () => setSelectedJobs(new Set()) }
+        { queueName, ...jobSelection, removeScheduler },
+        { onSuccess: clearSelection }
       )
     }
   }
 
   const handleInvokeSelected = () => {
-    if (selectedJobs.size > 0) {
-      invokeMutation.mutate(
-        { queueName, jobIds: Array.from(selectedJobs) },
-        { onSuccess: () => setSelectedJobs(new Set()) }
-      )
+    if (hasSelection) {
+      invokeMutation.mutate({ queueName, ...jobSelection }, { onSuccess: clearSelection })
     }
   }
 
   const toggleJobSelection = (jobId: string) => {
-    const newSelected = new Set(selectedJobs)
+    // Unchecking a row leaves "all matching" mode with every loaded row still selected.
+    const newSelected = new Set(selectAllMatching ? visibleJobs.map((j) => j.id) : selectedJobs)
+    setSelectAllMatching(false)
     if (newSelected.has(jobId)) {
       newSelected.delete(jobId)
     } else {
@@ -669,8 +696,8 @@ function QueueDetailPage() {
 
   const toggleAllJobs = () => {
     if (!visibleJobs.length) return
-    if (selectedJobs.size === visibleJobs.length) {
-      setSelectedJobs(new Set())
+    if (selectAllMatching || allLoadedJobsSelected) {
+      clearSelection()
     } else {
       setSelectedJobs(new Set(visibleJobs.map((j) => j.id)))
     }
@@ -1558,9 +1585,11 @@ function QueueDetailPage() {
             className="flex min-h-0 flex-1 flex-col space-y-4 overflow-hidden"
           >
             {/* Selected job actions */}
-            {selectedJobs.size > 0 && (
+            {hasSelection && (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{selectedJobs.size} selected</span>
+                <span className="text-sm text-muted-foreground">
+                  {formatNumber(selectedJobCount)} selected
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -1580,16 +1609,16 @@ function QueueDetailPage() {
                   Invoke
                 </Button>
                 {(() => {
-                  const hasScheduledJobs = Array.from(selectedJobs).some((id) =>
-                    id.startsWith('repeat:')
-                  )
+                  const hasScheduledJobs = selectAllMatching
+                    ? !hideScheduledJobs && (scheduledJobs?.total ?? 0) > 0
+                    : Array.from(selectedJobs).some((id) => id.startsWith('repeat:'))
                   return (
                     <JobRemoveButton
                       isScheduledJob={hasScheduledJobs}
                       isPending={removeMutation.isPending}
                       onRemoveJobOnly={() => handleRemoveSelected(false)}
                       onRemoveJobAndStopScheduler={() => handleRemoveSelected(true)}
-                      subject={`${selectedJobs.size} selected job${selectedJobs.size === 1 ? '' : 's'}`}
+                      subject={`${formatNumber(selectedJobCount)} selected job${selectedJobCount === 1 ? '' : 's'}`}
                     />
                   )
                 })()}
@@ -1604,6 +1633,40 @@ function QueueDetailPage() {
                   Jobs
                 </CardTitle>
               </CardHeader>
+              {showSelectAllMatchingBar && (
+                <div className="flex items-center justify-center gap-2 border-b bg-primary/5 px-4 py-2 text-sm">
+                  {selectAllMatching ? (
+                    <>
+                      <span>
+                        All {formatNumber(matchingJobCount ?? 0)} {matchingJobsLabel} are selected.
+                      </span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0"
+                        onClick={clearSelection}
+                      >
+                        Clear selection
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span>All {formatNumber(visibleJobs.length)} loaded jobs are selected.</span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0"
+                        onClick={() => setSelectAllMatching(true)}
+                        disabled={matchingJobCount === undefined}
+                      >
+                        {matchingJobCount === undefined
+                          ? 'Counting matching jobs…'
+                          : `Select all ${formatNumber(matchingJobCount)} ${matchingJobsLabel}`}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
               <div ref={jobsScrollRef} className="min-h-0 flex-1 overflow-auto">
                 <table className="w-full caption-bottom border-separate border-spacing-0 text-sm">
                   <TableHeader className="bg-card [&_th]:border-b [&_th]:border-border/70">
@@ -1611,9 +1674,8 @@ function QueueDetailPage() {
                       <TableHead className="sticky top-0 z-20 w-12 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
                         <input
                           type="checkbox"
-                          checked={
-                            visibleJobs.length > 0 && selectedJobs.size === visibleJobs.length
-                          }
+                          aria-label="Select all loaded jobs"
+                          checked={selectAllMatching || allLoadedJobsSelected}
                           onChange={toggleAllJobs}
                           disabled={visibleJobs.length === 0}
                           className="rounded border-gray-300"
@@ -1666,7 +1728,7 @@ function QueueDetailPage() {
                           orgSlug={orgSlug}
                           connectionId={connectionId}
                           queueName={queueName}
-                          selected={selectedJobs.has(job.id)}
+                          selected={selectAllMatching || selectedJobs.has(job.id)}
                           onToggleSelect={() => toggleJobSelection(job.id)}
                         />
                       ))
