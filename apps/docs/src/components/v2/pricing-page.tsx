@@ -44,7 +44,7 @@ function PlanPrice({ plan, interval }: { plan: CloudPlan; interval: Interval }) 
           </span>
         ) : null}
       </p>
-      <p className="v2-mono mt-2 text-[10.5px] text-[var(--v2-faint)]">{note}</p>
+      <p className="v2-mono mt-2 text-[10.5px] text-[var(--v2-muted)]">{note}</p>
     </div>
   )
 }
@@ -179,7 +179,7 @@ export function V2PricingPlans() {
           ))}
         </div>
 
-        <p className="v2-mono mt-8 text-[var(--v2-faint)]">
+        <p className="v2-mono mt-8 text-[var(--v2-muted)]">
           Prices in USD before applicable taxes · Upgrade from Free inside the app · 14-day Business
           trial, no card
         </p>
@@ -301,7 +301,7 @@ export function V2PlanComparison() {
               </tbody>
             </table>
           </div>
-          <p className="mt-5 max-w-3xl text-[13px] leading-relaxed text-[var(--v2-faint)]">
+          <p className="mt-5 max-w-3xl text-[13px] leading-relaxed text-[var(--v2-muted)]">
             Enterprise is sold by agreement on shared Durabull Cloud. SAML SSO, SCIM, dedicated
             deployment and contractual SLAs are not included in any plan today; ask us about your
             requirements.
