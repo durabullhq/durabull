@@ -35,8 +35,9 @@ const recentRedisConnectionFailures = new Map<
   string,
   { message: string; permanent: boolean; consecutive: number; retryAt: number }
 >()
-// The most useful error seen by each client; connect() itself only rejects with "Connection is closed"
-const lastRedisErrorMessages = new WeakMap<Redis, string>()
+// The most specific error each client reported (permanent errors win over later generic ones);
+// connect() itself only rejects with "Connection is closed"
+const redisErrorCauses = new WeakMap<Redis, string>()
 // Cache recent log lines to dedupe noisy repeated errors
 const recentRedisErrorLogs = new Map<string, { message: string; at: number }>()
 // Cache for queues keyed by connection ID, connection URL, prefix, and queue name
@@ -48,6 +49,8 @@ const REDIS_MAX_RECONNECT_ATTEMPTS = 3
 const REDIS_FAILURE_COOLDOWN_MS = 30_000
 const REDIS_FAILURE_BACKOFF_BASE_MS = 5_000
 const REDIS_FAILURE_BACKOFF_MAX_MS = 5 * 60_000
+// Matches ioredis's default connectTimeout, which used to bound the lookup it performs itself
+const REDIS_DNS_TIMEOUT_MS = 10_000
 const REDIS_ERROR_LOG_DEDUPE_WINDOW_MS = 10_000
 const DEFAULT_QUEUE_SCAN_COUNT = 1000
 
@@ -115,7 +118,20 @@ function disconnectRedisClient(redis: Redis) {
 }
 
 let resolveHostname = async (hostname: string): Promise<void> => {
-  await lookup(hostname)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      lookup(hostname),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`getaddrinfo timed out for ${hostname}`)),
+          REDIS_DNS_TIMEOUT_MS
+        )
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /** Hostname to resolve before connecting, or null when the URL has none or is an IP literal. */
@@ -135,9 +151,29 @@ function getResolvableHostname(connectionUrl: string): string | null {
  * Fail before creating a socket when the host does not resolve. Bun never frees a socket whose
  * DNS lookup failed, so this keeps deleted hosts from leaking memory on every attempt.
  */
-async function assertHostnameResolves(connectionUrl: string): Promise<void> {
+export async function assertHostnameResolves(connectionUrl: string): Promise<void> {
   const hostname = getResolvableHostname(connectionUrl)
   if (hostname) await resolveHostname(hostname)
+}
+
+/** Backoff key shared by every client and queue for one connection. */
+function redisFailureKey(
+  connectionId: string,
+  connectionUrl: string,
+  options?: RedisConnectionOptions
+): string {
+  return JSON.stringify([connectionId, connectionUrl, options?.allowSelfSignedCerts ?? false])
+}
+
+function assertNotBackingOff(
+  failureKey: string,
+  connectionId: string,
+  connectionName: string | undefined
+) {
+  const recentFailure = recentRedisConnectionFailures.get(failureKey)
+  if (recentFailure && Date.now() < recentFailure.retryAt) {
+    throw toRedisUnavailableError(connectionId, connectionName, recentFailure.message)
+  }
 }
 
 function markPermanentRedisFailure(failureKey: string, message: string) {
@@ -206,9 +242,9 @@ function buildRedisClient(
     }
 
     const permanent = isPermanentRedisConnectionError(message)
-    const previous = lastRedisErrorMessages.get(redis)
+    const previous = redisErrorCauses.get(redis)
     if (permanent || !previous || !isPermanentRedisConnectionError(previous)) {
-      lastRedisErrorMessages.set(redis, message)
+      redisErrorCauses.set(redis, message)
     }
 
     if (permanent) {
@@ -235,11 +271,7 @@ export async function getRedis(
   lifecycle: RedisClientLifecycle = {}
 ): Promise<Redis> {
   const shouldCache = lifecycle.cache !== false
-  const sharedCacheKey = JSON.stringify([
-    connectionId,
-    connectionUrl,
-    options?.allowSelfSignedCerts ?? false,
-  ])
+  const sharedCacheKey = redisFailureKey(connectionId, connectionUrl, options)
   const cacheKey = shouldCache ? sharedCacheKey : `caller-owned:${sharedCacheKey}`
   if (shouldCache) {
     const existingConnection = redisConnections.get(cacheKey)
@@ -253,10 +285,7 @@ export async function getRedis(
 
   // Shared and caller-owned clients back off together, so background probes and UI requests
   // cannot each keep retrying a dead host.
-  const recentFailure = recentRedisConnectionFailures.get(sharedCacheKey)
-  if (recentFailure && Date.now() < recentFailure.retryAt) {
-    throw toRedisUnavailableError(connectionId, connectionName, recentFailure.message)
-  }
+  assertNotBackingOff(sharedCacheKey, connectionId, connectionName)
 
   if (shouldCache) {
     const inFlightConnection = redisConnectionPromises.get(cacheKey)
@@ -283,8 +312,7 @@ export async function getRedis(
       if (shouldCache) console.log(`✅ Connected to Redis: ${connectionName ?? connectionId}`)
       return redis
     } catch (error) {
-      const message =
-        (redis && lastRedisErrorMessages.get(redis)) ?? getSafeRedisErrorMessage(error)
+      const message = (redis && redisErrorCauses.get(redis)) ?? getSafeRedisErrorMessage(error)
       recordRedisConnectionFailure(sharedCacheKey, message)
       if (redis) disconnectRedisClient(redis)
       throw toRedisUnavailableError(connectionId, connectionName, message)
@@ -413,6 +441,19 @@ export async function getQueue(
   ])
 
   if (!queues.has(cacheKey)) {
+    // BullMQ opens its own ioredis client, so dead hosts need the same guards as getRedis.
+    const failureKey = redisFailureKey(connectionId, connectionUrl, options)
+    assertNotBackingOff(failureKey, connectionId, undefined)
+    try {
+      await assertHostnameResolves(connectionUrl)
+    } catch (error) {
+      const message = getSafeRedisErrorMessage(error)
+      recordRedisConnectionFailure(failureKey, message)
+      throw toRedisUnavailableError(connectionId, undefined, message)
+    }
+  }
+
+  if (!queues.has(cacheKey)) {
     const queue = new Queue(name, {
       connection: {
         url: connectionUrl,
@@ -434,10 +475,7 @@ export async function getQueue(
       }
 
       if (isPermanentRedisConnectionError(message)) {
-        markPermanentRedisFailure(
-          JSON.stringify([connectionId, connectionUrl, options?.allowSelfSignedCerts ?? false]),
-          message
-        )
+        markPermanentRedisFailure(redisFailureKey(connectionId, connectionUrl, options), message)
         queue.close().catch(() => {})
         queues.delete(cacheKey)
       }

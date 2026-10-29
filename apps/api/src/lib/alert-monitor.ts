@@ -279,6 +279,11 @@ async function loadDiscoveredQueueNames(connectionId: string): Promise<string[]>
   return names
 }
 
+/** Unreachable tenant Redis is expected; its message names the cause without a stack trace. */
+function describeMonitorError(error: unknown): unknown {
+  return error instanceof RedisUnavailableError ? error.message : error
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null
 
@@ -745,7 +750,7 @@ async function processConnection(
       })
     })
   } catch (error) {
-    console.error(`[alert-monitor] Connection ${connectionId} failed:`, error)
+    console.error(`[alert-monitor] Connection ${connectionId} failed:`, describeMonitorError(error))
   }
 }
 
@@ -913,10 +918,9 @@ async function processRedisHealthRules(
       },
     })
   } catch (error) {
-    // Unreachable tenant Redis is expected; its message names the cause without a stack trace.
     console.error(
       `[alert-monitor] Redis INFO health check failed for ${connection.id}:`,
-      error instanceof RedisUnavailableError ? error.message : error
+      describeMonitorError(error)
     )
   }
 }
@@ -1283,7 +1287,10 @@ async function runJobAutoResolveCycle(): Promise<void> {
           )
           resolvedEvents.push(...resolved)
         } catch (error) {
-          console.error(`[alert-monitor] Job auto-resolve failed for ${connectionId}:`, error)
+          console.error(
+            `[alert-monitor] Job auto-resolve failed for ${connectionId}:`,
+            describeMonitorError(error)
+          )
         }
       }
     )
