@@ -346,6 +346,39 @@ describe('captureMcpAnalyticsServerEvent coalescing', () => {
     }
   })
 
+  it.each([
+    true,
+    false,
+  ])('uses app organization IDs only in identified captures (collectEnabled=%s)', async (collectEnabled) => {
+    configure({ collectEnabled, collectSigningSecret: 'test-signing-secret' })
+    const { calls, restore } = captureFetchCalls()
+    try {
+      await captureMcpAnalyticsServerEvent({
+        event: '$mcp_tools_list',
+        properties: { $mcp_server_name: 'durabull-mcp' },
+        includeAnonymous: true,
+        anonymousInstanceId: 'anon-instance',
+        sessionId: 'session-1',
+        identifiedDistinctId: 'app-user-123',
+        identifiedOrganizationGroup: 'app-org-123',
+      })
+      const bodies = calls.map((call) => JSON.parse(String(call.init?.body)))
+      expect(bodies).toHaveLength(2)
+      const app = bodies.find((body) => body.api_key === 'phc_app')
+      expect(app.batch).toHaveLength(1)
+      expect(app.batch[0].properties).toMatchObject({
+        distinct_id: 'app-user-123',
+        $groups: { organization: 'app-org-123' },
+        $process_person_profile: true,
+      })
+      const anonymous = bodies.find((body) => body !== app)
+      expect(JSON.stringify(anonymous)).not.toContain('app-user-123')
+      expect(JSON.stringify(anonymous)).not.toContain('app-org-123')
+    } finally {
+      restore()
+    }
+  })
+
   it('coalesces anonymous and identified captures into one batch request when targets match', async () => {
     resetServerAnalyticsForTests()
     configure({ appPosthogKey: 'phc_durabull' })

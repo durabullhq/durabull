@@ -1,7 +1,8 @@
 /**
  * Stripe sandbox lifecycle verification for Durabull Cloud billing.
  *
- * Runs the PRD's must-pass billing scenarios against a real Stripe sandbox
+ * Runs the billing lifecycle scenarios (trial, upgrade, failed payment, cancellation,
+ * duplicate and forged webhooks) against a real Stripe sandbox
  * (test clocks, test payment methods) and a disposable PostgreSQL database,
  * through the production gateway, reconciliation and entitlement code.
  *
@@ -40,7 +41,7 @@ mutableEnv.STRIPE_WEBHOOK_SECRET = `whsec_${randomUUID().replaceAll('-', '')}`
 const { createStripeClient, setupStripeCatalog } = await import(
   '../../apps/api/src/billing/stripe-setup'
 )
-const catalog = await setupStripeCatalog({ secretKey: apiKey, allowLive: false })
+const catalog = await setupStripeCatalog({ secretKey: apiKey, mode: 'sandbox' })
 Object.assign(mutableEnv, catalog.env)
 
 const { billingRepository, closeDb, getDb, organization } = await import('@durabull/dal')

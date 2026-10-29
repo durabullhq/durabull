@@ -11,6 +11,7 @@ import {
   isFeatureKey,
   isPlanCode,
   LIMIT_KEYS,
+  OUTAGE_TOLERANCE_MS,
   type PlanCode,
   type PlanLimits,
   resolveEntitlement,
@@ -23,6 +24,7 @@ import {
   billingRepository,
   type OrganizationEntitlement,
 } from '@durabull/dal'
+import { getRedisHealthRetentionDays } from '../lib/redis-health-history'
 import { recordBillingEvent } from './analytics'
 import { getBillingConfig, isBillingEnabled, isEnforcedFor } from './config'
 import {
@@ -173,10 +175,29 @@ function limitsToJson(limits: PlanLimits): BillingLimitsJson {
   return Object.fromEntries(LIMIT_KEYS.map((key) => [key, limits[key]]))
 }
 
-function initialMigrationGrant(organizationCreatedAt: Date | null): Date | null {
+/**
+ * Beta transition grant for an organization that has none recorded yet. A null
+ * stored grant means "never decided", so the grant applies whenever launch
+ * dates are configured, even if the organization's row was created earlier
+ * (for example by the shadow-mode sweep). Clearing a grant stores a past
+ * instant instead of null so it is not re-applied.
+ */
+async function initialMigrationGrant(organizationId: string): Promise<Date | null> {
   const { launchAt, migrationGrantUntil } = getBillingConfig()
-  if (!launchAt || !migrationGrantUntil || !organizationCreatedAt) return null
-  return organizationCreatedAt.getTime() < launchAt.getTime() ? migrationGrantUntil : null
+  if (!launchAt || !migrationGrantUntil) return null
+  const createdAt = await billingRepository.findOrganizationCreatedAt(organizationId)
+  if (!createdAt) return null
+  return createdAt.getTime() < launchAt.getTime() ? migrationGrantUntil : null
+}
+
+/** When the stored entitlement first saw an unmapped Price, so tolerance is not restarted. */
+function unknownPriceSince(existing: OrganizationEntitlement | null): Date | null {
+  if (!existing?.notices?.includes('unknown_price')) return null
+  if (existing.source === 'degraded' && existing.reevaluateAt) {
+    return new Date(existing.reevaluateAt.getTime() - OUTAGE_TOLERANCE_MS)
+  }
+  // The tolerance already lapsed.
+  return new Date(0)
 }
 
 /**
@@ -208,9 +229,8 @@ export async function materializeEntitlementLocked(
     ])
 
     let migrationGrantExpiresAt = existing?.migrationGrantExpiresAt ?? null
-    if (!existing) {
-      const createdAt = await billingRepository.findOrganizationCreatedAt(organizationId)
-      migrationGrantExpiresAt = initialMigrationGrant(createdAt)
+    if (migrationGrantExpiresAt === null) {
+      migrationGrantExpiresAt = await initialMigrationGrant(organizationId)
     }
 
     const resolved = resolveEntitlement({
@@ -230,6 +250,7 @@ export async function materializeEntitlementLocked(
         : null,
       contractLimits: existing?.contractLimits ? limitsFromJson(existing.contractLimits) : null,
       verifiedAt: subscription?.lastReconciledAt ?? null,
+      unknownPriceSince: unknownPriceSince(existing),
     })
 
     const previousLimits = existing ? limitsFromJson(existing.limits) : null
@@ -263,6 +284,13 @@ export async function materializeEntitlementLocked(
           lastCapacityAdjustmentEndedAt = now
         }
         capacityAdjustmentExpiresAt = transition.windowExpiresAt
+        // Only connections and memberships get the adjustment window.
+        if (transition.suspendImmediately.length > 0) {
+          await allocateCapacity(organizationId, resolved.limits, {
+            reason: `Plan ${resolved.planCode} limits after ${options.reason}`,
+            only: transition.suspendImmediately,
+          })
+        }
         // Restore previously suspended resources when the new limits allow.
         await allocateCapacity(organizationId, resolved.limits, {
           reason: 'restore',
@@ -279,7 +307,12 @@ export async function materializeEntitlementLocked(
     // history downgrade; the visible window is clamped immediately.
     let historyRetentionFloorDays = existing?.historyRetentionFloorDays ?? null
     let historyRetentionFloorExpiresAt = existing?.historyRetentionFloorExpiresAt ?? null
-    const previousHistory = previousLimits?.['history.redis_health_days'] ?? null
+    // While a row was not enforced (shadow or newly enforced organizations),
+    // storage kept the deployment's full retention; that is what is lost.
+    const previousHistory =
+      existing && !existing.enforced && enforced
+        ? getRedisHealthRetentionDays()
+        : (previousLimits?.['history.redis_health_days'] ?? null)
     const nextHistory = resolved.limits['history.redis_health_days']
     if (
       previousHistory !== null &&
@@ -439,4 +472,64 @@ export async function isResourceSuspended(
   if (!isBillingEnabled()) return false
   if (!isEnforcedFor(organizationId)) return false
   return billingRepository.isSuspended(kind, resourceId)
+}
+
+/** IDs of an organization's resources of one kind that its plan currently pauses. */
+export async function suspendedResourceIds(
+  organizationId: string,
+  kind: 'connection' | 'alert_rule' | 'alert_destination' | 'service_account' | 'invitation'
+): Promise<Set<string>> {
+  if (!isBillingEnabled() || !isEnforcedFor(organizationId)) return new Set()
+  return billingRepository.suspendedIds(organizationId, kind)
+}
+
+/**
+ * Drop connections a caller cannot use under plan state: connections paused by
+ * a plan limit, and every connection of an organization where the caller's own
+ * seat is paused. Listings may span several organizations, so each one is
+ * evaluated separately.
+ */
+export async function filterPlanAccessibleConnections<
+  T extends { id: string; organizationId: string },
+>(connections: T[], userId: string | null): Promise<T[]> {
+  if (!isBillingEnabled()) return connections
+  const memberSuspended = new Map<string, boolean>()
+  const suspended = new Map<string, Set<string>>()
+  const result: T[] = []
+  for (const connection of connections) {
+    const organizationId = connection.organizationId
+    if (userId) {
+      if (!memberSuspended.has(organizationId)) {
+        memberSuspended.set(organizationId, await isMemberSuspended(organizationId, userId))
+      }
+      if (memberSuspended.get(organizationId)) continue
+    }
+    if (!suspended.has(organizationId)) {
+      suspended.set(organizationId, await suspendedResourceIds(organizationId, 'connection'))
+    }
+    if (suspended.get(organizationId)?.has(connection.id)) continue
+    result.push(connection)
+  }
+  return result
+}
+
+/**
+ * Bring stored enforcement in line with the current deployment mode. The
+ * capacity triggers read the stored `enforced` flag, so after billing is turned
+ * off or enforcement is rolled back to shadow/pilot, rows enforced earlier
+ * would otherwise keep rejecting writes until each organization is touched.
+ * Runs once at startup; also lifts the suspensions those rows imposed.
+ */
+export async function syncStoredEnforcement(): Promise<number> {
+  let relaxed = 0
+  for (const organizationId of await billingRepository.listEnforcedOrganizationIds()) {
+    if (isEnforcedFor(organizationId)) continue
+    await billingRepository.withOrganizationLock(organizationId, async () => {
+      await liftAllSuspensions(organizationId)
+      await billingRepository.markEntitlementUnenforced(organizationId)
+    })
+    cache.delete(organizationId)
+    relaxed += 1
+  }
+  return relaxed
 }

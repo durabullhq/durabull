@@ -11,7 +11,14 @@ export type CapacityPreferences = Partial<Record<CapacityLimitKey, string[]>>
 
 interface KindPlan {
   limit: CapacityLimitKey
-  candidates: Array<CapacityCandidate & { kind: BillingResourceKind; resourceId: string }>
+  candidates: Array<
+    CapacityCandidate & {
+      kind: BillingResourceKind
+      resourceId: string
+      /** Alert rules: the connection they watch. */
+      connectionId?: string | null
+    }
+  >
 }
 
 function key(kind: BillingResourceKind, id: string): string {
@@ -24,6 +31,11 @@ async function buildPlans(organizationId: string, preferences: CapacityPreferenc
     billingRepository.listSuspensions(organizationId),
   ])
   const suspended = new Set(suspensions.map((s) => key(s.resourceKind, s.resourceId)))
+  const foundingOwnerId = candidates.members
+    .filter((m) => m.role === 'owner')
+    .sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
+    )[0]?.id
   const explicit = (limit: CapacityLimitKey) => preferences[limit]
   // Without an explicit choice, resources that are currently active are
   // preferred so repeated evaluations keep a stable set.
@@ -51,8 +63,9 @@ async function buildPlans(organizationId: string, preferences: CapacityPreferenc
           kind: 'member' as const,
           resourceId: m.id,
           createdAt: m.createdAt,
-          // The organization owner is never suspended.
-          pinned: m.role === 'owner',
+          // The founding owner is never suspended. Other owners count like any
+          // member, so promoting members to owner cannot bypass a seat limit.
+          pinned: m.id === foundingOwnerId,
           preferred: preferred('members.reserved', 'member', m.id),
         })),
         ...candidates.invitations.map((i) => ({
@@ -70,6 +83,7 @@ async function buildPlans(organizationId: string, preferences: CapacityPreferenc
         id: key('alert_rule', r.id),
         kind: 'alert_rule' as const,
         resourceId: r.id,
+        connectionId: r.connectionId,
         createdAt: r.createdAt,
         preferred: preferred('alerts.enabled', 'alert_rule', r.id),
       })),
@@ -114,13 +128,40 @@ export interface AllocationResult {
 export async function allocateCapacity(
   organizationId: string,
   limits: PlanLimits,
-  options: { preferences?: CapacityPreferences; reason: string; restoreOnly?: boolean }
+  options: {
+    preferences?: CapacityPreferences
+    reason: string
+    restoreOnly?: boolean
+    /** Limit allocation to these limits; others are left as they are. */
+    only?: readonly CapacityLimitKey[]
+  }
 ): Promise<AllocationResult> {
   const { plans, suspended } = await buildPlans(organizationId, options.preferences ?? {})
   const toSuspend: Array<{ kind: BillingResourceKind; resourceId: string }> = []
   const toRestore: Array<{ kind: BillingResourceKind; resourceId: string }> = []
 
+  // Connections are allocated first, so rules on connections that stay active
+  // win the rule allowance over rules watching paused connections.
+  let activeConnections: Set<string> | null = null
   for (const plan of plans) {
+    if (plan.limit === 'connections.enabled') {
+      const selection = selectResourcesWithinLimit(plan.candidates, limits[plan.limit])
+      activeConnections = new Set(
+        plan.candidates.filter((c) => selection.keep.includes(c.id)).map((c) => c.resourceId)
+      )
+    }
+    if (options.only && !options.only.includes(plan.limit)) continue
+    if (
+      plan.limit === 'alerts.enabled' &&
+      activeConnections &&
+      !options.preferences?.[plan.limit]
+    ) {
+      const live = activeConnections
+      plan.candidates = plan.candidates.map((c) => ({
+        ...c,
+        preferred: Boolean(c.preferred) && (!c.connectionId || live.has(c.connectionId)),
+      }))
+    }
     const selection = selectResourcesWithinLimit(plan.candidates, limits[plan.limit])
     const byId = new Map(plan.candidates.map((c) => [c.id, c]))
     for (const id of selection.keep) {

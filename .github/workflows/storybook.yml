@@ -24,7 +24,8 @@ permissions:
   contents: read
 jobs:
   catalog:
-    runs-on: ubuntu-latest
+    # Playwright 1.58 does not support Ubuntu 26.04 browser dependencies.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

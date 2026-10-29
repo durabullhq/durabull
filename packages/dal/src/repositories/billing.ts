@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
-import { getDatabaseMode, getDb, getPgPool } from '../db/client'
+import { getDatabaseMode, getDb, getPgLockPool } from '../db/client'
 import { alertDestination } from '../db/schemas/alert-destination/schema'
 import { alertRule } from '../db/schemas/alert-rule/schema'
 import {
@@ -8,6 +8,7 @@ import {
   type BillingResourceKind,
   billingCheckoutAttempt,
   billingEntitlementOverride,
+  billingOperatorAction,
   billingResourceSuspension,
   billingSubscription,
   billingWebhookEvent,
@@ -101,6 +102,9 @@ export function parsePlanLimitDbError(error: unknown): PlanLimitDbViolation | nu
 
 const localOrganizationLocks = new Map<string, Promise<void>>()
 
+/** Longest a request waits behind another replica holding the same organization lock. */
+const ORGANIZATION_LOCK_TIMEOUT = '30s'
+
 async function withProcessLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const previous = localOrganizationLocks.get(key) ?? Promise.resolve()
   let release: () => void = () => {}
@@ -133,18 +137,30 @@ export const billingRepository = {
     return withProcessLock(key, async () => {
       if (getDatabaseMode() !== 'postgres') return fn()
       // A session-level advisory lock on a dedicated client serializes
-      // replicas without forcing `fn` into one transaction.
-      const pool = await getPgPool()
+      // replicas without forcing `fn` into one transaction. The client comes
+      // from a separate lock pool so held locks cannot starve `fn` of
+      // connections, and lock_timeout bounds the wait behind a stuck holder.
+      const pool = await getPgLockPool()
       const client = await pool.connect()
+      let locked = false
+      let unlockError: Error | undefined
       try {
+        await client.query(`SET lock_timeout = '${ORGANIZATION_LOCK_TIMEOUT}'`)
         await client.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [key])
-        try {
-          return await fn()
-        } finally {
-          await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [key])
-        }
+        locked = true
+        return await fn()
       } finally {
-        client.release()
+        if (locked) {
+          try {
+            await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [key])
+          } catch (error) {
+            unlockError = error instanceof Error ? error : new Error(String(error))
+            console.error('[billing] Failed to release organization lock', unlockError)
+          }
+        }
+        // An unlock failure may leave a session lock behind. Destroy that
+        // session instead of handing it back to the pool (see migration-lock).
+        client.release(unlockError)
       }
     })
   },
@@ -318,6 +334,25 @@ export const billingRepository = {
   // Effective entitlement snapshot
   // ---------------------------------------------------------------------------
 
+  /** Organizations whose stored entitlement is currently enforced by the capacity triggers. */
+  async listEnforcedOrganizationIds(): Promise<string[]> {
+    const db = await getDb()
+    const rows = await db
+      .select({ id: organizationEntitlement.organizationId })
+      .from(organizationEntitlement)
+      .where(eq(organizationEntitlement.enforced, true))
+    return rows.map((row) => row.id)
+  },
+
+  /** Mark an entitlement informational so the capacity triggers stop enforcing it. */
+  async markEntitlementUnenforced(organizationId: string): Promise<void> {
+    const db = await getDb()
+    await db
+      .update(organizationEntitlement)
+      .set({ enforced: false, updatedAt: new Date() })
+      .where(eq(organizationEntitlement.organizationId, organizationId))
+  },
+
   async findEntitlement(organizationId: string): Promise<OrganizationEntitlement | null> {
     const db = await getDb()
     const rows = await db
@@ -449,7 +484,9 @@ export const billingRepository = {
     const db = await getDb()
     const inserted = await db
       .insert(billingWebhookEvent)
-      .values({ ...input, status: 'pending' })
+      // Due by the application clock, which claimWebhookEvents compares
+      // against; the database default could be ahead of it.
+      .values({ ...input, status: 'pending', nextAttemptAt: new Date() })
       .onConflictDoNothing({ target: billingWebhookEvent.id })
       .returning({ id: billingWebhookEvent.id })
     return inserted.length > 0
@@ -765,6 +802,33 @@ export const billingRepository = {
   // Overrides (each row is also the audit record)
   // ---------------------------------------------------------------------------
 
+  /** Record a manual billing change or organization deletion for audit. */
+  async recordOperatorAction(input: {
+    organizationId: string
+    action: string
+    actor: string
+    reason: string
+    details?: Record<string, unknown> | null
+  }): Promise<void> {
+    const db = await getDb()
+    await db.insert(billingOperatorAction).values({
+      organizationId: input.organizationId,
+      action: input.action,
+      actor: input.actor,
+      reason: input.reason,
+      details: input.details ?? null,
+    })
+  },
+
+  async listOperatorActions(organizationId: string) {
+    const db = await getDb()
+    return db
+      .select()
+      .from(billingOperatorAction)
+      .where(eq(billingOperatorAction.organizationId, organizationId))
+      .orderBy(desc(billingOperatorAction.createdAt))
+  },
+
   async createOverride(input: {
     organizationId: string
     planCode: string
@@ -884,7 +948,12 @@ export const billingRepository = {
             )
           ),
         db
-          .select({ id: alertRule.id, name: alertRule.name, createdAt: alertRule.createdAt })
+          .select({
+            id: alertRule.id,
+            name: alertRule.name,
+            connectionId: alertRule.connectionId,
+            createdAt: alertRule.createdAt,
+          })
           .from(alertRule)
           .where(
             and(

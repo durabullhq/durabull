@@ -8,6 +8,7 @@ import { resolvePosthogBatchUrl } from '@durabull/analytics/server'
 import { env } from '@durabull/env'
 import { APP_BUILD_ID } from '../../lib/build-info'
 import { mcpAnalyticsContext } from './mcp-analytics-context'
+import { resolveMcpPosthogIdentity } from './mcp-posthog-identity'
 
 // One client per Bun process; request-scoped MCP servers share its batch queue.
 let posthog: PostHog | undefined
@@ -24,6 +25,7 @@ export function instrumentMcpAnalytics(server: unknown): void {
     context: false,
     captureModel: false,
     enableConversationId: false,
+    identify: async () => resolveMcpPosthogIdentity(mcpAnalyticsContext.getStore()?.identity()),
     beforeSend: (event) => {
       // Existing ingress analytics covers listings, handshakes and rejected calls.
       if (event.event !== E.ToolCall) return null
@@ -44,6 +46,8 @@ export function instrumentMcpAnalytics(server: unknown): void {
         P.IsError,
         P.ProtocolVersion,
         P.SessionId,
+        '$groups',
+        '$process_person_profile',
       ]) {
         if (event.properties?.[key] !== undefined) properties[key] = event.properties[key]
       }

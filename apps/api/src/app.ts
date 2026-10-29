@@ -21,6 +21,7 @@ import { mountMcpIngress } from './mcp/mount'
 import { createMcpOAuthAnalyticsMiddleware } from './mcp/observability/mcp-oauth-analytics'
 import { createMcpRequestAnalyticsMiddleware } from './mcp/observability/mcp-request-analytics'
 import { createSessionMiddleware } from './middleware/auth'
+import { suspendedMemberAuthGuard } from './middleware/billing-auth-guard'
 import { createConnectionMiddleware } from './middleware/connection'
 import {
   apiRateLimiter,
@@ -362,6 +363,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
 
   // Rate limiting
   app.use('/api/auth/*', createMcpOAuthAnalyticsMiddleware())
+  app.use('/api/auth/organization/*', suspendedMemberAuthGuard)
 
   // Skip rate limiting for session checks - these are read-only and shouldn't break user sessions
   // Only rate limit actual auth actions (sign-in, sign-up, etc.)

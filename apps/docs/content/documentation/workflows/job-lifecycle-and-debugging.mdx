@@ -45,6 +45,30 @@ API route:
 
 - `GET /api/c/:connectionId/queues/:queueName/jobs/:jobId`
 
+## Parent and child dependencies
+
+Open the **Dependencies** tab on a job to inspect its parent and children. Follow a related job
+to continue through the flow, including across queues on the same connection. Jobs waiting for
+children show the pending count, and each child shows its current state so failed work is visible.
+
+Filter children by **Pending**, **Processed**, **Failed**, or **Ignored failures**. Pending means
+the parent still has an outstanding dependency; it can include a child whose job state is failed.
+Ignored failures are tracked separately according to the parent's failure policy. Removed jobs
+remain visible as unavailable references, and references outside the connection prefix are not linked.
+
+Use **Next**, **Previous**, and **Refresh dependencies** to browse current dependency data.
+Collections can change while workers run, so pages are not a fixed snapshot.
+
+API route:
+
+- `GET /api/c/:connectionId/queues/:queueName/jobs/:jobId/dependencies`
+- `kind`: `unprocessed` (default), `processed`, `failed`, or `ignored`
+- `cursor`: opaque Redis cursor; pass the response's `nextCursor` unchanged, until it is `null`
+- `pageSize`: scan count hint from 1 to 100 (default 20); Redis may return more entries
+
+The response contains parent and child references, current job states, and counts for all four
+dependency categories. Child payloads, return values, and failure reasons are not included.
+
 ## Logs and Stacktraces
 
 Logs are paginated via BullMQ log API:

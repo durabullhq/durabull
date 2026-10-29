@@ -29,6 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   type EnabledBillingOverview,
   useBilling,
+  useCancelCheckout,
   useConfirmCheckout,
   useOpenBillingPortal,
   useRefreshBilling,
@@ -53,9 +54,11 @@ const SOURCE_LABELS: Record<
   free: { label: 'Free', variant: 'secondary' },
 }
 
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+
 function formatDate(value: string | null | undefined): string | null {
   if (!value) return null
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
+  return DATE_FORMAT.format(new Date(value))
 }
 
 function formatLimit(value: number | null, unit: string): string {
@@ -70,6 +73,18 @@ function formatHistoryDays(days: number | null): string {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+type CheckoutReturnState = 'confirming' | 'canceled' | null
+
+/** What the hosted Checkout redirect says about the purchase, read once on mount. */
+function readCheckoutReturn(): CheckoutReturnState {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const checkout = params.get('checkout')
+  if (checkout === 'canceled') return 'canceled'
+  if (checkout === 'success' && params.get('session_id')) return 'confirming'
+  return null
 }
 
 export function BillingSettingsPage() {
@@ -123,8 +138,9 @@ function SelfHostedBilling() {
 
 function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
   const confirmCheckout = useConfirmCheckout()
+  const cancelCheckout = useCancelCheckout()
   const refreshBilling = useRefreshBilling()
-  const [returnState, setReturnState] = useState<'confirming' | 'canceled' | null>(null)
+  const [returnState, setReturnState] = useState<CheckoutReturnState>(readCheckoutReturn)
   const handledReturn = useRef(false)
 
   // The return from hosted Checkout only starts a server-side confirmation;
@@ -135,9 +151,11 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
     const params = new URLSearchParams(window.location.search)
     const checkout = params.get('checkout')
     const sessionId = params.get('session_id')
-    if (checkout === 'canceled') setReturnState('canceled')
+    // Leaving Checkout without paying closes the attempt on the server.
+    if (checkout === 'canceled' && overview.canManageBilling) {
+      void cancelCheckout.mutateAsync().catch(() => {})
+    }
     if (checkout === 'success' && sessionId) {
-      setReturnState('confirming')
       // mutateAsync settles independently of the observer, so a StrictMode
       // remount cannot leave the page stuck in the confirming state.
       void confirmCheckout
@@ -153,9 +171,11 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
     if (checkout || params.get('portal')) {
       window.history.replaceState(null, '', window.location.pathname)
     }
-  }, [confirmCheckout, refreshBilling, overview.canManageBilling])
+  }, [confirmCheckout, cancelCheckout, refreshBilling, overview.canManageBilling])
 
-  const confirming = returnState === 'confirming' || overview.pendingCheckout !== null
+  // Only the person returning from Checkout waits for confirmation; the server
+  // confirms that session with Stripe directly.
+  const confirming = returnState === 'confirming'
 
   return (
     <div className="max-w-5xl space-y-6" data-testid="billing-settings">
@@ -218,8 +238,14 @@ function BillingNotices({ overview }: { overview: EnabledBillingOverview }) {
     notices.push(
       <Notice key="payment" tone="warning" icon={AlertTriangle} title="Payment failed">
         {grace
-          ? `Your ${overview.planName} access continues until ${grace}. Update your payment method in Manage billing to keep it.`
-          : 'Update your payment method in Manage billing to restore paid features.'}
+          ? `Your ${overview.planName} access continues until ${grace}. ${
+              overview.canManageBilling
+                ? 'Update your payment method in Manage billing to keep it.'
+                : 'Ask your organization owner to update the payment method.'
+            }`
+          : overview.canManageBilling
+            ? 'Update your payment method in Manage billing to restore paid features.'
+            : 'Ask your organization owner to update the payment method to restore paid features.'}
       </Notice>
     )
   }
@@ -306,6 +332,8 @@ function CurrentPlanCard({ overview }: { overview: EnabledBillingOverview }) {
       ? overview.subscription
       : null
   const renews = formatDate(subscription?.cancelAt ?? subscription?.currentPeriodEnd)
+  const trialEnds = subscription?.status === 'trialing' ? formatDate(subscription.trialEnd) : null
+  const ending = Boolean(subscription?.cancelAtPeriodEnd || subscription?.cancelAt)
 
   return (
     <Card>
@@ -316,11 +344,13 @@ function CurrentPlanCard({ overview }: { overview: EnabledBillingOverview }) {
             <Badge variant={source.variant}>{source.label}</Badge>
           </CardTitle>
           <CardDescription>
-            {subscription && renews
-              ? `${subscription.interval === 'year' ? 'Annual' : 'Monthly'} billing · ${
-                  subscription.cancelAtPeriodEnd ? 'ends' : 'renews'
-                } ${renews}`
-              : 'Billed per organization. Your workers keep running on your infrastructure.'}
+            {trialEnds
+              ? `Free trial · ends ${trialEnds}. Add a payment method in Manage billing to continue after the trial.`
+              : subscription && renews
+                ? `${subscription.interval === 'year' ? 'Annual' : 'Monthly'} billing · ${
+                    ending ? 'ends' : 'renews'
+                  } ${renews}`
+                : 'Billed per organization. Your workers keep running on your infrastructure.'}
           </CardDescription>
         </div>
         {overview.canManageBilling ? (
@@ -623,6 +653,12 @@ function PlanColumn({
                 Start {overview.trialDays}-day free trial
               </Button>
             ) : null}
+            {code === 'business' && overview.trialEligible ? (
+              <p className="text-xs text-muted-foreground">
+                No card needed. Without a payment method the organization returns to Free when the
+                trial ends; nothing is charged.
+              </p>
+            ) : null}
           </>
         ) : purchasable && !current && !overview.canManageBilling ? (
           <p className="text-xs text-muted-foreground">Ask your organization owner to upgrade.</p>
@@ -714,9 +750,11 @@ function AllocationDialog({
   onClose: () => void
 }) {
   const save = useSaveCapacityAllocation()
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(options.filter((o) => !o.suspended || o.pinned).map((o) => o.id))
-  )
+  const [selected, setSelected] = useState<Set<string>>(() => {
+    const kept = new Set<string>()
+    for (const o of options) if (!o.suspended || o.pinned) kept.add(o.id)
+    return kept
+  })
   const pinnedCount = useMemo(() => options.filter((o) => o.pinned).length, [options])
   const max = limit === null ? options.length : Math.max(limit, pinnedCount)
   const tooMany = selected.size > max

@@ -254,6 +254,31 @@ describe('billing capacity triggers', () => {
     expect(changed?.revision).toBe((first?.revision ?? 0) + 1)
   })
 
+  it('keeps operator audit records after the organization is deleted', async () => {
+    await billingRepository.recordOperatorAction({
+      organizationId: ORG,
+      action: 'organization_deleted',
+      actor: 'owner',
+      reason: 'test',
+      details: { stripeCustomerId: 'cus_123' },
+    })
+    const db = await getDb()
+    await db.delete(organization).where(eq(organization.id, ORG))
+    const actions = await billingRepository.listOperatorActions(ORG)
+    expect(actions).toHaveLength(1)
+    expect(actions[0].details).toEqual({ stripeCustomerId: 'cus_123' })
+  })
+
+  it('lists enforced entitlements and can relax them', async () => {
+    await enforceLimits({ 'connections.enabled': 1 })
+    expect(await billingRepository.listEnforcedOrganizationIds()).toEqual([ORG])
+    await billingRepository.markEntitlementUnenforced(ORG)
+    expect(await billingRepository.listEnforcedOrganizationIds()).toEqual([])
+    // The trigger reads the stored flag, so creation is no longer capped.
+    await insertConnection('a')
+    await insertConnection('b')
+  })
+
   it('serializes work under the organization lock', async () => {
     const order: string[] = []
     await Promise.all([

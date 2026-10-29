@@ -1,18 +1,27 @@
 import type { OrganizationPolicyHooks } from '@durabull/auth'
 import { and, billingRepository, eq, getDb, member, sql } from '@durabull/dal'
 import { APIError } from 'better-auth/api'
-import { isBillingEnabled, isEnforcedFor } from './config'
+import { getBillingConfig, isBillingEnabled, isEnforcedFor } from './config'
 import { assertCapacity } from './entitlements'
 import { BillingStateUnverifiedError, PlanLimitReachedError } from './errors'
 
 /** Abuse control: a person can own at most this many organizations on Cloud. */
 export const MAX_OWNED_ORGANIZATIONS_PER_USER = 10
 
-const LIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid', 'paused'])
+// `incomplete` can still become active once its first payment succeeds.
+const LIVE_SUBSCRIPTION_STATUSES = new Set([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+  'paused',
+  'incomplete',
+])
 
 function toApiError(error: unknown): never {
   if (error instanceof PlanLimitReachedError) {
-    throw new APIError('FORBIDDEN', { ...error.toBody() })
+    // Same 409 contract as the HTTP routes (ADR-0002).
+    throw new APIError('CONFLICT', { ...error.toBody() })
   }
   if (error instanceof BillingStateUnverifiedError) {
     throw new APIError('SERVICE_UNAVAILABLE', { ...error.toBody() })
@@ -58,8 +67,9 @@ export function createBillingOrganizationPolicy(): OrganizationPolicyHooks | und
       }
     },
 
-    async beforeDeleteOrganization({ organizationId }) {
+    async beforeDeleteOrganization({ organizationId, userId }) {
       // Deleting an organization with a live subscription would orphan it.
+      // This protects billing integrity, so it applies in every rollout mode.
       const current = await billingRepository.findCurrentSubscription(organizationId)
       if (current && LIVE_SUBSCRIPTION_STATUSES.has(current.status)) {
         throw new APIError('BAD_REQUEST', {
@@ -68,9 +78,33 @@ export function createBillingOrganizationPolicy(): OrganizationPolicyHooks | und
           code: 'billing_subscription_active',
         })
       }
+      // Billing rows are removed with the organization; keep the Stripe
+      // identifiers so later refunds or disputes can still be matched.
+      const [account, subscriptions] = await Promise.all([
+        billingRepository.findAccount(organizationId),
+        billingRepository.listSubscriptions(organizationId),
+      ])
+      if (account || subscriptions.length > 0) {
+        await billingRepository.recordOperatorAction({
+          organizationId,
+          action: 'organization_deleted',
+          actor: userId,
+          reason: 'Organization deleted by an owner',
+          details: {
+            stripeCustomerId: account?.stripeCustomerId ?? null,
+            subscriptions: subscriptions.map((sub) => ({
+              id: sub.stripeSubscriptionId,
+              status: sub.status,
+              planCode: sub.planCode,
+            })),
+          },
+        })
+      }
     },
 
     async hasReachedOrganizationLimit(user) {
+      // An abuse control, so it observes the same rollout as plan limits.
+      if (getBillingConfig().enforcement !== 'on') return false
       const db = await getDb()
       const [row] = await db
         .select({ count: sql<number>`count(*)::int` })

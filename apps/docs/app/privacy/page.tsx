@@ -288,7 +288,10 @@ function PrivacyAnalyticsSection() {
         and durations. MCP analytics also includes tool and resource names, OAuth stages and scope
         counts, client and protocol metadata, and hashed session, request, client, connection,
         principal, user, and organization identifiers where configured. These are pseudonymous, not
-        guaranteed anonymous, and can associate activity across requests.
+        guaranteed anonymous, and can associate activity across requests. In the configured app
+        PostHog project, authenticated MCP activity uses the same account user and organization IDs
+        as browser analytics so it can be associated with existing users and organizations.
+        Service-account identities remain hashed.
       </p>
       <p>
         The sanitized stream excludes raw tool arguments and responses, job payloads, results, logs

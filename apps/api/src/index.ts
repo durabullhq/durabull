@@ -7,6 +7,7 @@ import { serveStatic } from 'hono/bun'
 
 import { createApiApp } from './app'
 import { getBillingConfig } from './billing/config'
+import { syncStoredEnforcement } from './billing/entitlements'
 import { startBillingLifecycle, stopBillingLifecycle } from './billing/lifecycle'
 import { startAlertMonitor, stopAlertMonitor } from './lib/alert-monitor'
 import { isAuthlessMode } from './lib/authless'
@@ -70,6 +71,10 @@ if (!process.stdin.isTTY) {
 
 // Create the API app
 const { app } = await createApiApp()
+const relaxedEnforcement = await syncStoredEnforcement()
+if (relaxedEnforcement > 0) {
+  console.log(`[billing] Stopped enforcing plan limits for ${relaxedEnforcement} organization(s)`)
+}
 startAlertMonitor()
 startRedisHealthCleanupJob()
 startBillingLifecycle()

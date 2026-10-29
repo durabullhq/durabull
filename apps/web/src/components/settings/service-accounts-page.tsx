@@ -1,4 +1,5 @@
-import { Bot, Copy, Plus } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Bot, Copy, Lock, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -17,7 +18,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/use-auth'
-import { useOrganizationMembers } from '@/hooks/use-organization'
+import { useBilling } from '@/hooks/use-billing'
+import { useActiveOrganization, useOrganizationMembers } from '@/hooks/use-organization'
 import {
   type ServiceAccount,
   type ServiceAccountExpiry,
@@ -51,9 +53,11 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
+
 function formatDate(value: string | null): string {
   if (!value) return 'never'
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
+  return DATE_FORMAT.format(new Date(value))
 }
 
 export function ServiceAccountsPage() {
@@ -62,6 +66,15 @@ export function ServiceAccountsPage() {
   const role = members?.find((m) => m.userId === user?.id)?.role
   const canManage = role === 'owner' || role === 'admin'
   const { data, isLoading } = useServiceAccounts()
+  const { data: billing } = useBilling()
+  const { data: activeOrganization } = useActiveOrganization()
+  // The plan check runs on every MCP call; show it here so an account is
+  // never listed as usable while the plan blocks it.
+  const planLocked = Boolean(
+    billing?.enabled &&
+      billing.enforced &&
+      !billing.features.includes('automation.service_accounts')
+  )
   const [creating, setCreating] = useState(false)
   const [revealedToken, setRevealedToken] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ServiceAccount | null>(null)
@@ -80,7 +93,7 @@ export function ServiceAccountsPage() {
               scopes you grant here; write scopes are always opt-in.
             </CardDescription>
           </div>
-          {canManage ? (
+          {canManage && !planLocked ? (
             <Button type="button" size="sm" onClick={() => setCreating(true)}>
               <Plus className="mr-1.5 h-4 w-4" />
               New service account
@@ -88,6 +101,30 @@ export function ServiceAccountsPage() {
           ) : null}
         </CardHeader>
         <CardContent className="space-y-3 p-4">
+          {planLocked ? (
+            <div
+              className="flex gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm"
+              data-testid="service-accounts-plan-locked"
+            >
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div className="space-y-1">
+                <div className="font-medium">Service accounts need the Team plan</div>
+                <p className="text-muted-foreground">
+                  Existing accounts are kept, but their MCP calls are refused until the organization
+                  upgrades.{' '}
+                  {activeOrganization?.slug ? (
+                    <Link
+                      to="/$orgSlug/settings/billing"
+                      params={{ orgSlug: activeOrganization.slug }}
+                      className="text-primary underline"
+                    >
+                      See plans
+                    </Link>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+          ) : null}
           {isLoading ? (
             <Skeleton className="h-20 w-full" />
           ) : data && data.serviceAccounts.length > 0 ? (
@@ -103,6 +140,8 @@ export function ServiceAccountsPage() {
                     <span className="text-sm font-semibold">{account.name}</span>
                     {account.suspended ? (
                       <Badge variant="warning">Paused by plan limit</Badge>
+                    ) : planLocked && !account.disabled ? (
+                      <Badge variant="warning">Locked by plan</Badge>
                     ) : (
                       <Badge variant={account.disabled ? 'secondary' : 'success'}>
                         {account.disabled ? 'Disabled' : 'Enabled'}
@@ -346,12 +385,19 @@ function TokenRevealDialog({ token, onClose }: { token: string; onClose: () => v
             type="button"
             variant="outline"
             size="sm"
+            aria-label="Copy token"
             onClick={() => {
-              void navigator.clipboard?.writeText(token)
-              toast.success('Token copied')
+              if (!navigator.clipboard) {
+                toast.error('Copying is unavailable here. Select the token and copy it manually.')
+                return
+              }
+              navigator.clipboard.writeText(token).then(
+                () => toast.success('Token copied'),
+                () => toast.error('Could not copy. Select the token and copy it manually.')
+              )
             }}
           >
-            <Copy className="h-4 w-4" />
+            <Copy className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
         <DialogFooter>

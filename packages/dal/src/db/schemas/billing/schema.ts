@@ -243,3 +243,21 @@ export const billingEntitlementOverride = pgTable(
   },
   (table) => [index('billing_entitlement_override_org_idx').on(table.organizationId)]
 )
+
+/**
+ * Audit trail for manual billing changes (operator overrides, contract limits,
+ * beta grants) and for organization deletion. Rows outlive the organization so
+ * later refunds or disputes can still be matched to it.
+ */
+export const billingOperatorAction = pgTable(
+  'billing_operator_action',
+  {
+    ...baseColumns,
+    organizationId: text('organization_id').notNull(),
+    action: text('action').notNull(),
+    actor: text('actor').notNull(),
+    reason: text('reason').notNull(),
+    details: jsonb('details').$type<Record<string, unknown>>(),
+  },
+  (table) => [index('billing_operator_action_org_idx').on(table.organizationId)]
+)

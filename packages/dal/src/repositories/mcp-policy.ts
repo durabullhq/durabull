@@ -19,10 +19,11 @@ import type { NewMcpPolicyBinding } from '../db/schemas/mcp-policy/types'
 import { member } from '../db/schemas/organization/schema'
 import { redisConnection } from '../db/schemas/redis-connection/schema'
 
-const MCP_SECRET_PREFIX = 'dbsa'
+/** Prefix that makes leaked service-account secrets and tokens easy to recognize and scan for. */
+export const MCP_SECRET_PREFIX = 'dbsa'
 const scryptAsync = promisify(scrypt)
 
-async function hashSecret(secret: string): Promise<string> {
+export async function hashSecret(secret: string): Promise<string> {
   const salt = randomBytes(16).toString('hex')
   const digestBuffer = (await scryptAsync(secret, salt, 64)) as Buffer
   const digest = digestBuffer.toString('hex')

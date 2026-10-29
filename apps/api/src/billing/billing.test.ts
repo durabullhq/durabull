@@ -3,7 +3,15 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLANS } from '@durabull/billing'
-import { billingRepository, closeDb, getDb, organization } from '@durabull/dal'
+import {
+  alertRule,
+  billingRepository,
+  closeDb,
+  getDb,
+  member,
+  organization,
+  user,
+} from '@durabull/dal'
 import { env } from '@durabull/env'
 import { createApiApp } from '../app'
 import { AUTHLESS_ORG_ID, getAuthlessContext, resetAuthlessStateForTests } from '../lib/authless'
@@ -16,6 +24,7 @@ import {
   hasFeature,
   invalidateEntitlementCache,
   materializeEntitlement,
+  syncStoredEnforcement,
 } from './entitlements'
 import {
   type BillingGateway,
@@ -314,6 +323,14 @@ describe('Cloud billing', () => {
       requiredPlan: 'team',
     })
 
+    const bulkPromote = await app.request(`/api/c/${connection.id}/queues/emails/jobs/invoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobIds: ['1', '2'] }),
+    })
+    expect(bulkPromote.status).toBe(403)
+    expect((await json(bulkPromote)).feature).toBe('jobs.bulk_recovery')
+
     const webhook = await app.request('/api/alerts/destinations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -514,6 +531,116 @@ describe('Cloud billing', () => {
     expect((await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).length).toBe(0)
   })
 
+  it('protects only the founding owner when seats are over the limit', async () => {
+    const db = await getDb()
+    const now = Date.now()
+    for (let i = 0; i < 3; i += 1) {
+      const userId = `extra-owner-${i}`
+      await db.insert(user).values({
+        id: userId,
+        name: `Owner ${i}`,
+        email: `${userId}@example.com`,
+        emailVerified: true,
+        createdAt: new Date(now + i),
+        updatedAt: new Date(now + i),
+      })
+      await db.insert(member).values({
+        id: `${userId}-member`,
+        organizationId: AUTHLESS_ORG_ID,
+        userId,
+        role: 'owner',
+        createdAt: new Date(now + 1000 + i),
+      })
+    }
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(now + 8 * 86_400_000),
+    })
+    const suspendedMembers = (await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).filter(
+      (s) => s.resourceKind === 'member'
+    )
+    // Free has one seat: the founding owner keeps it, every promoted owner is suspended.
+    expect(suspendedMembers).toHaveLength(3)
+  })
+
+  it('stops enforcing stored limits once enforcement is rolled back', async () => {
+    const app = await createApp()
+    await createConnection(app, 'a')
+    expect((await createConnection(app, 'b')).status).toBe(409)
+
+    setBillingConfigForTests(billingConfig({ enforcement: 'shadow' }))
+    invalidateEntitlementCache()
+    expect(await syncStoredEnforcement()).toBe(1)
+    // The capacity trigger no longer rejects, even before the organization is re-materialized.
+    expect((await createConnection(app, 'b')).status).toBe(201)
+  })
+
+  it('keeps alert rules on connections that stay active when trimming to the plan', async () => {
+    await subscribe(AUTHLESS_ORG_ID)
+    const app = await createApp()
+    const oldest = (await json(await createConnection(app, 'oldest'))).connection
+    const newer = (await json(await createConnection(app, 'newer'))).connection
+    const db = await getDb()
+    const rule = (connectionId: string, name: string, offset: number) => ({
+      organizationId: AUTHLESS_ORG_ID,
+      connectionId,
+      name,
+      type: 'job_failed' as const,
+      config: {},
+      createdAt: new Date(Date.now() - 86_400_000 + offset),
+    })
+    // The newer connection's rules are older, so plain oldest-first would keep them.
+    await db
+      .insert(alertRule)
+      .values([
+        rule(newer.id, 'n1', 0),
+        rule(newer.id, 'n2', 1),
+        rule(newer.id, 'n3', 2),
+        rule(oldest.id, 'o1', 3),
+      ])
+
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(Date.now() + 8 * 86_400_000),
+    })
+    const suspensions = await billingRepository.listSuspensions(AUTHLESS_ORG_ID)
+    const suspendedRules = new Set(
+      suspensions.filter((s) => s.resourceKind === 'alert_rule').map((s) => s.resourceId)
+    )
+    const rules = await db.select().from(alertRule)
+    const keptOnLiveConnection = rules.filter(
+      (r) => r.connectionId === oldest.id && !suspendedRules.has(r.id)
+    )
+    expect(keptOnLiveConnection).toHaveLength(1)
+  })
+
+  it('keeps collected history for the recovery window when enforcement turns on', async () => {
+    setBillingConfigForTests(billingConfig({ enforcement: 'shadow' }))
+    invalidateEntitlementCache()
+    await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
+
+    setBillingConfigForTests(billingConfig({ enforcement: 'on' }))
+    invalidateEntitlementCache()
+    const enforced = await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
+    expect(enforced.historyRetentionFloorExpiresAt).not.toBeNull()
+  })
+
+  it('applies the beta grant to organizations whose rows predate the launch dates', async () => {
+    // The shadow sweep created the row before launch dates were configured.
+    await getEntitlement(AUTHLESS_ORG_ID)
+    setBillingConfigForTests(
+      billingConfig({
+        launchAt: new Date(Date.now() + 86_400_000),
+        migrationGrantUntil: new Date(Date.now() + 31 * 86_400_000),
+      })
+    )
+    invalidateEntitlementCache()
+    const entitlement = await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
+    expect(entitlement.source).toBe('migration_grant')
+  })
+
   it('stops premium deliveries and MCP writes after a downgrade', async () => {
     await subscribe(AUTHLESS_ORG_ID)
     expect(await hasFeature(AUTHLESS_ORG_ID, 'alerts.webhook')).toBe(true)
@@ -567,7 +694,7 @@ describe('Cloud billing', () => {
         organizationId: AUTHLESS_ORG_ID,
         email: 'new@example.com',
       })
-    ).rejects.toMatchObject({ body: { code: 'plan_limit_reached' } })
+    ).rejects.toMatchObject({ status: 'CONFLICT', body: { code: 'plan_limit_reached' } })
   })
 
   it('only observes denials in shadow mode', async () => {

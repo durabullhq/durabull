@@ -132,6 +132,22 @@ describePostgres('billing on PostgreSQL', () => {
     expect(order).toEqual(['a:start', 'probe:false', 'a:end', 'b'])
   })
 
+  it('does not exhaust the main pool when many organizations are locked at once', async () => {
+    // More concurrent lock holders than the main pool's default 10 clients,
+    // each needing a main-pool query while holding its lock.
+    const db = await getDb()
+    const results = await Promise.all(
+      Array.from({ length: 16 }, (_, i) =>
+        billingRepository.withOrganizationLock(`${ORG}-many-${i}`, async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          const rows = await db.execute(sql`SELECT 1 AS one`)
+          return rows.rows.length
+        })
+      )
+    )
+    expect(results).toEqual(Array.from({ length: 16 }, () => 1))
+  }, 20_000)
+
   it('never hands one webhook event to two concurrent workers', async () => {
     for (let i = 0; i < 30; i += 1) {
       await billingRepository.recordWebhookEvent({

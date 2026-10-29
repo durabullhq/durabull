@@ -16,9 +16,9 @@ export const billingKeys = {
 }
 
 /**
- * Current organization's plan, limits, usage and billing status. While a
- * purchase is awaiting Stripe confirmation the query polls, because the
- * browser return from Checkout never grants access by itself.
+ * Current organization's plan, limits, usage and billing status. Returning
+ * from Checkout confirms the session on the server, which reconciles with
+ * Stripe before access changes, so the overview does not need to poll.
  */
 export function useBilling(options: { enabled?: boolean } = {}) {
   const { data: activeOrganization } = useActiveOrganization()
@@ -26,10 +26,6 @@ export function useBilling(options: { enabled?: boolean } = {}) {
     queryKey: billingKeys.overview(activeOrganization?.id),
     queryFn: async () => handleRes<BillingOverview>(await api.billing.$get()),
     enabled: options.enabled !== false && Boolean(activeOrganization?.id),
-    refetchInterval: (query) => {
-      const data = query.state.data
-      return data?.enabled && data.pendingCheckout ? 3_000 : false
-    },
   })
 }
 
@@ -61,6 +57,15 @@ export function useConfirmCheckout() {
       handleRes<{ status: string }>(
         await api.billing.checkout.confirm.$post({ json: { sessionId } })
       ),
+    onSettled: invalidate,
+  })
+}
+
+export function useCancelCheckout() {
+  const invalidate = useInvalidateBilling()
+  return useMutation({
+    mutationFn: async () =>
+      handleRes<{ status: string }>(await api.billing.checkout.cancel.$post()),
     onSettled: invalidate,
   })
 }

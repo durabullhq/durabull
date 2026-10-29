@@ -28,7 +28,12 @@ describe('evaluateCapacityTransition', () => {
 
   it('does nothing when usage fits', () => {
     const result = evaluateCapacityTransition({ ...base, usage: { 'connections.enabled': 1 } })
-    expect(result).toEqual({ overLimit: [], windowExpiresAt: null, suspendNow: false })
+    expect(result).toEqual({
+      overLimit: [],
+      windowExpiresAt: null,
+      suspendNow: false,
+      suspendImmediately: [],
+    })
   })
 
   it('opens one seven-day window for existing excess', () => {
@@ -73,6 +78,20 @@ describe('evaluateCapacityTransition', () => {
       skipWindow: true,
     })
     expect(result.suspendNow).toBe(true)
+  })
+
+  it('windows only connections and memberships; other excess is suspended at once', () => {
+    const result = evaluateCapacityTransition({
+      ...base,
+      usage: { 'connections.enabled': 3, 'service_accounts.enabled': 2 },
+    })
+    expect(result.suspendNow).toBe(false)
+    expect(result.windowExpiresAt).not.toBeNull()
+    expect(result.suspendImmediately).toEqual(['service_accounts.enabled'])
+
+    const onlyRules = evaluateCapacityTransition({ ...base, usage: { 'alerts.enabled': 9 } })
+    expect(onlyRules.windowExpiresAt).toBeNull()
+    expect(onlyRules.suspendImmediately).toEqual(['alerts.enabled'])
   })
 })
 

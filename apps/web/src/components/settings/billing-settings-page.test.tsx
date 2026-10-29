@@ -5,15 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BillingSettingsPage } from '@/components/settings/billing-settings-page'
 import type { BillingOverview, EnabledBillingOverview } from '@/hooks/use-billing'
 
-const { useBillingMock, startCheckoutMock, openPortalMock, confirmMock, refreshMock } = vi.hoisted(
-  () => ({
+const { useBillingMock, startCheckoutMock, openPortalMock, confirmMock, refreshMock, cancelMock } =
+  vi.hoisted(() => ({
+    cancelMock: vi.fn(),
     refreshMock: vi.fn(),
     useBillingMock: vi.fn(),
     startCheckoutMock: vi.fn(),
     openPortalMock: vi.fn(),
     confirmMock: vi.fn(),
-  })
-)
+  }))
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -22,6 +22,7 @@ vi.mock('@/hooks/use-billing', () => ({
   useStartCheckout: () => ({ mutate: startCheckoutMock, isPending: false }),
   useOpenBillingPortal: () => ({ mutate: openPortalMock, isPending: false }),
   useConfirmCheckout: () => ({ mutate: confirmMock, mutateAsync: confirmMock, isPending: false }),
+  useCancelCheckout: () => ({ mutate: cancelMock, mutateAsync: cancelMock, isPending: false }),
   useRefreshBilling: () => ({ mutate: refreshMock, mutateAsync: refreshMock, isPending: false }),
   useSaveCapacityAllocation: () => ({ mutate: vi.fn(), isPending: false }),
 }))
@@ -133,6 +134,32 @@ describe('BillingSettingsPage', () => {
     expect(startCheckoutMock).not.toHaveBeenCalled()
   })
 
+  it('shows when a trial ends instead of a renewal date', () => {
+    useBillingMock.mockReturnValue({
+      data: overview({
+        planCode: 'business',
+        planName: 'Business',
+        source: 'trial',
+        hasBillingAccount: true,
+        trialEligible: false,
+        subscription: {
+          status: 'trialing',
+          planCode: 'business',
+          interval: 'month',
+          currentPeriodEnd: '2026-11-15T00:00:00.000Z',
+          cancelAtPeriodEnd: false,
+          cancelAt: null,
+          trialEnd: '2026-11-15T00:00:00.000Z',
+          collectionMethod: 'charge_automatically',
+        },
+      }),
+      isLoading: false,
+    })
+    render(<BillingSettingsPage />)
+    expect(screen.getByText(/Free trial · ends/)).toBeInTheDocument()
+    expect(screen.queryByText(/renews/)).not.toBeInTheDocument()
+  })
+
   it('tells non-owners to ask the owner instead of offering Checkout', () => {
     useBillingMock.mockReturnValue({
       data: overview({ canManageBilling: false }),
@@ -143,7 +170,27 @@ describe('BillingSettingsPage', () => {
     expect(screen.getAllByText('Ask your organization owner to upgrade.').length).toBeGreaterThan(0)
   })
 
-  it('discloses payment grace and the confirmation-in-progress state', () => {
+  it('closes the attempt when the owner leaves Checkout without paying', () => {
+    window.history.replaceState(null, '', '/acme/settings/billing?checkout=canceled')
+    cancelMock.mockResolvedValue({ status: 'canceled' })
+    useBillingMock.mockReturnValue({
+      data: overview({
+        pendingCheckout: {
+          planCode: 'team',
+          interval: 'month',
+          trial: false,
+          createdAt: '2026-11-01T00:00:00.000Z',
+        },
+      }),
+      isLoading: false,
+    })
+    render(<BillingSettingsPage />)
+    expect(cancelMock).toHaveBeenCalled()
+    expect(screen.getByText('Checkout canceled')).toBeInTheDocument()
+    expect(screen.queryByText('Confirming your purchase')).not.toBeInTheDocument()
+  })
+
+  it('discloses payment grace without a stale confirmation notice', () => {
     useBillingMock.mockReturnValue({
       data: overview({
         planCode: 'team',
@@ -162,7 +209,8 @@ describe('BillingSettingsPage', () => {
     })
     render(<BillingSettingsPage />)
     expect(screen.getByText('Payment failed')).toBeInTheDocument()
-    expect(screen.getByText('Confirming your purchase')).toBeInTheDocument()
+    // An open attempt someone else abandoned is not "your purchase".
+    expect(screen.queryByText('Confirming your purchase')).not.toBeInTheDocument()
   })
 
   it('confirms a Checkout return on the server and then clears the confirming state', async () => {
