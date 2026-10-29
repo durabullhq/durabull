@@ -16,7 +16,7 @@ subscription and never contact Stripe.
 | Enabled Redis connections | 1 | 5 | 15 | From 30 |
 | Members (including pending invitations) | 1 | 10 | 50 | From 100 |
 | Queues on included connections | All | All | All | Agreed envelope |
-| Bulk recovery | — | Included | Included | Included |
+| Bulk recovery (retry or promote many jobs at once) | — | Included | Included | Included |
 | Read-only MCP | Included | Included | Included | Included |
 | Opt-in MCP writes | — | Included | Included | Included |
 | Service accounts | — | 1 | 5 | From 25 |
@@ -65,6 +65,14 @@ the plan and usage and can ask the owner to upgrade.
 - **Annual plans** are prepaid: Team $90/year (equivalent to $7.50/month) and Business $290/year
   (about $24.17/month).
 
+## Moving from the beta
+
+Organizations created during the Durabull Cloud beta keep full access until the date in their notice
+email, which is also shown in Settings → Billing and in a banner in the app. After that date they use
+the Free plan unless an owner chooses a plan. Settings → Billing shows the plan that covers current
+usage and exactly what Free would pause. Nothing is deleted, and paused resources come back when the
+organization upgrades.
+
 ## Failed payments
 
 If a renewal fails, a previously paid plan keeps working for **seven days** while you update the
@@ -76,12 +84,14 @@ subscription whose first payment fails does not unlock paid features.
 Billing never pauses your queues, deletes jobs, purges Redis, or changes schedules.
 
 - New resources cannot be created above the new limits.
-- Existing resources above the limits stay enabled for a **seven-day adjustment window**. The window is
-  not extended by repeated upgrade and downgrade cycles, and there is no second window after a failed
-  payment's grace period.
+- Existing **connections and members** above the limits stay enabled for a **seven-day adjustment
+  window**. The window is not extended by repeated upgrade and downgrade cycles, and there is no second
+  window after a failed payment's grace period. Extra alert rules, destinations, and service accounts
+  are paused right away.
 - In Settings → Billing the owner chooses which connections, members, rules, destinations, and service
-  accounts stay enabled. Without a choice, Durabull keeps the owner and the oldest resources and pauses
-  the newest extras.
+  accounts stay enabled. Without a choice, Durabull keeps the founding owner and the oldest resources
+  and pauses the newest extras; other owners count like any member. Alert rules on connections that
+  stay enabled are kept first.
 - Paused resources keep their configuration and are restored automatically after an upgrade. Paused
   members cannot use existing sessions or tokens for that organization, paused connections stop
   polling, and webhook or Linear deliveries stop when the plan no longer includes them.

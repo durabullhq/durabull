@@ -145,7 +145,12 @@ export const PRICING_FAQS = [
   {
     question: 'What happens if I downgrade or cancel?',
     answer:
-      'Cancellation takes effect at the end of the paid period. After a downgrade, existing resources above the new limits stay enabled for seven days; then the newest extras are paused, never deleted, and you choose what stays enabled. Billing never pauses your queues, deletes jobs or changes your Redis data.',
+      'Cancellation takes effect at the end of the paid period. After a downgrade, connections and members above the new limits stay enabled for seven days; extra alert rules, destinations and service accounts are paused right away. Nothing is deleted: you choose what stays enabled, and paused resources come back when you upgrade. Billing never pauses your queues, deletes jobs or changes your Redis data.',
+  },
+  {
+    question: 'I used Durabull Cloud during the beta. What happens now?',
+    answer:
+      'Organizations created during the beta keep full access until the date in your notice email, also shown in Settings → Billing. After that they use the Free plan unless an owner chooses a plan. Settings → Billing shows the plan that covers your current usage and what Free would pause. Nothing is deleted, and anything paused comes back when you upgrade.',
   },
   {
     question: 'What if a payment fails?',

@@ -89,7 +89,7 @@ const MATRIX: Array<{ label: string; value: (plan: CloudPlan) => string | boolea
   { label: 'Fees per job, retry or MCP call', value: () => 'None' },
   { label: 'Inspect jobs, logs, queues and workers', value: () => true },
   { label: 'Individual job retry', value: () => true },
-  { label: 'Bulk recovery', value: (p) => p.features.bulkRecovery },
+  { label: 'Bulk retry and promote', value: (p) => p.features.bulkRecovery },
   { label: 'Read-only MCP for members', value: () => true },
   { label: 'Opt-in MCP write operations', value: (p) => p.features.mcpWrites },
   {
