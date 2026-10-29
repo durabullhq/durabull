@@ -71,6 +71,9 @@ function fixture(onToolInvocationComplete?: McpRequestContext['onToolInvocationC
           nextCursor: null,
         }
       },
+      getJob: async () => {
+        throw new Error('Opening a job view must not invoke its data handler.')
+      },
       pauseQueue: async ({ connectionId, queueName }) => ({
         connectionId,
         queueName,
@@ -160,14 +163,31 @@ describe('MCP protocol interoperability', () => {
       try {
         expect(client.getProtocolEra()).toBe(mode === 'legacy' ? 'legacy' : 'modern')
         const tools = await client.listTools()
-        const opener = tools.tools.find((tool) => tool.name === 'list_connections')!
-        expect(opener._meta?.ui).toEqual({ resourceUri: MCP_APP_URI, visibility: ['model', 'app'] })
+        const opener = tools.tools.find((tool) => tool.name === 'render_ui')!
+        expect(opener._meta?.ui).toEqual({ resourceUri: MCP_APP_URI, visibility: ['model'] })
+        expect(opener._meta?.['ui/resourceUri']).toBe(MCP_APP_URI)
+        expect(opener._meta?.['openai/outputTemplate']).toBe(MCP_APP_URI)
         expect(opener._meta?.['openai/ui']).toEqual({
           entrypoints: [{ type: 'global' }, { type: 'thread' }],
         })
         expect(tools.tools.find((tool) => tool.name === 'pause_queue')?._meta?.ui).toMatchObject({
           visibility: ['model'],
         })
+        for (const tool of tools.tools.filter((tool) => tool.name !== 'render_ui')) {
+          expect(tool._meta?.ui).not.toHaveProperty('resourceUri')
+          expect(tool._meta).not.toHaveProperty('ui/resourceUri')
+          expect(tool._meta).not.toHaveProperty('openai/outputTemplate')
+          expect(tool._meta).not.toHaveProperty('openai/ui')
+        }
+        expect(tools.tools.find((tool) => tool.name === 'list_connections')?._meta).toMatchObject({
+          ui: { visibility: ['model', 'app'] },
+          'openai/widgetAccessible': true,
+        })
+        const display = await client.callTool({ name: 'render_ui', arguments: {} })
+        expect(display.isError).not.toBe(true)
+        expect(display.structuredContent).toEqual({ toolName: 'list_connections', arguments: {} })
+        // Opening a view must not invoke a data handler inside the launcher's discovery policy.
+        expect(audits.map((event) => event.toolName)).toEqual(['render_ui'])
         const result = await client.callTool({ name: 'list_connections', arguments: {} })
         expect(result.isError).not.toBe(true)
         expect(result.structuredContent).toMatchObject({ connections: [{ name: 'user-one' }] })
@@ -214,6 +234,77 @@ describe('MCP protocol interoperability', () => {
       }
     })
   }
+
+  it('validates render targets and arguments without fetching data or allowing writes', async () => {
+    const audits: McpToolInvocationAuditInput[] = []
+    const { client } = await connect('auto', 'user-one', (event) => audits.push(event))
+    try {
+      const result = await client.callTool({
+        name: 'render_ui',
+        arguments: { toolName: 'list_connections', arguments: { cursor: 'page-2', pageSize: 10 } },
+      })
+      expect(result.structuredContent).toEqual({
+        toolName: 'list_connections',
+        arguments: { cursor: 'page-2', pageSize: 10 },
+      })
+      for (const args of [
+        { toolName: 'pause_queue', arguments: { connectionId: 'one', queueName: 'email' } },
+        { toolName: 'render_ui' },
+        { toolName: 'ping' },
+        { toolName: 'unknown_tool' },
+        { toolName: 'get_queue', arguments: { connectionId: 'one', queueName: 'email' } },
+        { toolName: 'list_connections', arguments: { pageSize: 101 } },
+        { toolName: 'list_connections', arguments: { payload: { password: 'secret' } } },
+      ]) {
+        const rejected = await client.callTool({ name: 'render_ui', arguments: args })
+        expect(rejected.isError).toBe(true)
+        expect(rejected.structuredContent).toBeUndefined()
+      }
+      expect(audits.every((event) => event.toolName === 'render_ui')).toBe(true)
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('rejects view arguments that output safety would change instead of reading an altered target', async () => {
+    const audits: McpToolInvocationAuditInput[] = []
+    const { client } = await connect('auto', 'user-one', (event) => audits.push(event))
+    try {
+      for (const identifier of ['pk_12345678', 'q'.repeat(501)]) {
+        for (const target of [
+          {
+            toolName: 'get_job',
+            arguments: { connectionId: 'one', queueName: 'email', jobId: identifier },
+          },
+          { toolName: 'list_connections', arguments: { cursor: identifier } },
+        ]) {
+          const result = await client.callTool({ name: 'render_ui', arguments: target })
+          expect(result.isError).toBe(true)
+          expect(result.structuredContent).toBeUndefined()
+          const content = result.content as Array<{ type: string; text: string }>
+          const error = JSON.parse(content[0]!.text).error
+          expect(error.code).toBe('validation_error')
+          expect(error.message).toContain('read tool directly with the original arguments')
+          expect(content[0]!.text).not.toContain(identifier)
+        }
+      }
+      expect(audits).toHaveLength(4)
+      expect(
+        audits.every(
+          (event) => event.toolName === 'render_ui' && event.responseClass === 'tool_error'
+        )
+      ).toBe(true)
+      const target = {
+        toolName: 'get_job',
+        arguments: { connectionId: 'one', queueName: 'email', jobId: 'j'.repeat(500) },
+      }
+      const result = await client.callTool({ name: 'render_ui', arguments: target })
+      expect(result.isError).not.toBe(true)
+      expect(result.structuredContent).toEqual(target)
+    } finally {
+      await client.close()
+    }
+  })
 
   it('keeps concurrent caller context isolated without sessions', async () => {
     const app = fixture()

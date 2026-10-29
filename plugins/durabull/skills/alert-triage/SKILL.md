@@ -20,3 +20,5 @@ A clear user request authorizes its named action; do not ask again merely becaus
 - `snooze_alert_rule` needs an explicit duration from 1 to 10080 minutes. Open incidents stay frozen until reevaluation after expiry. `unsnooze_alert_rule` resumes evaluation on the next monitor poll; it does not synchronously clear incidents.
 
 Read the target before and after a change with `get_alert_event` or `get_alert_rule`. Report actual resulting status/expiry and any pending external effects. On uncertain delivery, inspect before retrying; stop on `conflict`. Use host reauthorization for `insufficient_scope`, and an administrator for policy denial. Rule creation/configuration and notification-channel edits are outside this MCP.
+
+Use ordinary data tools during this workflow. When intentionally presenting an interactive view to the user, follow [UI display guidance](../../references/ui.md) and call `render_ui`; routine investigation and verification need no UI.

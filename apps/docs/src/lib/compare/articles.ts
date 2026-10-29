@@ -327,7 +327,7 @@ export const articles: Article[] = [
       {
         heading: 'Understand the available tools and their limits',
         body: [
-          'Durabull documents 30 tools: 21 reads and nine writes. Reads cover connections, queues, jobs, logs, stacktraces, recurring schedules, metrics, Redis health, and alert evidence. The default OAuth consent bundle includes read scopes; retry, promote, queue pause/resume, and alert-state actions require explicit write scopes.',
+          'Durabull documents 31 tools: 22 read-only tools (including intentional UI display) and nine writes. Reads cover connections, queues, jobs, logs, stacktraces, recurring schedules, metrics, Redis health, and alert evidence. The default OAuth consent bundle includes read scopes; retry, promote, queue pause/resume, and alert-state actions require explicit write scopes.',
           'The MCP surface does not expose arbitrary Redis commands, job payload editing, deletion, queue purging, worker scaling, scheduler editing, or alert-rule configuration. These are real capability boundaries, not instructions that a model is merely expected to obey.',
           'A read tool can still reveal sensitive business information. Scope selection should follow the data access the operator actually needs. Tool annotations describe intended behavior, and the MCP specification tells clients to treat them as untrusted; they do not replace authentication, authorization, or your client’s action-approval controls.',
         ],

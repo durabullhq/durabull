@@ -1809,6 +1809,39 @@ describe('api MCP ingress', () => {
     }
   })
 
+  it('opens a data-free view with discovery scope but requires data scopes for the subsequent read', async () => {
+    const { connectionId, call } = await seedDelegatedToken('mcp:discover')
+    const args = { connectionId, queueName: 'email' }
+    const display = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'render_ui', arguments: { toolName: 'get_queue', arguments: args } },
+    })
+    expect(display.status).toBe(200)
+    expect(parseSseJson(await display.text())).toMatchObject({
+      result: { structuredContent: { toolName: 'get_queue', arguments: args } },
+    })
+    const read = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'get_queue', arguments: args },
+    })
+    expect(read.status).toBe(403)
+    expect(await read.text()).toContain('insufficient_scope')
+    const invalid = await call({
+      jsonrpc: MCP_JSON_RPC_VERSION,
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'render_ui',
+        arguments: { toolName: 'get_queue', arguments: { connectionId } },
+      },
+    })
+    expect(parseSseJson(await invalid.text())).toMatchObject({ result: { isError: true } })
+  })
+
   it('authorizes resources/read through the policy engine and fails closed on unknown URIs', async () => {
     const { connectionId, call } = await seedDelegatedToken('mcp:discover mcp:jobs:read')
 
@@ -1833,7 +1866,7 @@ describe('api MCP ingress', () => {
       jsonrpc: MCP_JSON_RPC_VERSION,
       id: 20,
       method: 'resources/read',
-      params: { uri: 'ui://durabull/queue-explorer-v1.html' },
+      params: { uri: 'ui://durabull/queue-explorer-v2.html' },
     })
     expect(appResponse.status).toBe(200)
     expect(await appResponse.text()).toContain('text/html;profile=mcp-app')
