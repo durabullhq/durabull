@@ -506,7 +506,11 @@ export async function getQueue(
 
     queue.on('error', (error) => {
       const message = getSafeRedisErrorMessage(error)
-      queueErrorCauses.set(queue, message)
+      // BullMQ reports "Connection is closed" after the transport error that caused it; keep the cause
+      const previous = queueErrorCauses.get(queue)
+      if (!previous || !/^connection is closed/i.test(message)) {
+        queueErrorCauses.set(queue, message)
+      }
 
       if (shouldLogRedisError(`queue:${cacheKey}`, message)) {
         console.error(`❌ Queue connection error (${name}): ${message}`)

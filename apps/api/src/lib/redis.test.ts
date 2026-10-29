@@ -374,6 +374,21 @@ describe('redis connection failure backoff', () => {
     expect(queueInstances).toHaveLength(2)
   })
 
+  it('keeps the transport error as the cause when "Connection is closed" follows it', async () => {
+    const { getQueue } = await importWithResolver()
+    const url = 'redis://refused-queue.example.com:6379'
+
+    await getQueue('conn-queue-cause', url, 'email')
+    await flushQueueClients()
+    queueInstances[0]?.emit('error', new Error('connect ECONNREFUSED 10.0.0.1:6379'))
+    queueInstances[0]?.emit('error', new Error('Connection is closed.'))
+    queueInstances[0]?.endConnection()
+
+    await expect(getQueue('conn-queue-cause', url, 'email')).rejects.toThrow(
+      'Failed to connect to Redis (conn-queue-cause): connect ECONNREFUSED 10.0.0.1:6379'
+    )
+  })
+
   it('evicts a queue that never connects', async () => {
     const { getQueue } = await importWithResolver()
     const url = 'redis://never-up.example.com:6379'
