@@ -15,6 +15,7 @@ import {
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { assertCapacity, isResourceSuspended, requireFeature } from '../billing/entitlements'
 import {
   type AlertEvaluation,
   type CursorState,
@@ -228,6 +229,7 @@ const app = new Hono()
     if (count >= 50) {
       return c.json({ error: 'Maximum of 50 alert rules per connection' }, 400)
     }
+    if (body.enabled) await assertCapacity(organizationId, 'alerts.enabled')
 
     const ruleInput =
       body.type === 'redis_health'
@@ -252,6 +254,9 @@ const app = new Hono()
     const existingRule = await alertRuleRepository.findById(ruleId, organizationId)
     if (!existingRule) {
       return c.json({ error: 'Rule not found' }, 404)
+    }
+    if (body.enabled === true && !existingRule.enabled) {
+      await assertCapacity(organizationId, 'alerts.enabled')
     }
 
     if (body.type !== undefined || body.config !== undefined) {
@@ -557,6 +562,7 @@ const app = new Hono()
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
+    await requireFeature(organizationId, 'alerts.webhook')
 
     let ruleName = 'Webhook test'
     let ruleType = 'job_failed'
@@ -827,6 +833,14 @@ async function validateNotificationChannels(
     (channel): channel is z.infer<typeof webhookNotificationChannelSchema> =>
       channel.type === 'webhook' && 'url' in channel
   )
+  // Premium delivery channels need the plan's capability. Denials propagate
+  // as the standard feature_not_entitled response.
+  if (channels.some((channel) => channel.type === 'webhook')) {
+    await requireFeature(organizationId, 'alerts.webhook')
+  }
+  if (channels.some((channel) => channel.type === 'linear')) {
+    await requireFeature(organizationId, 'alerts.linear')
+  }
   const inlineWebhookTargets = new Set<string>()
   for (const channel of inlineWebhookChannels) {
     if (inlineWebhookTargets.has(channel.url)) {
@@ -866,6 +880,11 @@ async function validateNotificationChannels(
     if (!destination.enabled) {
       return `Destination "${destination.name}" is disabled.`
     }
+    if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
+      return `Destination "${destination.name}" is paused because it is above your plan's destination limit.`
+    }
+    if (destination.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
+    if (destination.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
     if (destination.type === 'webhook' && destination.encryptedSigningSecret) {
       try {
         decryptSecret(destination.encryptedSigningSecret)

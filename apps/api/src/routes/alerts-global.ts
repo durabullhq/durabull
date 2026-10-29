@@ -10,6 +10,7 @@ import { env } from '@durabull/env'
 import { zValidator } from '@hono/zod-validator'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
+import { requireFeature } from '../billing/entitlements'
 import { sanitizeAlertDeliveryForClient } from '../lib/alert-webhook-channels'
 import {
   exchangeLinearOauthCode,
@@ -184,6 +185,7 @@ const app = new Hono()
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
+    await requireFeature(organizationId, 'alerts.linear')
     if (!user) {
       return c.json({ error: 'User is required' }, 401)
     }

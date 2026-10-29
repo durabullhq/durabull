@@ -190,6 +190,38 @@ export const redisHealthSampleRepository = {
     return deleted.length
   },
 
+  /** Bounded, indexed deletion for one organization's connections (plan retention). */
+  async deleteOlderThanForConnections(
+    connectionIds: string[],
+    cutoff: Date,
+    limit: number
+  ): Promise<number> {
+    if (connectionIds.length === 0) return 0
+    const db = await getDb()
+    const expired = await db
+      .select({ id: redisHealthSample.id })
+      .from(redisHealthSample)
+      .where(
+        and(
+          inArray(redisHealthSample.connectionId, connectionIds),
+          lt(redisHealthSample.capturedAt, cutoff)
+        )
+      )
+      .orderBy(asc(redisHealthSample.capturedAt))
+      .limit(limit)
+    if (expired.length === 0) return 0
+    const deleted = await db
+      .delete(redisHealthSample)
+      .where(
+        inArray(
+          redisHealthSample.id,
+          expired.map((row) => row.id)
+        )
+      )
+      .returning({ id: redisHealthSample.id })
+    return deleted.length
+  },
+
   async hasOlderThan(cutoff: Date): Promise<boolean> {
     const db = await getDb()
     const rows = await db

@@ -48,10 +48,10 @@ Optional MCP-related toggles:
 
 ## Tenancy and policy bindings
 
-Service accounts are **org-scoped**. Tool calls still pass `connectionId` in arguments; policy enforces that the connection belongs to the principal's org.
+Service accounts are **org-scoped**. Owners and admins create them in **Settings → Service accounts** (`/api/service-accounts`): each gets a confidential OAuth client, per-scope bindings and a `dbsa_…` bearer token shown once (rotate or delete from the same page; revocation is effective within the 60-second token cache). On Durabull Cloud the plan limits enabled service accounts (Free 0, Team 1, Business 5) and MCP write tools require Team or higher; see [billing-operations-runbook.md](./billing-operations-runbook.md). Tool calls still pass `connectionId` in arguments; policy enforces that the connection belongs to the principal's org.
 
 - Grant **least-privilege** `mcp_policy_binding` rows per **`toolName` + `scope`** (service accounts are always org-scoped).
-- Avoid `toolName: null` bindings — they grant the scope for **all** tools.
+- Avoid hand-written `toolName: null` bindings — they grant the scope for **all** tools. Self-service service accounts (Settings → Service accounts) deliberately bind each scope the owner selected with `toolName: null`, because the owner chose those scopes for that account; narrow them with per-tool bindings if needed.
 - OAuth scopes alone do not replace bindings for service accounts — both are required.
 - Resource reads bind under `toolName = 'resource:<name>'` (`resource:server`, `resource:connections`, `resource:connection_queues`, `resource:queue`, `resource:connection_alerts`).
 - Optional-evidence tools (`explain_job_failure`, `get_connection_overview`) include a section only when the service account holds **both** the token scope and a binding for that scope on that tool. Missing evidence is reported in the response, not as a denial.

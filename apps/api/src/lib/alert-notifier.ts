@@ -18,6 +18,7 @@ import {
 } from '@durabull/dal'
 import { isEmailConfigured } from '@durabull/email'
 import { env } from '@durabull/env'
+import { hasFeature, isResourceSuspended } from '../billing/entitlements'
 import { buildAlertAppUrls } from './alert-app-urls'
 import {
   findWebhookSecretFromChannels,
@@ -43,6 +44,23 @@ class NonRetryableDeliveryError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'NonRetryableDeliveryError'
+  }
+}
+
+/**
+ * Delivery-time entitlement check. A delivery queued while the organization
+ * was entitled must not send after the entitlement has ended.
+ */
+async function assertDeliveryEntitled(
+  organizationId: string,
+  channel: 'email' | 'webhook' | 'linear'
+): Promise<void> {
+  if (channel === 'email') return
+  const feature = channel === 'webhook' ? 'alerts.webhook' : 'alerts.linear'
+  if (!(await hasFeature(organizationId, feature))) {
+    throw new NonRetryableDeliveryError(
+      `${channel === 'webhook' ? 'Webhook' : 'Linear'} alert delivery is not included in this organization’s current plan.`
+    )
   }
 }
 
@@ -192,9 +210,11 @@ export async function processAlertDeliveries(
           await alertDeliveryRepository.markDelivered(delivery.id, {}, requireClaimedAt(delivery))
           break
         case 'linear':
+          await assertDeliveryEntitled(event.organizationId, 'linear')
           await sendLinearAlert(delivery, event, connection, ruleName, organizationSlug)
           break
         case 'webhook':
+          await assertDeliveryEntitled(event.organizationId, 'webhook')
           await sendWebhookAlert(delivery, event, connection, ruleName, organizationSlug)
           break
         case 'destination':
@@ -532,6 +552,14 @@ async function sendDestinationAlert(
     throw new WebhookDeliveryError(`Destination "${destination.name}" is disabled.`, {
       retryable: true,
     })
+  }
+  if (await isResourceSuspended(event.organizationId, 'alert_destination', destination.id)) {
+    throw new NonRetryableDeliveryError(
+      `Destination "${destination.name}" is paused because it is above the plan's destination limit.`
+    )
+  }
+  if (destination.type === 'webhook' || destination.type === 'linear') {
+    await assertDeliveryEntitled(event.organizationId, destination.type)
   }
 
   switch (destination.type) {

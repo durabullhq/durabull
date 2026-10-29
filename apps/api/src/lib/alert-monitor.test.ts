@@ -94,6 +94,7 @@ function createConnection(): RedisConnection {
     isDefault: true,
     prefix: 'bull',
     allowSelfSignedCerts: false,
+    enabled: true,
     createdAt: now,
     updatedAt: now,
   }

@@ -1,6 +1,7 @@
 import { delay, HttpResponse, http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import { metrics, redisHealth } from './analytics'
+import { billingOverview, serviceAccounts } from './billing'
 import {
   connections,
   counts,
@@ -41,6 +42,7 @@ export const appConfig = {
     dedupeIdentifiedPosthogEvents: false,
     disclosureUrl: 'https://durabull.io/privacy',
   },
+  billing: { enabled: true, enforcement: 'on' },
   version: {
     version: 'storybook',
     buildId: 'public-preview',
@@ -79,6 +81,9 @@ function readFixture(path: string, url: URL): unknown {
     return { connections: state === 'empty-connections' ? [] : connections }
   if (path.startsWith('/connections/')) return { connection: connections[0], ...connections[0] }
   if (path === '/team/members') return { members: list(members) }
+  if (path === '/billing') return billingOverview
+  if (path === '/service-accounts')
+    return state === 'empty' ? { ...serviceAccounts, serviceAccounts: [] } : serviceAccounts
   if (path.startsWith('/invitations/'))
     return {
       invitation: {

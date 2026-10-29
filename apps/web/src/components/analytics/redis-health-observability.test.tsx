@@ -97,6 +97,8 @@ function createResponse(): RedisHealthHistoryResponse {
     collectionEnabled: true,
     retentionDays: 30,
     staleAfterMs: 180_000,
+    planHistoryDays: null,
+    rangeClamped: false,
   }
 }
 

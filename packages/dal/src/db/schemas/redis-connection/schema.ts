@@ -21,6 +21,9 @@ export const redisConnection = pgTable('redis_connection', {
   environment: text('environment').$type<ConnectionEnvironment>().default('development'),
   prefix: text('prefix').notNull().default('bull'),
   allowSelfSignedCerts: boolean('allow_self_signed_certs').notNull().default(false),
+  // Disabled connections stop background polling, alert evaluation and
+  // operational access, and do not count toward the plan's connection limit.
+  enabled: boolean('enabled').notNull().default(true),
   // Organization that owns this connection
   organizationId: text('organization_id')
     .notNull()

@@ -10,6 +10,8 @@ export function useAppMode() {
     stateless: config.stateless,
     environment: config.environment,
     hasDurablePersistence: config.persistence === 'postgres',
+    /** Durabull Cloud subscriptions are active on this deployment. */
+    billingEnabled: config.billing?.enabled === true,
     isLoading,
   }
 }

@@ -7,6 +7,7 @@ import {
   alertDeliveryRepository,
   alertEventRepository,
   alertRuleRepository,
+  billingRepository,
   linearIssueResolutionRepository,
   type RedisConnection,
   redisConnectionRepository,
@@ -15,6 +16,7 @@ import {
 } from '@durabull/dal'
 import { env } from '@durabull/env'
 import type { JobType } from 'bullmq'
+import { isBillingEnabled } from '../billing/config'
 import {
   type AlertEvaluation,
   type CursorState,
@@ -362,6 +364,18 @@ export function stopAlertMonitor(): void {
   console.log('[alert-monitor] Stopped.')
 }
 
+async function loadBillingSuspensions(): Promise<{
+  connections: Set<string>
+  rules: Set<string>
+}> {
+  if (!isBillingEnabled()) return { connections: new Set(), rules: new Set() }
+  const [connections, rules] = await Promise.all([
+    billingRepository.allSuspendedIds('connection'),
+    billingRepository.allSuspendedIds('alert_rule'),
+  ])
+  return { connections, rules }
+}
+
 async function runPollCycle(): Promise<void> {
   if (pollInProgress) return
   pollInProgress = true
@@ -372,15 +386,20 @@ async function runPollCycle(): Promise<void> {
     const evaluateAlerts = isAlertMonitorEnabled()
     const collectRedisHealth = isRedisHealthHistoryEnabled()
     const filterEnvConnections = evaluateAlerts && shouldUseEnvConnections()
-    const [rules, connections] = await Promise.all([
+    const [rules, allConnections, suspended] = await Promise.all([
       evaluateAlerts ? alertRuleRepository.findAllActive() : Promise.resolve([]),
       collectRedisHealth || filterEnvConnections
         ? redisConnectionRepository.findAllIdsUnsafe()
         : Promise.resolve([]),
+      loadBillingSuspensions(),
     ])
+    // Plan-suspended connections and rules stop polling and evaluation; their
+    // configuration is preserved and nothing in the customer's Redis changes.
+    const connections = allConnections.filter((id) => !suspended.connections.has(id))
     const activeConnectionIds = new Set(connections)
     const rulesByConnection = new Map<string, AlertRule[]>()
     for (const rule of rules) {
+      if (suspended.rules.has(rule.id) || suspended.connections.has(rule.connectionId)) continue
       // Env-managed connections can leave historical rows and rules behind
       // when configuration changes. Never dial a connection that is no longer
       // part of the active configuration.
@@ -545,7 +564,8 @@ async function processConnection(
     // connections across organizations. IDs originate only from persisted rules
     // or the repository's internal active-connection enumeration, never user input.
     const connection = await redisConnectionRepository.findByIdUnsafe(connectionId)
-    if (!connection) return
+    // Disabled connections get no background polling or alert evaluation.
+    if (!connection || !connection.enabled) return
 
     const cursors = await alertCheckCursorRepository.findByConnection(connectionId)
     const cursorMap = new Map(cursors.map((cursor) => [cursor.queueName, cursor]))

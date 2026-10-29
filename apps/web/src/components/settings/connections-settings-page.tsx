@@ -1,6 +1,6 @@
-import { useNavigate, useParams } from '@tanstack/react-router'
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import {
   AlertCircle,
   Check,
@@ -67,6 +67,9 @@ interface RedisConnection {
   isDefault: boolean
   environment: ConnectionEnvironment | null
   prefix: string
+  enabled?: boolean
+  /** Paused by the organization's plan connection limit. */
+  suspended?: boolean
 }
 
 const CONNECTION_TROUBLESHOOTING_DOCS_URL =
@@ -409,7 +412,10 @@ function ConnectionCard({
     showUrl && canViewSecrets ? connection.id : null
   )
   const setDefaultMutation = useSetDefaultConnection()
+  const updateMutation = useUpdateConnection()
   const envConfig = getEnvironmentConfig(connection.environment)
+  const enabled = connection.enabled !== false
+  const suspended = connection.suspended === true
   const EnvIcon = envConfig.icon
 
   const handleSetDefault = () => {
@@ -443,16 +449,24 @@ function ConnectionCard({
             </div>
             <div className="min-w-0">
               <CardTitle className="text-base truncate">{connection.name}</CardTitle>
-              <Badge
-                variant="outline"
-                className={cn(
-                  'mt-1 text-[10px] font-medium',
-                  envConfig.borderColor,
-                  envConfig.color
-                )}
-              >
-                {envConfig.label}
-              </Badge>
+              <div className="mt-1 flex flex-wrap gap-1">
+                <Badge
+                  variant="outline"
+                  className={cn('text-[10px] font-medium', envConfig.borderColor, envConfig.color)}
+                >
+                  {envConfig.label}
+                </Badge>
+                {!enabled ? (
+                  <Badge variant="secondary" className="text-[10px]">
+                    Disabled
+                  </Badge>
+                ) : null}
+                {suspended ? (
+                  <Badge variant="warning" className="text-[10px]">
+                    Paused by plan limit
+                  </Badge>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
@@ -534,6 +548,19 @@ function ConnectionCard({
           <div className="flex items-center gap-1">
             {!readOnly && (
               <>
+                {/* Disabled connections stop polling and alert evaluation and
+                    do not count toward the plan's connection limit. */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  disabled={updateMutation.isPending}
+                  onClick={() =>
+                    updateMutation.mutate({ id: connection.id, data: { enabled: !enabled } })
+                  }
+                >
+                  {enabled ? 'Disable' : 'Enable'}
+                </Button>
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit}>
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>

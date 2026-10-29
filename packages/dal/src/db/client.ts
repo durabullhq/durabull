@@ -24,6 +24,7 @@ export type DatabaseMode = 'postgres' | 'pglite'
 // Internal state
 let db: Database | null = null
 let pgPool: pg.Pool | null = null
+let pgLockPool: pg.Pool | null = null
 let pgliteClient: PGlite | null = null
 let initialized = false
 let initializationPromise: Promise<Database> | null = null
@@ -150,12 +151,38 @@ export async function getPgPool(): Promise<pg.Pool> {
   return pgPool
 }
 
+/** Upper bound on connections held for session-level advisory locks. */
+const LOCK_POOL_MAX = 4
+
+/**
+ * A separate small pool for clients that only hold session-level advisory
+ * locks. Work done while a lock is held uses the main pool, so lock holders can
+ * never exhaust the connections that work needs (which would deadlock).
+ */
+export async function getPgLockPool(): Promise<pg.Pool> {
+  await getPgPool()
+  if (!pgLockPool) {
+    const connectionString = env.DATABASE_URL as string
+    pgLockPool = new pg.Pool({
+      connectionString,
+      ...(shouldDisableSslForPostgresUrl(connectionString) ? { ssl: false } : {}),
+      max: LOCK_POOL_MAX,
+      idleTimeoutMillis: 30_000,
+    })
+  }
+  return pgLockPool
+}
+
 /**
  * Close the database connection.
  */
 export async function closeDb(): Promise<void> {
   if (initializationPromise) {
     await initializationPromise.catch(() => {})
+  }
+  if (pgLockPool) {
+    await pgLockPool.end()
+    pgLockPool = null
   }
   if (pgPool) {
     await pgPool.end()

@@ -27,6 +27,7 @@ describe('resolveConnectionForPrincipal', () => {
       url: 'https://redis.example.com',
       prefix: 'queues',
       allowSelfSignedCerts: false,
+      enabled: true,
       isDefault: false,
       createdAt: new Date(0),
       updatedAt: new Date(0),

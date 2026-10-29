@@ -1,6 +1,7 @@
 import { createAuth } from '@durabull/auth'
 import { createInvitationEmailSender, isEmailConfigured } from '@durabull/email'
 import { env } from '@durabull/env'
+import { createBillingOrganizationPolicy } from '../billing/auth-policy'
 
 let authInstance: Awaited<ReturnType<typeof createAuth>> | null = null
 
@@ -19,6 +20,7 @@ export async function getAuth() {
       baseURL: env.APP_BASE_URL,
       trustedOrigins: ['http://localhost:3000', 'http://localhost:3001', env.APP_BASE_URL],
       sendInvitationEmail,
+      organizationPolicy: createBillingOrganizationPolicy(),
     })
   }
   return authInstance
