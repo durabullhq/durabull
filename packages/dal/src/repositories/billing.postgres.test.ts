@@ -148,6 +148,22 @@ describePostgres('billing on PostgreSQL', () => {
     expect(results).toEqual(Array.from({ length: 16 }, () => 1))
   }, 20_000)
 
+  it('leaves no organization lock behind, even behind a transaction pooler', async () => {
+    // Behind PgBouncer in transaction mode, a session lock and its unlock can
+    // run on different server backends; this must never leave a lock held.
+    for (let i = 0; i < 20; i += 1) {
+      await billingRepository.withOrganizationLock(`${ORG}-leak-${i % 3}`, async () => {
+        const db = await getDb()
+        await db.execute(sql`SELECT 1`)
+      })
+    }
+    const pool = await getPgPool()
+    const held = await pool.query(
+      `SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory' AND granted`
+    )
+    expect(held.rows[0].held).toBe(0)
+  })
+
   it('never hands one webhook event to two concurrent workers', async () => {
     for (let i = 0; i < 30; i += 1) {
       await billingRepository.recordWebhookEvent({
