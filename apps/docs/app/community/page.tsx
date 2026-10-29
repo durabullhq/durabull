@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { ContentPage } from '@/components/v2/content-page'
 import { SiteLayout } from '@/components/v2/site-layout'
+import { CONTACT_EMAIL } from '@/lib/config'
 import { createAbsoluteMetadata } from '@/lib/seo'
 
 export const metadata: Metadata = createAbsoluteMetadata(
@@ -36,7 +37,7 @@ export default function CommunityPage() {
             description: 'Share how you run BullMQ — we love spotlighting the community.',
           },
         ]}
-        note="Want to host a community session? Reach out at hello@durabull.io."
+        note={`Want to host a community session? Reach out at ${CONTACT_EMAIL}.`}
       />
     </SiteLayout>
   )

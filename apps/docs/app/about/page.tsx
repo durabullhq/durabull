@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { ContentPage } from '@/components/v2/content-page'
 import { SiteLayout } from '@/components/v2/site-layout'
+import { CONTACT_EMAIL } from '@/lib/config'
 import { createAbsoluteMetadata, createBreadcrumbSchema, createOrganizationSchema } from '@/lib/seo'
 
 export const metadata: Metadata = createAbsoluteMetadata(
@@ -51,7 +52,7 @@ export default function AboutPage() {
               'Durabull is open source under Apache-2.0. Self-host with PostgreSQL or persistent PGlite storage, or use the desktop app.',
           },
         ]}
-        note="Questions about Durabull? Email us at hello@durabull.io."
+        note={`Questions about Durabull? Email us at ${CONTACT_EMAIL}.`}
       />
     </SiteLayout>
   )

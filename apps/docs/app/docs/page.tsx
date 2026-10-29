@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { ContentPage } from '@/components/v2/content-page'
 import { SiteLayout } from '@/components/v2/site-layout'
+import { CONTACT_EMAIL } from '@/lib/config'
 import { createAbsoluteMetadata, createBreadcrumbSchema } from '@/lib/seo'
 
 export const metadata: Metadata = createAbsoluteMetadata(
@@ -78,7 +79,7 @@ export default function DocsPage() {
             ],
           },
         ]}
-        note="Need a specific guide added? Open an issue or contact hello@durabull.io."
+        note={`Need a specific guide added? Open an issue or contact ${CONTACT_EMAIL}.`}
       />
     </SiteLayout>
   )

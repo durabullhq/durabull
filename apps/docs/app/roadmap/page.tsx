@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { ContentPage } from '@/components/v2/content-page'
 import { SiteLayout } from '@/components/v2/site-layout'
-import { WEB_APP_URL } from '@/lib/config'
+import { CONTACT_EMAIL, WEB_APP_URL } from '@/lib/config'
 import { createAbsoluteMetadata } from '@/lib/seo'
 
 export const metadata: Metadata = createAbsoluteMetadata(
@@ -45,7 +45,7 @@ export default function RoadmapPage() {
             items: ['Authless deployment guide', 'Plugin marketplace', 'Advanced audit logging'],
           },
         ]}
-        note="Have a roadmap request? Reach out at hello@durabull.io."
+        note={`Have a roadmap request? Reach out at ${CONTACT_EMAIL}.`}
       />
     </SiteLayout>
   )

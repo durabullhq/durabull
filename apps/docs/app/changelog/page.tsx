@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { ContentPage } from '@/components/v2/content-page'
 import { SiteLayout } from '@/components/v2/site-layout'
+import { CONTACT_EMAIL } from '@/lib/config'
 import { createAbsoluteMetadata } from '@/lib/seo'
 
 export const metadata: Metadata = createAbsoluteMetadata(
@@ -30,7 +31,7 @@ export default function ChangelogPage() {
             description: 'See published versions, release notes, and desktop assets on GitHub.',
           },
         ]}
-        note="Looking for a specific update? Email us at hello@durabull.io."
+        note={`Looking for a specific update? Email us at ${CONTACT_EMAIL}.`}
       />
     </SiteLayout>
   )
