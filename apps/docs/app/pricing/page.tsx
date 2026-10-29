@@ -55,7 +55,7 @@ export default function PricingPage() {
       </PageHeading>
       <V2PricingPlans />
       <V2PlanComparison />
-      <V2Deploy />
+      <V2Deploy intro="Cloud plans cover the hosted service. The desktop app and self-hosting stay free, with no subscription, under the Apache License 2.0." />
       <V2BillingFaq />
       <V2FinalCta />
     </SiteLayout>

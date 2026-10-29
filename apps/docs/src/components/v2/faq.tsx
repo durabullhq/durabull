@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
+import { CONTACT_EMAIL } from '@/lib/config'
 import { faqs } from '@/lib/faqs'
 import { Eyebrow, Reveal } from './reveal'
 
@@ -78,10 +79,10 @@ export function FaqContact({ lead = 'Something else?' }: { lead?: string }) {
     <p className="mt-7 text-sm text-[var(--v2-faint)]">
       {lead}{' '}
       <a
-        href="mailto:hello@durabull.io"
+        href={`mailto:${CONTACT_EMAIL}`}
         className="font-medium text-[var(--v2-accent)] underline-offset-4 hover:underline"
       >
-        hello@durabull.io
+        {CONTACT_EMAIL}
       </a>{' '}
       — a human engineer replies within a business day.
     </p>

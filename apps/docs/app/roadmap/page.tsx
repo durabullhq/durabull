@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { ContentPage } from '@/components/v2/content-page'
 import { SiteLayout } from '@/components/v2/site-layout'
+import { WEB_APP_URL } from '@/lib/config'
 import { createAbsoluteMetadata } from '@/lib/seo'
 
 export const metadata: Metadata = createAbsoluteMetadata(
@@ -20,7 +21,7 @@ export default function RoadmapPage() {
         label="What's Next"
         title="Roadmap"
         intro="Our near-term focus is reliability, collaboration, and authless + persistence flexibility."
-        primaryCta={{ label: 'Start Free', to: '/signup' }}
+        primaryCta={{ label: 'Start Free', to: `${WEB_APP_URL}/signup` }}
         secondaryCta={{ label: 'Read Changelog', to: '/changelog' }}
         sections={[
           {

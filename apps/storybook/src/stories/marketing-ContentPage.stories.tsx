@@ -1,6 +1,7 @@
-import { ContentPage } from '@docs/components/v2/content-page'
+import { ContentGrid, ContentPage } from '@docs/components/v2/content-page'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import '@docs/styles/v2.css'
+
 const meta = {
   title: 'Marketing/V2 / Content Page/ContentPage',
   component: ContentPage,
@@ -31,9 +32,12 @@ const meta = {
   },
   parameters: { layout: 'fullscreen' },
 } satisfies Meta<typeof ContentPage>
+
 export default meta
-export const Default: StoryObj<typeof meta> = {}
-export const SingleSection: StoryObj<typeof meta> = {
+type Story = StoryObj<typeof meta>
+
+export const Default: Story = {}
+export const SingleSection: Story = {
   args: {
     label: 'Product Updates',
     title: 'Changelog',
@@ -46,4 +50,7 @@ export const SingleSection: StoryObj<typeof meta> = {
       },
     ],
   },
+}
+export const GridOnly: Story = {
+  render: (args) => <ContentGrid label="Capabilities" sections={args.sections} />,
 }

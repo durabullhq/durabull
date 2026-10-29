@@ -1,63 +1,11 @@
 'use client'
 
-import { motion, useReducedMotion } from 'framer-motion'
-import { Check, Cloud, Laptop, Lock, type LucideIcon, Server } from 'lucide-react'
+import { Cloud, Laptop, Lock, type LucideIcon, Server } from 'lucide-react'
 import Link from 'next/link'
-import { useRef } from 'react'
+import type { ReactNode } from 'react'
 import { GITHUB_RELEASE_URL, MAC_CHECKSUM_URL, WEB_APP_URL } from '@/lib/config'
-import { EmberField } from './ember-field'
 import { Eyebrow, Reveal } from './reveal'
-
-/** Card with cursor-tracked 3D tilt, shimmer, and a sweeping border ring. */
-export function TiltCard({
-  featured,
-  children,
-}: {
-  featured?: boolean
-  children: React.ReactNode
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const reduceMotion = useReducedMotion()
-
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (reduceMotion) return
-    const el = ref.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const px = (e.clientX - rect.left) / rect.width
-    const py = (e.clientY - rect.top) / rect.height
-    el.style.setProperty('--mx', `${(px * 100).toFixed(1)}%`)
-    el.style.setProperty('--my', `${(py * 100).toFixed(1)}%`)
-    el.style.transform = `perspective(700px) rotateY(${((px - 0.5) * 7).toFixed(2)}deg) rotateX(${((0.5 - py) * 7).toFixed(2)}deg) translateY(-2px)`
-  }
-
-  const onMouseLeave = () => {
-    const el = ref.current
-    if (el) el.style.transform = ''
-  }
-
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: mouse tracking is purely decorative (tilt/sheen); the card's link remains the interactive element
-    <div
-      ref={ref}
-      onMouseMove={onMouseMove}
-      onMouseLeave={onMouseLeave}
-      className={`v2-card v2-tilt relative h-full overflow-hidden rounded-xl p-6 ${
-        featured ? 'v2-dark v2-card-premium' : ''
-      }`}
-    >
-      {featured ? (
-        <>
-          <span aria-hidden className="v2-premium-glow" />
-          <span aria-hidden className="v2-premium-sheen" />
-          <EmberField count={9} intensity={0.7} spread={1} />
-          <span aria-hidden className="v2-premium-ring" />
-        </>
-      ) : null}
-      <div className="relative flex h-full flex-col">{children}</div>
-    </div>
-  )
-}
+import { DrawnCheck, TiltCard } from './tilt-card'
 
 /* ---------------- deploy your way ---------------- */
 
@@ -99,7 +47,11 @@ const modes: DeployMode[] = [
   },
 ]
 
-export function V2Deploy() {
+export function V2Deploy({
+  intro = 'Durabull is open source under the Apache License 2.0. Run it where your security model says it should run.',
+}: {
+  intro?: ReactNode
+}) {
   return (
     <section id="deploy" className="relative scroll-mt-20 bg-[var(--v2-bg)] py-24">
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
@@ -109,8 +61,7 @@ export function V2Deploy() {
             Cloud, desktop, or self-hosted.
           </h2>
           <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-[var(--v2-muted)]">
-            Durabull is open source under the Apache License 2.0. Run it where your security model
-            says it should run.
+            {intro}
           </p>
         </Reveal>
 
@@ -125,14 +76,12 @@ export function V2Deploy() {
                     }`}
                   />
                   {mode.featured ? (
-                    <span className="v2-mono text-[10px] text-[#fdba74]">recommended</span>
+                    <span className="v2-premium-badge v2-mono text-[10px]">recommended</span>
                   ) : null}
                 </div>
                 <h3
                   className={`v2-h mt-4 text-lg ${
-                    mode.featured
-                      ? 'bg-linear-to-br from-[#fff7ed] to-[#d8d2cb] bg-clip-text text-transparent'
-                      : 'text-[var(--v2-fg)]'
+                    mode.featured ? 'v2-premium-title' : 'text-[var(--v2-fg)]'
                   }`}
                 >
                   {mode.title}
@@ -166,36 +115,6 @@ export function V2Deploy() {
 }
 
 /* ---------------- pricing ---------------- */
-
-/** Checkmark that draws its stroke in when scrolled into view. */
-export function DrawnCheck({ delay }: { delay: number }) {
-  const reduceMotion = useReducedMotion()
-
-  if (reduceMotion) {
-    return <Check className="size-4 shrink-0 text-[var(--v2-accent)]" />
-  }
-
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="size-4 shrink-0 text-[var(--v2-accent)]"
-    >
-      <motion.path
-        d="M4 12.5 9.5 18 20 6.5"
-        initial={{ pathLength: 0, opacity: 0 }}
-        whileInView={{ pathLength: 1, opacity: 1 }}
-        viewport={{ once: true, margin: '-80px' }}
-        transition={{ duration: 0.4, delay, ease: 'easeOut' }}
-      />
-    </svg>
-  )
-}
 
 const tiers = [
   { name: 'Free', price: '$0', detail: '1 connection · 1 person · email alerts' },

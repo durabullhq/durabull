@@ -3,32 +3,41 @@
 import { ArrowRight, Check, Minus } from 'lucide-react'
 import { usePostHog } from 'posthog-js/react'
 import { useEffect, useState } from 'react'
-import { WEB_APP_URL } from '@/lib/config'
+import { CONTACT_EMAIL, WEB_APP_URL } from '@/lib/config'
 import { CLOUD_PLANS, type CloudPlan, effectiveMonthly, PRICING_FAQS } from '@/lib/pricing'
-import { DrawnCheck, TiltCard } from './deploy'
 import { FaqContact, FaqList } from './faq'
 import { Eyebrow, Reveal } from './reveal'
+import { DrawnCheck, TiltCard } from './tilt-card'
 
 type Interval = 'month' | 'year'
-
-const SALES_EMAIL = 'hello@durabull.io'
 
 function historyLabel(days: number): string {
   return days === 1 ? '24 hours' : `${days} days`
 }
 
+/** Enterprise limits are contractual floors, so they read "From N". */
+function planLimit(plan: CloudPlan, limit: number): string {
+  return plan.code === 'enterprise' ? `From ${limit}` : String(limit)
+}
+
+function countOf(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
 function PlanPrice({ plan, interval }: { plan: CloudPlan; interval: Interval }) {
   let amount: string
   let note: string
+  let perMonth = true
   if (plan.monthlyPriceUsd === null || plan.annualPriceUsd === null) {
     amount = 'Custom'
     note = 'Annual agreement'
+    perMonth = false
   } else if (plan.monthlyPriceUsd === 0) {
     amount = '$0'
     note = 'Free forever'
   } else if (interval === 'year') {
     amount = `$${effectiveMonthly(plan.annualPriceUsd)}`
-    note = `Billed $${plan.annualPriceUsd} yearly per org`
+    note = `Billed $${plan.annualPriceUsd} annually per organization`
   } else {
     amount = `$${plan.monthlyPriceUsd}`
     note = 'Per organization, billed monthly'
@@ -38,7 +47,7 @@ function PlanPrice({ plan, interval }: { plan: CloudPlan; interval: Interval }) 
     <div>
       <p className="v2-h text-4xl text-[var(--v2-fg)]">
         {amount}
-        {amount !== 'Custom' ? (
+        {perMonth ? (
           <span className="ml-0.5 text-sm font-medium tracking-normal text-[var(--v2-muted)]">
             /month
           </span>
@@ -52,15 +61,15 @@ function PlanPrice({ plan, interval }: { plan: CloudPlan; interval: Interval }) 
 function planHighlights(plan: CloudPlan): string[] {
   const prefix = plan.code === 'enterprise' ? 'From ' : ''
   return [
-    `${prefix}${plan.limits.connections} Redis connection${plan.limits.connections === 1 ? '' : 's'}`,
-    `${prefix}${plan.limits.members} member${plan.limits.members === 1 ? '' : 's'}`,
+    `${prefix}${countOf(plan.limits.connections, 'Redis connection')}`,
+    `${prefix}${countOf(plan.limits.members, 'member')}`,
     'All queues on included connections',
     `${prefix}${plan.limits.alertRules} enabled alert rules`,
     `${historyLabel(plan.limits.historyDays)} of Redis health history`,
     plan.features.webhookAlerts ? 'Email, webhook and Linear alerts' : 'Email alerts',
     plan.features.mcpWrites ? 'MCP reads and opt-in writes' : 'Read-only MCP',
     plan.limits.serviceAccounts > 0
-      ? `${prefix}${plan.limits.serviceAccounts} service account${plan.limits.serviceAccounts === 1 ? '' : 's'}`
+      ? `${prefix}${countOf(plan.limits.serviceAccounts, 'service account')}`
       : 'No service accounts',
     plan.support,
   ]
@@ -126,15 +135,13 @@ export function V2PricingPlans() {
                 <div className="flex items-center justify-between">
                   <h3
                     className={`v2-h text-lg ${
-                      plan.highlighted
-                        ? 'bg-linear-to-br from-[#fff7ed] to-[#d8d2cb] bg-clip-text text-transparent'
-                        : 'text-[var(--v2-fg)]'
+                      plan.highlighted ? 'v2-premium-title' : 'text-[var(--v2-fg)]'
                     }`}
                   >
                     {plan.name}
                   </h3>
                   {plan.highlighted ? (
-                    <span className="v2-mono text-[10px] text-[#fdba74]">
+                    <span className="v2-premium-badge v2-mono text-[10px]">
                       most teams start here
                     </span>
                   ) : null}
@@ -164,7 +171,7 @@ export function V2PricingPlans() {
                 <a
                   href={
                     plan.cta.href === 'contact'
-                      ? `mailto:${SALES_EMAIL}?subject=Durabull%20Enterprise`
+                      ? `mailto:${CONTACT_EMAIL}?subject=Durabull%20Enterprise`
                       : `${WEB_APP_URL}/signup`
                   }
                   className={`group mt-7 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-[13.5px] font-semibold ${
@@ -189,15 +196,8 @@ export function V2PricingPlans() {
 }
 
 const MATRIX: Array<{ label: string; value: (plan: CloudPlan) => string | boolean }> = [
-  {
-    label: 'Enabled Redis connections',
-    value: (p) =>
-      p.code === 'enterprise' ? `From ${p.limits.connections}` : String(p.limits.connections),
-  },
-  {
-    label: 'Members (incl. pending invitations)',
-    value: (p) => (p.code === 'enterprise' ? `From ${p.limits.members}` : String(p.limits.members)),
-  },
+  { label: 'Enabled Redis connections', value: (p) => planLimit(p, p.limits.connections) },
+  { label: 'Members (incl. pending invitations)', value: (p) => planLimit(p, p.limits.members) },
   { label: 'Queues on included connections', value: () => 'All' },
   { label: 'Fees per job, retry or MCP call', value: () => 'None' },
   { label: 'Inspect jobs, logs, queues and workers', value: () => true },
@@ -207,23 +207,10 @@ const MATRIX: Array<{ label: string; value: (plan: CloudPlan) => string | boolea
   { label: 'Opt-in MCP write operations', value: (p) => p.features.mcpWrites },
   {
     label: 'Service accounts',
-    value: (p) =>
-      p.limits.serviceAccounts === 0
-        ? false
-        : p.code === 'enterprise'
-          ? `From ${p.limits.serviceAccounts}`
-          : String(p.limits.serviceAccounts),
+    value: (p) => p.limits.serviceAccounts > 0 && planLimit(p, p.limits.serviceAccounts),
   },
-  {
-    label: 'Enabled alert rules',
-    value: (p) =>
-      p.code === 'enterprise' ? `From ${p.limits.alertRules}` : String(p.limits.alertRules),
-  },
-  {
-    label: 'Saved alert destinations',
-    value: (p) =>
-      p.code === 'enterprise' ? `From ${p.limits.destinations}` : String(p.limits.destinations),
-  },
+  { label: 'Enabled alert rules', value: (p) => planLimit(p, p.limits.alertRules) },
+  { label: 'Saved alert destinations', value: (p) => planLimit(p, p.limits.destinations) },
   { label: 'Email alerts', value: () => true },
   { label: 'Webhook alerts', value: (p) => p.features.webhookAlerts },
   { label: 'Linear alerts', value: (p) => p.features.linearAlerts },

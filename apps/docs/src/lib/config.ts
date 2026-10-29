@@ -8,6 +8,9 @@ export const WEB_APP_URL = process.env.NEXT_PUBLIC_WEB_APP_URL || 'https://app.d
 // Site URL for this docs/marketing site
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://durabull.io'
 
+// Team inbox for support, sales and security
+export const CONTACT_EMAIL = 'hello@durabull.io'
+
 // Desktop distribution and release links
 export const GITHUB_RELEASE_URL = 'https://github.com/durabullhq/durabull/releases/latest'
 export const MAC_DOWNLOAD_URL = GITHUB_RELEASE_URL

@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { V2FinalCta } from '@/components/v2/closing'
 import { V2Deploy } from '@/components/v2/deploy'
 import { PageHeading } from '@/components/v2/page-heading'
-import { V2Showcase } from '@/components/v2/showcase'
+import { V2ProductTour } from '@/components/v2/showcase'
 import { SiteLayout } from '@/components/v2/site-layout'
 import { createAbsoluteMetadata } from '@/lib/seo'
 
@@ -25,7 +25,7 @@ export default function ProductPage() {
           operational path visible, fast, and inspectable.
         </p>
       </PageHeading>
-      <V2Showcase />
+      <V2ProductTour />
       <V2Deploy />
       <V2FinalCta />
     </SiteLayout>
