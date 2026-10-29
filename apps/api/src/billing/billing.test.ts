@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -36,6 +36,8 @@ import {
 } from './gateway'
 import { reconcileOrganization } from './reconcile'
 import {
+  listTransitionAudience,
+  refreshGrantEligibility,
   sendDueReminders,
   sendTransitionNotices,
   setTransitionEmailSenderForTests,
@@ -735,6 +737,7 @@ describe('Cloud billing', () => {
     let sentEmails: Array<{
       to: string
       kind: string
+      idempotencyKey: string
       restrictions: string[]
       featuresInUse: string[]
     }>
@@ -756,6 +759,7 @@ describe('Cloud billing', () => {
         sentEmails.push({
           to: email.to,
           kind: email.kind,
+          idempotencyKey: email.idempotencyKey,
           restrictions: email.restrictions,
           featuresInUse: email.featuresInUse,
         })
@@ -801,7 +805,13 @@ describe('Cloud billing', () => {
       expect(failed.failed).toHaveLength(1)
 
       setTransitionEmailSenderForTests(async (email) => {
-        sentEmails.push({ to: email.to, kind: email.kind, restrictions: [], featuresInUse: [] })
+        sentEmails.push({
+          to: email.to,
+          kind: email.kind,
+          idempotencyKey: email.idempotencyKey,
+          restrictions: [],
+          featuresInUse: [],
+        })
         return { id: 'msg_retry' }
       })
       const retried = await sendTransitionNotices()
@@ -856,6 +866,76 @@ describe('Cloud billing', () => {
       await subscribe(AUTHLESS_ORG_ID)
       invalidateEntitlementCache()
       expect((await json(await app.request('/api/billing'))).transition).toBeNull()
+    })
+
+    it('retries a send it could not record under the same idempotency key', async () => {
+      await startGrant(31)
+      const spy = spyOn(billingRepository, 'completeNoticeDelivery').mockImplementationOnce(
+        async () => {
+          throw new Error('database unavailable')
+        }
+      )
+      try {
+        const first = await sendTransitionNotices()
+        expect(first.sent).toBe(0)
+        expect(first.delivered.has(AUTHLESS_ORG_ID)).toBe(true)
+        expect(first.failed[0].error).toContain('Sent, but recording the delivery failed')
+
+        // Still claimed: an immediate rerun does not send again.
+        expect((await sendTransitionNotices()).sent).toBe(0)
+
+        // Once the claim is stale it is retried with the same key, which the
+        // provider deduplicates.
+        const later = await sendTransitionNotices(new Date(Date.now() + 2 * 3_600_000))
+        expect(later.sent).toBe(1)
+        expect(sentEmails).toHaveLength(2)
+        expect(sentEmails[1].idempotencyKey).toBe(sentEmails[0].idempotencyKey)
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it('hides the in-app banner while an operator override provides access', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      await billingRepository.createOverride({
+        organizationId: AUTHLESS_ORG_ID,
+        planCode: 'team',
+        limits: null,
+        reason: 'test',
+        createdBy: 'test',
+        expiresAt: new Date(Date.now() + 60 * day),
+      })
+      await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
+      invalidateEntitlementCache()
+      const app = await createApp()
+      const overview = await json(await app.request('/api/billing'))
+      expect(overview.source).toBe('override')
+      expect(overview.transition).toBeNull()
+    })
+
+    it('finds organizations whose entitlement predates the launch dates', async () => {
+      // Materialized before launch was configured: no grant recorded.
+      await getEntitlement(AUTHLESS_ORG_ID)
+      setBillingConfigForTests(
+        billingConfig({
+          launchAt: new Date(Date.now() + day),
+          migrationGrantUntil: new Date(Date.now() + 31 * day),
+        })
+      )
+      invalidateEntitlementCache()
+      expect(await listTransitionAudience()).toHaveLength(0)
+
+      const dryRun = await refreshGrantEligibility({ execute: false })
+      expect(dryRun.pending.map((org) => org.id)).toEqual([AUTHLESS_ORG_ID])
+      expect(await listTransitionAudience()).toHaveLength(0)
+
+      const executed = await refreshGrantEligibility({ execute: true })
+      expect(executed.refreshed).toBe(1)
+      expect((await listTransitionAudience()).map((entry) => entry.organizationId)).toEqual([
+        AUTHLESS_ORG_ID,
+      ])
+      expect((await refreshGrantEligibility({ execute: false })).pending).toHaveLength(0)
     })
 
     it('creates one Stripe Customer per organization, and a dry run creates none', async () => {

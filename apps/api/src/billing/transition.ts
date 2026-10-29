@@ -18,7 +18,8 @@ import {
 } from '@durabull/billing'
 import { type BillingNoticeKind, billingRepository } from '@durabull/dal'
 import { type BillingTransitionEmailProps, sendBillingTransitionEmail } from '@durabull/email'
-import { getBillingUrl } from './config'
+import { getBillingConfig, getBillingUrl } from './config'
+import { materializeEntitlement } from './entitlements'
 import { getBillingGateway } from './gateway'
 import { reconcileOrganization } from './reconcile'
 
@@ -163,6 +164,30 @@ function emailFor(
   }
 }
 
+/**
+ * Organizations created before launch whose stored entitlement never decided
+ * the beta grant, usually because it was materialized before the launch dates
+ * were configured. They are missing from the audience until recomputed. With
+ * `execute`, recompute them so eligible ones get their grant; a dry run only
+ * lists them.
+ */
+export async function refreshGrantEligibility(options: {
+  execute: boolean
+  now?: Date
+}): Promise<{ pending: Array<{ id: string; name: string }>; refreshed: number }> {
+  const { launchAt, migrationGrantUntil } = getBillingConfig()
+  const now = options.now ?? new Date()
+  if (!launchAt || !migrationGrantUntil || migrationGrantUntil.getTime() <= now.getTime()) {
+    return { pending: [], refreshed: 0 }
+  }
+  const pending = await billingRepository.listOrganizationsWithoutMigrationGrant(launchAt)
+  if (!options.execute) return { pending, refreshed: 0 }
+  for (const { id } of pending) {
+    await materializeEntitlement(id, { reason: 'transition_launch', now })
+  }
+  return { pending, refreshed: pending.length }
+}
+
 export interface StripeCustomerSyncResult {
   created: number
   reconciled: number
@@ -257,18 +282,14 @@ async function sendNotice(
       result.alreadySent += 1
       continue
     }
+    let providerMessageId: string | null
     try {
-      const { id } = await sender({
+      const sent = await sender({
         ...email,
         to: owner.email,
         idempotencyKey: `durabull-billing-notice-${claim.idempotencyKey}`,
       })
-      await billingRepository.completeNoticeDelivery(claim.id, {
-        sent: true,
-        providerMessageId: id,
-      })
-      result.sent += 1
-      result.delivered.add(entry.organizationId)
+      providerMessageId = sent.id
     } catch (error) {
       const message = (error as Error).message
       await billingRepository.completeNoticeDelivery(claim.id, { sent: false, error: message })
@@ -276,6 +297,20 @@ async function sendNotice(
         organizationId: entry.organizationId,
         email: owner.email,
         error: message,
+      })
+      continue
+    }
+    // The email went out. If recording that fails, the claim stays `sending`
+    // and a retry after STALE_SEND_MS reuses the key, so it is not delivered twice.
+    result.delivered.add(entry.organizationId)
+    try {
+      await billingRepository.completeNoticeDelivery(claim.id, { sent: true, providerMessageId })
+      result.sent += 1
+    } catch (error) {
+      result.failed.push({
+        organizationId: entry.organizationId,
+        email: owner.email,
+        error: `Sent, but recording the delivery failed: ${(error as Error).message}`,
       })
     }
   }
@@ -318,14 +353,17 @@ export async function sendDueReminders(now = new Date()): Promise<NoticeSendResu
 
 /**
  * Beta transition state for the in-app banner: shown only once the notice has
- * gone out, and only while the organization has not chosen a plan.
+ * gone out, and only while access comes from the grant (an operator override
+ * can outlast it) and the organization has not chosen a plan.
  */
 export async function getTransitionStatus(
   organizationId: string,
-  migrationGrantExpiresAt: Date | null,
+  entitlement: { source: string; migrationGrantExpiresAt: Date | null },
   subscriptionStatus: string | undefined,
   now = new Date()
 ): Promise<{ deadline: string; noticeSentAt: string } | null> {
+  const { migrationGrantExpiresAt } = entitlement
+  if (entitlement.source !== 'migration_grant') return null
   if (!migrationGrantExpiresAt || migrationGrantExpiresAt.getTime() <= now.getTime()) return null
   if (hasChosenPlan(subscriptionStatus)) return null
   const { firstSentAt } = await billingRepository.findNoticeProgress(

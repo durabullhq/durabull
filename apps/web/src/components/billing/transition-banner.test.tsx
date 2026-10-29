@@ -35,6 +35,28 @@ describe('TransitionBanner', () => {
     window.localStorage.clear()
   })
 
+  it('does not carry a dismissal to another organization', async () => {
+    billingState.data = overview()
+    const { rerender } = render(<TransitionBanner orgSlug="acme" />)
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss until the final week' }))
+    expect(screen.queryByTestId('transition-banner')).not.toBeInTheDocument()
+    rerender(<TransitionBanner orgSlug="globex" />)
+    expect(screen.getByTestId('transition-banner')).toBeInTheDocument()
+  })
+
+  it('remembers a dismissal when billing loads after the first render', () => {
+    const transition = transitionIn(20)
+    window.localStorage.setItem(
+      `durabull:transition-banner-dismissed:acme:${transition.deadline}`,
+      '1'
+    )
+    billingState.data = null
+    const { rerender } = render(<TransitionBanner orgSlug="acme" />)
+    billingState.data = overview({ transition })
+    rerender(<TransitionBanner orgSlug="acme" />)
+    expect(screen.queryByTestId('transition-banner')).not.toBeInTheDocument()
+  })
+
   it('tells owners the date and links them to choose a plan', () => {
     billingState.data = overview()
     render(<TransitionBanner orgSlug="acme" />)

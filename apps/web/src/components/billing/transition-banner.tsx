@@ -30,7 +30,8 @@ function readDismissed(key: string): boolean {
  */
 export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
   const { data: billing } = useBilling()
-  const [dismissedNow, setDismissedNow] = useState(false)
+  // Scoped to the organization and deadline it was dismissed for.
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null)
 
   const transition = billing?.enabled ? billing.transition : null
   if (!billing?.enabled || !transition) return null
@@ -39,7 +40,7 @@ export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
   if (remainingMs <= 0) return null
   const finalWeek = remainingMs <= TRANSITION_FINAL_WEEK_MS
   const key = dismissalKey(orgSlug, transition.deadline)
-  if (!finalWeek && (dismissedNow || readDismissed(key))) return null
+  if (!finalWeek && (dismissedKey === key || readDismissed(key))) return null
 
   const date = formatTransitionDeadline(deadline)
   const dismiss = () => {
@@ -48,7 +49,7 @@ export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
     } catch {
       // Dismissal is a convenience; the banner simply returns next visit.
     }
-    setDismissedNow(true)
+    setDismissedKey(key)
   }
 
   return (

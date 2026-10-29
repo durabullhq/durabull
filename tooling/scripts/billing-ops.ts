@@ -31,6 +31,7 @@ import { setupStripeCatalog } from '../../apps/api/src/billing/stripe-setup'
 import { getBillingConfig, isBillingEnabled } from '../../apps/api/src/billing/config'
 import {
   listTransitionAudience,
+  refreshGrantEligibility,
   sendTransitionNotices,
   syncStripeCustomers,
 } from '../../apps/api/src/billing/transition'
@@ -282,6 +283,17 @@ async function main() {
       if (config.enforcement !== 'on') {
         console.warn(
           `⚠ Enforcement is "${config.enforcement}": nothing changes at the deadline the email announces until DURABULL_BILLING_ENFORCEMENT=on.`
+        )
+      }
+
+      // Entitlements materialized before the launch dates were set have no grant
+      // yet and would be missed; --execute recomputes them first.
+      const eligibility = await refreshGrantEligibility({ execute })
+      if (eligibility.pending.length > 0) {
+        console.log(
+          execute
+            ? `Recomputed ${eligibility.refreshed} entitlement(s) created before launch that had no grant yet.`
+            : `${eligibility.pending.length} organization(s) created before launch have no grant recorded yet: ${eligibility.pending.map((org) => org.name).join(', ')}. --execute recomputes them first, so eligible ones join the list below.`
         )
       }
 

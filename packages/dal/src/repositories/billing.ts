@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import { getDatabaseMode, getDb, getPgLockPool } from '../db/client'
 import { alertDestination } from '../db/schemas/alert-destination/schema'
 import { alertRule } from '../db/schemas/alert-rule/schema'
@@ -512,6 +512,31 @@ export const billingRepository = {
         ? [{ ...row, migrationGrantExpiresAt: row.migrationGrantExpiresAt }]
         : []
     )
+  },
+
+  /**
+   * Organizations created before `createdBefore` whose stored entitlement has
+   * never decided a beta grant (or that have no entitlement row yet), such as
+   * snapshots materialized before the launch dates were configured.
+   */
+  async listOrganizationsWithoutMigrationGrant(
+    createdBefore: Date
+  ): Promise<Array<{ id: string; name: string }>> {
+    const db = await getDb()
+    return db
+      .select({ id: organization.id, name: organization.name })
+      .from(organization)
+      .leftJoin(
+        organizationEntitlement,
+        eq(organizationEntitlement.organizationId, organization.id)
+      )
+      .where(
+        and(
+          lt(organization.createdAt, createdBefore),
+          isNull(organizationEntitlement.migrationGrantExpiresAt)
+        )
+      )
+      .orderBy(asc(organization.createdAt))
   },
 
   /**

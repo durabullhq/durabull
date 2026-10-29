@@ -234,11 +234,7 @@ const app = new Hono()
       capacityAdjustmentExpiresAt: serializeDate(entitlement.capacityAdjustmentExpiresAt),
       migrationGrantExpiresAt: serializeDate(entitlement.migrationGrantExpiresAt),
       // Beta transition banner: only after the notice was sent, until a plan is chosen.
-      transition: await getTransitionStatus(
-        organizationId,
-        entitlement.migrationGrantExpiresAt,
-        subscription?.status
-      ),
+      transition: await getTransitionStatus(organizationId, entitlement, subscription?.status),
       historyRetentionFloorExpiresAt: serializeDate(entitlement.historyRetentionFloorExpiresAt),
       // Beta transition: the smallest plan that fits current usage, and what
       // Free would restrict, so owners see the exact impact before it applies.
