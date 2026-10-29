@@ -6,7 +6,6 @@ import {
 import {
   captureMcpAnalyticsServerEvent,
   hashMcpAnalyticsSessionId,
-  resolveIdentifiedDistinctIds,
   shouldDedupeIdentifiedPosthogEvents,
   tryGetServerAnalyticsOptions,
 } from '@durabull/analytics/server'
@@ -20,6 +19,7 @@ import {
   mcpClientMetadata,
 } from './mcp-analytics-context'
 import { enqueueMcpAnalytics } from './mcp-analytics-queue'
+import { resolveMcpPosthogIdentity } from './mcp-posthog-identity'
 import type { McpTelemetrySignal } from './mcp-telemetry-signals'
 
 export interface McpAnalyticsIdentity {
@@ -63,16 +63,8 @@ async function processMcpAnalytics(input: McpAnalyticsInput): Promise<void> {
 
   const properties = buildBaseProperties(input.properties)
   const identity = input.identity ?? null
-  const identified = identity
-    ? resolveIdentifiedDistinctIds({
-        userId: identity.userId,
-        organizationId: identity.organizationId,
-      })
-    : { distinctId: null, organizationGroup: null }
-  if (identity?.principalType === 'service_account' && !identity.userId) {
-    identified.distinctId = mcpAnalyticsKey('principal', identity.principalId) ?? null
-  }
-  const hasIdentifiedIdentity = identified.distinctId != null
+  const identified = resolveMcpPosthogIdentity(identity)
+  const hasIdentifiedIdentity = identified != null
   const shouldSkipAnonymous = shouldDedupeIdentifiedPosthogEvents() && hasIdentifiedIdentity
 
   const includeAnonymous = !shouldSkipAnonymous
@@ -93,11 +85,8 @@ async function processMcpAnalytics(input: McpAnalyticsInput): Promise<void> {
     includeAnonymous,
     anonymousInstanceId,
     sessionId,
-    identifiedDistinctId: identified.distinctId,
-    // Pass the raw org id; captureMcpAnalyticsServerEvent hashes it once for
-    // the PostHog group. Passing identified.organizationGroup (already hashed)
-    // would double-hash and break org correlation.
-    organizationId: identity?.organizationId ?? null,
+    identifiedDistinctId: identified?.distinctId ?? null,
+    identifiedOrganizationGroup: identified?.groups?.organization ?? null,
     timestamp: input.timestamp,
   })
 }

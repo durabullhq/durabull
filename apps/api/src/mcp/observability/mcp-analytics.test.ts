@@ -85,7 +85,7 @@ describe('mcp analytics', () => {
     expect(captureMcpAnalyticsServerEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         event: AnalyticsEvents.MCP_TOOL_CALLED,
-        identifiedDistinctId: 'hashed-user:user-1',
+        identifiedDistinctId: 'user-1',
         includeAnonymous: true,
         properties: expect.objectContaining({
           tool_name: 'list_jobs',
@@ -129,8 +129,7 @@ describe('mcp analytics', () => {
         identifiedDistinctId: createHmac('sha256', 'test-secret')
           .update('mcp:principal:sa-1')
           .digest('hex'),
-        // Raw org id is forwarded so capture hashes it exactly once (no double-hash).
-        organizationId: 'org-1',
+        identifiedOrganizationGroup: 'org-1',
       })
     )
   })
@@ -178,7 +177,7 @@ describe('mcp analytics', () => {
       .digest('hex')
     expect(event.identifiedDistinctId).toBe(expectedPrincipal)
     expect(event.properties.mcp_principal_key).toBe(expectedPrincipal)
-    expect(event.organizationId).toBe('explicit-org')
+    expect(event.identifiedOrganizationGroup).toBe('explicit-org')
   })
 })
 
@@ -205,7 +204,7 @@ function capturedEvents() {
             event: string
             properties: Record<string, unknown>
             identifiedDistinctId?: string
-            organizationId?: string
+            identifiedOrganizationGroup?: string
           },
         ]
       )[0]
@@ -270,7 +269,7 @@ describe('MCP lifecycle analytics coverage', () => {
       ].sort()
     )
     for (const event of events) {
-      expect(event.identifiedDistinctId).toBe('hashed-user:user-123')
+      expect(event.identifiedDistinctId).toBe('user-123')
       expect(event.properties.mcp_client_family).toBe('codex')
       expect(event.properties.mcp_client_key).toMatch(/^[a-f0-9]{64}$/)
       expect(event.properties.mcp_request_key).toMatch(/^[a-f0-9]{64}$/)
@@ -693,10 +692,7 @@ describe('MCP lifecycle analytics coverage', () => {
     )
     await settleAnalytics()
     const limits = capturedEvents().filter((e) => e.event === AnalyticsEvents.MCP_RATE_LIMITED)
-    expect(limits.map((e) => e.identifiedDistinctId).sort()).toEqual([
-      'hashed-user:alice',
-      'hashed-user:bob',
-    ])
+    expect(limits.map((e) => e.identifiedDistinctId).sort()).toEqual(['alice', 'bob'])
     expect(limits[0].properties.mcp_client_key).not.toBe(limits[1].properties.mcp_client_key)
   })
 
@@ -747,7 +743,7 @@ describe('MCP lifecycle analytics coverage', () => {
       const event = capturedEvents().find(
         (event) => event.event === AnalyticsEvents.MCP_CLIENT_REGISTERED
       )!
-      expect(event.identifiedDistinctId).toBe('hashed-user:register-user')
+      expect(event.identifiedDistinctId).toBe('register-user')
       expect(event.properties).toMatchObject({
         mcp_client_family: 'codex',
         scope_count: 2,
@@ -893,7 +889,7 @@ describe('MCP lifecycle analytics coverage', () => {
       events
         .filter((e) => e.event === AnalyticsEvents.MCP_OAUTH_COMPLETED)
         .filter((e) => e.properties.success === true || e.properties.oauth_stage === 'consent')
-        .every((e) => e.identifiedDistinctId === 'hashed-user:oauth-user')
+        .every((e) => e.identifiedDistinctId === 'oauth-user')
     ).toBe(true)
     for (const event of events)
       expect(sanitizeTelemetryEvent(event.event, event.properties).droppedProperties).toEqual([])
