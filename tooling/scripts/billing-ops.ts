@@ -271,7 +271,10 @@ async function main() {
       }
       if (!isEmailConfigured()) problems.push('RESEND_API_KEY is not set, so no email can be sent.')
       if (!args.includes('--skip-pricing-check')) {
-        const response = await fetch(CLOUD_PRICING_URL, { method: 'GET' }).catch(() => null)
+        const response = await fetch(CLOUD_PRICING_URL, {
+          method: 'GET',
+          signal: AbortSignal.timeout(10_000),
+        }).catch(() => null)
         if (!response?.ok) {
           problems.push(`${CLOUD_PRICING_URL} is not live (the email links to it). Merge and deploy the pricing page first.`)
         }

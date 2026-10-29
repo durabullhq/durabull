@@ -50,12 +50,12 @@ const COPY: Record<
     heading: 'Durabull Cloud is moving to plans',
   },
   reminder_7d: {
-    subject: (org) => `One week left to choose a Durabull Cloud plan for ${org}`,
-    heading: 'One week left to choose a plan',
+    subject: (org) => `Less than a week left to choose a Durabull Cloud plan for ${org}`,
+    heading: 'Less than a week left to choose a plan',
   },
   reminder_1d: {
-    subject: (org) => `Tomorrow: ${org} moves to the Durabull Cloud Free plan`,
-    heading: 'Your beta access ends tomorrow',
+    subject: (org) => `Within 24 hours: ${org} moves to the Durabull Cloud Free plan`,
+    heading: 'Your beta access ends within 24 hours',
   },
 }
 

@@ -137,10 +137,32 @@ export function createInvitationEmailSender(options: EmailOptions) {
   }
 }
 
+/** Resend errors after which the email may still have been accepted. */
+const UNCERTAIN_RESEND_ERRORS = new Set([
+  'application_error',
+  'internal_server_error',
+  'concurrent_idempotent_requests',
+])
+
+/**
+ * A billing email that was not confirmed sent. `uncertain` means the provider
+ * may have accepted it (network failure, server error), so a retry must reuse
+ * the idempotency key; otherwise it was definitely rejected.
+ */
+export class BillingEmailError extends Error {
+  constructor(
+    message: string,
+    readonly uncertain: boolean
+  ) {
+    super(message)
+    this.name = 'BillingEmailError'
+  }
+}
+
 /**
  * Send one beta-transition notice or reminder to an organization owner.
  * Returns the provider message id. Throws when sending fails so the caller can
- * record the attempt as failed and retry it later.
+ * retry it later (see BillingEmailError for whether to keep the key).
  */
 export async function sendBillingTransitionEmail(
   data: BillingTransitionEmailProps & { to: string; idempotencyKey: string }
@@ -163,7 +185,12 @@ export async function sendBillingTransitionEmail(
     },
     { idempotencyKey }
   )
-  if (error) throw new Error(`Failed to send billing notice: ${error.message}`)
+  if (error) {
+    throw new BillingEmailError(
+      `Failed to send billing notice: ${error.message}`,
+      UNCERTAIN_RESEND_ERRORS.has(error.name)
+    )
+  }
   return { id: sent?.id ?? null }
 }
 

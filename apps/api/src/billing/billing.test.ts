@@ -12,6 +12,7 @@ import {
   organization,
   user,
 } from '@durabull/dal'
+import { BillingEmailError } from '@durabull/email'
 import { env } from '@durabull/env'
 import { createApiApp } from '../app'
 import { AUTHLESS_ORG_ID, getAuthlessContext, resetAuthlessStateForTests } from '../lib/authless'
@@ -893,6 +894,91 @@ describe('Cloud billing', () => {
       } finally {
         spy.mockRestore()
       }
+    })
+
+    it('keeps the idempotency key when the provider may have accepted the send', async () => {
+      await startGrant(31)
+      const keys: string[] = []
+      setTransitionEmailSenderForTests(async (email) => {
+        keys.push(email.idempotencyKey)
+        throw new BillingEmailError('Unable to fetch data', true)
+      })
+      const uncertain = await sendTransitionNotices()
+      expect(uncertain.failed[0].error).toContain('delivery uncertain')
+
+      setTransitionEmailSenderForTests(async (email) => {
+        keys.push(email.idempotencyKey)
+        return { id: 'msg_retry' }
+      })
+      // Left claimed, so only a stale retry sends again, under the same key.
+      expect((await sendTransitionNotices()).sent).toBe(0)
+      const later = await sendTransitionNotices(new Date(Date.now() + 2 * 3_600_000))
+      expect(later.sent).toBe(1)
+      expect(keys).toHaveLength(2)
+      expect(keys[1]).toBe(keys[0])
+    })
+
+    it('ignores a slow attempt finishing after its claim was taken over', async () => {
+      await startGrant(31)
+      const claim = async (now: Date) =>
+        billingRepository.claimNoticeDelivery({
+          organizationId: AUTHLESS_ORG_ID,
+          kind: 'transition_notice',
+          userId: 'owner-x',
+          email: 'owner-x@example.com',
+          now,
+          staleBefore: new Date(now.getTime() - 3_600_000),
+        })
+      const first = await claim(new Date())
+      const second = await claim(new Date(Date.now() + 2 * 3_600_000))
+      expect(first && second).toBeTruthy()
+      if (!first || !second) return
+      expect(
+        await billingRepository.completeNoticeDelivery(second, {
+          sent: true,
+          providerMessageId: 'msg_new',
+        })
+      ).toBe(true)
+      // The first attempt fails late; the delivered row must stay delivered.
+      expect(
+        await billingRepository.completeNoticeDelivery(first, { sent: false, error: 'timeout' })
+      ).toBe(false)
+      const [row] = await billingRepository.listNoticeDeliveries(AUTHLESS_ORG_ID)
+      expect(row.status).toBe('sent')
+    })
+
+    it('gives an owner added later their own reminder gap', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      const db = await getDb()
+      await db.insert(user).values({
+        id: 'late-owner',
+        name: 'Late owner',
+        email: 'late-owner@example.com',
+        emailVerified: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      await db.insert(member).values({
+        id: 'late-owner-member',
+        organizationId: AUTHLESS_ORG_ID,
+        userId: 'late-owner',
+        role: 'owner',
+        createdAt: new Date(),
+      })
+      const grantEnd = new Date(Date.now() + 31 * day)
+      // Six days left: the original owner is due a reminder; the new owner only
+      // gets the notice now, and no reminder in the same pass.
+      await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))
+      expect(sentEmails.map((email) => [email.to, email.kind]).slice(1)).toEqual(
+        expect.arrayContaining([
+          ['late-owner@example.com', 'transition_notice'],
+          [expect.not.stringContaining('late-owner'), 'reminder_7d'],
+        ])
+      )
+      expect(
+        sentEmails.filter((email) => email.to === 'late-owner@example.com').map((e) => e.kind)
+      ).toEqual(['transition_notice'])
     })
 
     it('hides the in-app banner while an operator override provides access', async () => {

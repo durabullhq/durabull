@@ -8,6 +8,7 @@ import { CalendarClock, X } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useBilling } from '@/hooks/use-billing'
+import { useActiveOrganization } from '@/hooks/use-organization'
 import { cn } from '@/lib/utils'
 
 function dismissalKey(orgSlug: string, deadline: string): string {
@@ -30,10 +31,14 @@ function readDismissed(key: string): boolean {
  */
 export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
   const { data: billing } = useBilling()
+  const { data: activeOrganization } = useActiveOrganization()
   // Scoped to the organization and deadline it was dismissed for.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null)
 
-  const transition = billing?.enabled ? billing.transition : null
+  // Billing follows the active organization, which switches after navigation;
+  // until it matches this route the data may belong to the previous one.
+  const transition =
+    billing?.enabled && activeOrganization?.slug === orgSlug ? billing.transition : null
   if (!billing?.enabled || !transition) return null
   const deadline = new Date(transition.deadline)
   const remainingMs = deadline.getTime() - Date.now()

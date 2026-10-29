@@ -580,13 +580,18 @@ export const billingRepository = {
     )
   },
 
+  /**
+   * Record the outcome of a claimed send. Applies only while the claim is
+   * still current (`attempts` grows on every claim), so a slow attempt cannot
+   * overwrite a newer one that reclaimed the row. Returns whether it applied.
+   */
   async completeNoticeDelivery(
-    id: string,
-    outcome: { sent: true; providerMessageId: string | null } | { sent: false; error: string }
-  ): Promise<void> {
+    claim: { id: string; attempts: number },
+    outcome: { sent: true; providerMessageId: string | null } | { sent: false; error: string },
+    now = new Date()
+  ): Promise<boolean> {
     const db = await getDb()
-    const now = new Date()
-    await db
+    const rows = await db
       .update(billingNoticeDelivery)
       .set(
         outcome.sent
@@ -598,7 +603,15 @@ export const billingRepository = {
             }
           : { status: 'failed', error: outcome.error.slice(0, 1000), updatedAt: now }
       )
-      .where(eq(billingNoticeDelivery.id, id))
+      .where(
+        and(
+          eq(billingNoticeDelivery.id, claim.id),
+          eq(billingNoticeDelivery.attempts, claim.attempts),
+          eq(billingNoticeDelivery.status, 'sending')
+        )
+      )
+      .returning({ id: billingNoticeDelivery.id })
+    return rows.length > 0
   },
 
   /**

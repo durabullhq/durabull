@@ -17,7 +17,11 @@ import {
   smallestPlanForUsage,
 } from '@durabull/billing'
 import { type BillingNoticeKind, billingRepository } from '@durabull/dal'
-import { type BillingTransitionEmailProps, sendBillingTransitionEmail } from '@durabull/email'
+import {
+  BillingEmailError,
+  type BillingTransitionEmailProps,
+  sendBillingTransitionEmail,
+} from '@durabull/email'
 import { getBillingConfig, getBillingUrl } from './config'
 import { materializeEntitlement } from './entitlements'
 import { getBillingGateway } from './gateway'
@@ -282,6 +286,8 @@ async function sendNotice(
       result.alreadySent += 1
       continue
     }
+    const failed = (error: string) =>
+      result.failed.push({ organizationId: entry.organizationId, email: owner.email, error })
     let providerMessageId: string | null
     try {
       const sent = await sender({
@@ -292,26 +298,28 @@ async function sendNotice(
       providerMessageId = sent.id
     } catch (error) {
       const message = (error as Error).message
-      await billingRepository.completeNoticeDelivery(claim.id, { sent: false, error: message })
-      result.failed.push({
-        organizationId: entry.organizationId,
-        email: owner.email,
-        error: message,
-      })
+      if (error instanceof BillingEmailError && error.uncertain) {
+        // The provider may have accepted it: leave the claim in `sending` so
+        // the retry after STALE_SEND_MS reuses the key instead of a new one.
+        failed(`${message} (delivery uncertain; retried later with the same key)`)
+        continue
+      }
+      failed(message)
+      try {
+        await billingRepository.completeNoticeDelivery(claim, { sent: false, error: message }, now)
+      } catch (recordError) {
+        failed(`Recording the failure also failed: ${(recordError as Error).message}`)
+      }
       continue
     }
     // The email went out. If recording that fails, the claim stays `sending`
     // and a retry after STALE_SEND_MS reuses the key, so it is not delivered twice.
     result.delivered.add(entry.organizationId)
     try {
-      await billingRepository.completeNoticeDelivery(claim.id, { sent: true, providerMessageId })
+      await billingRepository.completeNoticeDelivery(claim, { sent: true, providerMessageId }, now)
       result.sent += 1
     } catch (error) {
-      result.failed.push({
-        organizationId: entry.organizationId,
-        email: owner.email,
-        error: `Sent, but recording the delivery failed: ${(error as Error).message}`,
-      })
+      failed(`Sent, but recording the delivery failed: ${(error as Error).message}`)
     }
   }
 }
@@ -340,13 +348,20 @@ export async function sendDueReminders(now = new Date()): Promise<NoticeSendResu
     )
     if (!before.attempted) continue
     await sendNotice(entry, 'transition_notice', now, result)
-    const noticeSentAt =
-      before.firstSentAt ??
-      (await billingRepository.findNoticeProgress(entry.organizationId, 'transition_notice'))
-        .firstSentAt
-    if (!noticeSentAt) continue
-    const reminder = dueTransitionReminder(entry.deadline, noticeSentAt, now)
-    if (reminder) await sendNotice(entry, reminder, now, result)
+    // Per owner: an owner added later gets the notice first and their own
+    // reminder gap, not the organization's earliest notice time.
+    const deliveries = await billingRepository.listNoticeDeliveries(entry.organizationId)
+    for (const owner of entry.owners) {
+      const noticeSentAt = deliveries.find(
+        (delivery) =>
+          delivery.kind === 'transition_notice' &&
+          delivery.userId === owner.userId &&
+          delivery.status === 'sent'
+      )?.sentAt
+      if (!noticeSentAt) continue
+      const reminder = dueTransitionReminder(entry.deadline, noticeSentAt, now)
+      if (reminder) await sendNotice({ ...entry, owners: [owner] }, reminder, now, result)
+    }
   }
   return result
 }

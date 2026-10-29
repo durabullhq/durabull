@@ -94,8 +94,11 @@ the founding owner), emails the notice to every owner of every organization on t
 not chosen a plan (an active, trialing or past-due subscription), and records a
 `transition_notice_sent` operator action for each organization an owner of which received it.
 Every email is claimed in `billing_notice_delivery` before it is sent and carries an idempotency
-key, so re-running only retries failures and never emails an owner twice. `--allow-sandbox` (not
-in production) and `--skip-pricing-check` exist for rehearsals.
+key, so re-running only retries what was not delivered. The key is kept when delivery is uncertain
+(a network or provider server error, or a send that was not recorded) and replaced after a definite
+rejection. Resend deduplicates a key for 24 hours, so a send left uncertain for longer than that can
+reach an owner twice; otherwise each owner gets each email once. `--allow-sandbox` (not in
+production) and `--skip-pricing-check` exist for rehearsals.
 
 After the notice, the billing lifecycle (at startup and then hourly) retries failed notices,
 reaches owners added since, and sends reminders 7 days and 1 day before an organization's grant

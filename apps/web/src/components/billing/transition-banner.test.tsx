@@ -3,14 +3,18 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TransitionBanner } from '@/components/billing/transition-banner'
 
-const { billingState } = vi.hoisted(() => ({
+const { billingState, activeState } = vi.hoisted(() => ({
   billingState: { data: null as Record<string, unknown> | null },
+  activeState: { slug: 'acme' },
 }))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/billing">{children}</a>,
 }))
 vi.mock('@/hooks/use-billing', () => ({ useBilling: () => ({ data: billingState.data }) }))
+vi.mock('@/hooks/use-organization', () => ({
+  useActiveOrganization: () => ({ data: { slug: activeState.slug } }),
+}))
 
 const DAY = 86_400_000
 
@@ -33,6 +37,17 @@ function overview(overrides: Record<string, unknown> = {}) {
 describe('TransitionBanner', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    activeState.slug = 'acme'
+  })
+
+  it('waits until the active organization matches the route', () => {
+    billingState.data = overview()
+    activeState.slug = 'globex'
+    const { rerender } = render(<TransitionBanner orgSlug="acme" />)
+    expect(screen.queryByTestId('transition-banner')).not.toBeInTheDocument()
+    activeState.slug = 'acme'
+    rerender(<TransitionBanner orgSlug="acme" />)
+    expect(screen.getByTestId('transition-banner')).toBeInTheDocument()
   })
 
   it('does not carry a dismissal to another organization', async () => {
@@ -40,6 +55,7 @@ describe('TransitionBanner', () => {
     const { rerender } = render(<TransitionBanner orgSlug="acme" />)
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss until the final week' }))
     expect(screen.queryByTestId('transition-banner')).not.toBeInTheDocument()
+    activeState.slug = 'globex'
     rerender(<TransitionBanner orgSlug="globex" />)
     expect(screen.getByTestId('transition-banner')).toBeInTheDocument()
   })
