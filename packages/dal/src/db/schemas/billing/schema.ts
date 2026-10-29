@@ -285,6 +285,11 @@ export const billingNoticeDelivery = pgTable(
     email: text('email').notNull(),
     status: text('status').$type<BillingNoticeStatus>().notNull(),
     attempts: integer('attempts').notNull().default(1),
+    /**
+     * Sent to the email provider. Kept when a stuck send is retried (it may
+     * have been delivered), replaced after a send that failed.
+     */
+    idempotencyKey: text('idempotency_key').notNull(),
     providerMessageId: text('provider_message_id'),
     error: text('error'),
     sentAt: timestamp('sent_at', { withTimezone: true }),

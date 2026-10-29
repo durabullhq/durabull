@@ -143,21 +143,26 @@ export function createInvitationEmailSender(options: EmailOptions) {
  * record the attempt as failed and retry it later.
  */
 export async function sendBillingTransitionEmail(
-  data: BillingTransitionEmailProps & { to: string }
+  data: BillingTransitionEmailProps & { to: string; idempotencyKey: string }
 ): Promise<{ id: string | null }> {
   if (!isEmailConfigured()) {
     throw new Error('RESEND_API_KEY is not configured')
   }
-  const { to, ...props } = data
+  const { to, idempotencyKey, ...props } = data
   const html = await render(BillingTransitionEmail(props))
   const text = await render(BillingTransitionEmail(props), { plainText: true })
-  const { data: sent, error } = await getResendClient().emails.send({
-    from: env.EMAIL_FROM,
-    to,
-    subject: billingTransitionSubject(props.kind, props.organizationName, props.deadline),
-    html,
-    text,
-  })
+  // The idempotency key makes a retried send (after a crash between sending
+  // and recording it) a no-op at the provider.
+  const { data: sent, error } = await getResendClient().emails.send(
+    {
+      from: env.EMAIL_FROM,
+      to,
+      subject: billingTransitionSubject(props.kind, props.organizationName, props.deadlineLabel),
+      html,
+      text,
+    },
+    { idempotencyKey }
+  )
   if (error) throw new Error(`Failed to send billing notice: ${error.message}`)
   return { id: sent?.id ?? null }
 }

@@ -14,12 +14,18 @@ vi.mock('@/hooks/use-billing', () => ({ useBilling: () => ({ data: billingState.
 
 const DAY = 86_400_000
 
+function transitionIn(days: number) {
+  return {
+    deadline: new Date(Date.now() + days * DAY).toISOString(),
+    noticeSentAt: new Date().toISOString(),
+  }
+}
+
 function overview(overrides: Record<string, unknown> = {}) {
   return {
     enabled: true,
     canManageBilling: true,
-    subscription: null,
-    migrationGrantExpiresAt: new Date(Date.now() + 20 * DAY).toISOString(),
+    transition: transitionIn(20),
     ...overrides,
   }
 }
@@ -47,8 +53,8 @@ describe('TransitionBanner', () => {
     expect(screen.queryByRole('link', { name: 'Choose a plan' })).not.toBeInTheDocument()
   })
 
-  it('is hidden once the organization subscribed, and on self-hosted installs', () => {
-    billingState.data = overview({ subscription: { status: 'active' } })
+  it('is hidden before the notice, once a plan is chosen, and on self-hosted installs', () => {
+    billingState.data = overview({ transition: null })
     const { rerender } = render(<TransitionBanner orgSlug="acme" />)
     expect(screen.queryByTestId('transition-banner')).not.toBeInTheDocument()
     billingState.data = { enabled: false }
@@ -63,11 +69,10 @@ describe('TransitionBanner', () => {
     expect(screen.queryByTestId('transition-banner')).not.toBeInTheDocument()
     unmount()
 
-    billingState.data = overview({
-      migrationGrantExpiresAt: new Date(Date.now() + 3 * DAY).toISOString(),
-    })
+    billingState.data = overview({ transition: transitionIn(3) })
     render(<TransitionBanner orgSlug="acme" />)
-    expect(screen.getByText(/Beta access ends/)).toBeInTheDocument()
+    expect(screen.getByText('Beta access ends this week')).toBeInTheDocument()
+    expect(screen.getByText(/UTC/)).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Dismiss until the final week' })
     ).not.toBeInTheDocument()

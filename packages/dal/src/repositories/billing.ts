@@ -5,6 +5,7 @@ import { alertRule } from '../db/schemas/alert-rule/schema'
 import {
   type BillingCheckoutAttemptStatus,
   type BillingLimitsJson,
+  type BillingNoticeKind,
   type BillingResourceKind,
   billingCheckoutAttempt,
   billingEntitlementOverride,
@@ -520,31 +521,38 @@ export const billingRepository = {
    */
   async claimNoticeDelivery(input: {
     organizationId: string
-    kind: 'transition_notice' | 'reminder_7d' | 'reminder_1d'
+    kind: BillingNoticeKind
     userId: string
     email: string
     now: Date
     staleBefore: Date
-  }): Promise<{ id: string; attempts: number } | null> {
+  }): Promise<{ id: string; attempts: number; idempotencyKey: string } | null> {
     const db = await getDb()
     const result = await db.execute(sql`
       INSERT INTO ${billingNoticeDelivery}
-        (id, organization_id, kind, user_id, email, status, attempts, created_at, updated_at)
+        (id, organization_id, kind, user_id, email, status, attempts, idempotency_key,
+         created_at, updated_at)
       VALUES
         (gen_random_uuid(), ${input.organizationId}, ${input.kind}, ${input.userId},
-         ${input.email}, 'sending', 1, ${input.now}, ${input.now})
+         ${input.email}, 'sending', 1, gen_random_uuid()::text, ${input.now}, ${input.now})
       ON CONFLICT (organization_id, kind, user_id) DO UPDATE
         SET status = 'sending',
             email = EXCLUDED.email,
             attempts = ${billingNoticeDelivery}.attempts + 1,
+            idempotency_key = CASE
+              WHEN ${billingNoticeDelivery}.status = 'failed' THEN gen_random_uuid()::text
+              ELSE ${billingNoticeDelivery}.idempotency_key
+            END,
             error = NULL,
             updated_at = EXCLUDED.updated_at
         WHERE ${billingNoticeDelivery}.status = 'failed'
            OR (${billingNoticeDelivery}.status = 'sending'
                AND ${billingNoticeDelivery}.updated_at < ${input.staleBefore})
-      RETURNING id, attempts
+      RETURNING id, attempts, idempotency_key AS "idempotencyKey"
     `)
-    return rowsFromExecute<{ id: string; attempts: number }>(result)[0] ?? null
+    return (
+      rowsFromExecute<{ id: string; attempts: number; idempotencyKey: string }>(result)[0] ?? null
+    )
   },
 
   async completeNoticeDelivery(
@@ -568,24 +576,29 @@ export const billingRepository = {
       .where(eq(billingNoticeDelivery.id, id))
   },
 
-  /** Whether any owner of the organization has been sent this notice. */
-  async hasSentNotice(
+  /**
+   * Whether this notice was attempted for any owner of the organization, and
+   * when it was first delivered (null if no owner has received it yet).
+   */
+  async findNoticeProgress(
     organizationId: string,
-    kind: 'transition_notice' | 'reminder_7d' | 'reminder_1d'
-  ): Promise<boolean> {
+    kind: BillingNoticeKind
+  ): Promise<{ attempted: boolean; firstSentAt: Date | null }> {
     const db = await getDb()
     const rows = await db
-      .select({ id: billingNoticeDelivery.id })
+      .select({ status: billingNoticeDelivery.status, sentAt: billingNoticeDelivery.sentAt })
       .from(billingNoticeDelivery)
       .where(
         and(
           eq(billingNoticeDelivery.organizationId, organizationId),
-          eq(billingNoticeDelivery.kind, kind),
-          eq(billingNoticeDelivery.status, 'sent')
+          eq(billingNoticeDelivery.kind, kind)
         )
       )
-      .limit(1)
-    return rows.length > 0
+    const sent = rows
+      .map((row) => row.sentAt)
+      .filter((sentAt): sentAt is Date => sentAt !== null)
+      .sort((a, b) => a.getTime() - b.getTime())
+    return { attempted: rows.length > 0, firstSentAt: sent[0] ?? null }
   },
 
   async listNoticeDeliveries(organizationId: string) {

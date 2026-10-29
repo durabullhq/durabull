@@ -86,11 +86,15 @@ export type {
 } from './db/schemas/auth/types'
 export {
   type BillingCheckoutAttemptStatus,
+  type BillingNoticeKind,
+  type BillingNoticeStatus,
   type BillingLimitsJson,
   type BillingResourceKind,
   type BillingWebhookEventStatus,
   billingCheckoutAttempt,
   billingCheckoutAttemptStatuses,
+  billingNoticeKinds,
+  billingNoticeStatuses,
   billingEntitlementOverride,
   billingNoticeDelivery,
   billingOperatorAction,

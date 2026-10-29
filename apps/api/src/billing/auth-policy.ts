@@ -1,4 +1,5 @@
 import type { OrganizationPolicyHooks } from '@durabull/auth'
+import { LIVE_SUBSCRIPTION_STATUSES, type SubscriptionStatus } from '@durabull/billing'
 import { and, billingRepository, eq, getDb, member, sql } from '@durabull/dal'
 import { APIError } from 'better-auth/api'
 import { getBillingConfig, isBillingEnabled, isEnforcedFor } from './config'
@@ -7,16 +8,6 @@ import { BillingStateUnverifiedError, PlanLimitReachedError } from './errors'
 
 /** Abuse control: a person can own at most this many organizations on Cloud. */
 export const MAX_OWNED_ORGANIZATIONS_PER_USER = 10
-
-// `incomplete` can still become active once its first payment succeeds.
-const LIVE_SUBSCRIPTION_STATUSES = new Set([
-  'active',
-  'trialing',
-  'past_due',
-  'unpaid',
-  'paused',
-  'incomplete',
-])
 
 function toApiError(error: unknown): never {
   if (error instanceof PlanLimitReachedError) {
@@ -71,7 +62,7 @@ export function createBillingOrganizationPolicy(): OrganizationPolicyHooks | und
       // Deleting an organization with a live subscription would orphan it.
       // This protects billing integrity, so it applies in every rollout mode.
       const current = await billingRepository.findCurrentSubscription(organizationId)
-      if (current && LIVE_SUBSCRIPTION_STATUSES.has(current.status)) {
+      if (current && LIVE_SUBSCRIPTION_STATUSES.has(current.status as SubscriptionStatus)) {
         throw new APIError('BAD_REQUEST', {
           message:
             'Cancel this organization’s subscription in Settings → Billing and wait for it to end before deleting the organization.',

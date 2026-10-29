@@ -1,18 +1,14 @@
+import {
+  CLOUD_PRICING_URL,
+  formatTransitionDeadline,
+  TRANSITION_FINAL_WEEK_MS,
+} from '@durabull/api-client/billing'
 import { Link } from '@tanstack/react-router'
 import { CalendarClock, X } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useBilling } from '@/hooks/use-billing'
 import { cn } from '@/lib/utils'
-
-const PRICING_URL = 'https://durabull.io/pricing'
-const FINAL_WEEK_MS = 7 * 24 * 60 * 60 * 1000
-const SUBSCRIBED_STATUSES = ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'paused']
-const DEADLINE_FORMAT = new Intl.DateTimeFormat(undefined, {
-  month: 'long',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 function dismissalKey(orgSlug: string, deadline: string): string {
   return `durabull:transition-banner-dismissed:${orgSlug}:${deadline}`
@@ -28,32 +24,31 @@ function readDismissed(key: string): boolean {
 
 /**
  * Beta transition notice for every member of an organization whose beta
- * access ends on a set date and that has not chosen a plan. Owners can act;
+ * access ends on a set date. The server includes it only after the notice
+ * email went out and until the organization chooses a plan. Owners can act;
  * other members are told to ask an owner. Dismissible until the final week.
  */
 export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
   const { data: billing } = useBilling()
-  const deadline = billing?.enabled ? billing.migrationGrantExpiresAt : null
-  const [dismissed, setDismissed] = useState(() =>
-    deadline ? readDismissed(dismissalKey(orgSlug, deadline)) : false
-  )
+  const [dismissedNow, setDismissedNow] = useState(false)
 
-  if (!billing?.enabled || !deadline) return null
-  const subscribed =
-    billing.subscription !== null && SUBSCRIBED_STATUSES.includes(billing.subscription.status)
-  const remainingMs = new Date(deadline).getTime() - Date.now()
-  if (subscribed || remainingMs <= 0) return null
-  const finalWeek = remainingMs <= FINAL_WEEK_MS
-  if (dismissed && !finalWeek) return null
+  const transition = billing?.enabled ? billing.transition : null
+  if (!billing?.enabled || !transition) return null
+  const deadline = new Date(transition.deadline)
+  const remainingMs = deadline.getTime() - Date.now()
+  if (remainingMs <= 0) return null
+  const finalWeek = remainingMs <= TRANSITION_FINAL_WEEK_MS
+  const key = dismissalKey(orgSlug, transition.deadline)
+  if (!finalWeek && (dismissedNow || readDismissed(key))) return null
 
-  const date = DEADLINE_FORMAT.format(new Date(deadline))
+  const date = formatTransitionDeadline(deadline)
   const dismiss = () => {
     try {
-      window.localStorage.setItem(dismissalKey(orgSlug, deadline), '1')
+      window.localStorage.setItem(key, '1')
     } catch {
       // Dismissal is a convenience; the banner simply returns next visit.
     }
-    setDismissed(true)
+    setDismissedNow(true)
   }
 
   return (
@@ -76,7 +71,7 @@ export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold leading-5">
-            {finalWeek ? `Beta access ends ${date}` : 'Durabull Cloud is moving to plans'}
+            {finalWeek ? 'Beta access ends this week' : 'Durabull Cloud is moving to plans'}
           </p>
           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
             This organization keeps full access until {date}, then uses the Free plan unless{' '}
@@ -84,7 +79,7 @@ export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
           </p>
           <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
             <a
-              href={PRICING_URL}
+              href={CLOUD_PRICING_URL}
               target="_blank"
               rel="noreferrer"
               className="text-xs text-primary underline"

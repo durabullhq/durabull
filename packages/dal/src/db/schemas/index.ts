@@ -53,11 +53,15 @@ export type {
 // Billing schema exports
 export {
   type BillingCheckoutAttemptStatus,
+  type BillingNoticeKind,
+  type BillingNoticeStatus,
   type BillingLimitsJson,
   type BillingResourceKind,
   type BillingWebhookEventStatus,
   billingCheckoutAttempt,
   billingCheckoutAttemptStatuses,
+  billingNoticeKinds,
+  billingNoticeStatuses,
   billingEntitlementOverride,
   billingNoticeDelivery,
   billingOperatorAction,

@@ -81,6 +81,8 @@ export function startBillingLifecycle(): void {
   running = true
   void singleFlight('inbox', runInboxPass)
   void singleFlight('sweep', () => runEntitlementSweep())
+  // Run once at startup too: frequent deploys would otherwise keep resetting the hourly timer.
+  void singleFlight('reminders', () => runReminderPass())
   timers.push(setInterval(() => void singleFlight('inbox', runInboxPass), INBOX_INTERVAL_MS))
   timers.push(
     setInterval(() => void singleFlight('sweep', () => runEntitlementSweep()), SWEEP_INTERVAL_MS)

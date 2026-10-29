@@ -12,108 +12,103 @@ import {
   Text,
 } from '@react-email/components'
 
-export type BillingTransitionEmailKind = 'notice' | 'reminder_7d' | 'reminder_1d'
+export type BillingTransitionEmailKind = 'transition_notice' | 'reminder_7d' | 'reminder_1d'
 
+/**
+ * Plan facts come from the caller (the billing catalog), so the email never
+ * restates prices, limits or feature names on its own.
+ */
 export interface BillingTransitionEmailProps {
   kind: BillingTransitionEmailKind
   organizationName: string
-  /** When the organization's beta access ends and the Free plan applies. */
-  deadline: Date
+  /** When beta access ends, already formatted, e.g. "Monday, January 14, 2030 at 17:00 UTC". */
+  deadlineLabel: string
   billingUrl: string
   pricingUrl: string
-  teamMonthlyUsd: number
-  businessMonthlyUsd: number
-  /** Capacity the Free plan would pause, e.g. "Enabled Redis connections: 3 in use, Free includes 1". */
+  /** Smallest plan that covers current usage, e.g. "Team ($9/month)". */
+  proposedPlan: string
+  /** Lowest paid plan, e.g. "Team". */
+  paidPlanName: string
+  /** One sentence on prices, e.g. "Team is $9/month and Business is $29/month per organization…". */
+  priceSummary: string
+  /** Capacity the Free plan would pause, naming the resources. */
   restrictions: string[]
-  /** Paid capabilities the organization uses today, e.g. "Webhook alerts". */
+  /** Paid capabilities the organization uses today. */
   featuresInUse: string[]
+  /** Every paid capability, for organizations whose usage fits Free. */
+  paidFeatures: string[]
+  /** What happens to Redis health history on Free. */
+  historyNote: string
 }
 
-const emerald = {
-  400: '#34d399',
-  500: '#10b981',
-  950: '#022c22',
-}
-
-const neutral = {
-  50: '#fafafa',
-  200: '#e5e5e5',
-  400: '#a3a3a3',
-  500: '#737373',
-  600: '#525252',
-  700: '#404040',
-  800: '#262626',
-  900: '#171717',
-  950: '#0a0a0a',
-}
-
-export function formatTransitionDeadline(deadline: Date): string {
-  return deadline.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  })
+const COPY: Record<
+  BillingTransitionEmailKind,
+  { subject: (org: string, deadline: string) => string; heading: string }
+> = {
+  transition_notice: {
+    subject: (org, deadline) => `Choose a Durabull Cloud plan for ${org} by ${deadline}`,
+    heading: 'Durabull Cloud is moving to plans',
+  },
+  reminder_7d: {
+    subject: (org) => `One week left to choose a Durabull Cloud plan for ${org}`,
+    heading: 'One week left to choose a plan',
+  },
+  reminder_1d: {
+    subject: (org) => `Tomorrow: ${org} moves to the Durabull Cloud Free plan`,
+    heading: 'Your beta access ends tomorrow',
+  },
 }
 
 export function billingTransitionSubject(
   kind: BillingTransitionEmailKind,
   organizationName: string,
-  deadline: Date
+  deadlineLabel: string
 ): string {
-  const date = formatTransitionDeadline(deadline)
-  switch (kind) {
-    case 'notice':
-      return `Choose a Durabull Cloud plan for ${organizationName} by ${date}`
-    case 'reminder_7d':
-      return `One week left to choose a Durabull Cloud plan for ${organizationName}`
-    case 'reminder_1d':
-      return `Tomorrow: ${organizationName} moves to the Durabull Cloud Free plan`
-  }
+  return COPY[kind].subject(organizationName, deadlineLabel)
+}
+
+function joinList(items: string[]): string {
+  if (items.length <= 1) return items.join('')
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 }
 
 export function BillingTransitionEmail({
-  kind = 'notice',
+  kind = 'transition_notice',
   organizationName = 'Acme Inc',
-  deadline = new Date('2026-11-23T17:00:00Z'),
-  billingUrl = 'https://app.durabull.io/acme/settings/billing',
-  pricingUrl = 'https://durabull.io/pricing',
-  teamMonthlyUsd = 9,
-  businessMonthlyUsd = 29,
+  deadlineLabel = 'Monday, January 14, 2030 at 17:00 UTC',
+  billingUrl = 'https://app.example.com/acme/settings/billing',
+  pricingUrl = 'https://example.com/pricing',
+  proposedPlan = 'Team ($9/month)',
+  paidPlanName = 'Team',
+  priceSummary = 'Team is $9/month and Business is $29/month per organization, not per seat.',
   restrictions = [],
   featuresInUse = [],
+  paidFeatures = [],
+  historyNote = '',
 }: BillingTransitionEmailProps) {
-  const date = formatTransitionDeadline(deadline)
   const affected = restrictions.length > 0 || featuresInUse.length > 0
-  const heading =
-    kind === 'notice'
-      ? 'Durabull Cloud is moving to plans'
-      : kind === 'reminder_7d'
-        ? 'One week left to choose a plan'
-        : 'Your beta access ends tomorrow'
 
   return (
     <Html>
       <Head />
-      <Preview>{billingTransitionSubject(kind, organizationName, deadline)}</Preview>
+      <Preview>{billingTransitionSubject(kind, organizationName, deadlineLabel)}</Preview>
       <Body style={main}>
         <Container style={container}>
-          <Heading style={headingStyle}>{heading}</Heading>
+          <Heading style={headingStyle}>{COPY[kind].heading}</Heading>
 
           <Section style={contentCard}>
-            {kind === 'notice' ? (
+            {kind === 'transition_notice' ? (
               <Text style={paragraph}>
                 Thank you for using Durabull Cloud during the beta. From{' '}
-                <span style={highlight}>{date}</span>, Cloud organizations use the Free plan unless
-                they subscribe. <span style={highlight}>{organizationName}</span> keeps full access
-                until then.
+                <span style={highlight}>{deadlineLabel}</span>, Cloud organizations use the Free
+                plan unless they subscribe. <span style={highlight}>{organizationName}</span> keeps
+                full access until then.
               </Text>
             ) : (
               <Text style={paragraph}>
                 <span style={highlight}>{organizationName}</span> keeps full beta access until{' '}
-                <span style={highlight}>{date}</span>. After that it uses the Free plan unless an
-                owner chooses a plan.
+                <span style={highlight}>{deadlineLabel}</span>. After that it uses the Free plan
+                unless an owner chooses a plan.
               </Text>
             )}
 
@@ -127,22 +122,25 @@ export function BillingTransitionEmail({
                 ))}
                 {featuresInUse.map((feature) => (
                   <Text key={feature} style={listItem}>
-                    • {feature} would stop (Team and above)
+                    • {feature} would stop ({paidPlanName} and above)
                   </Text>
                 ))}
               </>
             ) : (
               <Text style={paragraph}>
-                {organizationName}’s current usage fits the Free plan. Webhook and Linear alerts,
-                MCP write actions, service accounts and bulk recovery need Team or higher.
+                {organizationName}’s current usage fits the Free plan. {joinList(paidFeatures)} need{' '}
+                {paidPlanName} or higher.
               </Text>
             )}
 
+            <Text style={paragraph}>
+              Based on current usage, <span style={highlight}>{proposedPlan}</span> covers{' '}
+              {organizationName}.
+            </Text>
+
             <Text style={mutedParagraph}>
-              Team is ${teamMonthlyUsd}/month and Business is ${businessMonthlyUsd}/month per
-              organization, not per seat, with two months free on annual billing. Nothing is
-              deleted: anything above the Free plan’s limits is paused and comes back when you
-              upgrade.
+              {priceSummary} Nothing you configured is deleted: anything above the Free plan’s
+              limits is paused and comes back when you upgrade. {historyNote}
             </Text>
           </Section>
 
@@ -175,6 +173,24 @@ export function BillingTransitionEmail({
       </Body>
     </Html>
   )
+}
+
+const emerald = {
+  400: '#34d399',
+  500: '#10b981',
+  950: '#022c22',
+}
+
+const neutral = {
+  50: '#fafafa',
+  200: '#e5e5e5',
+  400: '#a3a3a3',
+  500: '#737373',
+  600: '#525252',
+  700: '#404040',
+  800: '#262626',
+  900: '#171717',
+  950: '#0a0a0a',
 }
 
 const main = {

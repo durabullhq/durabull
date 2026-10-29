@@ -22,6 +22,7 @@
  */
 
 import { isLimitKey, isPlanCode } from '../../packages/billing/src/catalog'
+import { CLOUD_PRICING_URL } from '../../packages/billing/src/transition'
 import { billingRepository, closeDb, type BillingWebhookEvent } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { invalidateEntitlementCache, materializeEntitlement } from '../../apps/api/src/billing/entitlements'
@@ -30,7 +31,6 @@ import { setupStripeCatalog } from '../../apps/api/src/billing/stripe-setup'
 import { getBillingConfig, isBillingEnabled } from '../../apps/api/src/billing/config'
 import {
   listTransitionAudience,
-  PRICING_URL,
   sendTransitionNotices,
   syncStripeCustomers,
 } from '../../apps/api/src/billing/transition'
@@ -256,22 +256,33 @@ async function main() {
       // Dry run unless --execute: prints who would be emailed and what would
       // change, and counts the Stripe Customers that would be created.
       const execute = args.includes('--execute')
-      const by = execute ? requireArg(flag(args, '--by'), '--by <operator> is required with --execute') : null
+      const by = execute ? requireArg(flag(args, '--by'), '--by <operator> is required with --execute') : ''
+      const config = getBillingConfig()
       const problems: string[] = []
       if (!isBillingEnabled()) problems.push('Cloud billing is not enabled (DURABULL_BILLING_ENABLED).')
-      if (!getBillingConfig().stripe.livemode && !args.includes('--allow-sandbox')) {
-        problems.push('STRIPE_API_KEY is not a live key. Pass --allow-sandbox to rehearse with a sandbox.')
+      if (!config.stripe.livemode) {
+        if (env.NODE_ENV === 'production') {
+          // Sandbox Customers bound to production organizations would block live ones later.
+          problems.push('STRIPE_API_KEY is not a live key; production needs the live key.')
+        } else if (!args.includes('--allow-sandbox')) {
+          problems.push('STRIPE_API_KEY is not a live key. Pass --allow-sandbox to rehearse outside production.')
+        }
       }
       if (!isEmailConfigured()) problems.push('RESEND_API_KEY is not set, so no email can be sent.')
       if (!args.includes('--skip-pricing-check')) {
-        const response = await fetch(PRICING_URL, { method: 'GET' }).catch(() => null)
+        const response = await fetch(CLOUD_PRICING_URL, { method: 'GET' }).catch(() => null)
         if (!response?.ok) {
-          problems.push(`${PRICING_URL} is not live (the email links to it). Merge and deploy the pricing page first.`)
+          problems.push(`${CLOUD_PRICING_URL} is not live (the email links to it). Merge and deploy the pricing page first.`)
         }
       }
       if (problems.length > 0) {
         for (const problem of problems) console.error(`✗ ${problem}`)
         process.exit(1)
+      }
+      if (config.enforcement !== 'on') {
+        console.warn(
+          `⚠ Enforcement is "${config.enforcement}": nothing changes at the deadline the email announces until DURABULL_BILLING_ENFORCEMENT=on.`
+        )
       }
 
       const audience = await listTransitionAudience()
@@ -280,6 +291,7 @@ async function main() {
           organization: entry.organizationName,
           owners: entry.owners.map((owner) => owner.email).join(', ') || '(none)',
           deadline: entry.deadline.toISOString(),
+          proposedPlan: entry.proposedPlan,
           freeWouldChange: [...entry.restrictions, ...entry.featuresInUse].join('; ') || 'fits Free',
         }))
       )
@@ -297,15 +309,16 @@ async function main() {
         break
       }
       const sent = await sendTransitionNotices()
-      console.log(`Notice emails: ${sent.sent} sent, ${sent.alreadySent} already sent earlier.`)
+      console.log(`Notice emails: ${sent.sent} sent, ${sent.alreadySent} already sent earlier. Failed ones are retried hourly by the API, or by running this again.`)
       for (const failure of sent.failed) {
         console.error(`✗ ${failure.email} (${failure.organizationId}): ${failure.error}`)
       }
       for (const entry of audience) {
+        if (!sent.delivered.has(entry.organizationId)) continue
         await billingRepository.recordOperatorAction({
           organizationId: entry.organizationId,
           action: 'transition_notice_sent',
-          actor: by ?? 'unknown',
+          actor: by,
           reason: 'Beta transition launch',
           details: { deadline: entry.deadline.toISOString(), owners: entry.owners.length },
         })

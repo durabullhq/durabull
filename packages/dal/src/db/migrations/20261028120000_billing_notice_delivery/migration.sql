@@ -10,6 +10,7 @@ CREATE TABLE "billing_notice_delivery" (
   "email" text NOT NULL,
   "status" text NOT NULL,
   "attempts" integer DEFAULT 1 NOT NULL,
+  "idempotency_key" text NOT NULL,
   "provider_message_id" text,
   "error" text,
   "sent_at" timestamp with time zone,

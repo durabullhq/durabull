@@ -36,7 +36,6 @@ import {
 } from './gateway'
 import { reconcileOrganization } from './reconcile'
 import {
-  dueReminder,
   sendDueReminders,
   sendTransitionNotices,
   setTransitionEmailSenderForTests,
@@ -774,9 +773,9 @@ describe('Cloud billing', () => {
 
       const first = await sendTransitionNotices()
       expect(first.sent).toBe(1)
-      expect(sentEmails[0]).toMatchObject({ kind: 'notice' })
+      expect(sentEmails[0]).toMatchObject({ kind: 'transition_notice' })
       expect(sentEmails[0].restrictions).toEqual([
-        'Enabled Redis connections: 2 in use, Free includes 1',
+        'Enabled Redis connections: 2 in use (a, b); Free includes 1, and you choose which stay active',
       ])
 
       // Running the launch again never emails an owner twice.
@@ -822,7 +821,7 @@ describe('Cloud billing', () => {
       expect((await sendDueReminders(new Date(grantEnd.getTime() - 5 * day))).sent).toBe(0)
       expect((await sendDueReminders(new Date(grantEnd.getTime() - 12 * 3_600_000))).sent).toBe(1)
       expect(sentEmails.map((email) => email.kind)).toEqual([
-        'notice',
+        'transition_notice',
         'reminder_7d',
         'reminder_1d',
       ])
@@ -836,12 +835,27 @@ describe('Cloud billing', () => {
       expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(0)
     })
 
-    it('picks the reminder by time left', () => {
-      const now = new Date('2026-11-01T00:00:00Z')
-      expect(dueReminder(new Date('2026-11-20T00:00:00Z'), now)).toBeNull()
-      expect(dueReminder(new Date('2026-11-07T00:00:00Z'), now)).toBe('reminder_7d')
-      expect(dueReminder(new Date('2026-11-01T12:00:00Z'), now)).toBe('reminder_1d')
-      expect(dueReminder(new Date('2026-10-31T00:00:00Z'), now)).toBeNull()
+    it('keeps reminding an organization whose first payment is incomplete', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      await subscribe(AUTHLESS_ORG_ID, { status: 'incomplete' })
+      const grantEnd = new Date(Date.now() + 31 * day)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(1)
+    })
+
+    it('shows the in-app banner only after the notice and until a plan is chosen', async () => {
+      await startGrant(31)
+      const app = await createApp()
+      expect((await json(await app.request('/api/billing'))).transition).toBeNull()
+
+      await sendTransitionNotices()
+      const overview = await json(await app.request('/api/billing'))
+      expect(overview.transition.deadline).toBe(overview.migrationGrantExpiresAt)
+      expect(overview.transition.noticeSentAt).toBeTruthy()
+
+      await subscribe(AUTHLESS_ORG_ID)
+      invalidateEntitlementCache()
+      expect((await json(await app.request('/api/billing'))).transition).toBeNull()
     })
 
     it('creates one Stripe Customer per organization, and a dry run creates none', async () => {

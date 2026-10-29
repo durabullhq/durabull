@@ -1,10 +1,23 @@
-import { exceededLimits, LIMIT_LABELS, PLANS } from '@durabull/billing'
-import { billingRepository } from '@durabull/dal'
 import {
-  type BillingTransitionEmailKind,
-  type BillingTransitionEmailProps,
-  sendBillingTransitionEmail,
-} from '@durabull/email'
+  type CapacityLimitKey,
+  CLOUD_PRICING_URL,
+  dueTransitionReminder,
+  exceededLimits,
+  FEATURE_KEYS,
+  FEATURE_LABELS,
+  type FeatureKey,
+  formatTransitionDeadline,
+  HISTORY_RECOVERY_WINDOW_MS,
+  LIMIT_LABELS,
+  PLAN_CHOSEN_SUBSCRIPTION_STATUSES,
+  PLANS,
+  type PlanCode,
+  requiredPlanForFeature,
+  type SubscriptionStatus,
+  smallestPlanForUsage,
+} from '@durabull/billing'
+import { type BillingNoticeKind, billingRepository } from '@durabull/dal'
+import { type BillingTransitionEmailProps, sendBillingTransitionEmail } from '@durabull/email'
 import { getBillingUrl } from './config'
 import { getBillingGateway } from './gateway'
 import { reconcileOrganization } from './reconcile'
@@ -16,21 +29,13 @@ import { reconcileOrganization } from './reconcile'
  * gives every organization a Stripe Customer ahead of purchase.
  */
 
-export const PRICING_URL = 'https://durabull.io/pricing'
-const DAY_MS = 24 * 60 * 60 * 1000
-/** A claimed email still marked `sending` after this long is retried. */
+/** A claimed email still marked `sending` after this long is retried with the same idempotency key. */
 const STALE_SEND_MS = 60 * 60 * 1000
-
-type NoticeKind = 'transition_notice' | 'reminder_7d' | 'reminder_1d'
-
-const EMAIL_KIND: Record<NoticeKind, BillingTransitionEmailKind> = {
-  transition_notice: 'notice',
-  reminder_7d: 'reminder_7d',
-  reminder_1d: 'reminder_1d',
-}
+/** Resources named per limit in the email before "and N more". */
+const NAMED_RESOURCES = 5
 
 export type TransitionEmailSender = (
-  email: BillingTransitionEmailProps & { to: string }
+  email: BillingTransitionEmailProps & { to: string; idempotencyKey: string }
 ) => Promise<{ id: string | null }>
 
 let sender: TransitionEmailSender = sendBillingTransitionEmail
@@ -45,24 +50,25 @@ export interface TransitionAudienceEntry {
   organizationSlug: string
   deadline: Date
   owners: Array<{ userId: string; email: string }>
+  proposedPlan: PlanCode
   restrictions: string[]
-  featuresInUse: string[]
+  featuresInUse: FeatureKey[]
 }
 
-/** Subscription statuses that mean the organization already chose a plan. */
-const SUBSCRIBED_STATUSES = new Set([
-  'active',
-  'trialing',
-  'past_due',
-  'unpaid',
-  'incomplete',
-  'paused',
-])
+function hasChosenPlan(status: string | undefined): boolean {
+  return status !== undefined && PLAN_CHOSEN_SUBSCRIPTION_STATUSES.has(status as SubscriptionStatus)
+}
+
+function nameList(names: string[]): string {
+  const shown = names.slice(0, NAMED_RESOURCES).join(', ')
+  const more = names.length - NAMED_RESOURCES
+  return more > 0 ? `${shown} and ${more} more` : shown
+}
 
 /**
- * Organizations on an unexpired beta grant that have not subscribed, with what
- * the Free plan would change for each. An organization that subscribed during
- * the grant still resolves to the (larger) grant until it ends, so the
+ * Organizations on an unexpired beta grant that have not chosen a plan, with
+ * what the Free plan would change for each. An organization that subscribed
+ * during the grant still resolves to the (larger) grant until it ends, so the
  * subscription is checked explicitly.
  */
 export async function listTransitionAudience(now = new Date()): Promise<TransitionAudienceEntry[]> {
@@ -70,33 +76,91 @@ export async function listTransitionAudience(now = new Date()): Promise<Transiti
   const audience: TransitionAudienceEntry[] = []
   for (const org of organizations) {
     const subscription = await billingRepository.findCurrentSubscription(org.id)
-    if (subscription && SUBSCRIBED_STATUSES.has(subscription.status)) continue
+    if (hasChosenPlan(subscription?.status)) continue
     const [owners, usage, candidates] = await Promise.all([
       billingRepository.listOwners(org.id),
       billingRepository.getUsage(org.id),
       billingRepository.listCapacityCandidates(org.id),
     ])
-    const restrictions = exceededLimits(PLANS.free.limits, usage).map(
-      ({ limit, usage: used, allowed }) =>
-        `${LIMIT_LABELS[limit].name}: ${used} in use, Free includes ${allowed}`
-    )
-    const featuresInUse: string[] = []
+    const namesByLimit: Record<CapacityLimitKey, string[]> = {
+      'connections.enabled': candidates.connections.map((c) => c.name),
+      'members.reserved': [
+        ...candidates.members.map((m) => m.name || m.email),
+        ...candidates.invitations.map((i) => `${i.email} (invited)`),
+      ],
+      'alerts.enabled': candidates.rules.map((r) => r.name),
+      'alerts.destinations': candidates.destinations.map((d) => d.name),
+      'service_accounts.enabled': candidates.serviceAccounts.map((a) => a.name),
+    }
+    const featuresInUse: FeatureKey[] = []
     if (candidates.destinations.some((d) => d.type === 'webhook'))
-      featuresInUse.push('Webhook alerts')
+      featuresInUse.push('alerts.webhook')
     if (candidates.destinations.some((d) => d.type === 'linear'))
-      featuresInUse.push('Linear alerts')
-    if (candidates.serviceAccounts.length > 0) featuresInUse.push('MCP service accounts')
+      featuresInUse.push('alerts.linear')
+    if (candidates.serviceAccounts.length > 0) featuresInUse.push('automation.service_accounts')
+    const restrictions = exceededLimits(PLANS.free.limits, usage)
+      // Service accounts stop as a feature on Free; listing the count too would repeat it.
+      .filter(({ limit }) => limit !== 'service_accounts.enabled')
+      .map(
+        ({ limit, usage: used, allowed }) =>
+          `${LIMIT_LABELS[limit].name}: ${used} in use (${nameList(namesByLimit[limit])}); Free includes ${allowed}, and you choose which stay active`
+      )
     audience.push({
       organizationId: org.id,
       organizationName: org.name,
       organizationSlug: org.slug,
       deadline: org.migrationGrantExpiresAt,
       owners: owners.map((owner) => ({ userId: owner.userId, email: owner.email })),
+      proposedPlan: smallestPlanForUsage(usage),
       restrictions,
       featuresInUse,
     })
   }
   return audience
+}
+
+function planLabel(code: PlanCode): string {
+  const price = PLANS[code].monthlyPriceUsd
+  return price ? `${PLANS[code].name} ($${price}/month)` : PLANS[code].name
+}
+
+function priceSummary(): string {
+  const { team, business } = PLANS
+  const monthsFree =
+    team.monthlyPriceUsd && team.annualPriceUsd
+      ? Math.round(12 - team.annualPriceUsd / team.monthlyPriceUsd)
+      : 0
+  const annual = monthsFree > 0 ? `, with ${monthsFree} months free on annual billing` : ''
+  return `${team.name} is $${team.monthlyPriceUsd}/month and ${business.name} is $${business.monthlyPriceUsd}/month per organization, not per seat${annual}.`
+}
+
+function historyNote(): string {
+  const freeDays = PLANS.free.limits['history.redis_health_days'] ?? 0
+  const window = freeDays === 1 ? '24 hours' : `${freeDays} days`
+  const recoveryDays = Math.round(HISTORY_RECOVERY_WINDOW_MS / (24 * 60 * 60 * 1000))
+  return `Redis health history on Free covers the last ${window}; older history is kept for ${recoveryDays} more days in case you upgrade, then removed.`
+}
+
+function emailFor(
+  entry: TransitionAudienceEntry,
+  kind: BillingNoticeKind
+): BillingTransitionEmailProps {
+  // Every paid capability unlocks on the same plan; name it from the catalog.
+  const paidPlan = PLANS[requiredPlanForFeature(FEATURE_KEYS[0])]
+  return {
+    kind,
+    organizationName: entry.organizationName,
+    deadlineLabel: formatTransitionDeadline(entry.deadline),
+    billingUrl: getBillingUrl(entry.organizationSlug),
+    pricingUrl: CLOUD_PRICING_URL,
+    proposedPlan: planLabel(entry.proposedPlan),
+    paidPlanName: paidPlan.name,
+    priceSummary: priceSummary(),
+    restrictions: entry.restrictions,
+    featuresInUse: entry.featuresInUse.map((feature) => FEATURE_LABELS[feature].name),
+    paidFeatures: FEATURE_KEYS.map((feature) => FEATURE_LABELS[feature].name),
+    historyNote: historyNote(),
+  }
 }
 
 export interface StripeCustomerSyncResult {
@@ -108,8 +172,9 @@ export interface StripeCustomerSyncResult {
 
 /**
  * Give every organization a Stripe Customer bound to it (contact: the founding
- * owner), and reconcile those that already have one. Idempotent: a fixed
- * idempotency key per organization means retries reuse one Customer.
+ * owner), and reconcile those that already have one. A fixed idempotency key
+ * per organization (separate from Checkout's, whose parameters differ) means
+ * retries reuse one Customer.
  */
 export async function syncStripeCustomers(options: {
   execute: boolean
@@ -141,7 +206,7 @@ export async function syncStripeCustomers(options: {
           organizationId: id,
           organizationName: organization.name,
           email: founder.email,
-          idempotencyKey: `durabull-customer-${id}`,
+          idempotencyKey: `durabull-customer-sync-${id}`,
         })
         await billingRepository.bindAccount({
           organizationId: id,
@@ -164,14 +229,21 @@ export interface NoticeSendResult {
   sent: number
   alreadySent: number
   failed: Array<{ organizationId: string; email: string; error: string }>
+  /** Organizations at least one owner of which received an email in this pass. */
+  delivered: Set<string>
+}
+
+function emptyResult(): NoticeSendResult {
+  return { sent: 0, alreadySent: 0, failed: [], delivered: new Set() }
 }
 
 async function sendNotice(
   entry: TransitionAudienceEntry,
-  kind: NoticeKind,
+  kind: BillingNoticeKind,
   now: Date,
   result: NoticeSendResult
 ): Promise<void> {
+  const email = emailFor(entry, kind)
   for (const owner of entry.owners) {
     const claim = await billingRepository.claimNoticeDelivery({
       organizationId: entry.organizationId,
@@ -187,22 +259,16 @@ async function sendNotice(
     }
     try {
       const { id } = await sender({
+        ...email,
         to: owner.email,
-        kind: EMAIL_KIND[kind],
-        organizationName: entry.organizationName,
-        deadline: entry.deadline,
-        billingUrl: getBillingUrl(entry.organizationSlug),
-        pricingUrl: PRICING_URL,
-        teamMonthlyUsd: PLANS.team.monthlyPriceUsd ?? 0,
-        businessMonthlyUsd: PLANS.business.monthlyPriceUsd ?? 0,
-        restrictions: entry.restrictions,
-        featuresInUse: entry.featuresInUse,
+        idempotencyKey: `durabull-billing-notice-${claim.idempotencyKey}`,
       })
       await billingRepository.completeNoticeDelivery(claim.id, {
         sent: true,
         providerMessageId: id,
       })
       result.sent += 1
+      result.delivered.add(entry.organizationId)
     } catch (error) {
       const message = (error as Error).message
       await billingRepository.completeNoticeDelivery(claim.id, { sent: false, error: message })
@@ -217,36 +283,58 @@ async function sendNotice(
 
 /** Send the transition notice to every owner of every organization on a beta grant, once. */
 export async function sendTransitionNotices(now = new Date()): Promise<NoticeSendResult> {
-  const result: NoticeSendResult = { sent: 0, alreadySent: 0, failed: [] }
+  const result = emptyResult()
   for (const entry of await listTransitionAudience(now)) {
     await sendNotice(entry, 'transition_notice', now, result)
   }
   return result
 }
 
-/** Which reminder is due for a grant ending at `deadline`, if any. */
-export function dueReminder(deadline: Date, now: Date): NoticeKind | null {
-  const remaining = deadline.getTime() - now.getTime()
-  if (remaining <= 0) return null
-  if (remaining <= DAY_MS) return 'reminder_1d'
-  if (remaining <= 7 * DAY_MS) return 'reminder_7d'
-  return null
+/**
+ * Follow-up pass after the launch: retries notices that failed (and reaches
+ * owners added since), then sends reminders that are due. Only organizations
+ * whose notice was already attempted take part, so nothing goes out before an
+ * operator runs the launch command, and reminders keep a gap after the notice.
+ */
+export async function sendDueReminders(now = new Date()): Promise<NoticeSendResult> {
+  const result = emptyResult()
+  for (const entry of await listTransitionAudience(now)) {
+    const before = await billingRepository.findNoticeProgress(
+      entry.organizationId,
+      'transition_notice'
+    )
+    if (!before.attempted) continue
+    await sendNotice(entry, 'transition_notice', now, result)
+    const noticeSentAt =
+      before.firstSentAt ??
+      (await billingRepository.findNoticeProgress(entry.organizationId, 'transition_notice'))
+        .firstSentAt
+    if (!noticeSentAt) continue
+    const reminder = dueTransitionReminder(entry.deadline, noticeSentAt, now)
+    if (reminder) await sendNotice(entry, reminder, now, result)
+  }
+  return result
 }
 
 /**
- * Send reminders that are due. Only organizations whose owners already got the
- * transition notice receive reminders, so nothing is sent before an operator
- * runs the launch command. Organizations that subscribed have left the grant
- * and are no longer in the audience.
+ * Beta transition state for the in-app banner: shown only once the notice has
+ * gone out, and only while the organization has not chosen a plan.
  */
-export async function sendDueReminders(now = new Date()): Promise<NoticeSendResult> {
-  const result: NoticeSendResult = { sent: 0, alreadySent: 0, failed: [] }
-  for (const entry of await listTransitionAudience(now)) {
-    const kind = dueReminder(entry.deadline, now)
-    if (!kind) continue
-    if (!(await billingRepository.hasSentNotice(entry.organizationId, 'transition_notice')))
-      continue
-    await sendNotice(entry, kind, now, result)
+export async function getTransitionStatus(
+  organizationId: string,
+  migrationGrantExpiresAt: Date | null,
+  subscriptionStatus: string | undefined,
+  now = new Date()
+): Promise<{ deadline: string; noticeSentAt: string } | null> {
+  if (!migrationGrantExpiresAt || migrationGrantExpiresAt.getTime() <= now.getTime()) return null
+  if (hasChosenPlan(subscriptionStatus)) return null
+  const { firstSentAt } = await billingRepository.findNoticeProgress(
+    organizationId,
+    'transition_notice'
+  )
+  if (!firstSentAt) return null
+  return {
+    deadline: migrationGrantExpiresAt.toISOString(),
+    noticeSentAt: firstSentAt.toISOString(),
   }
-  return result
 }

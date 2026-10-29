@@ -85,19 +85,23 @@ bun tooling/scripts/billing-ops.ts launch-transition
 bun tooling/scripts/billing-ops.ts launch-transition --execute --by <you>
 ```
 
-The first command is a dry run: it checks the deployment (billing enabled, live Stripe key, email
-configured, pricing page reachable), lists every organization still on the grant with its owners
-and what the Free plan would change, and counts the Stripe Customers it would create. `--execute`
-creates a Stripe Customer for every organization that lacks one (contact: the founding owner),
-emails the notice to every owner of every organization on the grant that has not subscribed, and
-records a `transition_notice_sent` operator action per organization. Every email is claimed in
-`billing_notice_delivery` before it is sent, so re-running only retries failures and never emails
-an owner twice. `--allow-sandbox` and `--skip-pricing-check` exist for rehearsals.
+The first command is a dry run: it checks the deployment (billing enabled, a live Stripe key in
+production, email configured, pricing page reachable), warns when enforcement is not `on` (nothing
+changes at the announced deadline until it is), lists every organization still on the grant with
+its owners, proposed plan and what the Free plan would change, and counts the Stripe Customers it
+would create. `--execute` creates a Stripe Customer for every organization that lacks one (contact:
+the founding owner), emails the notice to every owner of every organization on the grant that has
+not chosen a plan (an active, trialing or past-due subscription), and records a
+`transition_notice_sent` operator action for each organization an owner of which received it.
+Every email is claimed in `billing_notice_delivery` before it is sent and carries an idempotency
+key, so re-running only retries failures and never emails an owner twice. `--allow-sandbox` (not
+in production) and `--skip-pricing-check` exist for rehearsals.
 
-After the notice, the billing lifecycle sends reminders hourly when due: 7 days and 1 day before an
-organization's grant ends, only to organizations that already received the notice and have not
-subscribed. Every member of those organizations also sees an in-app banner with the date (owners
-get "Choose a plan"); it can be dismissed until the final week.
+After the notice, the billing lifecycle (at startup and then hourly) retries failed notices,
+reaches owners added since, and sends reminders 7 days and 1 day before an organization's grant
+ends, never within two days of its notice and only while it has not chosen a plan. Once the notice
+went out, every member of those organizations sees an in-app banner with the deadline in UTC
+(owners get "Choose a plan"); it can be dismissed until the final week.
 
 Rollback: set `DURABULL_BILLING_PURCHASES_ENABLED=false` (stops new purchases, keeps known paid
 access and ingestion), or `DURABULL_BILLING_ENFORCEMENT=shadow` (stops denials; suspensions are

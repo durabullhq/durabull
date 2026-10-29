@@ -35,6 +35,7 @@ export function setBillingTransition(value: BillingTransitionFixture) {
 function billingFixture() {
   if (billingTransition === 'off') return billingOverview
   const days = billingTransition === 'final-week' ? 3 : 26
+  const deadline = new Date(Date.now() + days * 86_400_000).toISOString()
   return {
     ...billingOverview,
     planCode: 'free',
@@ -42,7 +43,8 @@ function billingFixture() {
     subscribedPlanCode: null,
     source: 'migration_grant',
     subscription: null,
-    migrationGrantExpiresAt: new Date(Date.now() + days * 86_400_000).toISOString(),
+    migrationGrantExpiresAt: deadline,
+    transition: { deadline, noticeSentAt: new Date().toISOString() },
   }
 }
 export function setFixtureState(next: FixtureState) {

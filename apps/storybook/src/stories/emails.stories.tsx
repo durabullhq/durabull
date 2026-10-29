@@ -54,15 +54,28 @@ export const Incident: Story = {
 }
 
 const transitionEmail: BillingTransitionEmailProps = {
-  kind: 'notice',
+  kind: 'transition_notice',
   organizationName: 'Acme Operations',
-  deadline: new Date('2026-11-23T17:00:00Z'),
+  deadlineLabel: 'Monday, January 14, 2030 at 17:00 UTC',
   billingUrl: 'https://example.com/acme/settings/billing',
   pricingUrl: 'https://example.com/pricing',
-  teamMonthlyUsd: 9,
-  businessMonthlyUsd: 29,
-  restrictions: ['Enabled Redis connections: 3 in use, Free includes 1'],
+  proposedPlan: 'Team ($9/month)',
+  paidPlanName: 'Team',
+  priceSummary:
+    'Team is $9/month and Business is $29/month per organization, not per seat, with 2 months free on annual billing.',
+  restrictions: [
+    'Enabled Redis connections: 3 in use (Production, Staging, Preview); Free includes 1, and you choose which stay active',
+  ],
   featuresInUse: ['Webhook alerts'],
+  paidFeatures: [
+    'Bulk recovery',
+    'MCP write operations',
+    'Service accounts',
+    'Webhook alerts',
+    'Linear alerts',
+  ],
+  historyNote:
+    'Redis health history on Free covers the last 24 hours; older history is kept for 7 more days in case you upgrade, then removed.',
 }
 
 function TransitionPreview({

@@ -26,6 +26,7 @@ import { getEntitlement, materializeEntitlement } from '../billing/entitlements'
 import { nudgeWebhookInbox } from '../billing/lifecycle'
 import { reconcileOrganization } from '../billing/reconcile'
 import { allocateCapacity } from '../billing/suspension'
+import { getTransitionStatus } from '../billing/transition'
 import { receiveStripeWebhook, WebhookSignatureError } from '../billing/webhooks'
 import { requireOrganization } from '../middleware/auth'
 
@@ -232,6 +233,12 @@ const app = new Hono()
       graceExpiresAt: serializeDate(entitlement.graceExpiresAt),
       capacityAdjustmentExpiresAt: serializeDate(entitlement.capacityAdjustmentExpiresAt),
       migrationGrantExpiresAt: serializeDate(entitlement.migrationGrantExpiresAt),
+      // Beta transition banner: only after the notice was sent, until a plan is chosen.
+      transition: await getTransitionStatus(
+        organizationId,
+        entitlement.migrationGrantExpiresAt,
+        subscription?.status
+      ),
       historyRetentionFloorExpiresAt: serializeDate(entitlement.historyRetentionFloorExpiresAt),
       // Beta transition: the smallest plan that fits current usage, and what
       // Free would restrict, so owners see the exact impact before it applies.
