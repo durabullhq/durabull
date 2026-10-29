@@ -9,7 +9,13 @@ import { EmberField } from './ember-field'
 import { Eyebrow, Reveal } from './reveal'
 
 /** Card with cursor-tracked 3D tilt, shimmer, and a sweeping border ring. */
-function TiltCard({ featured, children }: { featured?: boolean; children: React.ReactNode }) {
+export function TiltCard({
+  featured,
+  children,
+}: {
+  featured?: boolean
+  children: React.ReactNode
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const reduceMotion = useReducedMotion()
 
@@ -162,7 +168,7 @@ export function V2Deploy() {
 /* ---------------- pricing ---------------- */
 
 /** Checkmark that draws its stroke in when scrolled into view. */
-function DrawnCheck({ delay }: { delay: number }) {
+export function DrawnCheck({ delay }: { delay: number }) {
   const reduceMotion = useReducedMotion()
 
   if (reduceMotion) {

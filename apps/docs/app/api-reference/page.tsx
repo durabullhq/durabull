@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
-import { LandingLayout, MarketingPage } from '@/components'
-import { createMetadata } from '@/lib/seo'
+import { ContentPage } from '@/components/v2/content-page'
+import { SiteLayout } from '@/components/v2/site-layout'
+import { createAbsoluteMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'API Reference',
     description: "Automate queue operations and observability with Durabull's REST endpoints.",
@@ -13,11 +14,11 @@ export const metadata: Metadata = createMetadata(
 
 export default function ApiReferencePage() {
   return (
-    <LandingLayout>
-      <MarketingPage
-        badge="Developer APIs"
+    <SiteLayout>
+      <ContentPage
+        label="Developer APIs"
         title="API Reference"
-        subtitle="Automate queue operations and observability with Durabull's REST endpoints."
+        intro="Automate queue operations and observability with Durabull's REST endpoints."
         primaryCta={{ label: 'HTTP API Reference', to: '/documentation/reference/http-api' }}
         secondaryCta={{ label: 'Browse Docs', to: '/documentation' }}
         sections={[
@@ -37,8 +38,8 @@ export default function ApiReferencePage() {
             items: ['Webhook subscriptions', 'Alert thresholds', 'Status checks'],
           },
         ]}
-        footerNote="The REST API ships with every deployment and uses session authentication. See the reference for authless mode and scoped MCP access."
+        note="The REST API ships with every deployment and uses session authentication. See the reference for authless mode and scoped MCP access."
       />
-    </LandingLayout>
+    </SiteLayout>
   )
 }

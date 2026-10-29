@@ -7,8 +7,8 @@ import { useEffect, useRef, useState } from 'react'
 import { DurabullLogo } from '@/components/durabull-logo'
 import { cn } from '@/lib/utils'
 import { ClaudeMark, OpenAIMark } from './brand-marks'
-import { UserMsg } from './primitives'
 import { McpAppFrame, type McpHostSurface } from './mcp-app-frame'
+import { UserMsg } from './primitives'
 
 interface Scenario {
   id: string

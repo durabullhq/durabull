@@ -1,15 +1,18 @@
 import type { Metadata } from 'next'
-import { LandingLayout } from '@/components'
-import { PricingContent } from '@/components/pricing/pricing-content'
+import { V2FinalCta } from '@/components/v2/closing'
+import { V2Deploy } from '@/components/v2/deploy'
+import { PageHeading } from '@/components/v2/page-heading'
+import { V2BillingFaq, V2PlanComparison, V2PricingPlans } from '@/components/v2/pricing-page'
+import { SiteLayout } from '@/components/v2/site-layout'
 import { PRICING_FAQS } from '@/lib/pricing'
 import {
+  createAbsoluteMetadata,
   createBreadcrumbSchema,
   createFAQSchema,
-  createMetadata,
   createProductSchema,
 } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'Pricing',
     description:
@@ -26,7 +29,7 @@ export const metadata: Metadata = createMetadata(
 
 export default function PricingPage() {
   return (
-    <LandingLayout>
+    <SiteLayout>
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for JSON-LD
@@ -41,7 +44,20 @@ export default function PricingPage() {
           ]),
         }}
       />
-      <PricingContent />
-    </LandingLayout>
+      <PageHeading
+        label="Pricing · One price per organization"
+        title="Simple, predictable pricing."
+      >
+        <p>
+          Operate BullMQ across your environments for one team price. Your workers keep running on
+          your infrastructure, and there are no per-job fees.
+        </p>
+      </PageHeading>
+      <V2PricingPlans />
+      <V2PlanComparison />
+      <V2Deploy />
+      <V2BillingFaq />
+      <V2FinalCta />
+    </SiteLayout>
   )
 }

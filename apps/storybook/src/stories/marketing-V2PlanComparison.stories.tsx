@@ -1,12 +1,11 @@
-import { Footer } from '@docs/components/footer'
+import { V2PlanComparison } from '@docs/components/v2/pricing-page'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import '@docs/styles/landing.css'
 import '@docs/styles/v2.css'
 const meta = {
-  title: 'Marketing/Footer/Footer',
-  component: Footer,
+  title: 'Marketing/V2 / Pricing Page/V2PlanComparison',
+  component: V2PlanComparison,
   args: {},
   parameters: { layout: 'fullscreen' },
-} satisfies Meta<typeof Footer>
+} satisfies Meta<typeof V2PlanComparison>
 export default meta
 export const Default: StoryObj<typeof meta> = {}

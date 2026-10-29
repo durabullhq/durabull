@@ -4,7 +4,6 @@ import type { Metadata } from 'next'
 import { MarketingGoogleAnalytics } from '@/components/google-analytics'
 import { PostHogProvider } from '@/components/posthog-provider'
 import '@/styles/globals.css'
-import '@/styles/landing.css'
 
 export const metadata: Metadata = {
   title: {

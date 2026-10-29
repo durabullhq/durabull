@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
-import { LandingLayout, MarketingPage } from '@/components'
-import { createBreadcrumbSchema, createMetadata, createOrganizationSchema } from '@/lib/seo'
+import { ContentPage } from '@/components/v2/content-page'
+import { SiteLayout } from '@/components/v2/site-layout'
+import { createAbsoluteMetadata, createBreadcrumbSchema, createOrganizationSchema } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'About',
     description:
@@ -14,7 +15,7 @@ export const metadata: Metadata = createMetadata(
 
 export default function AboutPage() {
   return (
-    <LandingLayout>
+    <SiteLayout>
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for JSON-LD
@@ -28,10 +29,10 @@ export default function AboutPage() {
           ]),
         }}
       />
-      <MarketingPage
-        badge="Our Story"
+      <ContentPage
+        label="Our Story"
         title="About Durabull"
-        subtitle="We built Durabull to bring clarity, reliability, and speed to BullMQ operations."
+        intro="We built Durabull to bring clarity, reliability, and speed to BullMQ operations."
         primaryCta={{ label: 'Meet the Team', to: '/contact' }}
         secondaryCta={{ label: 'View Product', to: '/product' }}
         sections={[
@@ -50,8 +51,8 @@ export default function AboutPage() {
               'Durabull is open source under Apache-2.0. Self-host with PostgreSQL or persistent PGlite storage, or use the desktop app.',
           },
         ]}
-        footerNote="Questions about Durabull? Email us at hello@durabull.io."
+        note="Questions about Durabull? Email us at hello@durabull.io."
       />
-    </LandingLayout>
+    </SiteLayout>
   )
 }

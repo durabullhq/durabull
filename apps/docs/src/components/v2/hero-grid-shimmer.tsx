@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
 import { useReducedMotion } from 'framer-motion'
+import { useEffect, useRef } from 'react'
 
 /** Must match .v2-blueprint background-size */
 const CELL = 24

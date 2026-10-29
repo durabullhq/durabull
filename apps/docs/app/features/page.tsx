@@ -1,8 +1,12 @@
 import type { Metadata } from 'next'
-import { Features, LandingLayout } from '@/components'
-import { createBreadcrumbSchema, createMetadata } from '@/lib/seo'
+import { V2FinalCta } from '@/components/v2/closing'
+import { V2Problem, V2ValueGrid } from '@/components/v2/features'
+import { PageHeading } from '@/components/v2/page-heading'
+import { V2Showcase } from '@/components/v2/showcase'
+import { SiteLayout } from '@/components/v2/site-layout'
+import { createAbsoluteMetadata, createBreadcrumbSchema } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'Features',
     description:
@@ -21,7 +25,7 @@ export const metadata: Metadata = createMetadata(
 
 export default function FeaturesPage() {
   return (
-    <LandingLayout>
+    <SiteLayout>
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for JSON-LD
@@ -34,9 +38,16 @@ export default function FeaturesPage() {
           ),
         }}
       />
-      <div className="min-h-screen pt-32">
-        <Features />
-      </div>
-    </LandingLayout>
+      <PageHeading label="Features" title="Every control surface for running BullMQ.">
+        <p>
+          Monitor queues, debug failed jobs, manage schedulers, and route alerts from one dashboard,
+          or hand the same controls to your agent through Durabull MCP.
+        </p>
+      </PageHeading>
+      <V2ValueGrid />
+      <V2Showcase />
+      <V2Problem />
+      <V2FinalCta />
+    </SiteLayout>
   )
 }

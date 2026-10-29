@@ -65,7 +65,7 @@ const footerLinks = [
   { label: 'UI catalog', href: '/ui/' },
   { label: 'Desktop apps', href: GITHUB_RELEASE_URL },
   { label: 'GitHub', href: 'https://github.com/durabullhq/durabull' },
-  { label: 'Pricing', href: '/#pricing' },
+  { label: 'Pricing', href: '/pricing' },
   { label: 'Contact', href: '/contact' },
 ]
 
