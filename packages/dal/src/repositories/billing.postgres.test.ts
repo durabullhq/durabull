@@ -186,6 +186,23 @@ describePostgres('billing on PostgreSQL', () => {
     expect(held.rows[0].held).toBe(0)
   })
 
+  it('lets only one replica claim each notice email', async () => {
+    const now = new Date()
+    const claims = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        billingRepository.claimNoticeDelivery({
+          organizationId: ORG,
+          kind: 'transition_notice',
+          userId: `${ORG}-owner`,
+          email: `${ORG}@example.com`,
+          now,
+          staleBefore: new Date(now.getTime() - 3_600_000),
+        })
+      )
+    )
+    expect(claims.filter(Boolean)).toHaveLength(1)
+  })
+
   it('never hands one webhook event to two concurrent workers', async () => {
     for (let i = 0; i < 30; i += 1) {
       await billingRepository.recordWebhookEvent({

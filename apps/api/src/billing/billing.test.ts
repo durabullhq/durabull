@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +12,7 @@ import {
   organization,
   user,
 } from '@durabull/dal'
+import { BillingEmailError } from '@durabull/email'
 import { env } from '@durabull/env'
 import { createApiApp } from '../app'
 import { AUTHLESS_ORG_ID, getAuthlessContext, resetAuthlessStateForTests } from '../lib/authless'
@@ -35,6 +36,14 @@ import {
   type WebhookEventSnapshot,
 } from './gateway'
 import { reconcileOrganization } from './reconcile'
+import {
+  listTransitionAudience,
+  refreshGrantEligibility,
+  sendDueReminders,
+  sendTransitionNotices,
+  setTransitionEmailSenderForTests,
+  syncStripeCustomers,
+} from './transition'
 import { processWebhookInbox, receiveStripeWebhook } from './webhooks'
 
 const TEST_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -723,5 +732,311 @@ describe('Cloud billing', () => {
     const billing = await json(await app.request('/api/billing'))
     expect(billing.migrationGrantExpiresAt).not.toBeNull()
     expect(billing.proposedPlanCode).toBe('free')
+  })
+  describe('beta transition notices', () => {
+    const day = 86_400_000
+    let sentEmails: Array<{
+      to: string
+      kind: string
+      idempotencyKey: string
+      restrictions: string[]
+      featuresInUse: string[]
+    }>
+
+    async function startGrant(grantDays: number) {
+      setBillingConfigForTests(
+        billingConfig({
+          launchAt: new Date(Date.now() + day),
+          migrationGrantUntil: new Date(Date.now() + grantDays * day),
+        })
+      )
+      invalidateEntitlementCache()
+      await getEntitlement(AUTHLESS_ORG_ID)
+    }
+
+    beforeEach(() => {
+      sentEmails = []
+      setTransitionEmailSenderForTests(async (email) => {
+        sentEmails.push({
+          to: email.to,
+          kind: email.kind,
+          idempotencyKey: email.idempotencyKey,
+          restrictions: email.restrictions,
+          featuresInUse: email.featuresInUse,
+        })
+        return { id: `msg_${sentEmails.length}` }
+      })
+    })
+
+    afterEach(() => setTransitionEmailSenderForTests(null))
+
+    it('emails every owner once, with what the Free plan would change', async () => {
+      await startGrant(31)
+      const app = await createApp()
+      await createConnection(app, 'a')
+      await createConnection(app, 'b')
+
+      const first = await sendTransitionNotices()
+      expect(first.sent).toBe(1)
+      expect(sentEmails[0]).toMatchObject({ kind: 'transition_notice' })
+      expect(sentEmails[0].restrictions).toEqual([
+        'Enabled Redis connections: 2 in use (a, b); Free includes 1, and you choose which stay active',
+      ])
+
+      // Running the launch again never emails an owner twice.
+      const second = await sendTransitionNotices()
+      expect(second.sent).toBe(0)
+      expect(second.alreadySent).toBe(1)
+      expect(sentEmails).toHaveLength(1)
+    })
+
+    it('tells organizations whose usage fits Free that only paid features change', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      expect(sentEmails[0].restrictions).toEqual([])
+      expect(sentEmails[0].featuresInUse).toEqual([])
+    })
+
+    it('retries an owner whose email failed, without resending to others', async () => {
+      await startGrant(31)
+      setTransitionEmailSenderForTests(async () => {
+        throw new Error('provider down')
+      })
+      const failed = await sendTransitionNotices()
+      expect(failed.failed).toHaveLength(1)
+
+      setTransitionEmailSenderForTests(async (email) => {
+        sentEmails.push({
+          to: email.to,
+          kind: email.kind,
+          idempotencyKey: email.idempotencyKey,
+          restrictions: [],
+          featuresInUse: [],
+        })
+        return { id: 'msg_retry' }
+      })
+      const retried = await sendTransitionNotices()
+      expect(retried.sent).toBe(1)
+    })
+
+    it('sends reminders 7 days and 1 day before the grant ends, only after the notice', async () => {
+      await startGrant(31)
+      const grantEnd = new Date(Date.now() + 31 * day)
+
+      // No notice yet: reminders never go out on their own.
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(0)
+
+      await sendTransitionNotices()
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 10 * day))).sent).toBe(0)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(1)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 5 * day))).sent).toBe(0)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 12 * 3_600_000))).sent).toBe(1)
+      expect(sentEmails.map((email) => email.kind)).toEqual([
+        'transition_notice',
+        'reminder_7d',
+        'reminder_1d',
+      ])
+    })
+
+    it('stops reminding organizations that subscribed', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      await subscribe(AUTHLESS_ORG_ID)
+      const grantEnd = new Date(Date.now() + 31 * day)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(0)
+    })
+
+    it('keeps reminding an organization whose first payment is incomplete', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      await subscribe(AUTHLESS_ORG_ID, { status: 'incomplete' })
+      const grantEnd = new Date(Date.now() + 31 * day)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(1)
+    })
+
+    it('shows the in-app banner only after the notice and until a plan is chosen', async () => {
+      await startGrant(31)
+      const app = await createApp()
+      expect((await json(await app.request('/api/billing'))).transition).toBeNull()
+
+      await sendTransitionNotices()
+      const overview = await json(await app.request('/api/billing'))
+      expect(overview.transition.deadline).toBe(overview.migrationGrantExpiresAt)
+      expect(overview.transition.noticeSentAt).toBeTruthy()
+
+      await subscribe(AUTHLESS_ORG_ID)
+      invalidateEntitlementCache()
+      expect((await json(await app.request('/api/billing'))).transition).toBeNull()
+    })
+
+    it('retries a send it could not record under the same idempotency key', async () => {
+      await startGrant(31)
+      const spy = spyOn(billingRepository, 'completeNoticeDelivery').mockImplementationOnce(
+        async () => {
+          throw new Error('database unavailable')
+        }
+      )
+      try {
+        const first = await sendTransitionNotices()
+        // The provider accepted it, so it counts as sent; only the record is missing.
+        expect(first.sent).toBe(1)
+        expect(first.delivered.has(AUTHLESS_ORG_ID)).toBe(true)
+        expect(first.failed[0].error).toContain('Sent, but recording the delivery failed')
+
+        // Still claimed: an immediate rerun does not send again.
+        expect((await sendTransitionNotices()).sent).toBe(0)
+
+        // Once the claim is stale it is retried with the same key, which the
+        // provider deduplicates.
+        const later = await sendTransitionNotices(new Date(Date.now() + 2 * 3_600_000))
+        expect(later.sent).toBe(1)
+        expect(sentEmails).toHaveLength(2)
+        expect(sentEmails[1].idempotencyKey).toBe(sentEmails[0].idempotencyKey)
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
+    it('keeps the idempotency key when the provider may have accepted the send', async () => {
+      await startGrant(31)
+      const keys: string[] = []
+      setTransitionEmailSenderForTests(async (email) => {
+        keys.push(email.idempotencyKey)
+        throw new BillingEmailError('Unable to fetch data', true)
+      })
+      const uncertain = await sendTransitionNotices()
+      expect(uncertain.failed[0].error).toContain('delivery uncertain')
+
+      setTransitionEmailSenderForTests(async (email) => {
+        keys.push(email.idempotencyKey)
+        return { id: 'msg_retry' }
+      })
+      // Left claimed, so only a stale retry sends again, under the same key.
+      expect((await sendTransitionNotices()).sent).toBe(0)
+      const later = await sendTransitionNotices(new Date(Date.now() + 2 * 3_600_000))
+      expect(later.sent).toBe(1)
+      expect(keys).toHaveLength(2)
+      expect(keys[1]).toBe(keys[0])
+    })
+
+    it('ignores a slow attempt finishing after its claim was taken over', async () => {
+      await startGrant(31)
+      const claim = async (now: Date) =>
+        billingRepository.claimNoticeDelivery({
+          organizationId: AUTHLESS_ORG_ID,
+          kind: 'transition_notice',
+          userId: 'owner-x',
+          email: 'owner-x@example.com',
+          now,
+          staleBefore: new Date(now.getTime() - 3_600_000),
+        })
+      const first = await claim(new Date())
+      const second = await claim(new Date(Date.now() + 2 * 3_600_000))
+      expect(first && second).toBeTruthy()
+      if (!first || !second) return
+      expect(
+        await billingRepository.completeNoticeDelivery(second, {
+          sent: true,
+          providerMessageId: 'msg_new',
+        })
+      ).toBe(true)
+      // The first attempt fails late; the delivered row must stay delivered.
+      expect(
+        await billingRepository.completeNoticeDelivery(first, { sent: false, error: 'timeout' })
+      ).toBe(false)
+      const [row] = await billingRepository.listNoticeDeliveries(AUTHLESS_ORG_ID)
+      expect(row.status).toBe('sent')
+    })
+
+    it('gives an owner added later their own reminder gap', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      const db = await getDb()
+      await db.insert(user).values({
+        id: 'late-owner',
+        name: 'Late owner',
+        email: 'late-owner@example.com',
+        emailVerified: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      await db.insert(member).values({
+        id: 'late-owner-member',
+        organizationId: AUTHLESS_ORG_ID,
+        userId: 'late-owner',
+        role: 'owner',
+        createdAt: new Date(),
+      })
+      const grantEnd = new Date(Date.now() + 31 * day)
+      // Six days left: the original owner is due a reminder; the new owner only
+      // gets the notice now, and no reminder in the same pass.
+      await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))
+      expect(sentEmails.map((email) => [email.to, email.kind]).slice(1)).toEqual(
+        expect.arrayContaining([
+          ['late-owner@example.com', 'transition_notice'],
+          [expect.not.stringContaining('late-owner'), 'reminder_7d'],
+        ])
+      )
+      expect(
+        sentEmails.filter((email) => email.to === 'late-owner@example.com').map((e) => e.kind)
+      ).toEqual(['transition_notice'])
+    })
+
+    it('hides the in-app banner while an operator override provides access', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      await billingRepository.createOverride({
+        organizationId: AUTHLESS_ORG_ID,
+        planCode: 'team',
+        limits: null,
+        reason: 'test',
+        createdBy: 'test',
+        expiresAt: new Date(Date.now() + 60 * day),
+      })
+      await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
+      invalidateEntitlementCache()
+      const app = await createApp()
+      const overview = await json(await app.request('/api/billing'))
+      expect(overview.source).toBe('override')
+      expect(overview.transition).toBeNull()
+    })
+
+    it('finds organizations whose entitlement predates the launch dates', async () => {
+      // Materialized before launch was configured: no grant recorded.
+      await getEntitlement(AUTHLESS_ORG_ID)
+      setBillingConfigForTests(
+        billingConfig({
+          launchAt: new Date(Date.now() + day),
+          migrationGrantUntil: new Date(Date.now() + 31 * day),
+        })
+      )
+      invalidateEntitlementCache()
+      expect(await listTransitionAudience()).toHaveLength(0)
+
+      const dryRun = await refreshGrantEligibility({ execute: false })
+      expect(dryRun.pending.map((org) => org.id)).toEqual([AUTHLESS_ORG_ID])
+      expect(await listTransitionAudience()).toHaveLength(0)
+
+      const executed = await refreshGrantEligibility({ execute: true })
+      expect(executed.refreshed).toBe(1)
+      expect((await listTransitionAudience()).map((entry) => entry.organizationId)).toEqual([
+        AUTHLESS_ORG_ID,
+      ])
+      expect((await refreshGrantEligibility({ execute: false })).pending).toHaveLength(0)
+    })
+
+    it('creates one Stripe Customer per organization, and a dry run creates none', async () => {
+      const dryRun = await syncStripeCustomers({ execute: false })
+      expect(dryRun.created).toBe(1)
+      expect(await billingRepository.findAccount(AUTHLESS_ORG_ID)).toBeNull()
+
+      const first = await syncStripeCustomers({ execute: true })
+      expect(first.created).toBe(1)
+      expect((await billingRepository.findAccount(AUTHLESS_ORG_ID))?.stripeCustomerId).toBe('cus_1')
+
+      const second = await syncStripeCustomers({ execute: true })
+      expect(second.created).toBe(0)
+      expect(second.reconciled).toBe(1)
+    })
   })
 })

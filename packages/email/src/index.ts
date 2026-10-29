@@ -2,6 +2,11 @@ import { env } from '@durabull/env'
 import { render } from '@react-email/components'
 import { getResendClient, isEmailConfigured } from './client'
 import { AlertEmail, type AlertEmailProps } from './templates/alert'
+import {
+  BillingTransitionEmail,
+  type BillingTransitionEmailProps,
+  billingTransitionSubject,
+} from './templates/billing-transition'
 import { InviteEmail, type InviteEmailProps } from './templates/invite'
 
 /**
@@ -132,6 +137,67 @@ export function createInvitationEmailSender(options: EmailOptions) {
   }
 }
 
+/** Resend errors after which the email may still have been accepted. */
+const UNCERTAIN_RESEND_ERRORS = new Set([
+  'application_error',
+  'internal_server_error',
+  'concurrent_idempotent_requests',
+])
+
+/**
+ * A billing email that was not confirmed sent. `uncertain` means the provider
+ * may have accepted it (network failure, server error), so a retry must reuse
+ * the idempotency key; otherwise it was definitely rejected.
+ */
+export class BillingEmailError extends Error {
+  constructor(
+    message: string,
+    readonly uncertain: boolean
+  ) {
+    super(message)
+    this.name = 'BillingEmailError'
+  }
+}
+
+/**
+ * Send one beta-transition notice or reminder to an organization owner.
+ * Returns the provider message id. Throws when sending fails so the caller can
+ * retry it later (see BillingEmailError for whether to keep the key).
+ */
+export async function sendBillingTransitionEmail(
+  data: BillingTransitionEmailProps & { to: string; idempotencyKey: string }
+): Promise<{ id: string | null }> {
+  if (!isEmailConfigured()) {
+    throw new Error('RESEND_API_KEY is not configured')
+  }
+  const { to, idempotencyKey, ...props } = data
+  const html = await render(BillingTransitionEmail(props))
+  const text = await render(BillingTransitionEmail(props), { plainText: true })
+  // The idempotency key makes a retried send (after a crash between sending
+  // and recording it) a no-op at the provider.
+  const { data: sent, error } = await getResendClient().emails.send(
+    {
+      from: env.EMAIL_FROM,
+      to,
+      subject: billingTransitionSubject(props.kind, props.organizationName, props.deadlineLabel),
+      html,
+      text,
+    },
+    { idempotencyKey }
+  )
+  if (error) {
+    throw new BillingEmailError(
+      `Failed to send billing notice: ${error.message}`,
+      UNCERTAIN_RESEND_ERRORS.has(error.name)
+    )
+  }
+  return { id: sent?.id ?? null }
+}
+
 // Re-export utilities
 export { isEmailConfigured } from './client'
+export type {
+  BillingTransitionEmailKind,
+  BillingTransitionEmailProps,
+} from './templates/billing-transition'
 export type { InviteEmailProps } from './templates/invite'

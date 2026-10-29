@@ -14,6 +14,7 @@
  *   bun tooling/scripts/billing-ops.ts contract <organization-id> --limits '{"connections.enabled":60}' --reason "…" --by <operator>
  *   bun tooling/scripts/billing-ops.ts migration-grant <organization-id> <ISO|none> --reason "…" --by <operator>
  *   bun tooling/scripts/billing-ops.ts stripe-setup [--webhook-url https://…/api/billing/webhook] [--live]
+ *   bun tooling/scripts/billing-ops.ts launch-transition [--execute --by <operator>] [--allow-sandbox] [--skip-pricing-check]
  *
  * Every manual entitlement change needs an operator and a reason (overrides
  * also an expiry). Each one is written to billing_operator_action, which is
@@ -21,11 +22,20 @@
  */
 
 import { isLimitKey, isPlanCode } from '../../packages/billing/src/catalog'
+import { CLOUD_PRICING_URL } from '../../packages/billing/src/transition'
 import { billingRepository, closeDb, type BillingWebhookEvent } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { invalidateEntitlementCache, materializeEntitlement } from '../../apps/api/src/billing/entitlements'
 import { reconcileAllOrganizations, reconcileOrganization } from '../../apps/api/src/billing/reconcile'
 import { setupStripeCatalog } from '../../apps/api/src/billing/stripe-setup'
+import { getBillingConfig, isBillingEnabled } from '../../apps/api/src/billing/config'
+import {
+  listTransitionAudience,
+  refreshGrantEligibility,
+  sendTransitionNotices,
+  syncStripeCustomers,
+} from '../../apps/api/src/billing/transition'
+import { isEmailConfigured } from '../../packages/email/src/index'
 
 function flag(args: string[], name: string): string | undefined {
   const index = args.indexOf(name)
@@ -241,6 +251,97 @@ async function main() {
       console.log(`# Stripe ${mode} mode. Add to the API environment:`)
       for (const [key, value] of Object.entries(result.env)) console.log(`${key}=${value}`)
       if (result.webhookSecret) console.log(`STRIPE_WEBHOOK_SECRET=${result.webhookSecret}`)
+      break
+    }
+    case 'launch-transition': {
+      // Dry run unless --execute: prints who would be emailed and what would
+      // change, and counts the Stripe Customers that would be created.
+      const execute = args.includes('--execute')
+      const by = execute ? requireArg(flag(args, '--by'), '--by <operator> is required with --execute') : ''
+      const config = getBillingConfig()
+      const problems: string[] = []
+      if (!isBillingEnabled()) problems.push('Cloud billing is not enabled (DURABULL_BILLING_ENABLED).')
+      if (!config.stripe.livemode) {
+        if (env.NODE_ENV === 'production') {
+          // Sandbox Customers bound to production organizations would block live ones later.
+          problems.push('STRIPE_API_KEY is not a live key; production needs the live key.')
+        } else if (!args.includes('--allow-sandbox')) {
+          problems.push('STRIPE_API_KEY is not a live key. Pass --allow-sandbox to rehearse outside production.')
+        }
+      }
+      if (!isEmailConfigured()) problems.push('RESEND_API_KEY is not set, so no email can be sent.')
+      if (!args.includes('--skip-pricing-check')) {
+        const response = await fetch(CLOUD_PRICING_URL, {
+          method: 'GET',
+          signal: AbortSignal.timeout(10_000),
+        }).catch(() => null)
+        if (!response?.ok) {
+          problems.push(`${CLOUD_PRICING_URL} is not live (the email links to it). Merge and deploy the pricing page first.`)
+        }
+      }
+      if (problems.length > 0) {
+        for (const problem of problems) console.error(`✗ ${problem}`)
+        process.exit(1)
+      }
+      if (config.enforcement !== 'on') {
+        console.warn(
+          `⚠ Enforcement is "${config.enforcement}": nothing changes at the deadline the email announces until DURABULL_BILLING_ENFORCEMENT=on.`
+        )
+      }
+
+      // Entitlements materialized before the launch dates were set have no grant
+      // yet and would be missed; --execute recomputes them first.
+      const eligibility = await refreshGrantEligibility({ execute })
+      if (eligibility.pending.length > 0) {
+        console.log(
+          execute
+            ? `Recomputed ${eligibility.refreshed} entitlement(s) created before launch that had no grant yet.`
+            : `${eligibility.pending.length} organization(s) created before launch have no grant recorded yet: ${eligibility.pending.map((org) => org.name).join(', ')}. --execute recomputes them first, so eligible ones join the list below.`
+        )
+      }
+
+      const audience = await listTransitionAudience()
+      console.table(
+        audience.map((entry) => ({
+          organization: entry.organizationName,
+          owners: entry.owners.map((owner) => owner.email).join(', ') || '(none)',
+          deadline: entry.deadline.toISOString(),
+          proposedPlan: entry.proposedPlan,
+          freeWouldChange: [...entry.restrictions, ...entry.featuresInUse].join('; ') || 'fits Free',
+        }))
+      )
+      const recipients = audience.reduce((total, entry) => total + entry.owners.length, 0)
+      console.log(`${audience.length} organization(s) on the beta grant, ${recipients} owner email(s).`)
+
+      const sync = await syncStripeCustomers({ execute })
+      console.log(
+        `Stripe Customers: ${sync.created} ${execute ? 'created' : 'to create'}, ${sync.reconciled} already linked, ${sync.skipped} skipped (no owner).`
+      )
+      for (const failure of sync.failed) console.error(`✗ ${failure.organizationId}: ${failure.error}`)
+
+      if (!execute) {
+        console.log('Dry run. Re-run with --execute --by <operator> to create Customers and send the notice.')
+        break
+      }
+      const sent = await sendTransitionNotices()
+      console.log(`Notice emails: ${sent.sent} sent, ${sent.alreadySent} already sent earlier. Failed ones are retried hourly by the API, or by running this again.`)
+      for (const failure of sent.failed) {
+        console.error(`✗ ${failure.email} (${failure.organizationId}): ${failure.error}`)
+      }
+      for (const entry of audience) {
+        if (!sent.delivered.has(entry.organizationId)) continue
+        await billingRepository.recordOperatorAction({
+          organizationId: entry.organizationId,
+          action: 'transition_notice_sent',
+          actor: by,
+          reason: 'Beta transition launch',
+          details: { deadline: entry.deadline.toISOString(), owners: entry.owners.length },
+        })
+      }
+      if (sent.failed.length > 0 || sync.failed.length > 0) {
+        console.error('Some steps failed. Fix the cause and run the same command again; it only retries what is left.')
+        process.exit(1)
+      }
       break
     }
     default:
