@@ -51,8 +51,8 @@ jobs:
           done
           exit "$status"
 
-      - name: Build
-        run: bun run build
+      - name: Build web and API
+        run: bunx turbo build --filter=@durabull/web --filter=@durabull/api
 
       - name: Verify MCP protocol, apps, plugins and authorization
         run: bun run mcp:check
@@ -63,19 +63,9 @@ jobs:
       - name: Run mode unit tests
         run: bun test packages/dal/src/db/env-redis-connections.test.ts apps/api/src/lib/authless.test.ts
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output
-          path: |
-            apps/web/dist
-            apps/api/dist
-          retention-days: 1
-
   e2e:
     name: E2E Tests
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: checks
     timeout-minutes: 30
     services:
       postgres:
@@ -150,12 +140,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/durabull_test
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output
-          path: .
-
       - name: Run E2E tests
         run: bun run test:e2e
         working-directory: apps/web
@@ -184,7 +168,6 @@ jobs:
   e2e-authless:
     name: E2E Tests (Authless Stateless)
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: checks
     timeout-minutes: 30
     services:
       redis:
@@ -239,12 +222,6 @@ jobs:
         run: bunx playwright install-deps chromium
         working-directory: apps/web
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output
-          path: .
-
       - name: Run authless stateless E2E smoke tests
         run: bunx playwright test e2e/authless.spec.ts e2e/alerts.spec.ts
         working-directory: apps/web
@@ -275,6 +252,32 @@ jobs:
           name: test-results-authless
           path: apps/web/test-results/
           retention-days: 7
+
+  desktop-build:
+    name: Desktop Build
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build desktop
+        run: bunx turbo build --filter=@durabull/desktop
 
   docker-image-smoke:
     name: Docker Image Smoke Test
