@@ -1,12 +1,12 @@
 import { MCP_FACTS, MCP_URL } from '@/lib/mcp-facts'
+import { CLOUD_PRICING_SUMMARY } from '@/lib/pricing'
 
 export const DURABULL = {
   name: 'Durabull',
   website: 'https://durabull.io',
   app: 'https://app.durabull.io',
   mcpUrl: MCP_URL,
-  pricing:
-    'Hosted dashboard is free to start. Redis, worker compute, and infrastructure operations remain your costs. Check the pricing page for current terms.',
+  pricing: `${CLOUD_PRICING_SUMMARY} Redis, worker compute, and infrastructure operations remain your costs.`,
   license: 'Apache License 2.0 (OSI-approved open source). Self-host on your own infrastructure.',
   discovery:
     'SCAN for `<prefix>:*:meta` (default prefix `bull`). No worker SDK required to list queues or inspect jobs.',

@@ -1,0 +1,104 @@
+---
+title: Plans and Billing
+description: How Durabull Cloud plans, limits, trials, upgrades, downgrades, and failed payments work.
+---
+
+Durabull Cloud subscriptions are billed **per organization**, not per person and not per job. The
+desktop app and self-hosted installations under Apache-2.0 include every local feature without a
+subscription and never contact Stripe.
+
+## Plans
+
+| | Free | Team | Business | Enterprise |
+| --- | --- | --- | --- | --- |
+| Monthly price | $0 | $9 | $29 | By agreement |
+| Annual price | $0 | $90 | $290 | Annual agreement |
+| Enabled Redis connections | 1 | 5 | 15 | From 30 |
+| Members (including pending invitations) | 1 | 10 | 50 | From 100 |
+| Queues on included connections | All | All | All | Agreed envelope |
+| Bulk recovery (retry or promote many jobs at once) | — | Included | Included | Included |
+| Read-only MCP | Included | Included | Included | Included |
+| Opt-in MCP writes | — | Included | Included | Included |
+| Service accounts | — | 1 | 5 | From 25 |
+| Enabled alert rules | 3 | 15 | 100 | From 250 |
+| Saved alert destinations | 1 | 5 | 20 | From 50 |
+| Email / webhook / Linear alerts | Email | All | All | All |
+| Redis health history | 24 hours | 14 days | 30 days | 30 days |
+| Support | Community | Email, best effort | Priority email (2 business days) | Agreed business hours |
+
+Prices are in US dollars before applicable taxes. There are no fees per job, retry, or MCP call.
+Individual job retries, inspection, and email alerts are available on every plan, and security
+controls (encryption, tenant isolation, redaction) are never premium-only.
+
+Enterprise is sold by agreement on shared Durabull Cloud. SAML SSO, SCIM, dedicated deployment, and
+contractual SLAs are not part of any plan today.
+
+## What counts
+
+- **Connections**: each enabled connection to a Redis logical database counts once, however many
+  queues it holds. A disconnected but enabled connection still counts. Disable a connection in
+  **Settings → Connections** to stop its polling, alert evaluation, and operational access; disabled
+  connections do not count. Different logical databases (or duplicate saved records) count separately.
+- **Members**: the owner and active members count. Pending invitations reserve a seat until they are
+  accepted, revoked, or expire. A person in two organizations uses a seat in each.
+- **Alert rules and destinations**: enabled rules and saved destinations count. Disabling an extra rule
+  keeps its configuration.
+- **Service accounts**: enabled service accounts count against the plan's automation limit. They are
+  separate from members and cannot sign in interactively.
+
+## Buying, trials, and changes
+
+Owners manage billing in **Settings → Billing**. Payment details, invoices, receipts, tax IDs, plan
+changes, and cancellation use Stripe-hosted pages; Durabull never sees card numbers. Other members see
+the plan and usage and can ask the owner to upgrade.
+
+- **Trial**: one 14-day Business trial per eligible organization, started from Settings → Billing,
+  with no payment method required. Without a payment method the organization returns to Free when
+  the trial ends.
+- **Confirmation**: returning from checkout does not change access by itself. The plan updates once
+  Stripe confirms payment, usually within seconds.
+- **Upgrades** take effect after payment is confirmed. Until then the previous plan stays active.
+- **Plan changes** are immediate with proration calculated by Stripe. Positive amounts are invoiced
+  immediately; unused amounts from a downgrade normally become account credit rather than a card
+  refund. Contact support about refunding unused credit or billing mistakes.
+- **Cancellation** takes effect at the end of the paid period.
+- **Annual plans** are prepaid: Team $90/year (equivalent to $7.50/month) and Business $290/year
+  (about $24.17/month).
+
+## Moving from the beta
+
+Organizations created during the Durabull Cloud beta keep full access until the date in their notice
+email, which is also shown in Settings → Billing and in a banner in the app. After that date they use
+the Free plan unless an owner chooses a plan. Settings → Billing shows the plan that covers current
+usage and exactly what Free would pause. Nothing is deleted, and paused resources come back when the
+organization upgrades.
+
+## Failed payments
+
+If a renewal fails, a previously paid plan keeps working for **seven days** while you update the
+payment method from Manage billing. After the grace period the organization uses Free limits. A new
+subscription whose first payment fails does not unlock paid features.
+
+## Over-limit resources after a downgrade
+
+Billing never pauses your queues, deletes jobs, purges Redis, or changes schedules.
+
+- New resources cannot be created above the new limits.
+- Existing **connections and members** above the limits stay enabled for a **seven-day adjustment
+  window**. The window is not extended by repeated upgrade and downgrade cycles, and there is no second
+  window after a failed payment's grace period. Extra alert rules, destinations, and service accounts
+  are paused right away.
+- In Settings → Billing the owner chooses which connections, members, rules, destinations, and service
+  accounts stay enabled. Without a choice, Durabull keeps the founding owner and the oldest resources
+  and pauses the newest extras; other owners count like any member. Alert rules on connections that
+  stay enabled are kept first.
+- Paused resources keep their configuration and are restored automatically after an upgrade. Paused
+  members cannot use existing sessions or tokens for that organization, paused connections stop
+  polling, and webhook or Linear deliveries stop when the plan no longer includes them.
+
+## History retention
+
+Plan history windows apply to the Redis health samples Durabull stores, not to job payloads or logs,
+which follow your own Redis and BullMQ retention. After a downgrade the visible window shortens
+immediately; samples already collected are kept for a seven-day recovery period before being pruned
+to the new window. Upgrading cannot recreate samples that were already pruned.

@@ -251,7 +251,7 @@ export const articles: Article[] = [
         heading: 'Durabull: evaluate fleet visibility and agent-assisted operations',
         body: [
           'Durabull is Apache-2.0 open source. It connects to Redis-backed BullMQ queues and groups connections by environment. It combines queue inspection, Redis health history, alerts, and scoped MCP tools. Alerts are delivered by email, signed webhooks, or Linear today; Slack and PagerDuty delivery are coming soon. Historical BullMQ throughput still requires worker metrics, and some Redis providers restrict worker or INFO introspection.',
-          'Choose it for evaluation when multiple Redis environments and a shared human-and-agent workflow are central requirements. Test missing permissions and incomplete metrics as well as the happy path. The hosted app is free to start; budget against current published terms. Self-hosting brings deployment and monitoring responsibilities.',
+          'Choose it for evaluation when multiple Redis environments and a shared human-and-agent workflow are central requirements. Test missing permissions and incomplete metrics as well as the happy path. The hosted app has a Free plan, with Team at $9/month and Business at $29/month per organization. Self-hosting brings deployment and monitoring responsibilities.',
         ],
         sourceUrls: urls('connections', 'nativeMetrics', 'mcp', 'health', 'pricing', 'deployment'),
       },
@@ -425,7 +425,7 @@ export const articles: Article[] = [
       {
         heading: 'Build the BullMQ side from measured resources',
         body: [
-          'For Redis-backed BullMQ, estimate Redis capacity and availability, worker compute, network traffic, backups, telemetry, and engineering operations. Durabull’s hosted dashboard is free to start, but that does not make the underlying workload free. Durabull is Apache-2.0 open source; self-hosting it adds its own deployment costs.',
+          'For Redis-backed BullMQ, estimate Redis capacity and availability, worker compute, network traffic, backups, telemetry, and engineering operations. Durabull’s hosted dashboard has a Free plan and flat per-organization paid plans, but that does not make the underlying workload free. Durabull is Apache-2.0 open source; self-hosting it adds its own deployment costs.',
           'Use the same job mix, payload sizes, retention, peak arrival pattern, and recovery target on both sides. Measure CPU time and memory for your processors; a large idle worker fleet and a highly utilized fleet produce very different costs per completed job. Include retained failed jobs when sizing Redis, especially after a prolonged dependency outage.',
           'Distinguish incremental cost from total cost. An existing BullMQ fleet may have spare capacity, making the next workload inexpensive to add. A greenfield comparison must include provisioning and maintaining that fleet. Both are valid questions, but they cannot share one unlabeled savings percentage.',
         ],

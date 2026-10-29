@@ -5,6 +5,7 @@
 
 import type { Metadata } from 'next'
 import { GITHUB_RELEASE_URL, MAC_DOWNLOAD_URL, SITE_URL } from '@/lib/config'
+import { CLOUD_PLANS } from './pricing'
 
 const SITE_NAME = 'Durabull'
 const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`
@@ -96,10 +97,12 @@ export function createSoftwareApplicationSchema() {
     downloadUrl: MAC_DOWNLOAD_URL,
     installUrl: GITHUB_RELEASE_URL,
     offers: {
-      '@type': 'Offer',
-      price: '0',
+      '@type': 'AggregateOffer',
+      lowPrice: '0',
+      highPrice: '29',
       priceCurrency: 'USD',
-      description: 'Free to start',
+      offerCount: CLOUD_PLANS.filter((plan) => plan.monthlyPriceUsd !== null).length,
+      description: 'Durabull Cloud: Free, Team and Business plans per organization',
     },
   }
 }
@@ -166,13 +169,27 @@ export function createProductSchema() {
       '@type': 'Brand',
       name: 'Durabull',
     },
-    offers: {
+    // One Offer per self-serve plan; Enterprise is sold by agreement.
+    offers: CLOUD_PLANS.filter((plan) => plan.monthlyPriceUsd !== null).map((plan) => ({
       '@type': 'Offer',
-      price: '0',
+      name: `Durabull Cloud ${plan.name}`,
+      price: String(plan.monthlyPriceUsd),
       priceCurrency: 'USD',
       availability: 'https://schema.org/InStock',
-      description: 'Free to start',
-    },
+      url: `${SITE_URL}/pricing`,
+      description: plan.description,
+      ...(plan.monthlyPriceUsd
+        ? {
+            priceSpecification: {
+              '@type': 'UnitPriceSpecification',
+              price: String(plan.monthlyPriceUsd),
+              priceCurrency: 'USD',
+              billingDuration: 'P1M',
+              unitText: 'organization',
+            },
+          }
+        : {}),
+    })),
   }
 }
 

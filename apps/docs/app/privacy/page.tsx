@@ -91,7 +91,7 @@ const retentionRows = [
   {
     category: 'Redis health samples stored by Durabull',
     period:
-      '30 days by default; deployment operators can configure 1–30 days. Older samples are eligible for periodic cleanup, which can be delayed by service downtime, errors, or a backlog.',
+      '30 days by default; deployment operators can configure 1–30 days. On Durabull Cloud the organization’s plan sets the window (24 hours, 14 days, or 30 days); after a downgrade, samples already collected are kept for a seven-day recovery period before cleanup. Older samples are eligible for periodic cleanup, which can be delayed by service downtime, errors, or a backlog. Cancelling a subscription does not delete data in your Redis.',
   },
   {
     category: 'Alert events and delivery records',
@@ -337,8 +337,13 @@ function PrivacySharingSection() {
           hosting, database, storage, backup, network, and support providers process service data
           needed to run Durabull. PostHog receives configured analytics and diagnostics; Google
           receives configured website analytics. Resend processes recipient addresses and email
-          content for configured invitations and alerts. Google or GitHub participates in
-          authentication when you choose that sign-in provider.
+          content for invitations, configured alerts, and billing notices to organization owners.
+          Google or GitHub participates in authentication when you choose that sign-in provider.
+          Stripe processes payment details, billing contacts, addresses, tax IDs, invoices, and
+          subscription status for Durabull Cloud subscriptions. Durabull stores the Stripe customer,
+          subscription, price, and latest-invoice references; subscription and invoice status; trial
+          and billing-period dates; checkout attempts; which member is the billing contact; and a
+          record of billing notices sent. It never stores card numbers.
         </li>
         <li>
           <strong className="text-[var(--v2-fg)]">Destinations you configure:</strong> notification
