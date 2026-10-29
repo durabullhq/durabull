@@ -111,13 +111,16 @@ function buildIdentifiedCapture(input: {
   properties: Record<string, string | number | boolean | null | string[]>
   distinctId: string
   organizationId?: string | null
+  organizationGroup?: string | null
   timestamp?: string
   hmacSecret: string | null
 }): PosthogBatchCapture {
   const organizationGroup =
-    input.organizationId && input.hmacSecret
-      ? hashIdentifiedOrganizationDistinctId(input.organizationId, input.hmacSecret)
-      : null
+    input.organizationGroup !== undefined
+      ? input.organizationGroup
+      : input.organizationId && input.hmacSecret
+        ? hashIdentifiedOrganizationDistinctId(input.organizationId, input.hmacSecret)
+        : null
 
   return {
     event: input.event,
@@ -261,6 +264,8 @@ export async function captureMcpAnalyticsServerEvent(input: {
   anonymousInstanceId?: string
   sessionId?: string
   identifiedDistinctId?: string | null
+  /** App-project group key, matching the browser; never copied to anonymous telemetry. */
+  identifiedOrganizationGroup?: string | null
   organizationId?: string | null
   timestamp?: string
 }): Promise<void> {
@@ -301,6 +306,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
             properties: validated.properties,
             distinctId: input.identifiedDistinctId!,
             organizationId: input.organizationId ?? null,
+            organizationGroup: input.identifiedOrganizationGroup,
             timestamp,
             hmacSecret: options.hmacSecret,
           })
@@ -374,6 +380,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
               properties: validated.properties,
               distinctId: input.identifiedDistinctId!,
               organizationId: input.organizationId ?? null,
+              organizationGroup: input.identifiedOrganizationGroup,
               timestamp,
               hmacSecret: options.hmacSecret,
             }),
