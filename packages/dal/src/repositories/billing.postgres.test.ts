@@ -154,15 +154,34 @@ describePostgres('billing on PostgreSQL', () => {
   it('leaves no organization lock behind, even behind a transaction pooler', async () => {
     // Behind PgBouncer in transaction mode, a session lock and its unlock can
     // run on different server backends; this must never leave a lock held.
-    for (let i = 0; i < 20; i += 1) {
-      await billingRepository.withOrganizationLock(`${ORG}-leak-${i % 3}`, async () => {
-        const db = await getDb()
-        await db.execute(sql`SELECT 1`)
+    // Concurrent cycles make a pooler hand consecutive statements of one
+    // client to different backends, as production traffic does.
+    const organizationIds = [0, 1, 2].map((n) => `${ORG}-leak-${n}`)
+    const db = await getDb()
+    await Promise.all(
+      organizationIds.map(async (organizationId) => {
+        for (let i = 0; i < 10; i += 1) {
+          await billingRepository.withOrganizationLock(organizationId, async () => {
+            await db.execute(sql`SELECT pg_sleep(0.005)`)
+          })
+        }
       })
-    }
+    )
+    // Only this database and the lock keys used above: advisory locks are
+    // per database, and other databases or tests may hold their own. A bigint
+    // key is shown as classid (high 32 bits) and objid (low 32 bits).
     const pool = await getPgPool()
     const held = await pool.query(
-      `SELECT count(*)::int AS held FROM pg_locks WHERE locktype = 'advisory' AND granted`
+      `SELECT count(*)::int AS held
+         FROM pg_locks l
+        WHERE l.locktype = 'advisory'
+          AND l.granted
+          AND l.objsubid = 1
+          AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+          AND ((l.classid::bigint << 32) | l.objid::bigint) IN (
+            SELECT hashtextextended('durabull_billing:' || id, 0) FROM unnest($1::text[]) AS id
+          )`,
+      [organizationIds]
     )
     expect(held.rows[0].held).toBe(0)
   })
