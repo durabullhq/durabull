@@ -1,6 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { AlertEmail } from '../../../../packages/email/src/templates/alert'
+import {
+  BillingTransitionEmail,
+  type BillingTransitionEmailProps,
+} from '../../../../packages/email/src/templates/billing-transition'
 import { InviteEmail } from '../../../../packages/email/src/templates/invite'
 
 const invitationRole = 'member'
@@ -45,6 +49,55 @@ export const Incident: Story = {
           muteUrl="https://example.com/demo-mute"
         />
       )}
+    />
+  ),
+}
+
+const transitionEmail: BillingTransitionEmailProps = {
+  kind: 'notice',
+  organizationName: 'Acme Operations',
+  deadline: new Date('2026-11-23T17:00:00Z'),
+  billingUrl: 'https://example.com/acme/settings/billing',
+  pricingUrl: 'https://example.com/pricing',
+  teamMonthlyUsd: 9,
+  businessMonthlyUsd: 29,
+  restrictions: ['Enabled Redis connections: 3 in use, Free includes 1'],
+  featuresInUse: ['Webhook alerts'],
+}
+
+function TransitionPreview({
+  props,
+  title,
+}: {
+  props: BillingTransitionEmailProps
+  title: string
+}) {
+  return (
+    <iframe
+      title={title}
+      sandbox=""
+      style={{ width: '100%', height: 1000, border: 0 }}
+      srcDoc={renderToStaticMarkup(<BillingTransitionEmail {...props} />)}
+    />
+  )
+}
+
+export const BillingTransitionNotice: Story = {
+  render: () => <TransitionPreview title="Billing transition notice" props={transitionEmail} />,
+}
+export const BillingTransitionFitsFree: Story = {
+  render: () => (
+    <TransitionPreview
+      title="Billing transition notice for an organization within Free"
+      props={{ ...transitionEmail, restrictions: [], featuresInUse: [] }}
+    />
+  ),
+}
+export const BillingTransitionFinalReminder: Story = {
+  render: () => (
+    <TransitionPreview
+      title="Billing transition final reminder"
+      props={{ ...transitionEmail, kind: 'reminder_1d' }}
     />
   ),
 }

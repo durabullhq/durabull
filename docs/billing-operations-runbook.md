@@ -69,11 +69,35 @@ sandbox.
    created before launch).
 2. Inspect who would be restricted: `bun tooling/scripts/billing-ops.ts status` and PostHog
    `feature_denied` events with `shadow=true`.
-3. Send the beta-transition notice (≥ 30 days). Each owner sees the proposed plan and the exact
+3. Send the beta-transition notice (see below). Each owner sees the proposed plan and the exact
    resources Free would restrict in Settings → Billing.
 4. Switch to `pilot` for selected organizations, verify real invoices and feature access, then run a
    full renewal / failed-payment simulation with Stripe test clocks.
 5. Switch to `on`.
+
+### Beta transition notice
+
+Organizations created before `DURABULL_BILLING_LAUNCH_AT` keep full access until their migration
+grant ends. Once the pricing page is live, run from the API environment:
+
+```bash
+bun tooling/scripts/billing-ops.ts launch-transition
+bun tooling/scripts/billing-ops.ts launch-transition --execute --by <you>
+```
+
+The first command is a dry run: it checks the deployment (billing enabled, live Stripe key, email
+configured, pricing page reachable), lists every organization still on the grant with its owners
+and what the Free plan would change, and counts the Stripe Customers it would create. `--execute`
+creates a Stripe Customer for every organization that lacks one (contact: the founding owner),
+emails the notice to every owner of every organization on the grant that has not subscribed, and
+records a `transition_notice_sent` operator action per organization. Every email is claimed in
+`billing_notice_delivery` before it is sent, so re-running only retries failures and never emails
+an owner twice. `--allow-sandbox` and `--skip-pricing-check` exist for rehearsals.
+
+After the notice, the billing lifecycle sends reminders hourly when due: 7 days and 1 day before an
+organization's grant ends, only to organizations that already received the notice and have not
+subscribed. Every member of those organizations also sees an in-app banner with the date (owners
+get "Choose a plan"); it can be dismissed until the final week.
 
 Rollback: set `DURABULL_BILLING_PURCHASES_ENABLED=false` (stops new purchases, keeps known paid
 access and ingestion), or `DURABULL_BILLING_ENFORCEMENT=shadow` (stops denials; suspensions are

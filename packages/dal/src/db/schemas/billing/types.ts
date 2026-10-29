@@ -1,6 +1,7 @@
 import type {
   billingCheckoutAttempt,
   billingEntitlementOverride,
+  billingNoticeDelivery,
   billingOperatorAction,
   billingResourceSuspension,
   billingSubscription,
@@ -32,3 +33,6 @@ export type NewBillingEntitlementOverride = typeof billingEntitlementOverride.$i
 
 export type BillingOperatorAction = typeof billingOperatorAction.$inferSelect
 export type NewBillingOperatorAction = typeof billingOperatorAction.$inferInsert
+
+export type BillingNoticeDelivery = typeof billingNoticeDelivery.$inferSelect
+export type NewBillingNoticeDelivery = typeof billingNoticeDelivery.$inferInsert

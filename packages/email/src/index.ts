@@ -2,6 +2,11 @@ import { env } from '@durabull/env'
 import { render } from '@react-email/components'
 import { getResendClient, isEmailConfigured } from './client'
 import { AlertEmail, type AlertEmailProps } from './templates/alert'
+import {
+  BillingTransitionEmail,
+  type BillingTransitionEmailProps,
+  billingTransitionSubject,
+} from './templates/billing-transition'
 import { InviteEmail, type InviteEmailProps } from './templates/invite'
 
 /**
@@ -132,6 +137,35 @@ export function createInvitationEmailSender(options: EmailOptions) {
   }
 }
 
+/**
+ * Send one beta-transition notice or reminder to an organization owner.
+ * Returns the provider message id. Throws when sending fails so the caller can
+ * record the attempt as failed and retry it later.
+ */
+export async function sendBillingTransitionEmail(
+  data: BillingTransitionEmailProps & { to: string }
+): Promise<{ id: string | null }> {
+  if (!isEmailConfigured()) {
+    throw new Error('RESEND_API_KEY is not configured')
+  }
+  const { to, ...props } = data
+  const html = await render(BillingTransitionEmail(props))
+  const text = await render(BillingTransitionEmail(props), { plainText: true })
+  const { data: sent, error } = await getResendClient().emails.send({
+    from: env.EMAIL_FROM,
+    to,
+    subject: billingTransitionSubject(props.kind, props.organizationName, props.deadline),
+    html,
+    text,
+  })
+  if (error) throw new Error(`Failed to send billing notice: ${error.message}`)
+  return { id: sent?.id ?? null }
+}
+
 // Re-export utilities
 export { isEmailConfigured } from './client'
+export type {
+  BillingTransitionEmailKind,
+  BillingTransitionEmailProps,
+} from './templates/billing-transition'
 export type { InviteEmailProps } from './templates/invite'

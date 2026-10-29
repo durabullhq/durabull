@@ -8,6 +8,7 @@ import {
   type BillingResourceKind,
   billingCheckoutAttempt,
   billingEntitlementOverride,
+  billingNoticeDelivery,
   billingOperatorAction,
   billingResourceSuspension,
   billingSubscription,
@@ -464,6 +465,136 @@ export const billingRepository = {
       .select({ id: organization.id, createdAt: organization.createdAt })
       .from(organization)
       .orderBy(asc(organization.createdAt))
+  },
+
+  /** Owners of an organization, oldest first (the first is the founding owner). */
+  async listOwners(
+    organizationId: string
+  ): Promise<Array<{ userId: string; email: string; name: string; createdAt: Date }>> {
+    const db = await getDb()
+    return db
+      .select({
+        userId: member.userId,
+        email: user.email,
+        name: user.name,
+        createdAt: member.createdAt,
+      })
+      .from(member)
+      .innerJoin(user, eq(member.userId, user.id))
+      .where(and(eq(member.organizationId, organizationId), eq(member.role, 'owner')))
+      .orderBy(asc(member.createdAt), asc(member.id))
+  },
+
+  /** Organizations whose access currently comes from an unexpired beta transition grant. */
+  async listMigrationGrantOrganizations(
+    now: Date
+  ): Promise<Array<{ id: string; name: string; slug: string; migrationGrantExpiresAt: Date }>> {
+    const db = await getDb()
+    const rows = await db
+      .select({
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        migrationGrantExpiresAt: organizationEntitlement.migrationGrantExpiresAt,
+      })
+      .from(organizationEntitlement)
+      .innerJoin(organization, eq(organizationEntitlement.organizationId, organization.id))
+      .where(
+        and(
+          eq(organizationEntitlement.source, 'migration_grant'),
+          gt(organizationEntitlement.migrationGrantExpiresAt, now)
+        )
+      )
+      .orderBy(asc(organization.createdAt))
+    return rows.flatMap((row) =>
+      row.migrationGrantExpiresAt
+        ? [{ ...row, migrationGrantExpiresAt: row.migrationGrantExpiresAt }]
+        : []
+    )
+  },
+
+  /**
+   * Claim one notice email before sending it. Returns null when it was already
+   * sent or another worker is sending it; a failed attempt, or one stuck in
+   * `sending` since before `staleBefore`, can be claimed again.
+   */
+  async claimNoticeDelivery(input: {
+    organizationId: string
+    kind: 'transition_notice' | 'reminder_7d' | 'reminder_1d'
+    userId: string
+    email: string
+    now: Date
+    staleBefore: Date
+  }): Promise<{ id: string; attempts: number } | null> {
+    const db = await getDb()
+    const result = await db.execute(sql`
+      INSERT INTO ${billingNoticeDelivery}
+        (id, organization_id, kind, user_id, email, status, attempts, created_at, updated_at)
+      VALUES
+        (gen_random_uuid(), ${input.organizationId}, ${input.kind}, ${input.userId},
+         ${input.email}, 'sending', 1, ${input.now}, ${input.now})
+      ON CONFLICT (organization_id, kind, user_id) DO UPDATE
+        SET status = 'sending',
+            email = EXCLUDED.email,
+            attempts = ${billingNoticeDelivery}.attempts + 1,
+            error = NULL,
+            updated_at = EXCLUDED.updated_at
+        WHERE ${billingNoticeDelivery}.status = 'failed'
+           OR (${billingNoticeDelivery}.status = 'sending'
+               AND ${billingNoticeDelivery}.updated_at < ${input.staleBefore})
+      RETURNING id, attempts
+    `)
+    return rowsFromExecute<{ id: string; attempts: number }>(result)[0] ?? null
+  },
+
+  async completeNoticeDelivery(
+    id: string,
+    outcome: { sent: true; providerMessageId: string | null } | { sent: false; error: string }
+  ): Promise<void> {
+    const db = await getDb()
+    const now = new Date()
+    await db
+      .update(billingNoticeDelivery)
+      .set(
+        outcome.sent
+          ? {
+              status: 'sent',
+              providerMessageId: outcome.providerMessageId,
+              sentAt: now,
+              updatedAt: now,
+            }
+          : { status: 'failed', error: outcome.error.slice(0, 1000), updatedAt: now }
+      )
+      .where(eq(billingNoticeDelivery.id, id))
+  },
+
+  /** Whether any owner of the organization has been sent this notice. */
+  async hasSentNotice(
+    organizationId: string,
+    kind: 'transition_notice' | 'reminder_7d' | 'reminder_1d'
+  ): Promise<boolean> {
+    const db = await getDb()
+    const rows = await db
+      .select({ id: billingNoticeDelivery.id })
+      .from(billingNoticeDelivery)
+      .where(
+        and(
+          eq(billingNoticeDelivery.organizationId, organizationId),
+          eq(billingNoticeDelivery.kind, kind),
+          eq(billingNoticeDelivery.status, 'sent')
+        )
+      )
+      .limit(1)
+    return rows.length > 0
+  },
+
+  async listNoticeDeliveries(organizationId: string) {
+    const db = await getDb()
+    return db
+      .select()
+      .from(billingNoticeDelivery)
+      .where(eq(billingNoticeDelivery.organizationId, organizationId))
+      .orderBy(asc(billingNoticeDelivery.createdAt))
   },
 
   async listEntitlements(): Promise<OrganizationEntitlement[]> {

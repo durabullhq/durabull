@@ -1,6 +1,7 @@
 import { createFileRoute, Navigate, Outlet, useNavigate } from '@tanstack/react-router'
 import { ShieldX } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { TransitionBanner } from '@/components/billing/transition-banner'
 import { UpgradePromptHost } from '@/components/billing/upgrade-prompt-host'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
@@ -100,6 +101,7 @@ function OrgSlugLayout() {
     <>
       <Outlet />
       <UpgradePromptHost orgSlug={orgSlug} />
+      <TransitionBanner orgSlug={orgSlug} />
     </>
   )
 }

@@ -35,6 +35,13 @@ import {
   type WebhookEventSnapshot,
 } from './gateway'
 import { reconcileOrganization } from './reconcile'
+import {
+  dueReminder,
+  sendDueReminders,
+  sendTransitionNotices,
+  setTransitionEmailSenderForTests,
+  syncStripeCustomers,
+} from './transition'
 import { processWebhookInbox, receiveStripeWebhook } from './webhooks'
 
 const TEST_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -723,5 +730,132 @@ describe('Cloud billing', () => {
     const billing = await json(await app.request('/api/billing'))
     expect(billing.migrationGrantExpiresAt).not.toBeNull()
     expect(billing.proposedPlanCode).toBe('free')
+  })
+  describe('beta transition notices', () => {
+    const day = 86_400_000
+    let sentEmails: Array<{
+      to: string
+      kind: string
+      restrictions: string[]
+      featuresInUse: string[]
+    }>
+
+    async function startGrant(grantDays: number) {
+      setBillingConfigForTests(
+        billingConfig({
+          launchAt: new Date(Date.now() + day),
+          migrationGrantUntil: new Date(Date.now() + grantDays * day),
+        })
+      )
+      invalidateEntitlementCache()
+      await getEntitlement(AUTHLESS_ORG_ID)
+    }
+
+    beforeEach(() => {
+      sentEmails = []
+      setTransitionEmailSenderForTests(async (email) => {
+        sentEmails.push({
+          to: email.to,
+          kind: email.kind,
+          restrictions: email.restrictions,
+          featuresInUse: email.featuresInUse,
+        })
+        return { id: `msg_${sentEmails.length}` }
+      })
+    })
+
+    afterEach(() => setTransitionEmailSenderForTests(null))
+
+    it('emails every owner once, with what the Free plan would change', async () => {
+      await startGrant(31)
+      const app = await createApp()
+      await createConnection(app, 'a')
+      await createConnection(app, 'b')
+
+      const first = await sendTransitionNotices()
+      expect(first.sent).toBe(1)
+      expect(sentEmails[0]).toMatchObject({ kind: 'notice' })
+      expect(sentEmails[0].restrictions).toEqual([
+        'Enabled Redis connections: 2 in use, Free includes 1',
+      ])
+
+      // Running the launch again never emails an owner twice.
+      const second = await sendTransitionNotices()
+      expect(second.sent).toBe(0)
+      expect(second.alreadySent).toBe(1)
+      expect(sentEmails).toHaveLength(1)
+    })
+
+    it('tells organizations whose usage fits Free that only paid features change', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      expect(sentEmails[0].restrictions).toEqual([])
+      expect(sentEmails[0].featuresInUse).toEqual([])
+    })
+
+    it('retries an owner whose email failed, without resending to others', async () => {
+      await startGrant(31)
+      setTransitionEmailSenderForTests(async () => {
+        throw new Error('provider down')
+      })
+      const failed = await sendTransitionNotices()
+      expect(failed.failed).toHaveLength(1)
+
+      setTransitionEmailSenderForTests(async (email) => {
+        sentEmails.push({ to: email.to, kind: email.kind, restrictions: [], featuresInUse: [] })
+        return { id: 'msg_retry' }
+      })
+      const retried = await sendTransitionNotices()
+      expect(retried.sent).toBe(1)
+    })
+
+    it('sends reminders 7 days and 1 day before the grant ends, only after the notice', async () => {
+      await startGrant(31)
+      const grantEnd = new Date(Date.now() + 31 * day)
+
+      // No notice yet: reminders never go out on their own.
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(0)
+
+      await sendTransitionNotices()
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 10 * day))).sent).toBe(0)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(1)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 5 * day))).sent).toBe(0)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 12 * 3_600_000))).sent).toBe(1)
+      expect(sentEmails.map((email) => email.kind)).toEqual([
+        'notice',
+        'reminder_7d',
+        'reminder_1d',
+      ])
+    })
+
+    it('stops reminding organizations that subscribed', async () => {
+      await startGrant(31)
+      await sendTransitionNotices()
+      await subscribe(AUTHLESS_ORG_ID)
+      const grantEnd = new Date(Date.now() + 31 * day)
+      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(0)
+    })
+
+    it('picks the reminder by time left', () => {
+      const now = new Date('2026-11-01T00:00:00Z')
+      expect(dueReminder(new Date('2026-11-20T00:00:00Z'), now)).toBeNull()
+      expect(dueReminder(new Date('2026-11-07T00:00:00Z'), now)).toBe('reminder_7d')
+      expect(dueReminder(new Date('2026-11-01T12:00:00Z'), now)).toBe('reminder_1d')
+      expect(dueReminder(new Date('2026-10-31T00:00:00Z'), now)).toBeNull()
+    })
+
+    it('creates one Stripe Customer per organization, and a dry run creates none', async () => {
+      const dryRun = await syncStripeCustomers({ execute: false })
+      expect(dryRun.created).toBe(1)
+      expect(await billingRepository.findAccount(AUTHLESS_ORG_ID)).toBeNull()
+
+      const first = await syncStripeCustomers({ execute: true })
+      expect(first.created).toBe(1)
+      expect((await billingRepository.findAccount(AUTHLESS_ORG_ID))?.stripeCustomerId).toBe('cus_1')
+
+      const second = await syncStripeCustomers({ execute: true })
+      expect(second.created).toBe(0)
+      expect(second.reconciled).toBe(1)
+    })
   })
 })
