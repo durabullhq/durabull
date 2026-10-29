@@ -5,7 +5,7 @@ import { usePostHog } from 'posthog-js/react'
 import { useEffect, useState } from 'react'
 import { CONTACT_EMAIL, WEB_APP_URL } from '@/lib/config'
 import { CLOUD_PLANS, type CloudPlan, effectiveMonthly, PRICING_FAQS } from '@/lib/pricing'
-import { FaqContact, FaqList } from './faq'
+import { FaqSection } from './faq'
 import { Eyebrow, Reveal } from './reveal'
 import { DrawnCheck, TiltCard } from './tilt-card'
 
@@ -16,8 +16,12 @@ function historyLabel(days: number): string {
 }
 
 /** Enterprise limits are contractual floors, so they read "From N". */
+function limitPrefix(plan: CloudPlan): string {
+  return plan.code === 'enterprise' ? 'From ' : ''
+}
+
 function planLimit(plan: CloudPlan, limit: number): string {
-  return plan.code === 'enterprise' ? `From ${limit}` : String(limit)
+  return `${limitPrefix(plan)}${limit}`
 }
 
 function countOf(count: number, noun: string): string {
@@ -59,7 +63,7 @@ function PlanPrice({ plan, interval }: { plan: CloudPlan; interval: Interval }) 
 }
 
 function planHighlights(plan: CloudPlan): string[] {
-  const prefix = plan.code === 'enterprise' ? 'From ' : ''
+  const prefix = limitPrefix(plan)
   return [
     `${prefix}${countOf(plan.limits.connections, 'Redis connection')}`,
     `${prefix}${countOf(plan.limits.members, 'member')}`,
@@ -142,7 +146,7 @@ export function V2PricingPlans() {
                   </h3>
                   {plan.highlighted ? (
                     <span className="v2-premium-badge v2-mono text-[10px]">
-                      most teams start here
+                      Most teams start here
                     </span>
                   ) : null}
                 </div>
@@ -186,9 +190,9 @@ export function V2PricingPlans() {
           ))}
         </div>
 
-        <p className="v2-mono mt-8 text-[var(--v2-muted)]">
-          Prices in USD before applicable taxes · Upgrade from Free inside the app · 14-day Business
-          trial, no card
+        <p className="mt-8 text-[13px] leading-relaxed text-[var(--v2-muted)]">
+          Prices in USD before applicable taxes. Upgrade from Free inside the app; a 14-day Business
+          trial needs no card.
         </p>
       </div>
     </section>
@@ -302,18 +306,12 @@ export function V2PlanComparison() {
 /** Billing questions accordion. */
 export function V2BillingFaq() {
   return (
-    <section id="billing-faq" className="relative scroll-mt-20 bg-[var(--v2-bg)] py-24">
-      <div className="mx-auto max-w-3xl px-5 sm:px-8">
-        <Reveal>
-          <Eyebrow>Billing questions</Eyebrow>
-          <h2 className="v2-h mt-4 text-3xl sm:text-4xl">How billing works</h2>
-        </Reveal>
-
-        <Reveal delay={0.08} className="mt-10">
-          <FaqList items={PRICING_FAQS} />
-          <FaqContact lead="Questions about pricing or Enterprise?" />
-        </Reveal>
-      </div>
-    </section>
+    <FaqSection
+      id="billing-faq"
+      eyebrow="Billing questions"
+      title="How billing works"
+      items={PRICING_FAQS}
+      contactLead="Questions about pricing or Enterprise?"
+    />
   )
 }

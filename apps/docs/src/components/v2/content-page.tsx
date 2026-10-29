@@ -57,7 +57,14 @@ function gridColumns(count: number): string {
 function lastCellSpan(count: number): string {
   if (count <= 4) return ''
   const sm = count % 2 === 1 ? 'sm:col-span-2' : ''
-  const lg = count % 3 === 1 ? 'lg:col-span-3' : sm ? 'lg:col-span-1' : ''
+  const lg =
+    count % 3 === 1
+      ? 'lg:col-span-3'
+      : count % 3 === 2
+        ? 'lg:col-span-2'
+        : sm
+          ? 'lg:col-span-1'
+          : ''
   return `${sm} ${lg}`
 }
 

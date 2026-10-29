@@ -139,7 +139,21 @@ const fleetOverviewTab: Tab = {
 }
 
 /** The full tour adds job inspection and the fleet overview to the home showcase. */
-const tourTabs: Tab[] = [tabs[0], tabs[1], jobsTab, tabs[2], tabs[3], fleetOverviewTab, tabs[4]]
+const tourOrder = [
+  'queues',
+  'debugging',
+  'jobs',
+  'schedulers',
+  'logs',
+  'fleet-overview',
+  'fleet',
+] as const
+
+const tourTabs: Tab[] = tourOrder.map((id) => {
+  const tab = [...tabs, jobsTab, fleetOverviewTab].find((t) => t.id === id)
+  if (!tab) throw new Error(`Unknown product tour tab: ${id}`)
+  return tab
+})
 
 export function V2Showcase() {
   return <ShowcaseSection tabs={tabs} />
