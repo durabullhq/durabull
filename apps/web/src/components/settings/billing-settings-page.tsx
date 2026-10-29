@@ -2,6 +2,7 @@ import {
   type BillingInterval,
   CAPACITY_LIMIT_KEYS,
   type CapacityLimitKey,
+  CLOUD_PRICING_URL,
   effectiveMonthlyUsd,
   FEATURE_LABELS,
   type FeatureKey,
@@ -126,8 +127,8 @@ function SelfHostedBilling() {
         </CardHeader>
         <CardContent className="p-4 text-sm text-muted-foreground">
           Durabull Cloud subscriptions apply only to the hosted service. See{' '}
-          <a className="text-primary underline" href="https://durabull.io/pricing">
-            durabull.io/pricing
+          <a className="text-primary underline" href={CLOUD_PRICING_URL}>
+            {CLOUD_PRICING_URL.replace('https://', '')}
           </a>{' '}
           for Cloud plans and support options.
         </CardContent>

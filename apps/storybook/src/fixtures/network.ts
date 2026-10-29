@@ -26,6 +26,27 @@ let updateAvailable = false
 export function setUpdateAvailable(value: boolean) {
   updateAvailable = value
 }
+/** Beta transition preview: an organization on the beta grant that has not subscribed. */
+export type BillingTransitionFixture = 'off' | 'notice' | 'final-week'
+let billingTransition: BillingTransitionFixture = 'off'
+export function setBillingTransition(value: BillingTransitionFixture) {
+  billingTransition = value
+}
+function billingFixture() {
+  if (billingTransition === 'off') return billingOverview
+  const days = billingTransition === 'final-week' ? 3 : 26
+  const deadline = new Date(Date.now() + days * 86_400_000).toISOString()
+  return {
+    ...billingOverview,
+    planCode: 'free',
+    planName: 'Free',
+    subscribedPlanCode: null,
+    source: 'migration_grant',
+    subscription: null,
+    migrationGrantExpiresAt: deadline,
+    transition: { deadline, noticeSentAt: new Date().toISOString() },
+  }
+}
 export function setFixtureState(next: FixtureState) {
   state = next
 }
@@ -81,7 +102,7 @@ function readFixture(path: string, url: URL): unknown {
     return { connections: state === 'empty-connections' ? [] : connections }
   if (path.startsWith('/connections/')) return { connection: connections[0], ...connections[0] }
   if (path === '/team/members') return { members: list(members) }
-  if (path === '/billing') return billingOverview
+  if (path === '/billing') return billingFixture()
   if (path === '/service-accounts')
     return state === 'empty' ? { ...serviceAccounts, serviceAccounts: [] } : serviceAccounts
   if (path.startsWith('/invitations/'))

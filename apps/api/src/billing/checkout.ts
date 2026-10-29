@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type { BillingInterval, PurchasablePlanCode } from '@durabull/billing'
+import {
+  type BillingInterval,
+  LIVE_SUBSCRIPTION_STATUSES,
+  type PurchasablePlanCode,
+  type SubscriptionStatus,
+} from '@durabull/billing'
 import { billingRepository } from '@durabull/dal'
 import { recordBillingEvent } from './analytics'
 import { getBillingConfig, TRIAL_PERIOD_DAYS } from './config'
@@ -9,7 +14,6 @@ import { reconcileOrganization } from './reconcile'
 const CHECKOUT_TTL_MS = 30 * 60 * 1000
 /** Abuse control: one person can start trials for at most this many organizations. */
 export const MAX_TRIALS_PER_USER = 2
-const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'paused'])
 
 export type CheckoutRefusal =
   | 'purchases_paused'
@@ -71,7 +75,7 @@ export async function startCheckout(
 
   return billingRepository.withOrganizationLock(input.organizationId, async () => {
     const current = await billingRepository.findCurrentSubscription(input.organizationId)
-    if (current && LIVE_STATUSES.has(current.status)) {
+    if (current && LIVE_SUBSCRIPTION_STATUSES.has(current.status as SubscriptionStatus)) {
       throw new CheckoutRefusedError(
         'subscription_exists',
         'This organization already has a subscription. Use Manage billing to change plans.'

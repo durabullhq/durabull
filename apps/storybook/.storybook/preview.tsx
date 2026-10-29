@@ -1,7 +1,12 @@
 import type { Preview } from '@storybook/react-vite'
 import { CatalogProvider } from '../src/catalog-provider'
 import { controlledStory } from '../src/controlled-story'
-import { setFixtureState, setUpdateAvailable, startFixtures } from '../src/fixtures/network'
+import {
+  setBillingTransition,
+  setFixtureState,
+  setUpdateAvailable,
+  startFixtures,
+} from '../src/fixtures/network'
 import { setSignedIn } from '../src/mocks/auth'
 import { setDesktop } from '../src/mocks/desktop'
 import '../src/catalog.css'
@@ -20,6 +25,7 @@ const preview: Preview = {
       await startFixtures()
       setFixtureState(parameters.fixtureState ?? 'ready')
       setUpdateAvailable(parameters.updateAvailable === true)
+      setBillingTransition(parameters.billingTransition ?? 'off')
       setSignedIn(parameters.signedIn !== false)
       setDesktop(parameters.desktop === true)
       return {}

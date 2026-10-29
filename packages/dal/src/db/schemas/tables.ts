@@ -15,6 +15,7 @@ export { authAccount, authSession, authVerification } from './auth/schema'
 export {
   billingCheckoutAttempt,
   billingEntitlementOverride,
+  billingNoticeDelivery,
   billingOperatorAction,
   billingResourceSuspension,
   billingSubscription,

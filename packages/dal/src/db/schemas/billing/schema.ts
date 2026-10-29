@@ -261,3 +261,44 @@ export const billingOperatorAction = pgTable(
   },
   (table) => [index('billing_operator_action_org_idx').on(table.organizationId)]
 )
+
+export const billingNoticeKinds = ['transition_notice', 'reminder_7d', 'reminder_1d'] as const
+export type BillingNoticeKind = (typeof billingNoticeKinds)[number]
+
+export const billingNoticeStatuses = ['sending', 'sent', 'failed'] as const
+export type BillingNoticeStatus = (typeof billingNoticeStatuses)[number]
+
+/**
+ * One row per billing notice email per organization owner. The unique key
+ * makes sending idempotent: a notice is claimed before it is sent, and only a
+ * failed (or long-stuck) claim can be retried.
+ */
+export const billingNoticeDelivery = pgTable(
+  'billing_notice_delivery',
+  {
+    ...baseColumns,
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<BillingNoticeKind>().notNull(),
+    userId: text('user_id').notNull(),
+    email: text('email').notNull(),
+    status: text('status').$type<BillingNoticeStatus>().notNull(),
+    attempts: integer('attempts').notNull().default(1),
+    /**
+     * Sent to the email provider. Kept when a stuck send is retried (it may
+     * have been delivered), replaced after a send that failed.
+     */
+    idempotencyKey: text('idempotency_key').notNull(),
+    providerMessageId: text('provider_message_id'),
+    error: text('error'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('billing_notice_delivery_unique_idx').on(
+      table.organizationId,
+      table.kind,
+      table.userId
+    ),
+  ]
+)
