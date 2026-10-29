@@ -1,6 +1,5 @@
 import * as marks from '@docs/components/mcp/brand-marks'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import '@docs/styles/landing.css'
 import '@docs/styles/v2.css'
 const meta = {
   title: 'Marketing/MCP / Brand Marks/ClaudeMark',

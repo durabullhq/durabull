@@ -1,12 +1,11 @@
-import { Screenshots } from '@docs/components/sections/screenshots'
+import { V2ProductTour } from '@docs/components/v2/showcase'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import '@docs/styles/landing.css'
 import '@docs/styles/v2.css'
 const meta = {
-  title: 'Marketing/Sections / Screenshots/Screenshots',
-  component: Screenshots,
+  title: 'Marketing/V2 / Showcase/V2ProductTour',
+  component: V2ProductTour,
   args: {},
   parameters: { layout: 'fullscreen' },
-} satisfies Meta<typeof Screenshots>
+} satisfies Meta<typeof V2ProductTour>
 export default meta
 export const Default: StoryObj<typeof meta> = {}

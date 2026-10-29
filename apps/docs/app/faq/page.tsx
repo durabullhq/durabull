@@ -1,9 +1,11 @@
 import type { Metadata } from 'next'
-import { FAQ, LandingLayout } from '@/components'
+import { FaqContact, FaqList } from '@/components/v2/faq'
+import { PageHeading } from '@/components/v2/page-heading'
+import { SiteLayout } from '@/components/v2/site-layout'
 import { faqs } from '@/lib/faqs'
-import { createBreadcrumbSchema, createFAQSchema, createMetadata } from '@/lib/seo'
+import { createAbsoluteMetadata, createBreadcrumbSchema, createFAQSchema } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'FAQ',
     description:
@@ -20,7 +22,7 @@ export const metadata: Metadata = createMetadata(
 
 export default function FAQPage() {
   return (
-    <LandingLayout>
+    <SiteLayout>
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for JSON-LD
@@ -34,9 +36,16 @@ export default function FAQPage() {
           ]),
         }}
       />
-      <div className="min-h-screen pt-32">
-        <FAQ />
-      </div>
-    </LandingLayout>
+      <PageHeading label="FAQ" title="Frequently asked questions.">
+        <p>
+          How Durabull works with BullMQ and Redis, what agents can do through Durabull MCP, and how
+          to run it in the cloud, on your desktop, or on your own network.
+        </p>
+      </PageHeading>
+      <section aria-label="Questions" className="mx-auto max-w-3xl px-5 py-14 sm:px-8 sm:py-20">
+        <FaqList items={faqs} />
+        <FaqContact />
+      </section>
+    </SiteLayout>
   )
 }

@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
-import { LandingLayout, MarketingPage } from '@/components'
-import { createMetadata } from '@/lib/seo'
+import { ContentPage } from '@/components/v2/content-page'
+import { SiteLayout } from '@/components/v2/site-layout'
+import { createAbsoluteMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'Changelog',
     description: "See what's new in Durabull — from fresh features to reliability upgrades.",
@@ -13,11 +14,11 @@ export const metadata: Metadata = createMetadata(
 
 export default function ChangelogPage() {
   return (
-    <LandingLayout>
-      <MarketingPage
-        badge="Product Updates"
+    <SiteLayout>
+      <ContentPage
+        label="Product Updates"
         title="Changelog"
-        subtitle="See what's new in Durabull — from fresh features to reliability upgrades."
+        intro="See what's new in Durabull — from fresh features to reliability upgrades."
         primaryCta={{
           label: 'View Releases',
           to: 'https://github.com/durabullhq/durabull/releases',
@@ -29,8 +30,8 @@ export default function ChangelogPage() {
             description: 'See published versions, release notes, and desktop assets on GitHub.',
           },
         ]}
-        footerNote="Looking for a specific update? Email us at hello@durabull.io."
+        note="Looking for a specific update? Email us at hello@durabull.io."
       />
-    </LandingLayout>
+    </SiteLayout>
   )
 }

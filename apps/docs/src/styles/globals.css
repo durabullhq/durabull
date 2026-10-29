@@ -58,6 +58,13 @@
   --color-chart-5: hsl(340 75% 55%);
 }
 
+/* smooth anchor scrolling, except for people who ask for reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
 /* layered so Tailwind border-color utilities (utilities layer) can override it */
 @layer base {
   * {

@@ -5,7 +5,6 @@ import {
   TooltipTrigger,
 } from '@docs/components/ui/tooltip'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import '@docs/styles/landing.css'
 import '@docs/styles/v2.css'
 const meta = {
   title: 'Marketing/Ui / Tooltip/Tooltip',

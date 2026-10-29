@@ -1,6 +1,5 @@
 import { V2Agents } from '@docs/components/v2/agents'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import '@docs/styles/landing.css'
 import '@docs/styles/v2.css'
 const meta = {
   title: 'Marketing/V2 / Agents/V2Agents',

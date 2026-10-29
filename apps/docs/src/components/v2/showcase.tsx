@@ -1,7 +1,16 @@
 'use client'
 
 import { motion, useReducedMotion } from 'framer-motion'
-import { Activity, Bug, CalendarClock, Check, ScrollText, TrendingUp } from 'lucide-react'
+import {
+  Activity,
+  BarChart3,
+  Bug,
+  CalendarClock,
+  Check,
+  List,
+  ScrollText,
+  TrendingUp,
+} from 'lucide-react'
 import Image from 'next/image'
 import { useState } from 'react'
 import { EmberField } from './ember-field'
@@ -97,7 +106,51 @@ const tabs: Tab[] = [
   },
 ]
 
+const jobsTab: Tab = {
+  id: 'jobs',
+  label: 'jobs',
+  icon: List,
+  kicker: 'Job inspection',
+  title: 'Every detail of a single job',
+  body: 'Inspect payloads, options, progress, and return values in one flow, so you understand job behavior before shipping queue-side fixes.',
+  bullets: [
+    'Filter paginated job lists by status and job name',
+    'Payload, options, progress, and return values side by side',
+    'Retry, promote, or remove from the same view',
+  ],
+  screenshot: '/screenshots/jobs.png',
+  alt: 'Durabull job inspection view with payload, options, and progress.',
+}
+
+const fleetOverviewTab: Tab = {
+  id: 'fleet-overview',
+  label: 'fleet overview',
+  icon: BarChart3,
+  kicker: 'Fleet overview',
+  title: 'Aggregate queue health at a glance',
+  body: 'Monitor queue health and fleet-level workload behavior in one view, and turn cross-queue telemetry into operations decisions.',
+  bullets: [
+    'A fleet health score across every queue',
+    'Backlog and failure-rate charts side by side',
+    'Throughput charts use BullMQ worker metrics',
+  ],
+  screenshot: '/screenshots/fleet-analytics-dash.png',
+  alt: 'Durabull Fleet Analytics overview of aggregate queue health.',
+}
+
+/** The full tour adds job inspection and the fleet overview to the home showcase. */
+const tourTabs: Tab[] = [tabs[0], tabs[1], jobsTab, tabs[2], tabs[3], fleetOverviewTab, tabs[4]]
+
 export function V2Showcase() {
+  return <ShowcaseSection tabs={tabs} />
+}
+
+/** Every product screen, for the /product tour. */
+export function V2ProductTour() {
+  return <ShowcaseSection tabs={tourTabs} />
+}
+
+function ShowcaseSection({ tabs }: { tabs: Tab[] }) {
   const [active, setActive] = useState(0)
   const reduceMotion = useReducedMotion()
 

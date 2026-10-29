@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
-import { LandingLayout, MarketingPage } from '@/components'
-import { createMetadata } from '@/lib/seo'
+import { ContentPage } from '@/components/v2/content-page'
+import { SiteLayout } from '@/components/v2/site-layout'
+import { WEB_APP_URL } from '@/lib/config'
+import { createAbsoluteMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'Roadmap',
     description:
@@ -14,12 +16,12 @@ export const metadata: Metadata = createMetadata(
 
 export default function RoadmapPage() {
   return (
-    <LandingLayout>
-      <MarketingPage
-        badge="What's Next"
+    <SiteLayout>
+      <ContentPage
+        label="What's Next"
         title="Roadmap"
-        subtitle="Our near-term focus is reliability, collaboration, and authless + persistence flexibility."
-        primaryCta={{ label: 'Join the Beta', to: '/signup' }}
+        intro="Our near-term focus is reliability, collaboration, and authless + persistence flexibility."
+        primaryCta={{ label: 'Start Free', to: `${WEB_APP_URL}/signup` }}
         secondaryCta={{ label: 'Read Changelog', to: '/changelog' }}
         sections={[
           {
@@ -43,8 +45,8 @@ export default function RoadmapPage() {
             items: ['Authless deployment guide', 'Plugin marketplace', 'Advanced audit logging'],
           },
         ]}
-        footerNote="Have a roadmap request? Reach out at hello@durabull.io."
+        note="Have a roadmap request? Reach out at hello@durabull.io."
       />
-    </LandingLayout>
+    </SiteLayout>
   )
 }

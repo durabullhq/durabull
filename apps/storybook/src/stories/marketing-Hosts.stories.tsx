@@ -1,6 +1,5 @@
 import { HostRow, TrademarkNote } from '@docs/components/mcp/hosts'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import '@docs/styles/landing.css'
 import '@docs/styles/v2.css'
 const meta = {
   title: 'Marketing/MCP / Hosts/HostRow',

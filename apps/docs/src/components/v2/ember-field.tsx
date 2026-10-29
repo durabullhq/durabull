@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
 import { useReducedMotion } from 'framer-motion'
+import { useEffect, useRef } from 'react'
 
 interface Ember {
   x: number

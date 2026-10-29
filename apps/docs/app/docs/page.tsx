@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
-import { LandingLayout, MarketingPage } from '@/components'
-import { createBreadcrumbSchema, createMetadata } from '@/lib/seo'
+import { ContentPage } from '@/components/v2/content-page'
+import { SiteLayout } from '@/components/v2/site-layout'
+import { createAbsoluteMetadata, createBreadcrumbSchema } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'Documentation',
     description:
@@ -19,7 +20,7 @@ export const metadata: Metadata = createMetadata(
 
 export default function DocsPage() {
   return (
-    <LandingLayout>
+    <SiteLayout>
       <script
         type="application/ld+json"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: Required for JSON-LD
@@ -32,10 +33,10 @@ export default function DocsPage() {
           ),
         }}
       />
-      <MarketingPage
-        badge="Documentation"
+      <ContentPage
+        label="Documentation"
         title="Durabull Documentation"
-        subtitle="Friendly guides for desktop installs, self-hosting, day-to-day operations, and incident response in BullMQ environments."
+        intro="Friendly guides for desktop installs, self-hosting, day-to-day operations, and incident response in BullMQ environments."
         primaryCta={{
           label: 'Desktop Install Guide',
           to: '/documentation/getting-started/desktop-apps',
@@ -77,8 +78,8 @@ export default function DocsPage() {
             ],
           },
         ]}
-        footerNote="Need a specific guide added? Open an issue or contact hello@durabull.io."
+        note="Need a specific guide added? Open an issue or contact hello@durabull.io."
       />
-    </LandingLayout>
+    </SiteLayout>
   )
 }

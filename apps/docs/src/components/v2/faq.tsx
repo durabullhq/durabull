@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
+import { CONTACT_EMAIL } from '@/lib/config'
 import { faqs } from '@/lib/faqs'
 import { Eyebrow, Reveal } from './reveal'
 
@@ -53,9 +54,42 @@ export function FaqItem({
   )
 }
 
-export function V2Faq() {
+/** Accordion of question/answer pairs; the first item starts open. */
+export function FaqList({ items }: { items: ReadonlyArray<{ question: string; answer: string }> }) {
   const [openIndex, setOpenIndex] = useState<number | null>(0)
 
+  return (
+    <div className="border-t border-[var(--v2-line)]">
+      {items.map((faq, i) => (
+        <FaqItem
+          key={faq.question}
+          question={faq.question}
+          answer={faq.answer}
+          open={openIndex === i}
+          onToggle={() => setOpenIndex((curr) => (curr === i ? null : i))}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** Closing line under an FAQ list that points to the team inbox. */
+export function FaqContact({ lead = 'Something else?' }: { lead?: string }) {
+  return (
+    <p className="mt-7 text-sm text-[var(--v2-faint)]">
+      {lead}{' '}
+      <a
+        href={`mailto:${CONTACT_EMAIL}`}
+        className="font-medium text-[var(--v2-accent)] underline-offset-4 hover:underline"
+      >
+        {CONTACT_EMAIL}
+      </a>{' '}
+      — a human engineer replies within a business day.
+    </p>
+  )
+}
+
+export function V2Faq() {
   return (
     <section id="faq" className="relative scroll-mt-20 bg-[var(--v2-bg)] py-24">
       <div className="mx-auto max-w-3xl px-5 sm:px-8">
@@ -65,27 +99,8 @@ export function V2Faq() {
         </Reveal>
 
         <Reveal delay={0.08} className="mt-10">
-          <div className="border-t border-[var(--v2-line)]">
-            {faqs.map((faq, i) => (
-              <FaqItem
-                key={faq.question}
-                question={faq.question}
-                answer={faq.answer}
-                open={openIndex === i}
-                onToggle={() => setOpenIndex((curr) => (curr === i ? null : i))}
-              />
-            ))}
-          </div>
-          <p className="mt-7 text-sm text-[var(--v2-faint)]">
-            Something else?{' '}
-            <a
-              href="mailto:hello@durabull.io"
-              className="font-medium text-[var(--v2-accent)] underline-offset-4 hover:underline"
-            >
-              hello@durabull.io
-            </a>{' '}
-            — a human engineer replies within a business day.
-          </p>
+          <FaqList items={faqs} />
+          <FaqContact />
         </Reveal>
       </div>
     </section>

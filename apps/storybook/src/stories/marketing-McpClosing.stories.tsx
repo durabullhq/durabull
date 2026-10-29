@@ -1,6 +1,5 @@
 import { McpFaq, McpFinalCta, McpWorksWith } from '@docs/components/mcp/mcp-closing'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import '@docs/styles/landing.css'
 import '@docs/styles/v2.css'
 const meta = {
   title: 'Marketing/MCP / Closing/McpWorksWith',

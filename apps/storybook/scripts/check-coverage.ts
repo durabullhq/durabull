@@ -79,8 +79,7 @@ for (const { path, text } of routeSources) {
   else covered++
 }
 const marketingPages = (await files(resolve(root, 'apps/docs/app'))).filter(
-  (path) =>
-    path.endsWith('/page.tsx') && !path.includes('/documentation/') && !path.includes('/v2/')
+  (path) => path.endsWith('/page.tsx') && !path.includes('/documentation/')
 )
 for (const path of marketingPages) {
   const modulePath = relative(resolve(root, 'apps'), path).replace(/\.tsx$/, '')

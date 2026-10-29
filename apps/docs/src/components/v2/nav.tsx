@@ -11,7 +11,7 @@ const links = [
   { label: 'Compare', href: '/compare' },
   { label: 'Guides', href: '/blog' },
   { label: 'Features', href: '/#features' },
-  { label: 'Pricing', href: '/#pricing' },
+  { label: 'Pricing', href: '/pricing' },
   { label: 'Docs', href: '/documentation' },
 ]
 

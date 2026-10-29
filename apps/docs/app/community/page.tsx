@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
-import { LandingLayout, MarketingPage } from '@/components'
-import { createMetadata } from '@/lib/seo'
+import { ContentPage } from '@/components/v2/content-page'
+import { SiteLayout } from '@/components/v2/site-layout'
+import { createAbsoluteMetadata } from '@/lib/seo'
 
-export const metadata: Metadata = createMetadata(
+export const metadata: Metadata = createAbsoluteMetadata(
   {
     title: 'Community',
     description: 'Join the developers improving BullMQ operations and sharing best practices.',
@@ -13,11 +14,11 @@ export const metadata: Metadata = createMetadata(
 
 export default function CommunityPage() {
   return (
-    <LandingLayout>
-      <MarketingPage
-        badge="Connect with Us"
+    <SiteLayout>
+      <ContentPage
+        label="Connect with Us"
         title="Community"
-        subtitle="Join the developers improving BullMQ operations and sharing best practices."
+        intro="Join the developers improving BullMQ operations and sharing best practices."
         primaryCta={{ label: 'Follow on X', to: 'https://x.com/durabullhq' }}
         secondaryCta={{ label: 'View on GitHub', to: 'https://github.com/durabullhq/durabull' }}
         sections={[
@@ -35,8 +36,8 @@ export default function CommunityPage() {
             description: 'Share how you run BullMQ — we love spotlighting the community.',
           },
         ]}
-        footerNote="Want to host a community session? Reach out at hello@durabull.io."
+        note="Want to host a community session? Reach out at hello@durabull.io."
       />
-    </LandingLayout>
+    </SiteLayout>
   )
 }

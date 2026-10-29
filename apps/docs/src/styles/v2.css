@@ -423,6 +423,18 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
+/* featured-card title and badge, shared by deploy and pricing cards */
+.v2-premium-title {
+  background: linear-gradient(to bottom right, #fff7ed, #d8d2cb);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.v2-premium-badge {
+  color: #fdba74;
+}
+
 /* slow drifting ember glow inside the premium card */
 .v2-premium-glow {
   position: absolute;
