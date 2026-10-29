@@ -878,7 +878,8 @@ describe('Cloud billing', () => {
       )
       try {
         const first = await sendTransitionNotices()
-        expect(first.sent).toBe(0)
+        // The provider accepted it, so it counts as sent; only the record is missing.
+        expect(first.sent).toBe(1)
         expect(first.delivered.has(AUTHLESS_ORG_ID)).toBe(true)
         expect(first.failed[0].error).toContain('Sent, but recording the delivery failed')
 

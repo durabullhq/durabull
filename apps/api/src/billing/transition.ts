@@ -314,10 +314,10 @@ async function sendNotice(
     }
     // The email went out. If recording that fails, the claim stays `sending`
     // and a retry after STALE_SEND_MS reuses the key, so it is not delivered twice.
+    result.sent += 1
     result.delivered.add(entry.organizationId)
     try {
       await billingRepository.completeNoticeDelivery(claim, { sent: true, providerMessageId }, now)
-      result.sent += 1
     } catch (error) {
       failed(`Sent, but recording the delivery failed: ${(error as Error).message}`)
     }
