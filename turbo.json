@@ -117,15 +117,16 @@
         "POSTHOG_HOST"
       ]
     },
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
     "typecheck": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["transit"]
     },
     "clean": {
       "cache": false
     },
-    "lint": {
-      "dependsOn": ["^build"]
-    },
+    "lint": {},
     "lint:fix": {
       "dependsOn": ["^build"],
       "cache": false
