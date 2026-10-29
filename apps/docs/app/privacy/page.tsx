@@ -337,11 +337,13 @@ function PrivacySharingSection() {
           hosting, database, storage, backup, network, and support providers process service data
           needed to run Durabull. PostHog receives configured analytics and diagnostics; Google
           receives configured website analytics. Resend processes recipient addresses and email
-          content for configured invitations and alerts. Google or GitHub participates in
-          authentication when you choose that sign-in provider. Stripe processes payment details,
-          billing contacts, addresses, tax IDs, invoices, and subscription status for Durabull Cloud
-          subscriptions; Durabull stores only the Stripe customer and subscription references and
-          plan status, never card numbers.
+          content for invitations, configured alerts, and billing notices to organization owners.
+          Google or GitHub participates in authentication when you choose that sign-in provider.
+          Stripe processes payment details, billing contacts, addresses, tax IDs, invoices, and
+          subscription status for Durabull Cloud subscriptions. Durabull stores the Stripe customer,
+          subscription, price, and latest-invoice references; subscription and invoice status; trial
+          and billing-period dates; checkout attempts; which member is the billing contact; and a
+          record of billing notices sent. It never stores card numbers.
         </li>
         <li>
           <strong className="text-[var(--v2-fg)]">Destinations you configure:</strong> notification

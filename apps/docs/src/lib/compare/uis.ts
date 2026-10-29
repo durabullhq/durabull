@@ -485,7 +485,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose Bullpane when you want a self-hosted box with a simple Free/Pro split and you accept a per-install Pro license for MCP and SSO.',
     whenToChooseDurabull:
-      'Choose Durabull for a hosted cloud option, org invitations and read-only MCP on the Free plan, and MCP writes from the $9 Team plan. Durabull is Apache-2.0 for the whole project, not a Free/Pro split.',
+      'Choose Durabull for a hosted cloud option with read-only MCP on the Free plan, and organization invitations, webhook and Linear alerts, and MCP writes from the $9 Team plan. Durabull is Apache-2.0 for the whole project, not a Free/Pro split.',
     rows: [
       {
         feature: 'See queues',

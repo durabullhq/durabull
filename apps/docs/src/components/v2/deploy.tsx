@@ -198,7 +198,11 @@ const tiers = [
     price: '$9',
     detail: '5 connections · 10 members · webhooks, Linear, MCP writes',
   },
-  { name: 'Business', price: '$29', detail: '15 connections · 50 members · 30-day history' },
+  {
+    name: 'Business',
+    price: '$29',
+    detail: '15 connections · 50 members · 30-day Redis health history',
+  },
 ]
 
 export function V2Pricing() {
