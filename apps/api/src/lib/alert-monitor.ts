@@ -34,7 +34,7 @@ import {
   syncLinearIssuesForResolvedEvents,
 } from './alert-resolution'
 import { toRedisConnectionOptions } from './connection-options'
-import { getQueue, getRedis } from './redis'
+import { getQueue, getRedis, RedisUnavailableError } from './redis'
 import {
   buildRedisHealthSnapshot,
   REDIS_HEALTH_CURSOR_SCOPE,
@@ -913,7 +913,11 @@ async function processRedisHealthRules(
       },
     })
   } catch (error) {
-    console.error(`[alert-monitor] Redis INFO health check failed for ${connection.id}:`, error)
+    // Unreachable tenant Redis is expected; its message names the cause without a stack trace.
+    console.error(
+      `[alert-monitor] Redis INFO health check failed for ${connection.id}:`,
+      error instanceof RedisUnavailableError ? error.message : error
+    )
   }
 }
 

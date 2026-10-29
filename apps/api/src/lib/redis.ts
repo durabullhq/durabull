@@ -1,3 +1,5 @@
+import { lookup } from 'node:dns/promises'
+import { isIP } from 'node:net'
 import { Queue } from 'bullmq'
 import { Redis } from 'ioredis'
 import { buildIoRedisConnectionOptions, type RedisConnectionOptions } from './connection-options'
@@ -26,11 +28,15 @@ export class RedisUnavailableError extends Error {
 const redisConnections = new Map<string, Redis>()
 // Cache in-flight connection attempts to prevent creating duplicate clients concurrently
 const redisConnectionPromises = new Map<string, Promise<Redis>>()
-// Cache recent failures to avoid hot-looping permanent connection/auth issues
+// Cache recent failures so unreachable connections back off instead of opening a socket on
+// every request or monitor tick. Bun retains memory for every failed connect, so repeated
+// attempts against dead hosts grow the heap until the process runs out of memory.
 const recentRedisConnectionFailures = new Map<
   string,
-  { message: string; at: number; permanent: boolean }
+  { message: string; permanent: boolean; consecutive: number; retryAt: number }
 >()
+// The most useful error seen by each client; connect() itself only rejects with "Connection is closed"
+const lastRedisErrorMessages = new WeakMap<Redis, string>()
 // Cache recent log lines to dedupe noisy repeated errors
 const recentRedisErrorLogs = new Map<string, { message: string; at: number }>()
 // Cache for queues keyed by connection ID, connection URL, prefix, and queue name
@@ -40,6 +46,8 @@ const REDIS_RECONNECT_BASE_DELAY_MS = 200
 const REDIS_RECONNECT_MAX_DELAY_MS = 2000
 const REDIS_MAX_RECONNECT_ATTEMPTS = 3
 const REDIS_FAILURE_COOLDOWN_MS = 30_000
+const REDIS_FAILURE_BACKOFF_BASE_MS = 5_000
+const REDIS_FAILURE_BACKOFF_MAX_MS = 5 * 60_000
 const REDIS_ERROR_LOG_DEDUPE_WINDOW_MS = 10_000
 const DEFAULT_QUEUE_SCAN_COUNT = 1000
 
@@ -106,6 +114,57 @@ function disconnectRedisClient(redis: Redis) {
   }
 }
 
+let resolveHostname = async (hostname: string): Promise<void> => {
+  await lookup(hostname)
+}
+
+/** Hostname to resolve before connecting, or null when the URL has none or is an IP literal. */
+function getResolvableHostname(connectionUrl: string): string | null {
+  let hostname: string
+  try {
+    hostname = new URL(connectionUrl).hostname
+  } catch {
+    return null
+  }
+  hostname = hostname.replace(/^\[|\]$/g, '')
+  if (!hostname || isIP(hostname) !== 0) return null
+  return hostname
+}
+
+/**
+ * Fail before creating a socket when the host does not resolve. Bun never frees a socket whose
+ * DNS lookup failed, so this keeps deleted hosts from leaking memory on every attempt.
+ */
+async function assertHostnameResolves(connectionUrl: string): Promise<void> {
+  const hostname = getResolvableHostname(connectionUrl)
+  if (hostname) await resolveHostname(hostname)
+}
+
+function markPermanentRedisFailure(failureKey: string, message: string) {
+  const previous = recentRedisConnectionFailures.get(failureKey)
+  recentRedisConnectionFailures.set(failureKey, {
+    message,
+    permanent: true,
+    consecutive: previous?.consecutive ?? 0,
+    retryAt: Math.max(previous?.retryAt ?? 0, Date.now() + REDIS_FAILURE_COOLDOWN_MS),
+  })
+}
+
+function recordRedisConnectionFailure(failureKey: string, message: string) {
+  const consecutive = (recentRedisConnectionFailures.get(failureKey)?.consecutive ?? 0) + 1
+  const permanent = isPermanentRedisConnectionError(message)
+  const backoffMs = Math.min(
+    REDIS_FAILURE_BACKOFF_BASE_MS * 2 ** (consecutive - 1),
+    REDIS_FAILURE_BACKOFF_MAX_MS
+  )
+  recentRedisConnectionFailures.set(failureKey, {
+    message,
+    permanent,
+    consecutive,
+    retryAt: Date.now() + (permanent ? Math.max(backoffMs, REDIS_FAILURE_COOLDOWN_MS) : backoffMs),
+  })
+}
+
 function shouldLogRedisError(connectionId: string, message: string): boolean {
   const now = Date.now()
   const existing = recentRedisErrorLogs.get(connectionId)
@@ -125,6 +184,7 @@ function shouldLogRedisError(connectionId: string, message: string): boolean {
 function buildRedisClient(
   connectionUrl: string,
   cacheKey: string,
+  failureKey: string,
   label: string,
   options?: RedisConnectionOptions
 ): Redis {
@@ -145,12 +205,14 @@ function buildRedisClient(
       console.error(`❌ Redis error (${label}): ${message}`)
     }
 
-    if (isPermanentRedisConnectionError(message)) {
-      recentRedisConnectionFailures.set(cacheKey, {
-        message,
-        at: Date.now(),
-        permanent: true,
-      })
+    const permanent = isPermanentRedisConnectionError(message)
+    const previous = lastRedisErrorMessages.get(redis)
+    if (permanent || !previous || !isPermanentRedisConnectionError(previous)) {
+      lastRedisErrorMessages.set(redis, message)
+    }
+
+    if (permanent) {
+      markPermanentRedisFailure(failureKey, message)
       disconnectRedisClient(redis)
     }
   })
@@ -189,13 +251,11 @@ export async function getRedis(
     }
   }
 
-  const recentFailure = recentRedisConnectionFailures.get(cacheKey)
-  if (recentFailure) {
-    const elapsed = Date.now() - recentFailure.at
-    if (recentFailure.permanent && elapsed < REDIS_FAILURE_COOLDOWN_MS) {
-      throw toRedisUnavailableError(connectionId, connectionName, recentFailure.message)
-    }
-    recentRedisConnectionFailures.delete(cacheKey)
+  // Shared and caller-owned clients back off together, so background probes and UI requests
+  // cannot each keep retrying a dead host.
+  const recentFailure = recentRedisConnectionFailures.get(sharedCacheKey)
+  if (recentFailure && Date.now() < recentFailure.retryAt) {
+    throw toRedisUnavailableError(connectionId, connectionName, recentFailure.message)
   }
 
   if (shouldCache) {
@@ -206,26 +266,28 @@ export async function getRedis(
   }
 
   const connectPromise = (async () => {
-    const redis = buildRedisClient(connectionUrl, cacheKey, connectionName ?? connectionId, options)
+    let redis: Redis | undefined
 
     try {
+      await assertHostnameResolves(connectionUrl)
+      redis = buildRedisClient(
+        connectionUrl,
+        cacheKey,
+        sharedCacheKey,
+        connectionName ?? connectionId,
+        options
+      )
       await redis.connect()
       if (shouldCache) redisConnections.set(cacheKey, redis)
-      recentRedisConnectionFailures.delete(cacheKey)
+      recentRedisConnectionFailures.delete(sharedCacheKey)
       if (shouldCache) console.log(`✅ Connected to Redis: ${connectionName ?? connectionId}`)
       return redis
     } catch (error) {
-      const message = getSafeRedisErrorMessage(error)
-      const existingFailure = recentRedisConnectionFailures.get(cacheKey)
-      const permanent = existingFailure?.permanent ?? isPermanentRedisConnectionError(message)
-      const failureMessage = existingFailure?.permanent ? existingFailure.message : message
-      recentRedisConnectionFailures.set(cacheKey, {
-        message: failureMessage,
-        at: Date.now(),
-        permanent,
-      })
-      disconnectRedisClient(redis)
-      throw toRedisUnavailableError(connectionId, connectionName, failureMessage)
+      const message =
+        (redis && lastRedisErrorMessages.get(redis)) ?? getSafeRedisErrorMessage(error)
+      recordRedisConnectionFailure(sharedCacheKey, message)
+      if (redis) disconnectRedisClient(redis)
+      throw toRedisUnavailableError(connectionId, connectionName, message)
     } finally {
       if (shouldCache) redisConnectionPromises.delete(cacheKey)
     }
@@ -372,13 +434,9 @@ export async function getQueue(
       }
 
       if (isPermanentRedisConnectionError(message)) {
-        recentRedisConnectionFailures.set(
+        markPermanentRedisFailure(
           JSON.stringify([connectionId, connectionUrl, options?.allowSelfSignedCerts ?? false]),
-          {
-            message,
-            at: Date.now(),
-            permanent: true,
-          }
+          message
         )
         queue.close().catch(() => {})
         queues.delete(cacheKey)
@@ -404,4 +462,10 @@ export async function safeGetWorkers(queue: Queue): Promise<Array<Record<string,
     )
     return []
   }
+}
+
+export const __redisTestUtils = {
+  setHostnameResolver(resolver: (hostname: string) => Promise<void>) {
+    resolveHostname = resolver
+  },
 }
