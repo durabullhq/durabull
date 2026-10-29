@@ -14,3 +14,5 @@ metadata:
 5. Return the likely bottleneck, exact connection/queue, evidence, missing information and smallest useful next step. Call out confidence and alternative explanations. A single waiting count cannot establish backlog growth, and zero workers is an observation rather than proof of why workers disappeared.
 
 Diagnosis does not authorize queue changes. If the user explicitly asks to pause/resume, use queue control; for retry/promotion, use job recovery. Scaling workers and changing application rate limits require application or infrastructure controls outside this MCP.
+
+Use ordinary data tools during this workflow. When intentionally presenting an interactive view to the user, follow [UI display guidance](../../references/ui.md) and call `render_ui`; routine investigation and verification need no UI.

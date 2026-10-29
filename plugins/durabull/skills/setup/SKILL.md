@@ -11,7 +11,7 @@ metadata:
 2. Call `ping` to verify transport, then `list_connections`. Follow `nextCursor` to find the requested environment. Preserve returned IDs; a connection name is not an ID. If multiple connections match, ask which environment the user means. An empty list means no visible connections, not an empty Redis database: check organization membership and connection access in Durabull.
 3. Read `durabull://server` when resources are supported to inspect granted scopes and the live catalog. Tool availability alone does not grant permission. On `insufficient_scope`, use host OAuth reauthorization; tenant or service-account policy denials need the connection administrator. If the host cannot elevate scopes, explain the required grant and stop the affected operation.
 4. On a rate-limit response, honor the returned `retryAfter`/`Retry-After` delay. Keep the same target and pagination cursor; reconnecting does not reset the work budget. Avoid parallel retry loops.
-5. Finish with the selected connection and environment, verified access, and a useful next task. `list_connections` opens the visual explorer in MCP Apps hosts; text tools work without it. Never mutate data as a connection test.
+5. Finish with the selected connection and environment, verified access, and a useful next task. `list_connections` returns evidence without opening a UI. Never mutate data as a connection test.
 
 ## Choose the next workflow
 
@@ -25,3 +25,5 @@ metadata:
 - Queue control: pause or resume a named queue on request.
 
 Durabull manages BullMQ background jobs on Redis. This MCP does not run arbitrary Redis commands, edit keys or job payloads, delete jobs, purge queues, scale workers, create schedules, or configure alert rules. For those requests, explain the boundary and point to the relevant Durabull or application controls without claiming to have performed the change.
+
+Use ordinary data tools during this workflow. When intentionally presenting an interactive view to the user, follow [UI display guidance](../../references/ui.md) and call `render_ui`; routine investigation and verification need no UI.

@@ -69,7 +69,7 @@ describe('Durabull plugin distribution', () => {
       }
       expect(config.interface.short_description).toBe(frontmatter.metadata['short-description'])
       expect(config.dependencies.tools).toEqual([expect.objectContaining({ value: 'durabull', url: 'https://app.durabull.io/mcp' })])
-      const tokens = source.match(/\b(?:ping|(?:list|get|find|explain|retry|promote|pause|resume|resolve|acknowledge|unacknowledge|snooze|unsnooze)_[a-z_]+)\b/g) ?? []
+      const tokens = source.match(/\b(?:ping|(?:list|get|find|explain|retry|promote|pause|resume|resolve|acknowledge|unacknowledge|snooze|unsnooze|render)_[a-z_]+)\b/g) ?? []
       for (const token of tokens) {
         expect(MCP_TOOL_NAMES).toContain(token)
         covered.add(token)
@@ -106,6 +106,7 @@ describe('Durabull plugin distribution', () => {
       expect(await readFile(resolve(output, 'skills/setup/SKILL.md'), 'utf8')).toContain(
         'list_connections'
       )
+      expect(await readFile(resolve(output, 'references/ui.md'), 'utf8')).toContain('render_ui')
       for (const name of ['LICENSE', 'NOTICE']) {
         expect(await readFile(resolve(output, name), 'utf8')).toBe(
           await readFile(resolve(root, '../..', name), 'utf8')

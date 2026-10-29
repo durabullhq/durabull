@@ -27,7 +27,7 @@ const bridge = new AppBridge(
       theme: params.get('theme') === 'dark' ? 'dark' : 'light',
       displayMode: 'inline',
       availableDisplayModes: ['inline', 'fullscreen'],
-      toolInfo: { tool: { name: 'list_connections', inputSchema: { type: 'object' } } },
+      toolInfo: { tool: { name: 'render_ui', inputSchema: { type: 'object' } } },
     },
   }
 )
@@ -54,7 +54,7 @@ bridge.onsizechange = ({ height }) => {
 }
 bridge.oninitialized = async () => {
   await bridge.sendToolInput({ arguments: {} })
-  await bridge.sendToolResult(result('list_connections', {}))
+  await bridge.sendToolResult(result('render_ui', {}))
 }
 Object.assign(window, { preview: { calls, messages, bridge } })
 await bridge.connect(new PostMessageTransport(iframe.contentWindow!, iframe.contentWindow!))

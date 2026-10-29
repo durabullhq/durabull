@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 
+import { MCP_UI_USAGE } from '../tools/tool-catalog'
 import { MCP_PROMPT_CATALOG } from './prompt-catalog'
 
 /**
@@ -29,7 +30,7 @@ export function registerPrompts(server: McpServer): void {
             role: 'user' as const,
             content: {
               type: 'text' as const,
-              text: prompt.render(args as Record<string, string | undefined>),
+              text: `${prompt.render(args as Record<string, string | undefined>)}\n\n${MCP_UI_USAGE}`,
             },
           },
         ],

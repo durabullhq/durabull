@@ -9,8 +9,8 @@ export const MCP_URL = `${WEB_APP_URL}/mcp`
 export const MCP_HOST_PATH = MCP_URL.replace(/^https?:\/\//, '')
 
 export const MCP_FACTS = {
-  tools: 30,
-  readTools: 21,
+  tools: 31,
+  readTools: 22,
   writeTools: 9,
   scopes: 9,
   skills: 9,
