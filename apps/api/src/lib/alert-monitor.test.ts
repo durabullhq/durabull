@@ -824,6 +824,7 @@ describe('alert monitor', () => {
       })),
     }))
     mock.module('./redis', () => ({
+      ...realRedisModule,
       getQueue: getQueueMock,
     }))
 
@@ -894,6 +895,7 @@ describe('alert monitor', () => {
       },
     })
     mock.module('./redis', () => ({
+      ...realRedisModule,
       getQueue: mock(async () => ({
         getJobCounts: mock(async () => ({ failed: 8, waiting: 0, active: 0, completed: 100 })),
         getMetrics: mock(async (metric: string) => ({
@@ -951,6 +953,7 @@ describe('alert monitor', () => {
       cooldownMinutes: 30,
     })
     mock.module('./redis', () => ({
+      ...realRedisModule,
       getQueue: mock(async () => ({
         getJobCounts: mock(async () => ({ failed: 0, waiting: 0, active: 0, completed: 100 })),
         getMetrics: mock(async (metric: string) => ({

@@ -25,6 +25,52 @@ const delegatedPrincipal: McpPrincipal = {
 }
 
 describe('evaluateMcpToolPolicy', () => {
+  it('allows a data-free UI request but still denies its selected read without data scopes', async () => {
+    for (const principal of [
+      delegatedPrincipal,
+      {
+        type: 'service_account' as const,
+        principalId: 'service',
+        serviceAccountId: 'service',
+        organizationId: 'org',
+      },
+    ]) {
+      const input = {
+        correlationId: 'ui',
+        principal,
+        session: { ...baseSession, scopes: 'mcp:discover' },
+        call: {
+          toolName: 'render_ui',
+          connectionId: null,
+          arguments: {
+            toolName: 'get_queue',
+            arguments: { connectionId: 'other-org', queueName: 'email' },
+          },
+        },
+      }
+      const display = await evaluateMcpToolPolicy(input)
+      expect(display.granted).toBe(true)
+      expect(display.effectiveScopes).toEqual(['mcp:discover'])
+      const read = await evaluateMcpToolPolicy({
+        ...input,
+        call: {
+          toolName: 'get_queue',
+          connectionId: 'other-org',
+          arguments: input.call.arguments.arguments,
+        },
+      })
+      expect(read.granted).toBe(false)
+      expect(read.denialReason).toBe('missing_scopes:mcp:jobs:read')
+      expect(
+        (
+          await evaluateMcpToolPolicy({
+            ...input,
+            session: { ...baseSession, scopes: 'mcp:jobs:read' },
+          })
+        ).granted
+      ).toBe(false)
+    }
+  })
   it('allows the exact data-free UI shell to authenticated service accounts without tenant bindings', async () => {
     const principal: McpPrincipal = {
       type: 'service_account',
@@ -34,7 +80,7 @@ describe('evaluateMcpToolPolicy', () => {
     }
     const call = {
       toolName: 'resource:queue_explorer',
-      arguments: { uri: 'ui://durabull/queue-explorer-v1.html' },
+      arguments: { uri: 'ui://durabull/queue-explorer-v2.html' },
       connectionId: null,
       requiredScopes: ['mcp:discover'],
     }

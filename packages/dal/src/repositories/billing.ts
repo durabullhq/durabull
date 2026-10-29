@@ -136,31 +136,34 @@ export const billingRepository = {
     const key = `durabull_billing:${organizationId}`
     return withProcessLock(key, async () => {
       if (getDatabaseMode() !== 'postgres') return fn()
-      // A session-level advisory lock on a dedicated client serializes
-      // replicas without forcing `fn` into one transaction. The client comes
-      // from a separate lock pool so held locks cannot starve `fn` of
-      // connections, and lock_timeout bounds the wait behind a stuck holder.
+      // A transaction-scoped advisory lock held open on a dedicated client
+      // serializes replicas without forcing `fn` into one transaction.
+      // Transaction scope matters behind a transaction-pooling proxy such as
+      // PgBouncer: a transaction stays on one server backend, whereas a
+      // session lock and its unlock can land on different backends and leak.
+      // Ending the transaction (or losing the connection) always releases it.
+      // The client comes from a separate lock pool so held locks cannot starve
+      // `fn` of connections, and lock_timeout bounds the wait.
       const pool = await getPgLockPool()
       const client = await pool.connect()
-      let locked = false
-      let unlockError: Error | undefined
+      let endError: Error | undefined
       try {
-        await client.query(`SET lock_timeout = '${ORGANIZATION_LOCK_TIMEOUT}'`)
-        await client.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [key])
-        locked = true
+        await client.query('BEGIN')
+        await client.query(`SET LOCAL lock_timeout = '${ORGANIZATION_LOCK_TIMEOUT}'`)
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [key])
         return await fn()
       } finally {
-        if (locked) {
-          try {
-            await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [key])
-          } catch (error) {
-            unlockError = error instanceof Error ? error : new Error(String(error))
-            console.error('[billing] Failed to release organization lock', unlockError)
-          }
+        try {
+          // Nothing is written on this client; ending the transaction only
+          // releases the lock.
+          await client.query('ROLLBACK')
+        } catch (error) {
+          endError = error instanceof Error ? error : new Error(String(error))
+          console.error('[billing] Failed to release organization lock', endError)
         }
-        // An unlock failure may leave a session lock behind. Destroy that
-        // session instead of handing it back to the pool (see migration-lock).
-        client.release(unlockError)
+        // A connection whose transaction could not be ended is destroyed,
+        // which also releases the lock.
+        client.release(endError)
       }
     })
   },

@@ -39,7 +39,7 @@ MCP route handlers must not embed BullMQ/domain logic; they call shared API lib 
 
 The catalog in `packages/mcp/src/tools/tool-catalog.ts` is the single source of truth for tool names, descriptions, annotations, input/output schemas, required scopes, and rate-limit class. The policy engine, rate limiter, `tools/list`, and the docs tests all read from it; a tool that is not in the catalog is denied.
 
-**Read tools** (`readOnlyHint=true`): `ping`, `list_connections`, `list_queues`, `get_queue`, `get_connection_overview`, `list_jobs`, `find_job`, `get_job`, `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `list_scheduled_jobs`, `get_scheduled_job`, `get_workers`, `get_queue_metrics`, `get_redis_health`, `get_failure_events`, `get_alert_event`, `get_alert_summary`, `list_alert_rules`, `get_alert_rule`.
+**Read tools** (`readOnlyHint=true`): `ping`, `render_ui`, `list_connections`, `list_queues`, `get_queue`, `get_connection_overview`, `list_jobs`, `find_job`, `get_job`, `get_job_logs`, `get_job_stacktraces`, `explain_job_failure`, `list_scheduled_jobs`, `get_scheduled_job`, `get_workers`, `get_queue_metrics`, `get_redis_health`, `get_failure_events`, `get_alert_event`, `get_alert_summary`, `list_alert_rules`, `get_alert_rule`.
 
 **Write tools** (`readOnlyHint=false`, `destructiveHint=false`): `resolve_alert_event`, `acknowledge_alert_event`, `unacknowledge_alert_event`, `snooze_alert_rule`, `unsnooze_alert_rule`, `retry_job`, `promote_job`, `pause_queue`, `resume_queue`. Each requires exactly one write scope. Write tools never mutate job payloads.
 
@@ -47,7 +47,7 @@ The catalog in `packages/mcp/src/tools/tool-catalog.ts` is the single source of 
 
 **2026-10 protocol and UI upgrade:** SDK v2 serves protocol 2026-07-28 through `createMcpHandler`, with stateless legacy compatibility. No principal or domain data is retained in transport sessions. Present Origin headers are validated before CORS/auth; absent Origin is accepted for server clients. Authenticated data remains `Cache-Control: no-store`. Dynamic list-change subscriptions are not advertised; the UI refreshes explicitly.
 
-**MCP App:** `ui://durabull/queue-explorer-v1.html` is a bundled, data-free HTML/JS/CSS resource. It requires a resolved authenticated principal and `mcp:discover`; service accounts need no separate policy binding for this exact shell. All other resource and tool policies remain enforced. The browser uses the host bridge exclusively, with empty network/frame CSP allowlists, no stored credentials, and text-only rendering of untrusted values. UI mutation buttons send a user request to the host agent. The browser also enforces the catalog's read-only allowlist; refreshing a mutation result reads the affected entity. Write tools advertise model-only UI visibility; this is a host presentation restriction, not an authorization boundary.
+**MCP App:** `ui://durabull/queue-explorer-v2.html` is a bundled, data-free HTML/JS/CSS resource. It requires a resolved authenticated principal and `mcp:discover`; service accounts need no separate policy binding for this exact shell or the data-free `render_ui` launcher. All other resource and tool policies remain enforced. The browser uses the host bridge exclusively, with empty network/frame CSP allowlists, no stored credentials, and text-only rendering of untrusted values. UI mutation buttons send a user request to the host agent. The browser also enforces the catalog's read-only allowlist; refreshing a mutation result reads the affected entity. Only `render_ui` advertises UI rendering templates and global/thread entrypoints. It validates a read-tool name and arguments but never invokes a data handler; the app loads the selected read through the normal policy boundary. Data tools return evidence without automatically opening an app. Write tools and `render_ui` advertise model-only UI visibility; this is a host presentation restriction, not an authorization boundary.
 
 **Platform metadata:** standard MCP Apps resource metadata is shared. OpenAI-only global/thread entrypoints and security-scheme mirrors are additive. The top-level `securitySchemes` field is emitted via the SDK's public tools/list handler because SDK v2 registration drops unknown fields. `openai/widgetDomain` uses the deployment origin; standard `ui.domain` is omitted so Claude chooses its own sandbox. Public OpenAI submission must verify that origin is unique to this plugin.
 
@@ -83,7 +83,7 @@ Policy decisions are audited to `mcp_audit_event`.
 
 | Scope | Kind | Purpose |
 | --- | --- | --- |
-| `mcp:discover` | read | Transport, `ping`, `tools/list`, prompts, `durabull://server` |
+| `mcp:discover` | read | Transport, `ping`, `render_ui`, `tools/list`, prompts, `durabull://server` |
 | `mcp:jobs:read` | read | Connections, queues, jobs, workers, scheduled jobs, connection overview |
 | `mcp:logs:read` | read | Job logs and stacktraces; optional enrichment for `explain_job_failure` |
 | `mcp:failures:read` | read | Alert events, rules, summaries; optional enrichment for `explain_job_failure` and `get_connection_overview` |

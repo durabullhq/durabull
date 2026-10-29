@@ -1,5 +1,5 @@
 import type { App } from '@modelcontextprotocol/ext-apps'
-import { getMcpToolDefinition } from '../../tools/tool-catalog'
+import { getMcpToolDefinition, MCP_UI_READ_TOOL_NAMES } from '../../tools/tool-catalog'
 
 type ToolCall = Parameters<App['callServerTool']>[0]
 
@@ -9,7 +9,7 @@ export async function callReadTool(
   call: ToolCall,
   options?: Parameters<App['callServerTool']>[1]
 ) {
-  if (!getMcpToolDefinition(call.name)?.annotations.readOnlyHint) {
+  if (!MCP_UI_READ_TOOL_NAMES.includes(call.name)) {
     throw new Error('Use the assistant to request this operation.')
   }
   return app.callServerTool(call, options)
@@ -31,7 +31,7 @@ const MUTATION_READS: Record<string, string> = {
 export function refreshToolCall(name: string, args: Record<string, unknown>): ToolCall | null {
   const readName = MUTATION_READS[name] ?? name
   const definition = getMcpToolDefinition(readName)
-  if (!definition?.annotations.readOnlyHint) return null
+  if (!definition || !MCP_UI_READ_TOOL_NAMES.includes(readName)) return null
   return {
     name: readName,
     // Exclude write-only arguments such as snooze duration.

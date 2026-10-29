@@ -76,13 +76,29 @@ export async function getDb(): Promise<Database> {
 
       try {
         console.log('🐘 Connecting to PostgreSQL...')
-        const migrationLockClient = await pgPool.connect()
-        await withMigrationLock(migrationLockClient, async () => {
-          // Run on the lock-owning session so connection loss cannot release
-          // the lock while a different pool connection continues migrating.
-          const migrationDb = drizzleNodePg({ client: migrationLockClient, schema, relations })
-          await migrateNodePg(migrationDb, { migrationsFolder: migrationsDir })
-        })
+        // The migration lock is a session lock, so it needs a real session. A
+        // transaction-mode pooler behind DATABASE_URL can route the lock and
+        // its unlock to different backends; DATABASE_MIGRATION_URL lets
+        // migrations use a direct connection instead.
+        const migrationUrl = env.DATABASE_MIGRATION_URL
+        const migrationPool = migrationUrl
+          ? new pg.Pool({
+              connectionString: migrationUrl,
+              ...(shouldDisableSslForPostgresUrl(migrationUrl) ? { ssl: false } : {}),
+              max: 1,
+            })
+          : null
+        try {
+          const migrationLockClient = await (migrationPool ?? pgPool).connect()
+          await withMigrationLock(migrationLockClient, async () => {
+            // Run on the lock-owning session so connection loss cannot release
+            // the lock while a different pool connection continues migrating.
+            const migrationDb = drizzleNodePg({ client: migrationLockClient, schema, relations })
+            await migrateNodePg(migrationDb, { migrationsFolder: migrationsDir })
+          })
+        } finally {
+          await migrationPool?.end().catch(() => {})
+        }
 
         if (shouldUseEnvConnections()) {
           const orgs = await pgDb.select({ id: organization.id }).from(organization)

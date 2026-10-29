@@ -86,6 +86,7 @@ export const fixture = (name: string, args: Record<string, unknown>) => {
   const connectionId = args.connectionId
   if (
     name !== 'list_connections' &&
+    name !== 'render_ui' &&
     connectionId !== 'preview-production' &&
     connectionId !== 'preview-staging'
   ) {
@@ -93,6 +94,8 @@ export const fixture = (name: string, args: Record<string, unknown>) => {
   }
   const isStaging = connectionId === 'preview-staging'
   switch (name) {
+    case 'render_ui':
+      return { toolName: args.toolName ?? 'list_connections', arguments: args.arguments ?? {} }
     case 'list_connections':
       return {
         connections: [

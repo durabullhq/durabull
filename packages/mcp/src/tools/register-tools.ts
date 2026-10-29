@@ -30,6 +30,7 @@ import {
   type ListJobsHandlerOutput,
   type ListQueuesHandlerOutput,
   type ListScheduledJobsHandlerOutput,
+  MCP_UI_READ_TOOL_NAMES,
   type McpJobState,
   type McpToolDefinition,
   type QueuePauseHandlerOutput,
@@ -595,6 +596,47 @@ export function registerTools(server: McpServer, options: RegisterToolsOptions):
   })
   registerFromCatalog(registry, 'pause_queue', options.pauseQueue, queueMutation)
   registerFromCatalog(registry, 'resume_queue', options.resumeQueue, queueMutation)
+
+  // This is a data-free launcher, never a proxy for a domain handler. The browser's
+  // subsequent read goes through the ordinary scope, tenant, billing and rate-limit checks.
+  registerFromCatalog(
+    registry,
+    'render_ui',
+    async (args: RawArgs) => {
+      const toolName = str(args.toolName)
+      const target = registry.tools.find(
+        ({ definition, registered }) =>
+          definition.name === toolName &&
+          registered.enabled &&
+          MCP_UI_READ_TOOL_NAMES.includes(toolName)
+      )
+      if (!target) {
+        throw {
+          code: 'validation_error',
+          message: 'Choose an available data read tool for this view.',
+        }
+      }
+      const parsed = z.strictObject(target.definition.inputSchema).safeParse(args.arguments)
+      if (!parsed.success) {
+        throw {
+          code: 'validation_error',
+          message: `Invalid view arguments. Use the input schema for ${toolName}, including its required identifiers.`,
+        }
+      }
+      // These values become a second request, so output safety must not silently
+      // change an identifier/cursor into a different target. Keep the ordinary
+      // redaction boundary and fail before handing the app a lossy request.
+      if (JSON.stringify(sanitizeMcpOutput(parsed.data).value) !== JSON.stringify(parsed.data)) {
+        throw {
+          code: 'validation_error',
+          message:
+            'This view contains identifiers or filters that output safety would redact or truncate. Call the read tool directly with the original arguments instead.',
+        }
+      }
+      return { toolName, arguments: parsed.data }
+    },
+    (args) => args
+  )
 
   // SDK v2 intentionally emits standard MCP Tool fields only. OpenAI requires its
   // securitySchemes extension at the top level as well as the compatibility _meta mirror.

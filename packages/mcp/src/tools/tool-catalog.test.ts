@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-
+import { MCP_APP_URI, toolAppMetadata } from '../apps/app-metadata'
 import {
   isKnownMcpScope,
   isMcpWriteScope,
@@ -16,6 +16,21 @@ import {
 } from './tool-catalog'
 
 describe('MCP tool catalog', () => {
+  it('attaches rendering metadata exclusively to render_ui across the complete catalog', () => {
+    for (const tool of MCP_TOOL_CATALOG) {
+      const metadata = toolAppMetadata(tool)
+      if (tool.name === 'render_ui') {
+        expect(metadata.ui).toEqual({ resourceUri: MCP_APP_URI, visibility: ['model'] })
+        expect(metadata['openai/outputTemplate']).toBe(MCP_APP_URI)
+        expect(metadata['openai/widgetAccessible']).toBe(false)
+      } else {
+        expect(metadata.ui).not.toHaveProperty('resourceUri')
+        expect(metadata).not.toHaveProperty('ui/resourceUri')
+        expect(metadata).not.toHaveProperty('openai/outputTemplate')
+        expect(metadata).not.toHaveProperty('openai/ui')
+      }
+    }
+  })
   it('has unique snake_case names', () => {
     const names = MCP_TOOL_CATALOG.map((tool) => tool.name)
     expect(new Set(names).size).toBe(names.length)
@@ -76,9 +91,9 @@ describe('MCP tool catalog', () => {
     }
   })
 
-  it('requires connectionId on every tool except ping and list_connections', () => {
+  it('requires connectionId on every tool except discovery and presentation tools', () => {
     for (const tool of MCP_TOOL_CATALOG) {
-      if (tool.name === 'ping' || tool.name === 'list_connections') continue
+      if (['ping', 'list_connections', 'render_ui'].includes(tool.name)) continue
       expect(Object.keys(tool.inputSchema)).toContain('connectionId')
     }
   })
