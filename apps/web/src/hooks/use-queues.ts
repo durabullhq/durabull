@@ -9,7 +9,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useParams } from '@tanstack/react-router'
 import { useConnection } from '@/components/connection-provider'
 import { ApiError, api, fetchApi, handleRes, type InferResponseType } from '@/lib/api'
-import { PAGINATION } from '@/lib/constants'
+import { type JobSortField, PAGINATION } from '@/lib/constants'
 import type { JobOptionsInput } from '@/lib/job-options'
 
 // Re-export ApiError for backward compatibility
@@ -217,6 +217,16 @@ export type QueueSortField = (typeof QUEUE_SORT_FIELDS)[number]
 export type QueueSortOrder = 'asc' | 'desc'
 export type QueueStatusFilter = 'active' | 'paused'
 
+export interface JobListFilters {
+  status?: string
+  name?: string
+  jobId?: string
+  data?: string
+  pageSize?: number
+  sortBy?: JobSortField
+  sortOrder?: QueueSortOrder
+}
+
 export interface UseQueuesOptions {
   page?: number
   pageSize?: number
@@ -235,11 +245,8 @@ export const queryKeys = {
   queue: (connectionId: string, name: string) => ['queue', connectionId, name] as const,
   queueMetrics: (connectionId: string, name: string, options?: QueueMetricsOptions) =>
     ['queue', connectionId, name, 'metrics', options] as const,
-  jobs: (
-    connectionId: string,
-    queueName: string,
-    filters?: { status?: string; name?: string; jobId?: string; data?: string; pageSize?: number }
-  ) => ['jobs', connectionId, queueName, filters] as const,
+  jobs: (connectionId: string, queueName: string, filters?: JobListFilters) =>
+    ['jobs', connectionId, queueName, filters] as const,
   job: (connectionId: string, queueName: string, jobId: string) =>
     ['job', connectionId, queueName, jobId] as const,
   jobLogs: (connectionId: string, queueName: string, jobId: string) =>
@@ -384,10 +391,7 @@ export function useQueueMetrics(queueName: string, options?: QueueMetricsOptions
 }
 
 // Job Queries - uses fetchApi since route doesn't have zValidator for query params
-export function useJobs(
-  queueName: string,
-  filters?: { status?: string; name?: string; jobId?: string; data?: string; pageSize?: number }
-) {
+export function useJobs(queueName: string, filters?: JobListFilters) {
   const connectionId = useConnectionIdFromContextOrRoute()
 
   return useInfiniteQuery({
@@ -399,6 +403,8 @@ export function useJobs(
       if (filters?.jobId) params.set('jobId', filters.jobId)
       if (filters?.data) params.set('data', filters.data)
       if (filters?.pageSize) params.set('pageSize', filters.pageSize.toString())
+      if (filters?.sortBy) params.set('sortBy', filters.sortBy)
+      if (filters?.sortOrder) params.set('sortOrder', filters.sortOrder)
       if (pageParam) params.set('cursor', pageParam)
       const query = params.toString()
 

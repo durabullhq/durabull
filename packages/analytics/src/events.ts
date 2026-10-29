@@ -72,6 +72,7 @@ export const AnalyticsEvents = {
   JOB_LOG_COPIED: 'job_log_copied',
   JOB_TAB_CHANGED: 'job_tab_changed',
   JOB_STATUS_FILTERED: 'job_status_filtered',
+  JOB_LIST_SORTED: 'job_list_sorted',
 
   // Scheduled Job Events
   SCHEDULED_JOB_CREATED: 'scheduled_job_created',
