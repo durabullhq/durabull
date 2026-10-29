@@ -12,7 +12,7 @@ import { billingRepository, parsePlanLimitDbError } from './billing'
  */
 const postgresUrl = process.env.DURABULL_TEST_POSTGRES_URL
 const describePostgres = postgresUrl ? describe : describe.skip
-const mutableEnv = env as { DATABASE_URL?: string }
+const mutableEnv = env as { DATABASE_URL?: string; DATABASE_MIGRATION_URL?: string }
 const originalDatabaseUrl = mutableEnv.DATABASE_URL
 const ORG = `pg-billing-${Date.now()}`
 
@@ -31,6 +31,8 @@ async function enforce(limits: Record<string, number | null>) {
 describePostgres('billing on PostgreSQL', () => {
   beforeAll(async () => {
     mutableEnv.DATABASE_URL = postgresUrl
+    // Optional: run migrations over a direct URL while the app goes through a pooler.
+    mutableEnv.DATABASE_MIGRATION_URL = process.env.DURABULL_TEST_POSTGRES_MIGRATION_URL
     await closeDb()
     const db = await getDb()
     const now = new Date()
@@ -62,6 +64,7 @@ describePostgres('billing on PostgreSQL', () => {
     await db.execute(sql`DELETE FROM billing_webhook_event WHERE id LIKE ${`${ORG}%`}`)
     await closeDb()
     mutableEnv.DATABASE_URL = originalDatabaseUrl
+    mutableEnv.DATABASE_MIGRATION_URL = undefined
   })
 
   it('commits exactly the remaining capacity under 20 parallel sessions', async () => {
@@ -147,6 +150,41 @@ describePostgres('billing on PostgreSQL', () => {
     )
     expect(results).toEqual(Array.from({ length: 16 }, () => 1))
   }, 20_000)
+
+  it('leaves no organization lock behind, even behind a transaction pooler', async () => {
+    // Behind PgBouncer in transaction mode, a session lock and its unlock can
+    // run on different server backends; this must never leave a lock held.
+    // Concurrent cycles make a pooler hand consecutive statements of one
+    // client to different backends, as production traffic does.
+    const organizationIds = [0, 1, 2].map((n) => `${ORG}-leak-${n}`)
+    const db = await getDb()
+    await Promise.all(
+      organizationIds.map(async (organizationId) => {
+        for (let i = 0; i < 10; i += 1) {
+          await billingRepository.withOrganizationLock(organizationId, async () => {
+            await db.execute(sql`SELECT pg_sleep(0.005)`)
+          })
+        }
+      })
+    )
+    // Only this database and the lock keys used above: advisory locks are
+    // per database, and other databases or tests may hold their own. A bigint
+    // key is shown as classid (high 32 bits) and objid (low 32 bits).
+    const pool = await getPgPool()
+    const held = await pool.query(
+      `SELECT count(*)::int AS held
+         FROM pg_locks l
+        WHERE l.locktype = 'advisory'
+          AND l.granted
+          AND l.objsubid = 1
+          AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+          AND ((l.classid::bigint << 32) | l.objid::bigint) IN (
+            SELECT hashtextextended('durabull_billing:' || id, 0) FROM unnest($1::text[]) AS id
+          )`,
+      [organizationIds]
+    )
+    expect(held.rows[0].held).toBe(0)
+  })
 
   it('never hands one webhook event to two concurrent workers', async () => {
     for (let i = 0; i < 30; i += 1) {

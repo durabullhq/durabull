@@ -14,6 +14,7 @@
       "outputs": ["dist/**", ".output/**", ".next/**", "out/**", "release/**"],
       "passThroughEnv": [
         "DATABASE_URL",
+        "DATABASE_MIGRATION_URL",
         "REDIS_URL",
         "DOTENV_PRIVATE_KEY",
         "MARKETPLACE_*",
@@ -35,6 +36,7 @@
       "persistent": true,
       "passThroughEnv": [
         "DATABASE_URL",
+        "DATABASE_MIGRATION_URL",
         "REDIS_URL",
         "DOTENV_PRIVATE_KEY",
         "MARKETPLACE_*",
@@ -68,6 +70,7 @@
       "outputs": ["release/**"],
       "passThroughEnv": [
         "DATABASE_URL",
+        "DATABASE_MIGRATION_URL",
         "REDIS_URL",
         "DOTENV_PRIVATE_KEY",
         "MARKETPLACE_*",
@@ -97,6 +100,7 @@
       "outputs": ["release/**"],
       "passThroughEnv": [
         "DATABASE_URL",
+        "DATABASE_MIGRATION_URL",
         "REDIS_URL",
         "DOTENV_PRIVATE_KEY",
         "MARKETPLACE_*",
@@ -138,6 +142,7 @@
       "cache": false,
       "passThroughEnv": [
         "DATABASE_URL",
+        "DATABASE_MIGRATION_URL",
         "REDIS_URL",
         "CI",
         "DURABULL_*",
