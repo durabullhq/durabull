@@ -616,7 +616,7 @@ function defineTool(definition: {
   }
 }
 
-export const MCP_TOOL_CATALOG: readonly McpToolDefinition[] = [
+const DATA_TOOL_CATALOG: readonly McpToolDefinition[] = [
   defineTool({
     name: 'ping',
     title: 'Ping',
@@ -631,9 +631,9 @@ export const MCP_TOOL_CATALOG: readonly McpToolDefinition[] = [
   // -- Connections & queues -------------------------------------------------
   defineTool({
     name: 'list_connections',
-    title: 'Queue explorer',
+    title: 'List connections',
     description:
-      'List the Redis connections the caller may access, with name, environment, BullMQ key prefix, and organization. Start here to open the interactive queue explorer in MCP Apps hosts, or get a text inventory in other clients. Data tools need a connectionId from this list. Follow nextCursor for all visible connections.',
+      'List the Redis connections the caller may access, with name, environment, BullMQ key prefix, and organization. Returns structured evidence without opening a UI. Data tools need a connectionId from this list. Follow nextCursor for all visible connections. Use render_ui only when intentionally presenting an interactive view to the user.',
     requiredScopes: [MCP_SCOPE_JOBS_READ],
     annotations: READ_ANNOTATIONS,
     inputSchema: { cursor: cursorArg, pageSize: pageSizeArg },
@@ -1045,6 +1045,37 @@ export const MCP_TOOL_CATALOG: readonly McpToolDefinition[] = [
     annotations: WRITE_IDEMPOTENT_ANNOTATIONS,
     inputSchema: { connectionId: connectionIdArg, queueName: queueNameArg },
     outputSchema: queuePauseOutputSchema,
+  }),
+]
+
+/** Data reads that the explorer can load; excludes ping, mutations and the UI launcher itself. */
+export const MCP_UI_READ_TOOL_NAMES: readonly string[] = DATA_TOOL_CATALOG.filter(
+  (tool) => tool.annotations.readOnlyHint && tool.outputSchema
+).map((tool) => tool.name)
+
+export const MCP_UI_USAGE =
+  'Use ordinary data tools for investigation, intermediate steps and verification; they return text and structured evidence without rendering a UI. Call render_ui only when intentionally presenting an interactive view to the user: when they ask to open/show a UI, or when a chosen view materially helps explain the answer. Prefer one focused view after gathering evidence, not a card for every tool call. Omit render_ui for background work, routine progress and text-only answers. In hosts without MCP Apps, call the selected read tool directly and summarize its evidence.'
+
+const uiToolName = z.enum(MCP_UI_READ_TOOL_NAMES)
+const uiArguments = z.record(z.string(), z.unknown())
+
+export const MCP_TOOL_CATALOG: readonly McpToolDefinition[] = [
+  ...DATA_TOOL_CATALOG,
+  defineTool({
+    name: 'render_ui',
+    title: 'Show Durabull explorer',
+    description: `Open an interactive Durabull view for the user. ${MCP_UI_USAGE} Pass toolName as the read tool for the desired view and arguments exactly as that tool expects; omit both to browse connections. Example: {"toolName":"get_queue","arguments":{"connectionId":"<id>","queueName":"emails"}}. Returns only a validated view request, not fetched evidence or proof that the host displayed it. The UI loads fresh data through the selected read tool with its normal scopes and permissions. Never use this tool to perform a mutation.`,
+    requiredScopes: [MCP_SCOPE_DISCOVER],
+    annotations: READ_ANNOTATIONS,
+    inputSchema: {
+      toolName: uiToolName.default('list_connections').describe('Read tool whose view to display.'),
+      arguments: uiArguments
+        .default({})
+        .describe(
+          'Arguments for the selected read tool, using its input schema (including required connectionId and entity identifiers). Do not pass tool results or payloads.'
+        ),
+    },
+    outputSchema: z.object({ toolName: uiToolName, arguments: uiArguments }),
   }),
 ]
 

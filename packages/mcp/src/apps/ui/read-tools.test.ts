@@ -5,7 +5,7 @@ import { callReadTool, refreshToolCall } from './read-tools'
 describe('MCP App read boundary', () => {
   it('never sends a mutation or unknown tool through a permissive host bridge', async () => {
     const callServerTool = mock(async () => ({ content: [] }))
-    for (const name of [...MCP_WRITE_TOOL_NAMES, 'unknown_tool']) {
+    for (const name of [...MCP_WRITE_TOOL_NAMES, 'unknown_tool', 'render_ui', 'ping']) {
       await expect(callReadTool({ callServerTool }, { name, arguments: {} })).rejects.toThrow(
         'Use the assistant'
       )

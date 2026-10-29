@@ -72,12 +72,13 @@ export async function evaluateMcpToolPolicy(input: {
     return deny(base, `missing_scopes:${missing.join(',')}`)
   }
 
-  // The exact app shell contains only code/CSS. Like tools/list, it requires
+  // The exact app shell and render_ui launcher contain no tenant data. Like tools/list, they require
   // an authenticated principal and discovery scope, but no access to tenant data.
   // All data loaded by the shell still passes the normal per-tool policy below.
   if (
-    input.call.toolName === 'resource:queue_explorer' &&
-    input.call.arguments.uri === MCP_APP_URI &&
+    (input.call.toolName === 'render_ui' ||
+      (input.call.toolName === 'resource:queue_explorer' &&
+        input.call.arguments.uri === MCP_APP_URI)) &&
     !input.call.connectionId &&
     grantedScopes.includes('mcp:discover')
   ) {

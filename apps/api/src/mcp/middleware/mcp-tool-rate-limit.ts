@@ -59,6 +59,7 @@ function principalRateLimitKey(c: Context): string {
 type WorkBucket = Exclude<keyof typeof MCP_RATE_LIMIT_POLICIES, 'ingress'>
 const DISCOVERY_OPERATIONS = new Set([
   'ping',
+  'render_ui',
   'list_connections',
   'resource:server',
   'resource:queue_explorer',

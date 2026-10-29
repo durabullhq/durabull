@@ -82,7 +82,7 @@ export class Explorer {
     this.initialArgs = args ?? {}
   }
   /** Adopt the host-delivered result; it supersedes any in-flight read. */
-  toolResult(result: CallToolResult) {
+  async toolResult(result: CallToolResult) {
     ++this.requestId
     this.activeRequest?.abort()
     try {
@@ -91,6 +91,12 @@ export class Explorer {
         this.app.getHostContext()?.toolInfo?.tool.name ?? 'list_connections',
         this.initialArgs
       )
+      if (view.tool === 'render_ui') {
+        // The launcher contains only a target. Fetch through the host so the read
+        // retains its own authorization, billing, rate limit and audit boundary.
+        await this.load(str(view.data.toolName), obj(view.data.arguments), false)
+        return
+      }
       this.set({ view, busy: false, error: '', notice: '', failedRead: undefined })
     } catch (failure) {
       this.set({

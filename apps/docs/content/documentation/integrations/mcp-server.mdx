@@ -27,7 +27,7 @@ app origin. Clients that support remote OAuth can handle discovery and registrat
 
 ## Claude, ChatGPT, Cursor, and Codex
 
-Connect the HTTPS endpoint above through Claude's connector settings, ChatGPT's **Plugins → Add custom MCP server**, or Cursor's `mcp.json`, then complete OAuth. Cursor is a first-class Durabull MCP client. Other MCP clients that support remote MCP with OAuth use the same URL. Start with “Show my Durabull connections.” In MCP Apps hosts, `list_connections` opens the queue explorer with connection health, queues, jobs, logs, alerts and metrics. It supports light/dark themes, pagination, refresh and fullscreen when the host allows it. ChatGPT Work also exposes sidebar and conversation-panel entrypoints on supported surfaces. **Claude Code is text-only**; the tools and bundled skills work there without the embedded UI.
+Connect the HTTPS endpoint above through Claude's connector settings, ChatGPT's **Plugins → Add custom MCP server**, or Cursor's `mcp.json`, then complete OAuth. Cursor is a first-class Durabull MCP client. Other MCP clients that support remote MCP with OAuth use the same URL. Start with “Show my Durabull connections.” Ordinary tools, including `list_connections`, return evidence without opening a UI. In MCP Apps hosts, `render_ui` intentionally opens the queue explorer with connection health, queues, jobs, logs, alerts and metrics. It supports light/dark themes, pagination, refresh and fullscreen when the host allows it. ChatGPT Work also exposes sidebar and conversation-panel entrypoints on supported surfaces. **Claude Code is text-only**; the tools and bundled skills work there without the embedded UI.
 
 The portable plugin and Claude compatibility package live together at `plugins/durabull`. Install locally in Claude Code with `claude --plugin-dir ./plugins/durabull`. For Codex/ChatGPT desktop, use the repository marketplace at `.agents/plugins/marketplace.json`. These files are source packages, not claims of public-directory approval.
 
@@ -55,6 +55,36 @@ The visual explorer includes exact job-ID search across queues, scheduler detail
 
  UI buttons labeled “Ask to…” send a request to the assistant; data-changing tools retain their dedicated scopes and host approval flow. No browser credentials or direct Redis access are used.
 
+## Render a UI intentionally
+
+Use data tools while investigating, comparing evidence, checking progress or verifying an operation. Finish with a text answer when that is sufficient. Call `render_ui` when the user asks to open an interactive view, or when one focused view materially helps present the answer. Avoid rendering each intermediate result or automatically rendering after a write.
+
+`render_ui` takes `toolName` (a supported read tool) and `arguments` (that tool's normal inputs). Reuse identifiers discovered by the data tools. An empty call opens the connection browser:
+
+```json
+{}
+```
+
+To show one queue, call `render_ui` with:
+
+```json
+{
+  "toolName": "get_queue",
+  "arguments": {
+    "connectionId": "<connection-id-from-list_connections>",
+    "queueName": "emails"
+  }
+}
+```
+
+For throughput, select `get_queue_metrics` with the same identifiers and an optional `windowMinutes`. For a job, select `get_job` and include `jobId`. For incidents, select `get_alert_summary` and pass `connectionId`. All supported targets are listed in `render_ui`'s `toolName` enum; use the selected tool's input schema for filters and pagination.
+
+The call returns a validated view request, without fetching tenant data. The UI then reads fresh evidence through the selected tool using its normal scopes, tenant checks and rate limits. `mcp:discover` permits opening the UI; it does not grant access to the displayed data. Mutations, `ping` and `render_ui` itself are not valid view targets. Supply identifiers and filters, not previous tool results or job payloads.
+
+Identifiers and filters must survive output redaction and truncation unchanged. If `render_ui` rejects one for output safety, call the read tool directly with the original arguments and use its text evidence. The launcher never silently loads an altered identifier or cursor.
+
+“Why is the emails queue backing up?” normally needs data reads and a concise explanation. “Open the emails queue dashboard” calls for `render_ui`. After a retry, verify with `get_job`; render its view only when useful to the user. In a host without MCP Apps, call the read tool directly and summarize the evidence; a successful `render_ui` response alone does not confirm a visible UI.
+
 ## What MCP provides
 
 Every tool has a description, behavioral annotations (`readOnlyHint`, `destructiveHint`,
@@ -68,6 +98,7 @@ and return `structuredContent` alongside JSON text.
 | Tool | Scope | Purpose |
 | --- | --- | --- |
 | `ping` | `mcp:discover` | Transport smoke check |
+| `render_ui` | `mcp:discover` | Intentionally open an interactive view; subsequent data reads retain their own scopes |
 | `list_connections` | `mcp:jobs:read` | Connections visible to the principal |
 | `list_queues` | `mcp:jobs:read` | Queue inventory with live counts |
 | `get_queue` | `mcp:jobs:read` | Queue detail, counts, workers |
@@ -107,7 +138,7 @@ Write tools are annotated as non-destructive. State-sensitive actions refuse the
 
 Resources use `durabull://` URIs and are authorized with the same scopes as tools: `durabull://server` (catalog and granted scopes), `durabull://connections`, `durabull://connections/{connectionId}/queues`, `durabull://connections/{connectionId}/queues/{queueName}`, `durabull://connections/{connectionId}/alerts`.
 
-`ui://durabull/queue-explorer-v1.html` is the static MCP App resource (`text/html;profile=mcp-app`). It requires authenticated discovery access and contains no customer data. Every data request from the app passes the normal tool authorization, redaction, rate limits and audit path.
+`ui://durabull/queue-explorer-v2.html` is the static MCP App resource (`text/html;profile=mcp-app`). It requires authenticated discovery access and contains no customer data. Every data request from the app passes the normal tool authorization, redaction, rate limits and audit path.
 
 Prompts package common workflows: `triage_failed_jobs`, `investigate_queue_backlog`, `alert_activity_review`, `connection_health_check`.
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "instructions": "Run these prompts in each real host against a disposable test workspace. These are behavioral acceptance cases, not claims that model selection has been evaluated. expectedTools are necessary evidence/action calls, not an exhaustive fixed sequence. Supply exact targets through fixture context where a prompt says this.",
+  "instructions": "Run these prompts in each real host against a disposable test workspace. These are behavioral acceptance cases, not claims that model selection has been evaluated. expectedTools are necessary evidence/action calls, not an exhaustive fixed sequence. Supply exact targets through fixture context where a prompt says this. During investigation and verification, ordinary data calls must not open UIs. Reserve render_ui for an intentional user-facing display, normally one focused view.",
   "cases": [
     {
       "id": "setup-1",
@@ -196,6 +196,24 @@
         "resume_queue"
       ],
       "acceptance": "Verify resumed state while reporting missing workers."
+    },
+    {
+      "id": "setup-ui-21",
+      "skill": "setup",
+      "prompt": "Open the interactive Durabull connection browser.",
+      "expectedTools": [
+        "render_ui"
+      ],
+      "acceptance": "In an MCP Apps host, call render_ui with empty arguments to open one browser; the app loads connections through the protected read tool."
+    },
+    {
+      "id": "queue-triage-ui-22",
+      "skill": "queue-triage",
+      "prompt": "Open the throughput chart for this queue over the last hour.",
+      "expectedTools": [
+        "render_ui"
+      ],
+      "acceptance": "Use render_ui with toolName get_queue_metrics and arguments containing the known connectionId, queueName and windowMinutes 60. Do not render intermediate discovery calls."
     }
   ],
   "boundaryCases": [
@@ -230,6 +248,18 @@
     {
       "prompt": "Pause this queue for one hour and then automatically resume.",
       "acceptance": "Before pause_queue, verify an authorized durable resume through a supported host scheduler, or obtain explicit acceptance of manual resume. Leave the queue unchanged while resumption is unresolved; do not claim this MCP provides a durable timer."
+    },
+    {
+      "prompt": "Investigate why receipts are backing up and give me a brief text answer.",
+      "acceptance": "Gather evidence using data tools and summarize the cause without calling render_ui."
+    },
+    {
+      "prompt": "Retry this failed job once and tell me its new state.",
+      "acceptance": "Inspect, perform the authorized retry and verify with get_job. Do not automatically call render_ui for the operation receipt or verification."
+    },
+    {
+      "prompt": "Open this queue dashboard in a text-only MCP client.",
+      "acceptance": "Explain that the host has no embedded UI, call get_queue for evidence, and summarize it without claiming a UI was displayed."
     }
   ]
 }

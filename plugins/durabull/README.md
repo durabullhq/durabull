@@ -4,7 +4,7 @@ Administer BullMQ queues and monitor Redis health from your assistant. Diagnose 
 
 ## Connect
 
-- **ChatGPT:** add the custom MCP server `https://app.durabull.io/mcp` in plugin settings and complete browser OAuth. Connecting the server supplies tools, but does not install the nine workflow skills. For those, add the portable package at `plugins/durabull` to a local marketplace, install it from the Plugins Directory, and start a new conversation with the plugin enabled. See [OpenAI’s complete-plugin installation guide](https://developers.openai.com/plugins/deploy/connect-chatgpt#test-the-complete-plugin). Supported MCP Apps hosts show the interactive explorer.
+- **ChatGPT:** add the custom MCP server `https://app.durabull.io/mcp` in plugin settings and complete browser OAuth. Connecting the server supplies tools, but does not install the nine workflow skills. For those, add the portable package at `plugins/durabull` to a local marketplace, install it from the Plugins Directory, and start a new conversation with the plugin enabled. See [OpenAI’s complete-plugin installation guide](https://developers.openai.com/plugins/deploy/connect-chatgpt#test-the-complete-plugin). Supported MCP Apps hosts can open the interactive explorer with an intentional `render_ui` call.
 - **Claude:** add the same URL as a remote connector and complete OAuth. The connector supplies tools and MCP Apps; the plugin supplies skills on hosts that support plugin installation.
 - **Claude Code:** from the repository root, run `claude --plugin-dir ./plugins/durabull`. To install from the repository marketplace, use `/plugin marketplace add durabullhq/durabull` followed by `/plugin install durabull@durabull`. Text tools and skills work without an embedded UI.
 - **Self-hosted:** generate an independent package with `bun run mcp:plugin --endpoint https://queues.example.com/mcp --out /tmp/durabull-plugin`. This updates both host configurations and every skill's MCP dependency. Connect to your own origin, not the Cloud URL.
@@ -27,6 +27,10 @@ You need a Durabull account with access to a Redis connection and its BullMQ que
 
 Alert triage also handles requested acknowledgement, unacknowledgement, resolution, snooze and unsnooze. The embedded app supports paginated inventories, exact job-ID search across queues, logs and stacktraces, recurring schedules, incident and rule inspection, Redis history, light/dark themes and host-supported fullscreen. “Ask to…” buttons send explicit requests to your assistant; data calls remain authorized on the server.
 
+## Intentional UI display
+
+Data tools return text and structured evidence without opening cards. Use `render_ui` when the user asks to open a UI or when a focused interactive view helps present the answer; investigations and routine verification stay text-only by default. For example, `render_ui({"toolName":"get_queue","arguments":{"connectionId":"<id>","queueName":"emails"}})` opens one queue. An empty call opens the connection browser. The app loads fresh data with the selected read tool's normal permissions. See [UI guidance for agents](references/ui.md) for examples and host fallback behavior. Reconnect or refresh the host's tool catalog after upgrading to discard cached automatic-rendering metadata.
+
 ## Boundaries
 
 This is a BullMQ operations integration, not an arbitrary Redis command interface. It does not edit job payloads or Redis keys, delete jobs, purge queues, scale workers, create/edit schedules or configure alert rules. A retry being queued does not prove success. A snapshot is not continuous monitoring. Missing or stale samples remain visible as uncertainty.
@@ -35,6 +39,6 @@ This is a BullMQ operations integration, not an arbitrary Redis command interfac
 
 `plugin.json` and `mcp.json` are canonical. `bun run mcp:plugin` generates Claude compatibility files and `agents/openai.yaml` for all skills. `bun run mcp:check` checks schemas, coverage, bundle freshness, protocol and policy. Run `claude plugin validate plugins/durabull` from the repository root.
 
-[evals.json](evals.json) contains 20 workflow scenarios and 8 boundary scenarios for real-host testing. Automated catalog checks verify that the scenarios reference real tools; they do not measure model routing or live OAuth behavior. Screenshots under `assets/` use clearly labeled preview fixtures and contain no customer data.
+[evals.json](evals.json) contains 22 workflow scenarios and 11 boundary scenarios for real-host testing. Automated catalog checks verify that the scenarios reference real tools; they do not measure model routing or live OAuth behavior. Screenshots under `assets/` use clearly labeled preview fixtures and contain no customer data.
 
 The package is ready for local installation and submission preparation. Public directory availability requires each platform's publisher review; this repository is not evidence of approval. See the repository's `docs/mcp-plugin-release.md` for the submission and validation record.

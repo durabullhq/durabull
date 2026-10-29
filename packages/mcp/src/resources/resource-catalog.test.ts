@@ -15,7 +15,7 @@ describe('MCP resource catalog', () => {
   })
 
   it('parses every template shape', () => {
-    expect(parseMcpResourceUri('ui://durabull/queue-explorer-v1.html')?.definition.name).toBe(
+    expect(parseMcpResourceUri('ui://durabull/queue-explorer-v2.html')?.definition.name).toBe(
       'queue_explorer'
     )
     expect(parseMcpResourceUri('ui://durabull/arbitrary.html')).toBeNull()
