@@ -24,6 +24,17 @@ const STACKTRACE_KEEP_FIELD = 'stacktrace'
 const CLEAR_RETENTION_SCHEMA = z.object({
   keepMostRecent: z.number().int().min(0).default(0),
 })
+const JOB_SORT_FIELDS = ['id', 'name', 'status', 'attempts', 'created', 'finished'] as const
+type JobSortField = (typeof JOB_SORT_FIELDS)[number]
+
+interface SortableJob {
+  id: string
+  name: string
+  status: string
+  attemptsMade: number
+  timestamp: number
+  finishedOn?: number
+}
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback
@@ -35,6 +46,27 @@ function parseNonNegativeInt(value: string | undefined): number | null {
   if (value === undefined) return null
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+function compareJobIds(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true })
+}
+
+function compareJobs(a: SortableJob, b: SortableJob, sortBy: JobSortField): number {
+  switch (sortBy) {
+    case 'id':
+      return compareJobIds(a.id, b.id)
+    case 'name':
+      return a.name.localeCompare(b.name)
+    case 'status':
+      return a.status.localeCompare(b.status)
+    case 'attempts':
+      return a.attemptsMade - b.attemptsMade
+    case 'created':
+      return a.timestamp - b.timestamp
+    case 'finished':
+      return (a.finishedOn ?? 0) - (b.finishedOn ?? 0)
+  }
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -115,6 +147,9 @@ const app = new Hono()
     const pageStr = c.req.query('page')
     const cursorStr = c.req.query('cursor')
     const pageSizeStr = c.req.query('pageSize')
+    const sortByParam = c.req.query('sortBy')
+    const sortBy = JOB_SORT_FIELDS.find((field) => field === sortByParam)
+    const sortDirection = c.req.query('sortOrder') === 'desc' ? -1 : 1
 
     const pageSize = Math.min(pageSizeStr ? parseInt(pageSizeStr, 10) : 20, 100)
     const cursor = cursorStr ? parseInt(cursorStr, 10) : null
@@ -197,11 +232,12 @@ const app = new Hono()
       states = [status as JobState]
     }
 
-    const needsClientFilter = !!(name || jobId || dataSearch)
+    // Filters and sorts need all jobs, so the BullMQ range pagination does not apply.
+    const needsAllJobs = !!(name || jobId || dataSearch || sortBy)
 
-    if (needsClientFilter) {
+    if (needsAllJobs) {
       // Fetch each state separately so we know the status without per-job getState() calls,
-      // then return all filtered results in one response for client-side pagination.
+      // then return one page of the filtered results.
       const jobsWithState: Array<{
         job: NonNullable<Awaited<ReturnType<typeof queue.getJobs>>[number]>
         state: JobState
@@ -242,15 +278,33 @@ const app = new Hono()
         priority: job.opts.priority ?? 0,
       }))
 
+      if (sortBy) {
+        mappedJobs.sort((a, b) => {
+          // Unfinished jobs stay at the end in both directions
+          const unfinishedLast =
+            sortBy === 'finished'
+              ? Number(a.finishedOn === undefined) - Number(b.finishedOn === undefined)
+              : 0
+          if (unfinishedLast !== 0) return unfinishedLast
+          const diff = compareJobs(a, b, sortBy)
+          if (diff !== 0) return sortDirection * diff
+          return compareJobIds(a.id, b.id)
+        })
+      }
+
+      const total = mappedJobs.length
+      const nextStart = start + pageSize
+      const hasMore = nextStart < total
+
       return c.json({
-        jobs: mappedJobs,
-        total: filtered.length,
-        page: 1,
-        cursor: '0',
-        nextCursor: null,
-        hasMore: false,
-        pageSize: filtered.length,
-        totalPages: 1,
+        jobs: mappedJobs.slice(start, nextStart),
+        total,
+        page,
+        cursor: String(start),
+        nextCursor: hasMore ? String(nextStart) : null,
+        hasMore,
+        pageSize,
+        totalPages: total > 0 ? Math.ceil(total / pageSize) : 0,
       })
     }
 

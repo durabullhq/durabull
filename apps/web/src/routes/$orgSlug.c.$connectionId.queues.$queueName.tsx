@@ -4,10 +4,13 @@ import { createFileRoute, Link, Outlet, useMatchRoute, useNavigate } from '@tans
 import { zodValidator } from '@tanstack/zod-adapter'
 import {
   AlertCircle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   BarChart3,
   Check,
   ChevronRight,
+  ChevronsUpDown,
   Clock,
   Copy,
   Database,
@@ -79,6 +82,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   type ListScheduledJobsResponse,
+  type QueueSortOrder,
   useInvokeJobs,
   useJobs,
   usePauseQueue,
@@ -89,8 +93,9 @@ import {
   useResumeQueue,
   useRetryJobs,
 } from '@/hooks/use-queues'
+import { JOB_SORT_FIELDS, type JobSortField } from '@/lib/constants'
 import { getScheduleExpression, getScheduleSummary } from '@/lib/scheduled-jobs'
-import { formatDate, formatNumber, getTimezoneAbbreviation } from '@/lib/utils'
+import { cn, formatDate, formatNumber, getTimezoneAbbreviation } from '@/lib/utils'
 
 const queueSearchSchema = z.object({
   section: z.enum(['jobs', 'observability']).catch('jobs'),
@@ -103,6 +108,8 @@ const queueSearchSchema = z.object({
     .union([z.literal(0), z.literal(1), z.literal('0'), z.literal('1')])
     .transform((value) => (value === 1 || value === '1' ? 1 : 0))
     .catch(0),
+  sortBy: z.enum(['', ...JOB_SORT_FIELDS]).catch(''),
+  sortOrder: z.enum(['asc', 'desc']).catch('asc'),
   page: z.number().int().positive().catch(1),
 })
 
@@ -117,6 +124,23 @@ const METRICS_WINDOWS = [
 ] as const
 
 const PRIORITY_BUCKETS = [1, 2, 5, 10, 20, 50]
+
+interface JobSortableColumn {
+  field: JobSortField
+  label: string
+  showsTimezone?: boolean
+  /** Numeric and time columns sort descending on first click (largest or newest first) */
+  defaultOrder: QueueSortOrder
+}
+
+const JOB_SORTABLE_COLUMNS: JobSortableColumn[] = [
+  { field: 'id', label: 'ID', defaultOrder: 'asc' },
+  { field: 'name', label: 'Name', defaultOrder: 'asc' },
+  { field: 'status', label: 'Status', defaultOrder: 'asc' },
+  { field: 'attempts', label: 'Attempts', defaultOrder: 'desc' },
+  { field: 'created', label: 'Created', showsTimezone: true, defaultOrder: 'desc' },
+  { field: 'finished', label: 'Finished', showsTimezone: true, defaultOrder: 'desc' },
+]
 
 const chartConfig = {
   completed: {
@@ -157,6 +181,8 @@ function QueueDetailPage() {
     name = '',
     data: dataSearch = '',
     hideScheduled,
+    sortBy,
+    sortOrder,
     page,
   } = Route.useSearch()
   const navigate = useNavigate()
@@ -208,6 +234,8 @@ function QueueDetailPage() {
     jobId: jobId || undefined,
     name: name || undefined,
     data: dataSearch || undefined,
+    sortBy: sortBy || undefined,
+    sortOrder: sortBy ? sortOrder : undefined,
     pageSize: 20,
   })
   const {
@@ -230,28 +258,14 @@ function QueueDetailPage() {
   const removeMutation = useRemoveJobs()
   const invokeMutation = useInvokeJobs()
   const hideScheduledJobs = hideScheduled === 1
-  const hasClientSideJobFilter = Boolean(jobId || name || dataSearch)
-  const [visibleJobCount, setVisibleJobCount] = useState(20)
   const allJobs = useMemo(
     () => jobsData?.pages.flatMap((pageData) => pageData.jobs) ?? [],
     [jobsData]
   )
-  const filteredVisibleJobs = useMemo(
+  const visibleJobs = useMemo(
     () => allJobs.filter((job) => (hideScheduledJobs ? !job.id.startsWith('repeat:') : true)) ?? [],
     [allJobs, hideScheduledJobs]
   )
-  const visibleJobs = useMemo(
-    () =>
-      hasClientSideJobFilter ? filteredVisibleJobs.slice(0, visibleJobCount) : filteredVisibleJobs,
-    [filteredVisibleJobs, hasClientSideJobFilter, visibleJobCount]
-  )
-  const hasMoreVisibleJobs = hasClientSideJobFilter
-    ? visibleJobs.length < filteredVisibleJobs.length
-    : hasMoreJobs
-
-  useEffect(() => {
-    setVisibleJobCount(20)
-  }, [jobId, name, dataSearch, status, hideScheduled, queueName])
   const jobsScrollRef = useRef<HTMLDivElement | null>(null)
   const metricsPoints = metrics?.series.points ?? []
   const metricsTotals = metrics?.series.totals
@@ -355,6 +369,8 @@ function QueueDetailPage() {
           name,
           data: dataSearch,
           hideScheduled,
+          sortBy,
+          sortOrder,
           page: 1,
         },
         replace: true,
@@ -362,7 +378,19 @@ function QueueDetailPage() {
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [jobIdInput, jobId, section, tab, status, name, dataSearch, hideScheduled, navigate])
+  }, [
+    jobIdInput,
+    jobId,
+    section,
+    tab,
+    status,
+    name,
+    dataSearch,
+    hideScheduled,
+    sortBy,
+    sortOrder,
+    navigate,
+  ])
 
   useEffect(() => {
     const normalizedName = nameInput.trim()
@@ -382,6 +410,8 @@ function QueueDetailPage() {
           name: normalizedName,
           data: dataSearch,
           hideScheduled,
+          sortBy,
+          sortOrder,
           page: 1,
         },
         replace: true,
@@ -389,7 +419,19 @@ function QueueDetailPage() {
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [nameInput, name, section, tab, status, jobId, dataSearch, hideScheduled, navigate])
+  }, [
+    nameInput,
+    name,
+    section,
+    tab,
+    status,
+    jobId,
+    dataSearch,
+    hideScheduled,
+    sortBy,
+    sortOrder,
+    navigate,
+  ])
 
   useEffect(() => {
     const normalizedData = dataInput.trim()
@@ -401,13 +443,36 @@ function QueueDetailPage() {
     const timer = setTimeout(() => {
       navigate({
         to: '.',
-        search: { section, tab, status, jobId, name, data: normalizedData, hideScheduled, page: 1 },
+        search: {
+          section,
+          tab,
+          status,
+          jobId,
+          name,
+          data: normalizedData,
+          hideScheduled,
+          sortBy,
+          sortOrder,
+          page: 1,
+        },
         replace: true,
       })
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [dataInput, dataSearch, section, tab, status, jobId, name, hideScheduled, navigate])
+  }, [
+    dataInput,
+    dataSearch,
+    section,
+    tab,
+    status,
+    jobId,
+    name,
+    hideScheduled,
+    sortBy,
+    sortOrder,
+    navigate,
+  ])
 
   useEffect(() => {
     const container = jobsScrollRef.current
@@ -422,14 +487,6 @@ function QueueDetailPage() {
         return
       }
 
-      if (hasClientSideJobFilter) {
-        if (visibleJobs.length >= filteredVisibleJobs.length) {
-          return
-        }
-        setVisibleJobCount((current) => Math.min(current + 20, filteredVisibleJobs.length))
-        return
-      }
-
       if (!hasMoreJobs || jobsFetchingNextPage) {
         return
       }
@@ -439,16 +496,7 @@ function QueueDetailPage() {
 
     container.addEventListener('scroll', onScroll)
     return () => container.removeEventListener('scroll', onScroll)
-  }, [
-    fetchNextJobsPage,
-    hasMoreJobs,
-    jobsFetchingNextPage,
-    section,
-    tab,
-    hasClientSideJobFilter,
-    filteredVisibleJobs.length,
-    visibleJobs.length,
-  ])
+  }, [fetchNextJobsPage, hasMoreJobs, jobsFetchingNextPage, section, tab])
 
   const handleTogglePause = useCallback(() => {
     if (queue?.isPaused) {
@@ -466,6 +514,33 @@ function QueueDetailPage() {
       )
     }
   }
+
+  const handleSortChange = useCallback(
+    (nextSortBy: JobSortField, nextSortOrder: QueueSortOrder) => {
+      trackEvent(AnalyticsEvents.JOB_LIST_SORTED, {
+        queue_name: queueName,
+        sort_by: nextSortBy,
+        sort_order: nextSortOrder,
+      })
+      navigate({
+        to: '.',
+        search: {
+          section,
+          tab,
+          status,
+          jobId,
+          name,
+          data: dataSearch,
+          hideScheduled,
+          sortBy: nextSortBy,
+          sortOrder: nextSortOrder,
+          page: 1,
+        },
+        replace: true,
+      })
+    },
+    [queueName, section, tab, status, jobId, name, dataSearch, hideScheduled, navigate]
+  )
 
   const handleOpenScheduledJobCreate = useCallback(() => {
     navigate({
@@ -704,6 +779,8 @@ function QueueDetailPage() {
               name,
               data: dataSearch,
               hideScheduled,
+              sortBy,
+              sortOrder,
               page,
             },
             replace: true,
@@ -1453,6 +1530,8 @@ function QueueDetailPage() {
                 name,
                 data: dataSearch,
                 hideScheduled,
+                sortBy,
+                sortOrder,
                 page,
               },
               replace: true,
@@ -1483,6 +1562,8 @@ function QueueDetailPage() {
                           name,
                           data: dataSearch,
                           hideScheduled,
+                          sortBy,
+                          sortOrder,
                           page: 1,
                         },
                         replace: true,
@@ -1533,6 +1614,8 @@ function QueueDetailPage() {
                             name,
                             data: dataSearch,
                             hideScheduled: e.target.checked ? 1 : 0,
+                            sortBy,
+                            sortOrder,
                             page: 1,
                           },
                           replace: true,
@@ -1619,24 +1702,15 @@ function QueueDetailPage() {
                           className="rounded border-gray-300"
                         />
                       </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        ID
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Name
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Status
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Attempts
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Created ({getTimezoneAbbreviation()})
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Finished ({getTimezoneAbbreviation()})
-                      </TableHead>
+                      {JOB_SORTABLE_COLUMNS.map((column) => (
+                        <SortableJobHead
+                          key={column.field}
+                          column={column}
+                          sortBy={sortBy}
+                          sortOrder={sortOrder}
+                          onSortChange={handleSortChange}
+                        />
+                      ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1684,7 +1758,7 @@ function QueueDetailPage() {
             </Card>
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>{jobsData?.pages[0]?.total ?? 0} total</span>
-              <span>{hasMoreVisibleJobs ? 'Scroll to load more' : 'All jobs loaded'}</span>
+              <span>{hasMoreJobs ? 'Scroll to load more' : 'All jobs loaded'}</span>
             </div>
           </TabsContent>
 
@@ -2035,6 +2109,51 @@ function shouldSkipRowNavigation(target: EventTarget | null): boolean {
     target.closest(
       'a,button,input,select,textarea,[role="menuitem"],[role="checkbox"],[data-row-nav-ignore="true"]'
     )
+  )
+}
+
+function SortableJobHead({
+  column,
+  sortBy,
+  sortOrder,
+  onSortChange,
+}: {
+  column: JobSortableColumn
+  sortBy: JobSortField | ''
+  sortOrder: QueueSortOrder
+  onSortChange: (sortBy: JobSortField, sortOrder: QueueSortOrder) => void
+}) {
+  const isActive = sortBy === column.field
+  const ariaSort = isActive ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'
+  const invertedOrder: QueueSortOrder = sortOrder === 'asc' ? 'desc' : 'asc'
+  const nextOrder = isActive ? invertedOrder : column.defaultOrder
+
+  return (
+    <TableHead
+      aria-sort={ariaSort}
+      className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]"
+    >
+      <button
+        type="button"
+        onClick={() => onSortChange(column.field, nextOrder)}
+        className={cn(
+          'inline-flex items-center gap-1 -mx-1 rounded px-1 py-0.5 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+          isActive ? 'text-foreground font-medium' : 'text-muted-foreground'
+        )}
+      >
+        {column.label}
+        {column.showsTimezone && ` (${getTimezoneAbbreviation()})`}
+        {isActive ? (
+          sortOrder === 'asc' ? (
+            <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+          )
+        ) : (
+          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" aria-hidden="true" />
+        )}
+      </button>
+    </TableHead>
   )
 }
 
