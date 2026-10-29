@@ -117,7 +117,12 @@
         "POSTHOG_HOST"
       ]
     },
-    "typecheck": {},
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
+    "typecheck": {
+      "dependsOn": ["transit"]
+    },
     "clean": {
       "cache": false
     },
