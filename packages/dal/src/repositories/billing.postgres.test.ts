@@ -12,7 +12,7 @@ import { billingRepository, parsePlanLimitDbError } from './billing'
  */
 const postgresUrl = process.env.DURABULL_TEST_POSTGRES_URL
 const describePostgres = postgresUrl ? describe : describe.skip
-const mutableEnv = env as { DATABASE_URL?: string }
+const mutableEnv = env as { DATABASE_URL?: string; DATABASE_MIGRATION_URL?: string }
 const originalDatabaseUrl = mutableEnv.DATABASE_URL
 const ORG = `pg-billing-${Date.now()}`
 
@@ -31,6 +31,8 @@ async function enforce(limits: Record<string, number | null>) {
 describePostgres('billing on PostgreSQL', () => {
   beforeAll(async () => {
     mutableEnv.DATABASE_URL = postgresUrl
+    // Optional: run migrations over a direct URL while the app goes through a pooler.
+    mutableEnv.DATABASE_MIGRATION_URL = process.env.DURABULL_TEST_POSTGRES_MIGRATION_URL
     await closeDb()
     const db = await getDb()
     const now = new Date()
@@ -62,6 +64,7 @@ describePostgres('billing on PostgreSQL', () => {
     await db.execute(sql`DELETE FROM billing_webhook_event WHERE id LIKE ${`${ORG}%`}`)
     await closeDb()
     mutableEnv.DATABASE_URL = originalDatabaseUrl
+    mutableEnv.DATABASE_MIGRATION_URL = undefined
   })
 
   it('commits exactly the remaining capacity under 20 parallel sessions', async () => {

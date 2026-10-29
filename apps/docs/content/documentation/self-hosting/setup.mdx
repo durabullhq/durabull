@@ -26,9 +26,10 @@ Durabull behavior is controlled by two toggles:
 - `DURABULL_AUTHLESS`
 - `DURABULL_ENV_CONNECTIONS`
 
-And one persistence setting:
+And the persistence settings:
 
 - `DATABASE_URL` (set = PostgreSQL, empty/unset = file-backed PGlite)
+- `DATABASE_MIGRATION_URL` (optional): a direct, non-pooled PostgreSQL URL for startup migrations. Set it when `DATABASE_URL` goes through a transaction-mode pooler such as PgBouncer; defaults to `DATABASE_URL`
 
 Both modes store Durabull state. Preserve the PGlite data directory for embedded deployments;
 use PostgreSQL for multiple API replicas sharing state. BullMQ jobs and queue data stay in Redis.
