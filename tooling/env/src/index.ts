@@ -70,6 +70,12 @@ const envSchema = z.object({
   PORT: optionalInt,
   BETTER_AUTH_SECRET: optionalString,
   DATABASE_URL: optionalString,
+  /**
+   * Optional direct (non-pooled) Postgres URL used only for startup migrations
+   * and their session lock. Set it when DATABASE_URL goes through a
+   * transaction-mode pooler such as PgBouncer. Defaults to DATABASE_URL.
+   */
+  DATABASE_MIGRATION_URL: optionalString,
   REDIS_URL: optionalString,
   RESEND_API_KEY: optionalString,
   EMAIL_FROM: emailFromSchema,
