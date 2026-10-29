@@ -42,6 +42,8 @@ const redisErrorCauses = new WeakMap<Redis, string>()
 const recentRedisErrorLogs = new Map<string, { message: string; at: number }>()
 // Cache for queues keyed by connection ID, connection URL, prefix, and queue name
 const queues = new Map<string, Queue>()
+// The last error each queue's connection reported, used as the failure message once it ends
+const queueErrorCauses = new WeakMap<Queue, string>()
 
 const REDIS_RECONNECT_BASE_DELAY_MS = 200
 const REDIS_RECONNECT_MAX_DELAY_MS = 2000
@@ -423,6 +425,40 @@ export async function debugGetBullKeys(
 }
 
 /**
+ * BullMQ never reconnects a queue whose ioredis client gave up retrying, so once the connection
+ * ends (or never connects) the cached queue would fail with "Connection is closed" until restart.
+ * Drop it instead and count the loss as a connect failure, so the next getQueue call rebuilds it
+ * after the same backoff getRedis uses rather than reconnecting to a dead host on every tick.
+ */
+function evictQueueWhenConnectionEnds(queue: Queue, cacheKey: string, failureKey: string) {
+  const evict = (fallbackMessage: string) => {
+    // Already closed for a permanent error, or replaced by a newer queue
+    if (queues.get(cacheKey) !== queue) return
+    queues.delete(cacheKey)
+    queue.close().catch(() => {})
+
+    // Every queue on a connection ends in the same outage; count that as one failure so the
+    // backoff grows per outage rather than jumping to the maximum when many queues are cached.
+    const recentFailure = recentRedisConnectionFailures.get(failureKey)
+    if (!recentFailure || Date.now() >= recentFailure.retryAt) {
+      recordRedisConnectionFailure(failureKey, queueErrorCauses.get(queue) ?? fallbackMessage)
+    }
+  }
+
+  queue.client.then(
+    (client) => {
+      if (client.status === 'end') {
+        evict('Connection is closed.')
+        return
+      }
+      recentRedisConnectionFailures.delete(failureKey)
+      client.once('end', () => evict('Connection is closed.'))
+    },
+    (error) => evict(getSafeRedisErrorMessage(error))
+  )
+}
+
+/**
  * Get or create a Queue instance for the given connection and queue name.
  */
 export async function getQueue(
@@ -440,9 +476,10 @@ export async function getQueue(
     options?.allowSelfSignedCerts ?? false,
   ])
 
+  const failureKey = redisFailureKey(connectionId, connectionUrl, options)
+
   if (!queues.has(cacheKey)) {
     // BullMQ opens its own ioredis client, so dead hosts need the same guards as getRedis.
-    const failureKey = redisFailureKey(connectionId, connectionUrl, options)
     assertNotBackingOff(failureKey, connectionId, undefined)
     try {
       await assertHostnameResolves(connectionUrl)
@@ -469,19 +506,21 @@ export async function getQueue(
 
     queue.on('error', (error) => {
       const message = getSafeRedisErrorMessage(error)
+      queueErrorCauses.set(queue, message)
 
       if (shouldLogRedisError(`queue:${cacheKey}`, message)) {
         console.error(`❌ Queue connection error (${name}): ${message}`)
       }
 
       if (isPermanentRedisConnectionError(message)) {
-        markPermanentRedisFailure(redisFailureKey(connectionId, connectionUrl, options), message)
+        markPermanentRedisFailure(failureKey, message)
         queue.close().catch(() => {})
         queues.delete(cacheKey)
       }
     })
 
     queues.set(cacheKey, queue)
+    evictQueueWhenConnectionEnds(queue, cacheKey, failureKey)
   }
 
   return queues.get(cacheKey)!
