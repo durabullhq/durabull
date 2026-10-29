@@ -19,10 +19,10 @@ describe('dueTransitionReminder', () => {
   })
 
   it('never sends a reminder within two days of the notice', () => {
-    const lateNotice = new Date('2026-11-18T00:00:00Z')
-    const deadline = new Date('2026-11-23T17:00:00Z')
-    expect(dueTransitionReminder(deadline, lateNotice, new Date('2026-11-18T02:00:00Z'))).toBeNull()
-    expect(dueTransitionReminder(deadline, lateNotice, new Date('2026-11-20T02:00:00Z'))).toBe(
+    const lateNotice = new Date('2030-01-09T00:00:00Z')
+    const deadline = new Date('2030-01-14T17:00:00Z')
+    expect(dueTransitionReminder(deadline, lateNotice, new Date('2030-01-09T02:00:00Z'))).toBeNull()
+    expect(dueTransitionReminder(deadline, lateNotice, new Date('2030-01-11T02:00:00Z'))).toBe(
       'reminder_7d'
     )
   })
