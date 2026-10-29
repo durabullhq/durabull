@@ -15,6 +15,7 @@ import { z } from 'zod'
 import { assertCapacity, isResourceSuspended, suspendedResourceIds } from '../billing/entitlements'
 import { buildIoRedisConnectionOptions } from '../lib/connection-options'
 import { resetQueueDiscoveryState } from '../lib/queue-discovery'
+import { assertHostnameResolves } from '../lib/redis'
 import { validateRedisUrlForEnvironment } from '../lib/url-validation'
 import { requireOrganization } from '../middleware/auth'
 import { connectionTestRateLimiter } from '../middleware/rate-limit'
@@ -346,6 +347,8 @@ const app = new Hono()
       let redis: Redis | null = null
 
       try {
+        // A socket whose DNS lookup fails is never freed under Bun, so fail before creating one.
+        await assertHostnameResolves(url)
         redis = new Redis(url, {
           connectTimeout: 5000,
           maxRetriesPerRequest: 1,
