@@ -148,7 +148,7 @@ a separate collector service. These settings support forwarding and cloud collec
 
 | Variable | Purpose |
 | --- | --- |
-| `DURABULL_TELEMETRY_COLLECT_SECRET` | Optional HMAC signing secret. When set, forwarded batches are signed and the collector rejects a signed batch whose signature fails. Unsigned batches are forwarded and accepted, so self-hosted instances need no telemetry configuration. |
+| `DURABULL_TELEMETRY_COLLECT_SECRET` | Optional HMAC signing secret. When set, forwarded batches are signed. The collector rejects any batch carrying signature headers that it cannot verify, including when it has no secret configured. Unsigned batches are forwarded and accepted, so self-hosted instances need no telemetry configuration. |
 | `DURABULL_TELEMETRY_HMAC_SECRET` | Dedicated HMAC secret for pseudonymous identifiers; not derived from `BETTER_AUTH_SECRET`. |
 | `DURABULL_CLOUD` | Enable Durabull Cloud collector behavior and trusted-proxy handling. Do not enable on an ordinary self-hosted instance. |
 | `DURABULL_TELEMETRY_POSTHOG_KEY` | Collector's Durabull telemetry destination; falls back to `POSTHOG_KEY`. |

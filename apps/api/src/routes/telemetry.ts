@@ -85,12 +85,18 @@ const telemetryRoutes = new Hono()
     // Self-hosted builds ship without a signing secret, so unsigned batches are accepted and
     // bounded by the rate limiter, body limit, event allowlist and property sanitizer instead.
     // The signature is therefore not an authentication boundary: any sender can omit it. A batch
-    // that does carry signature headers must still verify, so a misconfigured or tampered
-    // signed sender is rejected instead of silently accepted.
+    // that carries either signature header (even an empty one) must verify, and is rejected when
+    // this collector has no secret to verify it with, so a misconfigured or tampered signed
+    // sender is never silently accepted.
     const timestampHeader = c.req.header(TELEMETRY_COLLECT_TIMESTAMP_HEADER)
     const signatureHeader = c.req.header(TELEMETRY_COLLECT_SIGNATURE_HEADER)
-    const collectSigningSecret = options?.collectSigningSecret
-    if (collectSigningSecret && (timestampHeader || signatureHeader)) {
+    const hasSignatureHeaders = timestampHeader !== undefined || signatureHeader !== undefined
+    if (hasSignatureHeaders) {
+      const collectSigningSecret = options?.collectSigningSecret
+      if (!collectSigningSecret) {
+        return c.json({ error: 'Unauthorized telemetry collect request' }, 401)
+      }
+
       const verification = verifyTelemetryCollectSignature({
         secret: collectSigningSecret,
         timestampHeader,

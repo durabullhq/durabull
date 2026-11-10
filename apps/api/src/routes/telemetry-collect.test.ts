@@ -507,9 +507,46 @@ describe('telemetry collect route', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch
     const app = createTelemetryRouteApp()
 
-    const response = await postCollect(app, collectPayload())
+    // Unsigned, so the request reaches the ingest-config check instead of signature handling.
+    const response = await app.request('/collect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: collectPayload(),
+    })
 
     expect(response.status).toBe(503)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects signed requests when the collector has no secret to verify them', async () => {
+    mutableEnv.DURABULL_TELEMETRY_COLLECT_SECRET = undefined
+    bootstrapServerAnalytics()
+    const fetchMock = mock(async () => new Response(null, { status: 200 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const app = createTelemetryRouteApp()
+
+    const response = await postCollect(app, collectPayload())
+
+    expect(response.status).toBe(401)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects requests with empty signature headers instead of treating them as unsigned', async () => {
+    const fetchMock = mock(async () => new Response(null, { status: 200 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const app = createTelemetryRouteApp()
+
+    const response = await app.request('/collect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        [TELEMETRY_COLLECT_TIMESTAMP_HEADER]: '',
+        [TELEMETRY_COLLECT_SIGNATURE_HEADER]: '',
+      },
+      body: collectPayload(),
+    })
+
+    expect(response.status).toBe(401)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

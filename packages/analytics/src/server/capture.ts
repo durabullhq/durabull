@@ -210,13 +210,19 @@ export async function captureAnonymousServerEvent(input: {
 
   const runtimeContext = options.getRuntimeContext()
   const validated = validateTelemetryPayload(input.event, input.properties, runtimeContext)
-  if (!validated.ok) return
+  if (!validated.ok) {
+    if (input.rejectOnFailure) throw new Error(`Anonymous telemetry invalid: ${validated.error}`)
+    return
+  }
 
   const timestamp = resolveCollectTimestamp(input.timestamp, Date.now())
 
   if (options.collectEnabled) {
     const config = getDurabullPosthogIngestConfig(options)
-    if (!config) return
+    if (!config) {
+      if (input.rejectOnFailure) throw new Error('Anonymous telemetry ingest is not configured')
+      return
+    }
 
     const accepted = await sendPosthogBatch(
       config,

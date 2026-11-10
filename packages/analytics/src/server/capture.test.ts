@@ -666,3 +666,56 @@ describe('captureAnonymousServerEvent unsigned forwarding', () => {
     })
   })
 })
+
+describe('captureAnonymousServerEvent rejectOnFailure', () => {
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    resetServerAnalyticsForTests()
+  })
+
+  const heartbeat = {
+    event: AnalyticsEvents.INSTANCE_ACTIVE,
+    properties: {},
+    anonymousInstanceId: 'anon-instance-id',
+    sessionId: 'instance-heartbeat',
+    rejectOnFailure: true,
+  }
+
+  it('throws when the cloud collector rejects a forwarded event', async () => {
+    resetServerAnalyticsForTests()
+    configure({ collectEnabled: false })
+    globalThis.fetch = (async () => new Response(null, { status: 429 })) as unknown as typeof fetch
+
+    await expect(captureAnonymousServerEvent(heartbeat)).rejects.toThrow(
+      'Telemetry cloud collector rejected batch'
+    )
+  })
+
+  it('throws when PostHog rejects a direct Cloud capture', async () => {
+    resetServerAnalyticsForTests()
+    configure()
+    globalThis.fetch = (async () => new Response(null, { status: 503 })) as unknown as typeof fetch
+
+    await expect(captureAnonymousServerEvent(heartbeat)).rejects.toThrow(
+      'Anonymous telemetry upstream rejected batch'
+    )
+  })
+
+  it('throws when Cloud ingest is not configured', async () => {
+    resetServerAnalyticsForTests()
+    configure({ durabullTelemetryPosthogKey: null })
+
+    await expect(captureAnonymousServerEvent(heartbeat)).rejects.toThrow(
+      'Anonymous telemetry ingest is not configured'
+    )
+  })
+
+  it('throws when the event fails validation', async () => {
+    resetServerAnalyticsForTests()
+    configure()
+
+    await expect(
+      captureAnonymousServerEvent({ ...heartbeat, properties: { email: 'a@example.com' } })
+    ).rejects.toThrow('Anonymous telemetry invalid: invalid_properties')
+  })
+})
