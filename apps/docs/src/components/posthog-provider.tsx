@@ -35,6 +35,14 @@ export function PostHogProvider({ children }: { children: ReactNode }) {
         persistence: 'localStorage+cookie',
         cross_subdomain_cookie: true,
         debug: !isProd,
+        // The docs and marketing site shares the product's PostHog project. Tag every event so
+        // product insights can exclude site visitors from active-user counts.
+        before_send: (event) => {
+          if (event) {
+            event.properties = { ...event.properties, surface: 'docs' }
+          }
+          return event
+        },
       }}
     >
       {children}

@@ -1,15 +1,13 @@
 export {
-  configureServerAnalytics,
-  DURABULL_CLOUD_API_HOST,
-  DEFAULT_CLOUD_COLLECT_URL,
-  getServerAnalyticsOptions,
-  getTelemetryStatusFromOptions,
-  resetServerAnalyticsForTests,
-  TELEMETRY_DISCLOSURE_URL,
-  tryGetServerAnalyticsOptions,
-  type ServerAnalyticsOptions,
-  type ServerAnalyticsRuntimeContext,
-} from './config'
+  captureAnonymousServerEvent,
+  captureMcpAnalyticsServerEvent,
+  type IngestCollectBatchResult,
+  ingestTelemetryCollectBatch,
+  isDurabullTelemetryCollectConfigured,
+  resolveIdentifiedDistinctIds,
+  shouldDedupeIdentifiedPosthogEvents,
+  type TelemetryCollectEventInput,
+} from './capture'
 export {
   createTelemetryCollectReplayCache,
   resetTelemetryCollectReplayCacheForTests,
@@ -20,26 +18,37 @@ export {
   verifyTelemetryCollectSignature,
 } from './collect-auth'
 export {
-  captureAnonymousServerEvent,
-  captureMcpAnalyticsServerEvent,
-  ingestTelemetryCollectBatch,
-  isDurabullTelemetryCollectConfigured,
-  resolveIdentifiedDistinctIds,
-  shouldDedupeIdentifiedPosthogEvents,
-  type IngestCollectBatchResult,
-  type TelemetryCollectEventInput,
-} from './capture'
+  configureServerAnalytics,
+  DEFAULT_CLOUD_COLLECT_URL,
+  DURABULL_CLOUD_API_HOST,
+  getServerAnalyticsOptions,
+  getTelemetryStatusFromOptions,
+  resetServerAnalyticsForTests,
+  type ServerAnalyticsOptions,
+  type ServerAnalyticsRuntimeContext,
+  TELEMETRY_DISCLOSURE_URL,
+  tryGetServerAnalyticsOptions,
+} from './config'
 export {
   hashIdentifiedOrganizationDistinctId,
   hashIdentifiedUserDistinctId,
   hashMcpAnalyticsSessionId,
   hashTelemetryIdentifier,
 } from './identifiers'
-export { validateTelemetryPayload, type TelemetryValidationResult } from './validate'
 export {
   isAllowedPosthogHostname,
-  resolvePosthogBatchUrl,
-  sendPosthogBatch,
   type PosthogBatchCapture,
   type PosthogBatchClientConfig,
+  resolvePosthogBatchUrl,
+  sendPosthogBatch,
 } from './posthog-batch'
+export {
+  resolveCollectRuntimeContext,
+  resolveTelemetryDistribution,
+  TELEMETRY_DEPLOYMENTS,
+  TELEMETRY_DISTRIBUTIONS,
+  type TelemetryCollectClientRuntime,
+  type TelemetryDeployment,
+  type TelemetryDistribution,
+} from './runtime'
+export { type TelemetryValidationResult, validateTelemetryPayload } from './validate'

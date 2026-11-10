@@ -69,7 +69,9 @@ Response shape:
     "enabled": true,
     "collectionRequired": true,
     "dedupeIdentifiedPosthogEvents": false,
-    "disclosureUrl": "https://durabull.io/privacy"
+    "disclosureUrl": "https://durabull.io/privacy",
+    "deployment": "self_hosted",
+    "distribution": "docker"
   }
 }
 ```
@@ -93,6 +95,9 @@ Field notes:
   Durabull-managed, so anonymous Durabull telemetry can be deduplicated once a user has been
   identified in the same Durabull-owned PostHog stream.
 - `telemetry.disclosureUrl`: public documentation for Durabull telemetry collection.
+- `telemetry.deployment`: `cloud` for Durabull Cloud, `self_hosted` for every other install.
+- `telemetry.distribution`: how the install was obtained: `cloud`, `docker`, `desktop` (including
+  Homebrew), or `source`.
 
 ## Anonymous Telemetry
 
@@ -104,11 +109,14 @@ existing cloud API at `POST /api/telemetry/collect`.
 `POSTHOG_KEY` configures a PostHog destination for the cloud product or instance owner. It does not
 disable Durabull anonymous telemetry, and Durabull does not provide a product-level telemetry
 opt-out. When a self-hosted owner provides `POSTHOG_KEY`, they receive the full PostHog browser
-stream for their project. Sanitized forwarding to Durabull requires a configured signing secret
-and is best-effort; see [Environment Variables](/documentation/getting-started/environment-variables#anonymous-usage-telemetry).
+stream for their project. Sanitized forwarding to Durabull is best-effort and needs no
+configuration. Batches are signed only when `DURABULL_TELEMETRY_COLLECT_SECRET` is set; see [Environment Variables](/documentation/getting-started/environment-variables#anonymous-usage-telemetry).
 
 Durabull telemetry includes feature and route usage, safe runtime context, booleans, enums, and
-aggregate buckets. It does not include Redis URLs, queue names, Redis key names, job data, logs,
+aggregate buckets. The server stamps every event with `deployment`, `distribution`,
+`release_channel`, and `app_version`; batches received on `/collect` are always labeled
+`self_hosted`. Each running install also sends one `instance_active` event per UTC day so active
+installs can be counted. It does not include Redis URLs, queue names, Redis key names, job data, logs,
 emails, names, organizations, hostnames, raw URLs, search patterns, stack traces, or raw error
 messages.
 

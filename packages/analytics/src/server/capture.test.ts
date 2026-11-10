@@ -25,6 +25,10 @@ const baseRuntime = {
   environment: 'production',
   persistence: 'postgres',
   stateless: false,
+  deployment: 'cloud',
+  distribution: 'cloud',
+  release_channel: 'docker',
+  app_version: '1.45.0',
 } as const
 
 function configure(overrides: Partial<ServerAnalyticsOptions> = {}): void {
@@ -223,6 +227,98 @@ describe('ingestTelemetryCollectBatch timestamp clamping', () => {
 
     const batch = (bodies[0] as { batch: Array<{ timestamp: string }> }).batch
     expect(batch[0].timestamp).toBe(recent)
+  })
+})
+
+describe('ingestTelemetryCollectBatch deployment stamping', () => {
+  beforeEach(() => {
+    resetServerAnalyticsForTests()
+    configure()
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    resetServerAnalyticsForTests()
+  })
+
+  type IngestedProperties = Record<string, unknown>
+
+  async function ingestOne(input: {
+    clientRuntime?: Parameters<typeof ingestTelemetryCollectBatch>[0]['clientRuntime']
+    properties?: Record<string, unknown>
+  }): Promise<IngestedProperties> {
+    const { bodies, restore } = captureFetchBodies()
+    const result = await ingestTelemetryCollectBatch({
+      instanceId: 'instance-1234567890',
+      clientRuntime: input.clientRuntime,
+      events: [
+        {
+          event: AnalyticsEvents.INSTANCE_ACTIVE,
+          properties: input.properties ?? {},
+          sessionId: 'instance-heartbeat',
+        },
+      ],
+    })
+    restore()
+    expect(result.ok).toBe(true)
+    return (bodies[0] as { batch: Array<{ properties: IngestedProperties }> }).batch[0].properties
+  }
+
+  const oldRuntime = {
+    authless: false,
+    env_connections: false,
+    environment: 'production',
+    persistence: 'postgres',
+    stateless: false,
+  }
+
+  it('stamps forwarded batches as self_hosted even when the sender claims cloud', async () => {
+    const properties = await ingestOne({
+      clientRuntime: { ...oldRuntime, deployment: 'cloud', distribution: 'cloud' },
+      properties: { deployment: 'cloud', distribution: 'cloud' },
+    })
+
+    expect(properties.deployment).toBe('self_hosted')
+    expect(properties.distribution).toBe('unknown')
+  })
+
+  it('keeps the reported distribution, release channel and version from a current install', async () => {
+    const properties = await ingestOne({
+      clientRuntime: {
+        ...oldRuntime,
+        deployment: 'self_hosted',
+        distribution: 'desktop',
+        release_channel: 'desktop',
+        app_version: '1.45.0',
+      },
+    })
+
+    expect(properties).toMatchObject({
+      deployment: 'self_hosted',
+      distribution: 'desktop',
+      release_channel: 'desktop',
+      app_version: '1.45.0',
+    })
+  })
+
+  it('reports unknown distribution for older installs and keeps a browser release channel', async () => {
+    const properties = await ingestOne({
+      clientRuntime: oldRuntime,
+      properties: { release_channel: 'stable' },
+    })
+
+    expect(properties).toMatchObject({
+      deployment: 'self_hosted',
+      distribution: 'unknown',
+      release_channel: 'stable',
+    })
+  })
+
+  it('stamps self_hosted when the batch carries no runtime at all', async () => {
+    const properties = await ingestOne({})
+
+    expect(properties.deployment).toBe('self_hosted')
+    expect(properties.distribution).toBe('unknown')
   })
 })
 
@@ -511,5 +607,59 @@ describe('captureAnonymousServerEvent OSS cloud forwarding', () => {
     expect(signature).toBe(
       signTelemetryCollectBody('collect-signing-secret', Number(timestamp), rawBody).signature
     )
+  })
+})
+
+describe('captureAnonymousServerEvent unsigned forwarding', () => {
+  beforeEach(() => {
+    resetServerAnalyticsForTests()
+    configure({
+      collectEnabled: false,
+      collectSigningSecret: null,
+      cloudCollectUrl: 'https://app.durabull.io/api/telemetry/collect',
+      getRuntimeContext: () => ({
+        ...baseRuntime,
+        deployment: 'self_hosted',
+        distribution: 'docker',
+      }),
+    })
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    resetServerAnalyticsForTests()
+  })
+
+  it('forwards an unsigned batch with the runtime context when no signing secret is set', async () => {
+    const { calls, restore } = captureFetchCalls()
+
+    await captureAnonymousServerEvent({
+      event: AnalyticsEvents.INSTANCE_ACTIVE,
+      properties: {},
+      anonymousInstanceId: 'anon-instance-id',
+      sessionId: 'instance-heartbeat',
+    })
+
+    restore()
+
+    expect(calls).toHaveLength(1)
+    const headers = calls[0].init?.headers as Record<string, string>
+    expect(headers[TELEMETRY_COLLECT_SIGNATURE_HEADER]).toBeUndefined()
+    expect(headers[TELEMETRY_COLLECT_TIMESTAMP_HEADER]).toBeUndefined()
+
+    const body = JSON.parse(String(calls[0].init?.body ?? '{}')) as {
+      runtime: Record<string, unknown>
+      events: Array<{ properties: Record<string, unknown> }>
+    }
+    expect(body.runtime).toMatchObject({
+      deployment: 'self_hosted',
+      distribution: 'docker',
+      release_channel: 'docker',
+      app_version: '1.45.0',
+    })
+    expect(body.events[0].properties).toMatchObject({
+      deployment: 'self_hosted',
+      distribution: 'docker',
+    })
   })
 })

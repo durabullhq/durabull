@@ -20,6 +20,7 @@ import {
   resolvePosthogBatchUrl,
   sendPosthogBatch,
 } from './posthog-batch'
+import { resolveCollectRuntimeContext, type TelemetryCollectClientRuntime } from './runtime'
 import { validateTelemetryPayload } from './validate'
 
 /**
@@ -142,7 +143,7 @@ function isSamePosthogConfig(
 
 async function forwardAnonymousToCloudCollect(input: {
   cloudCollectUrl: string
-  collectSigningSecret: string
+  collectSigningSecret: string | null
   anonymousInstanceId: string
   event: string
   properties: Record<string, string | number | boolean | null | string[]>
@@ -165,20 +166,22 @@ async function forwardAnonymousToCloudCollect(input: {
       },
     ],
   })
-  const signedAt = Math.floor(Date.now() / 1000)
-  const { signature, timestamp } = signTelemetryCollectBody(
-    input.collectSigningSecret,
-    signedAt,
-    rawBody
-  )
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  // Signing is optional: self-hosted builds have no secret, and the collector accepts unsigned batches.
+  if (input.collectSigningSecret) {
+    const signedAt = Math.floor(Date.now() / 1000)
+    const { signature, timestamp } = signTelemetryCollectBody(
+      input.collectSigningSecret,
+      signedAt,
+      rawBody
+    )
+    headers[TELEMETRY_COLLECT_TIMESTAMP_HEADER] = timestamp
+    headers[TELEMETRY_COLLECT_SIGNATURE_HEADER] = signature
+  }
 
   const response = await fetch(input.cloudCollectUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      [TELEMETRY_COLLECT_TIMESTAMP_HEADER]: timestamp,
-      [TELEMETRY_COLLECT_SIGNATURE_HEADER]: signature,
-    },
+    headers,
     body: rawBody,
     redirect: 'manual',
     signal: AbortSignal.timeout(POSTHOG_FETCH_TIMEOUT_MS),
@@ -227,11 +230,6 @@ export async function captureAnonymousServerEvent(input: {
       ],
       { runtimeContext, mergeRuntime: true }
     )
-    return
-  }
-
-  if (!options.collectSigningSecret) {
-    console.warn('[analytics] cloud collect forward skipped: missing collect signing secret')
     return
   }
 
@@ -349,23 +347,19 @@ export async function captureMcpAnalyticsServerEvent(input: {
 
   const tasks: Promise<void>[] = []
   if (shouldCaptureAnonymous) {
-    if (!options.collectSigningSecret) {
-      console.warn('[analytics] cloud collect forward skipped: missing collect signing secret')
-    } else {
-      tasks.push(
-        forwardAnonymousToCloudCollect({
-          cloudCollectUrl: options.cloudCollectUrl,
-          collectSigningSecret: options.collectSigningSecret,
-          anonymousInstanceId: input.anonymousInstanceId!,
-          event: validated.event,
-          properties: validated.properties,
-          sessionId: input.sessionId!,
-          timestamp,
-          runtimeContext,
-          rejectOnFailure: true,
-        })
-      )
-    }
+    tasks.push(
+      forwardAnonymousToCloudCollect({
+        cloudCollectUrl: options.cloudCollectUrl,
+        collectSigningSecret: options.collectSigningSecret,
+        anonymousInstanceId: input.anonymousInstanceId!,
+        event: validated.event,
+        properties: validated.properties,
+        sessionId: input.sessionId!,
+        timestamp,
+        runtimeContext,
+        rejectOnFailure: true,
+      })
+    )
   }
 
   if (shouldCaptureIdentified) {
@@ -420,7 +414,8 @@ export async function ingestTelemetryCollectBatch(input: {
   instanceId: string
   sentAt?: string
   events: TelemetryCollectEventInput[]
-  clientRuntime?: ServerAnalyticsRuntimeContext
+  /** Runtime reported by the forwarding instance; always stamped `self_hosted` before ingest. */
+  clientRuntime?: TelemetryCollectClientRuntime
 }): Promise<IngestCollectBatchResult> {
   const options = getOptions()
   if (!options?.enabled) {
@@ -432,7 +427,10 @@ export async function ingestTelemetryCollectBatch(input: {
     return { ok: false, error: 'not_configured' }
   }
 
-  const runtimeContext = input.clientRuntime ?? options.getRuntimeContext()
+  // A batch on /collect never comes from Cloud itself, even when the sender omits its runtime.
+  const runtimeContext = resolveCollectRuntimeContext(
+    input.clientRuntime ?? options.getRuntimeContext()
+  )
   const nowMs = Date.now()
   const batch: PosthogBatchCapture[] = []
 

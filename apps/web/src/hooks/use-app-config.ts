@@ -27,6 +27,8 @@ const FALLBACK_APP_CONFIG: AppConfigResponse = {
     collectionRequired: true,
     dedupeIdentifiedPosthogEvents: false,
     disclosureUrl: 'https://durabull.io/privacy',
+    deployment: 'self_hosted',
+    distribution: 'unknown',
   },
   billing: {
     enabled: false,

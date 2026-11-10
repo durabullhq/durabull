@@ -16,6 +16,7 @@ import {
   getRedisHealthRetentionDays,
   isRedisHealthHistoryEnabled,
 } from './lib/redis-health-history'
+import { startTelemetryHeartbeat, stopTelemetryHeartbeat } from './lib/telemetry-heartbeat'
 import { shutdownMcpAnalytics } from './mcp/observability/posthog-mcp'
 
 process.on('unhandledRejection', (reason) => {
@@ -38,6 +39,7 @@ async function shutdown(reason: NodeJS.Signals): Promise<void> {
       stopAlertMonitor()
       stopRedisHealthCleanupJob()
       stopBillingLifecycle()
+      stopTelemetryHeartbeat()
       console.log('[shutdown] Alert monitor stopped.')
       await shutdownMcpAnalytics()
 
@@ -78,6 +80,7 @@ if (relaxedEnforcement > 0) {
 startAlertMonitor()
 startRedisHealthCleanupJob()
 startBillingLifecycle()
+startTelemetryHeartbeat()
 
 // Serve static files from web app build (for production)
 const webDistPath = join(import.meta.dir, '../../web/dist')

@@ -112,6 +112,8 @@ export const AnalyticsEvents = {
 
   // App Lifecycle Events
   APP_UPDATE_CLICKED: 'app_update_clicked',
+  /** Server heartbeat, at most once per UTC day per running install. Counts active installs. */
+  INSTANCE_ACTIVE: 'instance_active',
 
   // Billing Events (Durabull Cloud subscriptions)
   PRICING_VIEWED: 'pricing_viewed',
@@ -228,6 +230,9 @@ export const AnalyticsProperties = {
   CLIENT_VERSION: 'client_version',
   PAGE: 'page',
   RELEASE_CHANNEL: 'release_channel',
+  DEPLOYMENT: 'deployment',
+  DISTRIBUTION: 'distribution',
+  SURFACE: 'surface',
   SERVER_BUILD_ID: 'server_build_id',
   SERVER_VERSION: 'server_version',
   TAB: 'tab',

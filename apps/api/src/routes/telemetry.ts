@@ -1,6 +1,7 @@
 import {
   getTelemetryStatusFromOptions,
   isDurabullTelemetryCollectConfigured,
+  resolveCollectRuntimeContext,
   TELEMETRY_COLLECT_SIGNATURE_HEADER,
   TELEMETRY_COLLECT_TIMESTAMP_HEADER,
   TELEMETRY_DISCLOSURE_URL,
@@ -36,6 +37,11 @@ const telemetryCollectRuntimeSchema = z.object({
   environment: z.string().min(1).max(64),
   persistence: z.string().min(1).max(64),
   stateless: z.boolean(),
+  // Added in the deployment-dimensions release; older self-hosted instances omit them.
+  deployment: z.string().min(1).max(32).optional(),
+  distribution: z.string().min(1).max(32).optional(),
+  release_channel: z.string().min(1).max(64).optional(),
+  app_version: z.string().min(1).max(64).optional(),
 })
 
 const telemetryCollectPayloadSchema = z.object({
@@ -53,6 +59,8 @@ export function getTelemetryStatus() {
       collectionRequired: true as const,
       dedupeIdentifiedPosthogEvents: false,
       disclosureUrl: TELEMETRY_DISCLOSURE_URL,
+      deployment: 'self_hosted' as const,
+      distribution: 'unknown' as const,
     }
   }
 
@@ -72,21 +80,26 @@ const telemetryRoutes = new Hono()
     }
 
     const options = tryGetServerAnalyticsOptions()
-    const collectSigningSecret = options?.collectSigningSecret
-    if (!collectSigningSecret) {
-      return c.json({ error: 'Telemetry collection is not configured' }, 503)
-    }
-
     const rawBody = await c.req.text()
-    const verification = verifyTelemetryCollectSignature({
-      secret: collectSigningSecret,
-      timestampHeader: c.req.header(TELEMETRY_COLLECT_TIMESTAMP_HEADER),
-      signatureHeader: c.req.header(TELEMETRY_COLLECT_SIGNATURE_HEADER),
-      rawBody,
-    })
 
-    if (!verification.ok) {
-      return c.json({ error: 'Unauthorized telemetry collect request' }, 401)
+    // Self-hosted builds ship without a signing secret, so unsigned batches are accepted and
+    // bounded by the rate limiter, body limit, event allowlist and property sanitizer instead.
+    // A batch that does carry a signature must verify, which keeps replay protection for
+    // senders configured with the shared secret.
+    const timestampHeader = c.req.header(TELEMETRY_COLLECT_TIMESTAMP_HEADER)
+    const signatureHeader = c.req.header(TELEMETRY_COLLECT_SIGNATURE_HEADER)
+    const collectSigningSecret = options?.collectSigningSecret
+    if (collectSigningSecret && (timestampHeader || signatureHeader)) {
+      const verification = verifyTelemetryCollectSignature({
+        secret: collectSigningSecret,
+        timestampHeader,
+        signatureHeader,
+        rawBody,
+      })
+
+      if (!verification.ok) {
+        return c.json({ error: 'Unauthorized telemetry collect request' }, 401)
+      }
     }
 
     let parsed: unknown
@@ -106,8 +119,9 @@ const telemetryRoutes = new Hono()
       return c.json({ error: 'Telemetry collection is not configured' }, 503)
     }
 
+    const runtime = resolveCollectRuntimeContext(payload.runtime)
     for (const event of payload.events) {
-      const validated = validateTelemetryPayload(event.event, event.properties, payload.runtime)
+      const validated = validateTelemetryPayload(event.event, event.properties, runtime)
       if (!validated.ok) {
         if (validated.error === 'unknown_event') {
           return c.json({ error: 'Unknown telemetry event' }, 400)
