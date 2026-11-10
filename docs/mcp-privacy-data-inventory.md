@@ -43,7 +43,7 @@ data differently: rule routing can contain targets; delivery summaries omit thei
 | --- | --- | --- |
 | Accounts, organizations, credentials, sessions, OAuth clients/consent/tokens | `packages/auth/src/index.ts`; `packages/dal/src/db/schemas/{user,auth,organization,oauth-mcp,mcp-policy,redis-connection}/schema.ts` | Names, emails, profiles, roles, provider accounts, credentials, IP/user agent and permissions; identity and access management; Google/GitHub when chosen |
 | MCP authorization audit | `apps/api/src/mcp/audit/mcp-audit.ts`; `apps/api/src/mcp/policy/mcp-policy-middleware.ts` | Timestamp, raw principal/org/connection IDs, correlation ID, operation/scopes, decision and SHA-256 input hash; no durable raw argument/result archive |
-| Sanitized product/MCP analytics | `packages/analytics/src/sanitizer.ts`; `packages/analytics/src/server/{capture,identifiers}.ts`; `apps/api/src/mcp/observability/` | Usage/outcomes/times/durations and permitted client metadata; anonymous telemetry uses hashed identifiers; the configured app PostHog project links authenticated MCP events to the same user and organization IDs as browser analytics, with hashed service-account identities; configured PostHog or signed self-hosted forwarding to Cloud |
+| Sanitized product/MCP analytics | `packages/analytics/src/sanitizer.ts`; `packages/analytics/src/server/{capture,identifiers}.ts`; `apps/api/src/mcp/observability/` | Usage/outcomes/times/durations and permitted client metadata; anonymous telemetry uses hashed identifiers; the configured app PostHog project links authenticated MCP events to the same user and organization IDs as browser analytics, with hashed service-account identities; configured PostHog or self-hosted forwarding to Cloud (signed only when a collect secret is set); every event carries deployment, distribution, release channel and version, plus a daily `instance_active` heartbeat per install |
 | Browser PostHog stream | `packages/analytics/src/client.ts`; `apps/web/src/routes/__root.tsx`; `apps/docs/src/components/posthog-provider.tsx` | Separate from sanitized telemetry: user name/email/ID/profile and organization identity, URLs/interactions, cookies/local storage and exception diagnostics; provider-controlled features may include replay |
 | Website Google Analytics | `apps/docs/src/components/google-analytics.tsx`; `apps/docs/app/layout.tsx` | Production only with configured measurement ID; browser analytics sent to Google |
 | Notifications and issue integrations | `apps/api/src/lib/alert-notifier.ts`; `apps/api/src/lib/alert-webhook-payload.ts`; `packages/email/` | Configured recipients, Resend, webhook operators and Linear receive email/incident/issue data |
@@ -51,8 +51,8 @@ data differently: rule routing can contain targets; delivery summaries omit thei
 
 The sanitized stream's exclusions must never be presented as exclusions from browser analytics,
 the application database, hosting logs, support communications, or authorized tool results.
-Production sanitized telemetry has no product-level opt-out. Self-hosted forwarding requires
-the configured signing secret. An optional PostHog project does not disable the sanitized stream.
+Production sanitized telemetry has no product-level opt-out. Self-hosted forwarding needs no
+configuration; batches are HMAC-signed only when `DURABULL_TELEMETRY_COLLECT_SECRET` is set. An optional PostHog project does not disable the sanitized stream.
 
 ## Retention evidence
 

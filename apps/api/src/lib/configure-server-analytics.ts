@@ -1,7 +1,8 @@
 import {
   configureServerAnalytics,
-  DURABULL_CLOUD_API_HOST,
   DEFAULT_CLOUD_COLLECT_URL,
+  DURABULL_CLOUD_API_HOST,
+  resolveTelemetryDeployment,
   TELEMETRY_DISCLOSURE_URL,
 } from '@durabull/analytics/server'
 import {
@@ -12,6 +13,7 @@ import {
 import { env } from '@durabull/env'
 
 import { isAuthlessMode } from './authless'
+import { APP_RELEASE_CHANNEL, APP_VERSION } from './build-info'
 
 function isDurabullManagedPosthogProject(): boolean {
   if (env.DURABULL_CLOUD === true) return true
@@ -60,14 +62,17 @@ async function resolveAnonymousInstanceId(): Promise<string> {
 export function bootstrapServerAnalytics(): void {
   const appPosthogKey = env.POSTHOG_KEY?.trim() || null
   const durabullTelemetryPosthogKey = getDurabullTelemetryPosthogKey()
+  const isCloud = isDurabullManagedPosthogProject()
+  const { deployment, distribution } = resolveTelemetryDeployment({
+    cloud: isCloud,
+    releaseChannel: APP_RELEASE_CHANNEL,
+  })
 
   configureServerAnalytics({
     enabled: env.NODE_ENV === 'production' && env.CI !== true,
-    collectEnabled: env.DURABULL_CLOUD === true || isDurabullManagedPosthogProject(),
+    collectEnabled: isCloud,
     dedupeIdentifiedPosthogEvents:
-      !!appPosthogKey &&
-      isDurabullManagedPosthogProject() &&
-      durabullTelemetryPosthogKey === appPosthogKey,
+      !!appPosthogKey && isCloud && durabullTelemetryPosthogKey === appPosthogKey,
     disclosureUrl: TELEMETRY_DISCLOSURE_URL,
     collectSigningSecret: env.DURABULL_TELEMETRY_COLLECT_SECRET?.trim() || null,
     hmacSecret: env.DURABULL_TELEMETRY_HMAC_SECRET?.trim() || null,
@@ -82,6 +87,10 @@ export function bootstrapServerAnalytics(): void {
       environment: env.NODE_ENV ?? 'development',
       persistence: getDatabaseMode(),
       stateless: getDatabaseMode() === 'pglite',
+      deployment,
+      distribution,
+      release_channel: APP_RELEASE_CHANNEL,
+      api_version: APP_VERSION,
     }),
     resolveAnonymousInstanceId,
   })

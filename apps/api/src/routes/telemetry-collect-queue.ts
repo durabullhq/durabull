@@ -1,7 +1,7 @@
 import {
-  ingestTelemetryCollectBatch,
   type IngestCollectBatchResult,
-  type ServerAnalyticsRuntimeContext,
+  ingestTelemetryCollectBatch,
+  type TelemetryCollectClientRuntime,
   type TelemetryCollectEventInput,
 } from '@durabull/analytics/server'
 import { createBoundedAsyncQueue } from '../lib/bounded-async-queue'
@@ -11,7 +11,7 @@ interface TelemetryCollectQueueItem {
   instanceId: string
   sentAt?: string
   events: TelemetryCollectEventInput[]
-  clientRuntime?: ServerAnalyticsRuntimeContext
+  clientRuntime: TelemetryCollectClientRuntime
 }
 
 const MAX_COLLECT_IN_FLIGHT = 4

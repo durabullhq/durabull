@@ -1,7 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { env } from '@durabull/env'
-import { Hono } from 'hono'
-import { bodyLimit } from 'hono/body-limit'
 import {
   hashTelemetryIdentifier,
   resetServerAnalyticsForTests,
@@ -10,12 +7,15 @@ import {
   TELEMETRY_COLLECT_SIGNATURE_HEADER,
   TELEMETRY_COLLECT_TIMESTAMP_HEADER,
 } from '@durabull/analytics/server'
+import { env } from '@durabull/env'
+import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import {
   bootstrapServerAnalytics,
   resetCachedAnonymousInstanceIdForTests,
 } from '../lib/configure-server-analytics'
-import { resetTelemetryCollectQueueForTests } from './telemetry-collect-queue'
 import telemetryRoutes from './telemetry'
+import { resetTelemetryCollectQueueForTests } from './telemetry-collect-queue'
 
 const INSTANCE_ID = '41111111-1111-4111-8111-111111111111'
 const SESSION_ID = 'ephemeral-session'
@@ -263,7 +263,7 @@ describe('telemetry collect route', () => {
     expect(properties.instance_key).not.toContain(INSTANCE_ID)
   })
 
-  it('uses authenticated client runtime instead of cloud server runtime', async () => {
+  it('uses the forwarded client runtime instead of cloud server runtime', async () => {
     const fetchMock = mock(async () => new Response(null, { status: 200 }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
     const app = createTelemetryRouteApp()
@@ -300,9 +300,49 @@ describe('telemetry collect route', () => {
     expect(properties.environment).toBe('production')
     expect(properties.persistence).toBe('pglite')
     expect(properties.stateless).toBe(true)
+    // An older install sends no deployment fields; the collector never labels it as Cloud.
+    expect(properties.deployment).toBe('self_hosted')
+    expect(properties.distribution).toBe('unknown')
   })
 
-  it('rejects unsigned collect requests', async () => {
+  it('accepts unsigned collect requests from self-hosted installs and stamps them self_hosted', async () => {
+    const fetchMock = mock(async () => new Response(null, { status: 200 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const app = createTelemetryRouteApp()
+
+    const response = await app.request('/collect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: collectPayload(
+        { success: true, deployment: 'cloud', distribution: 'cloud', release_channel: 'docker' },
+        {
+          ...DEFAULT_RUNTIME,
+          deployment: 'cloud',
+          distribution: 'docker',
+          release_channel: 'docker',
+          api_version: '1.45.0',
+        }
+      ),
+    })
+
+    expect(response.status).toBe(202)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(String(init.body)) as {
+      batch: Array<{ properties: Record<string, unknown> }>
+    }
+    expect(body.batch[0].properties).toMatchObject({
+      deployment: 'self_hosted',
+      distribution: 'docker',
+      release_channel: 'docker',
+      api_version: '1.45.0',
+    })
+  })
+
+  it('accepts unsigned collect requests when the collector has no signing secret', async () => {
+    mutableEnv.DURABULL_TELEMETRY_COLLECT_SECRET = undefined
+    bootstrapServerAnalytics()
     const fetchMock = mock(async () => new Response(null, { status: 200 }))
     globalThis.fetch = fetchMock as unknown as typeof fetch
     const app = createTelemetryRouteApp()
@@ -313,8 +353,25 @@ describe('telemetry collect route', () => {
       body: collectPayload(),
     })
 
+    expect(response.status).toBe(202)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects requests that send only one of the signature headers', async () => {
+    const fetchMock = mock(async () => new Response(null, { status: 200 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const app = createTelemetryRouteApp()
+
+    const response = await app.request('/collect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        [TELEMETRY_COLLECT_SIGNATURE_HEADER]: 'sha256=deadbeef',
+      },
+      body: collectPayload(),
+    })
+
     expect(response.status).toBe(401)
-    expect(await response.json()).toEqual({ error: 'Unauthorized telemetry collect request' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -450,9 +507,46 @@ describe('telemetry collect route', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch
     const app = createTelemetryRouteApp()
 
-    const response = await postCollect(app, collectPayload())
+    // Unsigned, so the request reaches the ingest-config check instead of signature handling.
+    const response = await app.request('/collect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: collectPayload(),
+    })
 
     expect(response.status).toBe(503)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects signed requests when the collector has no secret to verify them', async () => {
+    mutableEnv.DURABULL_TELEMETRY_COLLECT_SECRET = undefined
+    bootstrapServerAnalytics()
+    const fetchMock = mock(async () => new Response(null, { status: 200 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const app = createTelemetryRouteApp()
+
+    const response = await postCollect(app, collectPayload())
+
+    expect(response.status).toBe(401)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects requests with empty signature headers instead of treating them as unsigned', async () => {
+    const fetchMock = mock(async () => new Response(null, { status: 200 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const app = createTelemetryRouteApp()
+
+    const response = await app.request('/collect', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        [TELEMETRY_COLLECT_TIMESTAMP_HEADER]: '',
+        [TELEMETRY_COLLECT_SIGNATURE_HEADER]: '',
+      },
+      body: collectPayload(),
+    })
+
+    expect(response.status).toBe(401)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

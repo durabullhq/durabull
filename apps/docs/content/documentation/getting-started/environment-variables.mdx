@@ -129,6 +129,12 @@ names, job data, logs, emails, names, organizations, hostnames, raw URLs, search
 stack traces, and raw error messages. This field restriction applies to the sanitized Durabull
 stream; your configured PostHog project receives its full browser analytics stream.
 
+Every sanitized event carries the install's `deployment` (`cloud` or `self_hosted`),
+`distribution` (`cloud`, `docker`, `desktop`, `source`, or `unknown` for installs too old to
+report it), `release_channel`, and server `api_version`. A running install also sends an
+`instance_active` event once per UTC day, with no other properties; a restart can send it again
+the same day.
+
 MCP analytics additionally records tool/resource names, OAuth stages, scope counts, client and
 protocol metadata, event times, outcomes, and durations. Where configured, hashed user,
 service-account, organization, client, connection, session, and request identifiers associate
@@ -142,7 +148,7 @@ a separate collector service. These settings support forwarding and cloud collec
 
 | Variable | Purpose |
 | --- | --- |
-| `DURABULL_TELEMETRY_COLLECT_SECRET` | HMAC signing secret for forwarded batches and collector verification. Forwarding is skipped when no signing secret is available. |
+| `DURABULL_TELEMETRY_COLLECT_SECRET` | Optional HMAC signing secret. When set, forwarded batches are signed. The collector rejects any batch carrying signature headers that it cannot verify, including when it has no secret configured. Unsigned batches are forwarded and accepted, so self-hosted instances need no telemetry configuration. |
 | `DURABULL_TELEMETRY_HMAC_SECRET` | Dedicated HMAC secret for pseudonymous identifiers; not derived from `BETTER_AUTH_SECRET`. |
 | `DURABULL_CLOUD` | Enable Durabull Cloud collector behavior and trusted-proxy handling. Do not enable on an ordinary self-hosted instance. |
 | `DURABULL_TELEMETRY_POSTHOG_KEY` | Collector's Durabull telemetry destination; falls back to `POSTHOG_KEY`. |

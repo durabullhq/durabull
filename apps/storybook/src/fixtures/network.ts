@@ -62,6 +62,8 @@ export const appConfig = {
     collectionRequired: false,
     dedupeIdentifiedPosthogEvents: false,
     disclosureUrl: 'https://durabull.io/privacy',
+    deployment: 'self_hosted',
+    distribution: 'unknown',
   },
   billing: { enabled: true, enforcement: 'on' },
   version: {

@@ -42,6 +42,8 @@ test('SDK v2 attributes concurrent tool calls to app users and organizations wit
       environment: 'production',
       persistence: 'postgres',
       stateless: false,
+      deployment: 'cloud',
+      distribution: 'cloud',
     }),
     resolveAnonymousInstanceId: async () => 'test-instance',
   }

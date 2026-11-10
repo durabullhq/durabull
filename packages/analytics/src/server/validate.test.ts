@@ -10,6 +10,8 @@ const productionRuntime: ServerAnalyticsRuntimeContext = {
   environment: 'production',
   persistence: 'postgres',
   stateless: false,
+  deployment: 'self_hosted',
+  distribution: 'docker',
 }
 
 describe('validateTelemetryPayload', () => {

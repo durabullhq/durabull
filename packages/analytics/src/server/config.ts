@@ -1,3 +1,5 @@
+import type { TelemetryDeployment, TelemetryDistribution } from './runtime'
+
 export const TELEMETRY_DISCLOSURE_URL = 'https://durabull.io/privacy'
 export const DURABULL_CLOUD_API_HOST = 'app.durabull.io'
 export const DEFAULT_CLOUD_COLLECT_URL = `https://${DURABULL_CLOUD_API_HOST}/api/telemetry/collect`
@@ -8,6 +10,13 @@ export interface ServerAnalyticsRuntimeContext {
   environment: string
   persistence: string
   stateless: boolean
+  /** Trusted, server-stamped: Durabull Cloud vs a self-hosted install. */
+  deployment: TelemetryDeployment
+  /** Trusted, server-stamped: how the install was obtained (docker, desktop, source, cloud). */
+  distribution: TelemetryDistribution
+  release_channel?: string
+  /** Server build version. Named like the browser's `api_version` so it never overwrites `app_version` (the web bundle). */
+  api_version?: string
 }
 
 export interface ServerAnalyticsOptions {
@@ -18,7 +27,11 @@ export interface ServerAnalyticsOptions {
   /** When app + Durabull telemetry share one PostHog project, skip duplicate anonymous events. */
   dedupeIdentifiedPosthogEvents: boolean
   disclosureUrl: string
-  /** Shared secret for HMAC-signed `/collect` batches (OSS forward + cloud ingest). */
+  /**
+   * Optional HMAC secret for `/collect` batches. When set, forwarded batches are signed and the
+   * collector rejects a signed batch whose signature fails. Unsigned batches are always accepted,
+   * because a secret shipped inside open-source builds cannot stay secret.
+   */
   collectSigningSecret: string | null
   hmacSecret: string | null
   durabullTelemetryPosthogKey: string | null
@@ -61,11 +74,16 @@ export function getTelemetryStatusFromOptions(options: ServerAnalyticsOptions): 
   collectionRequired: true
   dedupeIdentifiedPosthogEvents: boolean
   disclosureUrl: string
+  deployment: TelemetryDeployment
+  distribution: TelemetryDistribution
 } {
+  const runtime = options.getRuntimeContext()
   return {
     enabled: options.enabled,
     collectionRequired: true as const,
     dedupeIdentifiedPosthogEvents: options.dedupeIdentifiedPosthogEvents,
     disclosureUrl: options.disclosureUrl,
+    deployment: runtime.deployment,
+    distribution: runtime.distribution,
   }
 }

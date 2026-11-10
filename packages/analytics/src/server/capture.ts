@@ -20,6 +20,7 @@ import {
   resolvePosthogBatchUrl,
   sendPosthogBatch,
 } from './posthog-batch'
+import { resolveCollectRuntimeContext, type TelemetryCollectClientRuntime } from './runtime'
 import { validateTelemetryPayload } from './validate'
 
 /**
@@ -142,7 +143,7 @@ function isSamePosthogConfig(
 
 async function forwardAnonymousToCloudCollect(input: {
   cloudCollectUrl: string
-  collectSigningSecret: string
+  collectSigningSecret: string | null
   anonymousInstanceId: string
   event: string
   properties: Record<string, string | number | boolean | null | string[]>
@@ -165,20 +166,22 @@ async function forwardAnonymousToCloudCollect(input: {
       },
     ],
   })
-  const signedAt = Math.floor(Date.now() / 1000)
-  const { signature, timestamp } = signTelemetryCollectBody(
-    input.collectSigningSecret,
-    signedAt,
-    rawBody
-  )
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  // Signing is optional: self-hosted builds have no secret, and the collector accepts unsigned batches.
+  if (input.collectSigningSecret) {
+    const signedAt = Math.floor(Date.now() / 1000)
+    const { signature, timestamp } = signTelemetryCollectBody(
+      input.collectSigningSecret,
+      signedAt,
+      rawBody
+    )
+    headers[TELEMETRY_COLLECT_TIMESTAMP_HEADER] = timestamp
+    headers[TELEMETRY_COLLECT_SIGNATURE_HEADER] = signature
+  }
 
   const response = await fetch(input.cloudCollectUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      [TELEMETRY_COLLECT_TIMESTAMP_HEADER]: timestamp,
-      [TELEMETRY_COLLECT_SIGNATURE_HEADER]: signature,
-    },
+    headers,
     body: rawBody,
     redirect: 'manual',
     signal: AbortSignal.timeout(POSTHOG_FETCH_TIMEOUT_MS),
@@ -190,7 +193,7 @@ async function forwardAnonymousToCloudCollect(input: {
 
   await response.body?.cancel()
   if (!response.ok && input.rejectOnFailure)
-    throw new Error('MCP analytics cloud collector rejected batch')
+    throw new Error('Telemetry cloud collector rejected batch')
 }
 
 export async function captureAnonymousServerEvent(input: {
@@ -199,21 +202,29 @@ export async function captureAnonymousServerEvent(input: {
   properties: Record<string, unknown>
   sessionId: string
   timestamp?: string
+  /** Throw when the collector or PostHog rejects the event, so the caller can retry. */
+  rejectOnFailure?: boolean
 }): Promise<void> {
   const options = getOptions()
   if (!options?.enabled) return
 
   const runtimeContext = options.getRuntimeContext()
   const validated = validateTelemetryPayload(input.event, input.properties, runtimeContext)
-  if (!validated.ok) return
+  if (!validated.ok) {
+    if (input.rejectOnFailure) throw new Error(`Anonymous telemetry invalid: ${validated.error}`)
+    return
+  }
 
   const timestamp = resolveCollectTimestamp(input.timestamp, Date.now())
 
   if (options.collectEnabled) {
     const config = getDurabullPosthogIngestConfig(options)
-    if (!config) return
+    if (!config) {
+      if (input.rejectOnFailure) throw new Error('Anonymous telemetry ingest is not configured')
+      return
+    }
 
-    await sendPosthogBatch(
+    const accepted = await sendPosthogBatch(
       config,
       [
         buildAnonymousCapture({
@@ -227,11 +238,9 @@ export async function captureAnonymousServerEvent(input: {
       ],
       { runtimeContext, mergeRuntime: true }
     )
-    return
-  }
-
-  if (!options.collectSigningSecret) {
-    console.warn('[analytics] cloud collect forward skipped: missing collect signing secret')
+    if (!accepted && input.rejectOnFailure) {
+      throw new Error('Anonymous telemetry upstream rejected batch')
+    }
     return
   }
 
@@ -244,6 +253,7 @@ export async function captureAnonymousServerEvent(input: {
     sessionId: input.sessionId,
     timestamp,
     runtimeContext,
+    rejectOnFailure: input.rejectOnFailure,
   })
 }
 
@@ -349,23 +359,19 @@ export async function captureMcpAnalyticsServerEvent(input: {
 
   const tasks: Promise<void>[] = []
   if (shouldCaptureAnonymous) {
-    if (!options.collectSigningSecret) {
-      console.warn('[analytics] cloud collect forward skipped: missing collect signing secret')
-    } else {
-      tasks.push(
-        forwardAnonymousToCloudCollect({
-          cloudCollectUrl: options.cloudCollectUrl,
-          collectSigningSecret: options.collectSigningSecret,
-          anonymousInstanceId: input.anonymousInstanceId!,
-          event: validated.event,
-          properties: validated.properties,
-          sessionId: input.sessionId!,
-          timestamp,
-          runtimeContext,
-          rejectOnFailure: true,
-        })
-      )
-    }
+    tasks.push(
+      forwardAnonymousToCloudCollect({
+        cloudCollectUrl: options.cloudCollectUrl,
+        collectSigningSecret: options.collectSigningSecret,
+        anonymousInstanceId: input.anonymousInstanceId!,
+        event: validated.event,
+        properties: validated.properties,
+        sessionId: input.sessionId!,
+        timestamp,
+        runtimeContext,
+        rejectOnFailure: true,
+      })
+    )
   }
 
   if (shouldCaptureIdentified) {
@@ -420,7 +426,8 @@ export async function ingestTelemetryCollectBatch(input: {
   instanceId: string
   sentAt?: string
   events: TelemetryCollectEventInput[]
-  clientRuntime?: ServerAnalyticsRuntimeContext
+  /** Runtime reported by the forwarding instance; always stamped `self_hosted` before ingest. */
+  clientRuntime: TelemetryCollectClientRuntime
 }): Promise<IngestCollectBatchResult> {
   const options = getOptions()
   if (!options?.enabled) {
@@ -432,7 +439,9 @@ export async function ingestTelemetryCollectBatch(input: {
     return { ok: false, error: 'not_configured' }
   }
 
-  const runtimeContext = input.clientRuntime ?? options.getRuntimeContext()
+  // Never fall back to Cloud's own runtime: its release channel and version would be stamped
+  // onto self-hosted events and overwrite what the sender reported.
+  const runtimeContext = resolveCollectRuntimeContext(input.clientRuntime)
   const nowMs = Date.now()
   const batch: PosthogBatchCapture[] = []
 

@@ -24,8 +24,8 @@ import {
 } from 'lucide-react'
 import { PostHogProvider } from 'posthog-js/react'
 import { useEffect, useMemo, useState } from 'react'
-import { AppUpdateBanner } from '@/components/app-update-banner'
 import { APP_TOP_BAR_HEIGHT_CLASS, AppTopBar, AppTopBarProvider } from '@/components/app-top-bar'
+import { AppUpdateBanner } from '@/components/app-update-banner'
 import { ConnectionProvider, useConnection } from '@/components/connection-provider'
 import { ConnectionSelector } from '@/components/connection-selector'
 import { DurabullLogo } from '@/components/durabull-logo'
@@ -111,6 +111,9 @@ function RootComponent() {
       api_version: config.version.version,
       api_build_id: config.version.buildId,
       release_channel: config.version.releaseChannel,
+      deployment: config.telemetry.deployment,
+      distribution: config.telemetry.distribution,
+      surface: 'app',
     }),
     [
       config.authless,
@@ -121,6 +124,8 @@ function RootComponent() {
       config.version.version,
       config.version.buildId,
       config.version.releaseChannel,
+      config.telemetry.deployment,
+      config.telemetry.distribution,
       isElectronShell,
     ]
   )

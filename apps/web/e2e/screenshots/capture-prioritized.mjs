@@ -74,7 +74,7 @@ const appConfig = {
   stateless: false,
   environment: 'development',
   posthog: { enabled: false, key: null, host: '/ingest', uiHost: 'https://us.posthog.com' },
-  telemetry: { enabled: false, collectionRequired: false, dedupeIdentifiedPosthogEvents: false, disclosureUrl: 'https://durabull.io/privacy' },
+  telemetry: { enabled: false, collectionRequired: false, dedupeIdentifiedPosthogEvents: false, disclosureUrl: 'https://durabull.io/privacy', deployment: 'self_hosted', distribution: 'unknown' },
   version: { version: 'dev', buildId: 'dev', buildTime: new Date(now).toISOString(), releaseChannel: 'development', update: { required: false, reason: 'up_to_date' } },
 }
 
