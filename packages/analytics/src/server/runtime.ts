@@ -14,16 +14,28 @@ export type TelemetryDeployment = (typeof TELEMETRY_DEPLOYMENTS)[number]
 export const TELEMETRY_DISTRIBUTIONS = ['cloud', 'docker', 'desktop', 'source', 'unknown'] as const
 export type TelemetryDistribution = (typeof TELEMETRY_DISTRIBUTIONS)[number]
 
+export interface TelemetryDeploymentInfo {
+  deployment: TelemetryDeployment
+  distribution: TelemetryDistribution
+}
+
 const DESKTOP_RELEASE_CHANNELS = new Set(['desktop', 'desktop-dev'])
 
-export function resolveTelemetryDistribution(input: {
+/**
+ * Resolve deployment and distribution together so they cannot disagree. Cloud runs the
+ * published Docker image, so its release channel alone would read `docker`.
+ */
+export function resolveTelemetryDeployment(input: {
   cloud: boolean
   releaseChannel: string
-}): TelemetryDistribution {
-  if (input.cloud) return 'cloud'
-  if (input.releaseChannel === 'docker') return 'docker'
-  if (DESKTOP_RELEASE_CHANNELS.has(input.releaseChannel)) return 'desktop'
-  return 'source'
+}): TelemetryDeploymentInfo {
+  if (input.cloud) return { deployment: 'cloud', distribution: 'cloud' }
+
+  let distribution: TelemetryDistribution = 'source'
+  if (input.releaseChannel === 'docker') distribution = 'docker'
+  else if (DESKTOP_RELEASE_CHANNELS.has(input.releaseChannel)) distribution = 'desktop'
+
+  return { deployment: 'self_hosted', distribution }
 }
 
 function isSelfHostedDistribution(value: unknown): value is TelemetryDistribution {
@@ -34,18 +46,15 @@ function isSelfHostedDistribution(value: unknown): value is TelemetryDistributio
   )
 }
 
-/** Runtime fields a self-hosted instance may send with a forwarded `/collect` batch. */
-export interface TelemetryCollectClientRuntime {
-  authless: boolean
-  env_connections: boolean
-  environment: string
-  persistence: string
-  stateless: boolean
-  deployment?: string
-  distribution?: string
-  release_channel?: string
-  app_version?: string
-}
+/**
+ * Runtime a self-hosted instance sends with a forwarded `/collect` batch. Same shape as the
+ * server runtime, except older instances omit `distribution` and any claimed value is
+ * untrusted. A sent `deployment` is ignored, since the collector always decides it.
+ */
+export type TelemetryCollectClientRuntime = Omit<
+  ServerAnalyticsRuntimeContext,
+  'deployment' | 'distribution'
+> & { distribution?: string }
 
 /**
  * Build the runtime context for a batch forwarded from a self-hosted instance.
@@ -57,21 +66,16 @@ export interface TelemetryCollectClientRuntime {
 export function resolveCollectRuntimeContext(
   clientRuntime: TelemetryCollectClientRuntime
 ): ServerAnalyticsRuntimeContext {
+  const { distribution, release_channel, api_version, ...base } = clientRuntime
   const runtime: ServerAnalyticsRuntimeContext = {
-    authless: clientRuntime.authless,
-    env_connections: clientRuntime.env_connections,
-    environment: clientRuntime.environment,
-    persistence: clientRuntime.persistence,
-    stateless: clientRuntime.stateless,
+    ...base,
     deployment: 'self_hosted',
-    distribution: isSelfHostedDistribution(clientRuntime.distribution)
-      ? clientRuntime.distribution
-      : 'unknown',
+    distribution: isSelfHostedDistribution(distribution) ? distribution : 'unknown',
   }
 
   // Omit absent keys so a browser-supplied value on the event is not overwritten with nothing.
-  if (clientRuntime.release_channel) runtime.release_channel = clientRuntime.release_channel
-  if (clientRuntime.app_version) runtime.app_version = clientRuntime.app_version
+  if (release_channel) runtime.release_channel = release_channel
+  if (api_version) runtime.api_version = api_version
 
   return runtime
 }

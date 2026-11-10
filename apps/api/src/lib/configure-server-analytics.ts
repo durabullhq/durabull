@@ -2,7 +2,7 @@ import {
   configureServerAnalytics,
   DEFAULT_CLOUD_COLLECT_URL,
   DURABULL_CLOUD_API_HOST,
-  resolveTelemetryDistribution,
+  resolveTelemetryDeployment,
   TELEMETRY_DISCLOSURE_URL,
 } from '@durabull/analytics/server'
 import {
@@ -63,8 +63,7 @@ export function bootstrapServerAnalytics(): void {
   const appPosthogKey = env.POSTHOG_KEY?.trim() || null
   const durabullTelemetryPosthogKey = getDurabullTelemetryPosthogKey()
   const isCloud = isDurabullManagedPosthogProject()
-  // Cloud runs the published Docker image, so release_channel alone reads "docker" there.
-  const distribution = resolveTelemetryDistribution({
+  const { deployment, distribution } = resolveTelemetryDeployment({
     cloud: isCloud,
     releaseChannel: APP_RELEASE_CHANNEL,
   })
@@ -88,10 +87,10 @@ export function bootstrapServerAnalytics(): void {
       environment: env.NODE_ENV ?? 'development',
       persistence: getDatabaseMode(),
       stateless: getDatabaseMode() === 'pglite',
-      deployment: isCloud ? 'cloud' : 'self_hosted',
+      deployment,
       distribution,
       release_channel: APP_RELEASE_CHANNEL,
-      app_version: APP_VERSION,
+      api_version: APP_VERSION,
     }),
     resolveAnonymousInstanceId,
   })

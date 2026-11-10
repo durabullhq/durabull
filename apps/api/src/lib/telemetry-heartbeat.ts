@@ -23,7 +23,7 @@ function utcDay(nowMs: number): string {
 }
 
 /**
- * Send `instance_active` once per UTC day while the process runs. Restarts may send it again
+ * Send `instance_active` once per UTC day while the process runs. A restart can send it again
  * the same day, which is harmless because installs are counted as unique ids per day.
  */
 export async function sendInstanceHeartbeatIfDue(nowMs: number = Date.now()): Promise<void> {
@@ -43,10 +43,12 @@ export async function sendInstanceHeartbeatIfDue(nowMs: number = Date.now()): Pr
         properties: {},
         sessionId: INSTANCE_HEARTBEAT_SESSION_ID,
         timestamp: new Date(nowMs).toISOString(),
+        rejectOnFailure: true,
       })
       lastSentUtcDay = day
     } catch {
-      // Telemetry must never affect product runtime; retry on the next hourly check.
+      // Telemetry must never affect product runtime. Network errors and rejected batches
+      // (e.g. 429/503 from the collector) leave the day unsent, so the next hourly check retries.
     } finally {
       inFlight = null
     }

@@ -320,7 +320,7 @@ describe('telemetry collect route', () => {
           deployment: 'cloud',
           distribution: 'docker',
           release_channel: 'docker',
-          app_version: '1.45.0',
+          api_version: '1.45.0',
         }
       ),
     })
@@ -336,7 +336,7 @@ describe('telemetry collect route', () => {
       deployment: 'self_hosted',
       distribution: 'docker',
       release_channel: 'docker',
-      app_version: '1.45.0',
+      api_version: '1.45.0',
     })
   })
 

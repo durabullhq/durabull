@@ -22,6 +22,13 @@ describe('telemetry collect queue', () => {
     const input = {
       events: [{ event: 'queue_paused', properties: {}, sessionId: 'session-1' }],
       instanceId: 'instance-1',
+      clientRuntime: {
+        authless: false,
+        env_connections: false,
+        environment: 'production',
+        persistence: 'postgres',
+        stateless: false,
+      },
     }
 
     for (let i = 0; i < 4 + 256; i += 1) {

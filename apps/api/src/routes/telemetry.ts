@@ -37,11 +37,11 @@ const telemetryCollectRuntimeSchema = z.object({
   environment: z.string().min(1).max(64),
   persistence: z.string().min(1).max(64),
   stateless: z.boolean(),
-  // Added in the deployment-dimensions release; older self-hosted instances omit them.
-  deployment: z.string().min(1).max(32).optional(),
+  // Added in the deployment-dimensions release; older self-hosted instances omit them. A sent
+  // `deployment` is stripped: the collector always stamps `self_hosted`.
   distribution: z.string().min(1).max(32).optional(),
   release_channel: z.string().min(1).max(64).optional(),
-  app_version: z.string().min(1).max(64).optional(),
+  api_version: z.string().min(1).max(64).optional(),
 })
 
 const telemetryCollectPayloadSchema = z.object({
@@ -84,8 +84,9 @@ const telemetryRoutes = new Hono()
 
     // Self-hosted builds ship without a signing secret, so unsigned batches are accepted and
     // bounded by the rate limiter, body limit, event allowlist and property sanitizer instead.
-    // A batch that does carry a signature must verify, which keeps replay protection for
-    // senders configured with the shared secret.
+    // The signature is therefore not an authentication boundary: any sender can omit it. A batch
+    // that does carry signature headers must still verify, so a misconfigured or tampered
+    // signed sender is rejected instead of silently accepted.
     const timestampHeader = c.req.header(TELEMETRY_COLLECT_TIMESTAMP_HEADER)
     const signatureHeader = c.req.header(TELEMETRY_COLLECT_SIGNATURE_HEADER)
     const collectSigningSecret = options?.collectSigningSecret

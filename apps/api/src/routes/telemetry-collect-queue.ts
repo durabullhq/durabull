@@ -11,7 +11,7 @@ interface TelemetryCollectQueueItem {
   instanceId: string
   sentAt?: string
   events: TelemetryCollectEventInput[]
-  clientRuntime?: TelemetryCollectClientRuntime
+  clientRuntime: TelemetryCollectClientRuntime
 }
 
 const MAX_COLLECT_IN_FLIGHT = 4

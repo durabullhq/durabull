@@ -193,7 +193,7 @@ async function forwardAnonymousToCloudCollect(input: {
 
   await response.body?.cancel()
   if (!response.ok && input.rejectOnFailure)
-    throw new Error('MCP analytics cloud collector rejected batch')
+    throw new Error('Telemetry cloud collector rejected batch')
 }
 
 export async function captureAnonymousServerEvent(input: {
@@ -202,6 +202,8 @@ export async function captureAnonymousServerEvent(input: {
   properties: Record<string, unknown>
   sessionId: string
   timestamp?: string
+  /** Throw when the collector or PostHog rejects the event, so the caller can retry. */
+  rejectOnFailure?: boolean
 }): Promise<void> {
   const options = getOptions()
   if (!options?.enabled) return
@@ -216,7 +218,7 @@ export async function captureAnonymousServerEvent(input: {
     const config = getDurabullPosthogIngestConfig(options)
     if (!config) return
 
-    await sendPosthogBatch(
+    const accepted = await sendPosthogBatch(
       config,
       [
         buildAnonymousCapture({
@@ -230,6 +232,9 @@ export async function captureAnonymousServerEvent(input: {
       ],
       { runtimeContext, mergeRuntime: true }
     )
+    if (!accepted && input.rejectOnFailure) {
+      throw new Error('Anonymous telemetry upstream rejected batch')
+    }
     return
   }
 
@@ -242,6 +247,7 @@ export async function captureAnonymousServerEvent(input: {
     sessionId: input.sessionId,
     timestamp,
     runtimeContext,
+    rejectOnFailure: input.rejectOnFailure,
   })
 }
 
@@ -415,7 +421,7 @@ export async function ingestTelemetryCollectBatch(input: {
   sentAt?: string
   events: TelemetryCollectEventInput[]
   /** Runtime reported by the forwarding instance; always stamped `self_hosted` before ingest. */
-  clientRuntime?: TelemetryCollectClientRuntime
+  clientRuntime: TelemetryCollectClientRuntime
 }): Promise<IngestCollectBatchResult> {
   const options = getOptions()
   if (!options?.enabled) {
@@ -427,10 +433,9 @@ export async function ingestTelemetryCollectBatch(input: {
     return { ok: false, error: 'not_configured' }
   }
 
-  // A batch on /collect never comes from Cloud itself, even when the sender omits its runtime.
-  const runtimeContext = resolveCollectRuntimeContext(
-    input.clientRuntime ?? options.getRuntimeContext()
-  )
+  // Never fall back to Cloud's own runtime: its release channel and version would be stamped
+  // onto self-hosted events and overwrite what the sender reported.
+  const runtimeContext = resolveCollectRuntimeContext(input.clientRuntime)
   const nowMs = Date.now()
   const batch: PosthogBatchCapture[] = []
 

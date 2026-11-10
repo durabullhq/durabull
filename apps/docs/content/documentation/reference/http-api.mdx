@@ -97,7 +97,7 @@ Field notes:
 - `telemetry.disclosureUrl`: public documentation for Durabull telemetry collection.
 - `telemetry.deployment`: `cloud` for Durabull Cloud, `self_hosted` for every other install.
 - `telemetry.distribution`: how the install was obtained: `cloud`, `docker`, `desktop` (including
-  Homebrew), or `source`.
+  Homebrew), `source`, or `unknown` when it can't be determined.
 
 ## Anonymous Telemetry
 
@@ -114,9 +114,9 @@ configuration. Batches are signed only when `DURABULL_TELEMETRY_COLLECT_SECRET` 
 
 Durabull telemetry includes feature and route usage, safe runtime context, booleans, enums, and
 aggregate buckets. The server stamps every event with `deployment`, `distribution`,
-`release_channel`, and `app_version`; batches received on `/collect` are always labeled
-`self_hosted`. Each running install also sends one `instance_active` event per UTC day so active
-installs can be counted. It does not include Redis URLs, queue names, Redis key names, job data, logs,
+`release_channel`, and `api_version`; batches received on `/collect` are always labeled
+`self_hosted`. Each running install also sends an `instance_active` event once per UTC day (a
+restart can repeat it) so active installs can be counted. It does not include Redis URLs, queue names, Redis key names, job data, logs,
 emails, names, organizations, hostnames, raw URLs, search patterns, stack traces, or raw error
 messages.
 

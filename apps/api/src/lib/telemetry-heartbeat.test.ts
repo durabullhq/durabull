@@ -34,7 +34,7 @@ function configure(overrides: Partial<ServerAnalyticsOptions> = {}): void {
       deployment: 'self_hosted',
       distribution: 'desktop',
       release_channel: 'desktop',
-      app_version: '1.45.0',
+      api_version: '1.45.0',
     }),
     resolveAnonymousInstanceId: async () => 'install-1234567890',
     ...overrides,
@@ -93,6 +93,21 @@ describe('instance heartbeat', () => {
     await sendInstanceHeartbeatIfDue(Date.parse('2026-11-10T08:00:00.000Z'))
 
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('retries on a later check when the collector rejects the heartbeat', async () => {
+    configure()
+    const statuses = [503, 202]
+    const fetchMock = mock(async () => new Response(null, { status: statuses.shift() ?? 202 }))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const now = Date.parse('2026-11-10T08:00:00.000Z')
+
+    await sendInstanceHeartbeatIfDue(now)
+    await sendInstanceHeartbeatIfDue(now + 60 * 60 * 1000)
+    await sendInstanceHeartbeatIfDue(now + 2 * 60 * 60 * 1000)
+
+    // Rejected, retried and accepted, then nothing more that day.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('retries on a later check when the installation id lookup fails', async () => {

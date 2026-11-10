@@ -44,11 +44,12 @@ export {
 } from './posthog-batch'
 export {
   resolveCollectRuntimeContext,
-  resolveTelemetryDistribution,
+  resolveTelemetryDeployment,
   TELEMETRY_DEPLOYMENTS,
   TELEMETRY_DISTRIBUTIONS,
   type TelemetryCollectClientRuntime,
   type TelemetryDeployment,
+  type TelemetryDeploymentInfo,
   type TelemetryDistribution,
 } from './runtime'
 export { type TelemetryValidationResult, validateTelemetryPayload } from './validate'

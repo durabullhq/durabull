@@ -112,7 +112,7 @@ export const AnalyticsEvents = {
 
   // App Lifecycle Events
   APP_UPDATE_CLICKED: 'app_update_clicked',
-  /** Server heartbeat, at most once per UTC day per running install. Counts active installs. */
+  /** Server heartbeat, once per UTC day per running process (restarts may repeat it). Counts active installs. */
   INSTANCE_ACTIVE: 'instance_active',
 
   // Billing Events (Durabull Cloud subscriptions)

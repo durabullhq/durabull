@@ -15,7 +15,8 @@ export interface ServerAnalyticsRuntimeContext {
   /** Trusted, server-stamped: how the install was obtained (docker, desktop, source, cloud). */
   distribution: TelemetryDistribution
   release_channel?: string
-  app_version?: string
+  /** Server build version. Named like the browser's `api_version` so it never overwrites `app_version` (the web bundle). */
+  api_version?: string
 }
 
 export interface ServerAnalyticsOptions {

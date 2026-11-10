@@ -23,7 +23,7 @@ describe('server analytics runtime context', () => {
       deployment: 'cloud',
       distribution: 'cloud',
       release_channel: APP_RELEASE_CHANNEL,
-      app_version: APP_VERSION,
+      api_version: APP_VERSION,
     })
   })
 

@@ -130,8 +130,10 @@ stack traces, and raw error messages. This field restriction applies to the sani
 stream; your configured PostHog project receives its full browser analytics stream.
 
 Every sanitized event carries the install's `deployment` (`cloud` or `self_hosted`),
-`distribution` (`cloud`, `docker`, `desktop`, or `source`), `release_channel`, and `app_version`.
-A running install also sends one `instance_active` event per UTC day with no other properties.
+`distribution` (`cloud`, `docker`, `desktop`, `source`, or `unknown` for installs too old to
+report it), `release_channel`, and server `api_version`. A running install also sends an
+`instance_active` event once per UTC day, with no other properties; a restart can send it again
+the same day.
 
 MCP analytics additionally records tool/resource names, OAuth stages, scope counts, client and
 protocol metadata, event times, outcomes, and durations. Where configured, hashed user,

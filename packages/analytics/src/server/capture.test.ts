@@ -28,7 +28,7 @@ const baseRuntime = {
   deployment: 'cloud',
   distribution: 'cloud',
   release_channel: 'docker',
-  app_version: '1.45.0',
+  api_version: '1.45.0',
 } as const
 
 function configure(overrides: Partial<ServerAnalyticsOptions> = {}): void {
@@ -60,6 +60,14 @@ function configure(overrides: Partial<ServerAnalyticsOptions> = {}): void {
 }
 
 const originalFetch = globalThis.fetch
+
+const COLLECT_CLIENT_RUNTIME = {
+  authless: false,
+  env_connections: false,
+  environment: 'production',
+  persistence: 'postgres',
+  stateless: false,
+}
 
 function captureFetchBodies(): { bodies: unknown[]; restore: () => void } {
   const bodies: unknown[] = []
@@ -187,6 +195,7 @@ describe('ingestTelemetryCollectBatch timestamp clamping', () => {
 
     const result = await ingestTelemetryCollectBatch({
       instanceId: 'instance-1234567890',
+      clientRuntime: COLLECT_CLIENT_RUNTIME,
       events: [
         {
           event: AnalyticsEvents.MCP_TOOL_CALLED,
@@ -213,6 +222,7 @@ describe('ingestTelemetryCollectBatch timestamp clamping', () => {
 
     await ingestTelemetryCollectBatch({
       instanceId: 'instance-1234567890',
+      clientRuntime: COLLECT_CLIENT_RUNTIME,
       events: [
         {
           event: AnalyticsEvents.MCP_TOOL_CALLED,
@@ -244,7 +254,7 @@ describe('ingestTelemetryCollectBatch deployment stamping', () => {
   type IngestedProperties = Record<string, unknown>
 
   async function ingestOne(input: {
-    clientRuntime?: Parameters<typeof ingestTelemetryCollectBatch>[0]['clientRuntime']
+    clientRuntime: Parameters<typeof ingestTelemetryCollectBatch>[0]['clientRuntime']
     properties?: Record<string, unknown>
   }): Promise<IngestedProperties> {
     const { bodies, restore } = captureFetchBodies()
@@ -274,7 +284,8 @@ describe('ingestTelemetryCollectBatch deployment stamping', () => {
 
   it('stamps forwarded batches as self_hosted even when the sender claims cloud', async () => {
     const properties = await ingestOne({
-      clientRuntime: { ...oldRuntime, deployment: 'cloud', distribution: 'cloud' },
+      // A sender cannot claim Cloud through its runtime or its event properties.
+      clientRuntime: { ...oldRuntime, distribution: 'cloud' },
       properties: { deployment: 'cloud', distribution: 'cloud' },
     })
 
@@ -286,10 +297,9 @@ describe('ingestTelemetryCollectBatch deployment stamping', () => {
     const properties = await ingestOne({
       clientRuntime: {
         ...oldRuntime,
-        deployment: 'self_hosted',
         distribution: 'desktop',
         release_channel: 'desktop',
-        app_version: '1.45.0',
+        api_version: '1.45.0',
       },
     })
 
@@ -297,7 +307,7 @@ describe('ingestTelemetryCollectBatch deployment stamping', () => {
       deployment: 'self_hosted',
       distribution: 'desktop',
       release_channel: 'desktop',
-      app_version: '1.45.0',
+      api_version: '1.45.0',
     })
   })
 
@@ -312,13 +322,6 @@ describe('ingestTelemetryCollectBatch deployment stamping', () => {
       distribution: 'unknown',
       release_channel: 'stable',
     })
-  })
-
-  it('stamps self_hosted when the batch carries no runtime at all', async () => {
-    const properties = await ingestOne({})
-
-    expect(properties.deployment).toBe('self_hosted')
-    expect(properties.distribution).toBe('unknown')
   })
 })
 
@@ -360,7 +363,7 @@ describe('captureMcpAnalyticsServerEvent coalescing', () => {
         anonymousInstanceId: 'instance',
         sessionId: 'session',
       })
-    ).rejects.toThrow('MCP analytics cloud collector rejected batch')
+    ).rejects.toThrow('Telemetry cloud collector rejected batch')
   })
 
   it('retains client attribution and outcome properties through the PostHog batch payload', async () => {
@@ -655,7 +658,7 @@ describe('captureAnonymousServerEvent unsigned forwarding', () => {
       deployment: 'self_hosted',
       distribution: 'docker',
       release_channel: 'docker',
-      app_version: '1.45.0',
+      api_version: '1.45.0',
     })
     expect(body.events[0].properties).toMatchObject({
       deployment: 'self_hosted',

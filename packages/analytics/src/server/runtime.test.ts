@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
 import { sanitizeTelemetryEvent } from '../sanitizer'
-import { resolveCollectRuntimeContext, resolveTelemetryDistribution } from './runtime'
+import { resolveCollectRuntimeContext, resolveTelemetryDeployment } from './runtime'
 
 const baseClientRuntime = {
   authless: false,
@@ -11,31 +11,29 @@ const baseClientRuntime = {
   stateless: false,
 }
 
-describe('resolveTelemetryDistribution', () => {
+describe('resolveTelemetryDeployment', () => {
   it('reports cloud for Durabull Cloud even though it runs the docker image', () => {
-    expect(resolveTelemetryDistribution({ cloud: true, releaseChannel: 'docker' })).toBe('cloud')
+    expect(resolveTelemetryDeployment({ cloud: true, releaseChannel: 'docker' })).toEqual({
+      deployment: 'cloud',
+      distribution: 'cloud',
+    })
   })
 
   it('maps release channels to self-hosted distributions', () => {
-    expect(resolveTelemetryDistribution({ cloud: false, releaseChannel: 'docker' })).toBe('docker')
-    expect(resolveTelemetryDistribution({ cloud: false, releaseChannel: 'desktop' })).toBe(
-      'desktop'
-    )
-    expect(resolveTelemetryDistribution({ cloud: false, releaseChannel: 'desktop-dev' })).toBe(
-      'desktop'
-    )
-    expect(resolveTelemetryDistribution({ cloud: false, releaseChannel: 'stable' })).toBe('source')
+    const distributionFor = (releaseChannel: string) =>
+      resolveTelemetryDeployment({ cloud: false, releaseChannel })
+
+    expect(distributionFor('docker')).toEqual({ deployment: 'self_hosted', distribution: 'docker' })
+    expect(distributionFor('desktop').distribution).toBe('desktop')
+    expect(distributionFor('desktop-dev').distribution).toBe('desktop')
+    expect(distributionFor('stable').distribution).toBe('source')
   })
 })
 
 describe('resolveCollectRuntimeContext', () => {
   it('forces self_hosted and discards a claimed cloud distribution', () => {
     expect(
-      resolveCollectRuntimeContext({
-        ...baseClientRuntime,
-        deployment: 'cloud',
-        distribution: 'cloud',
-      })
+      resolveCollectRuntimeContext({ ...baseClientRuntime, distribution: 'cloud' })
     ).toMatchObject({ deployment: 'self_hosted', distribution: 'unknown' })
   })
 
@@ -48,7 +46,7 @@ describe('resolveCollectRuntimeContext', () => {
   it('omits absent release channel and version keys', () => {
     const runtime = resolveCollectRuntimeContext(baseClientRuntime)
     expect('release_channel' in runtime).toBe(false)
-    expect('app_version' in runtime).toBe(false)
+    expect('api_version' in runtime).toBe(false)
   })
 })
 
