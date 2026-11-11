@@ -13,8 +13,13 @@ import {
   MoreHorizontal,
   Plus,
 } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BillingLink, CapacityCount, PausedBadge } from '@/components/billing/plan-access'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  BillingLink,
+  CapacityCount,
+  LimitReachedNote,
+  PausedBadge,
+} from '@/components/billing/plan-access'
 import { useConnection } from '@/components/connection-provider'
 import { CopyButton, SettingsPage, useSettingsTopBar } from '@/components/settings/settings-layout'
 import { StatusIndicator } from '@/components/status-badge'
@@ -153,15 +158,18 @@ export function ConnectionsSettingsPage({
     trackEvent(AnalyticsEvents.CONNECTIONS_VIEWED)
   }, [])
 
-  // A create link goes through the same limit check as the button, once.
-  const openedFromSearch = useRef(false)
-  useEffect(() => {
-    if (!createFromSearch || envConnections || openedFromSearch.current) return
-    // Wait for the plan, or the check would pass before the limit is known.
-    if (entitlement.isLoading) return
-    openedFromSearch.current = true
-    openCreateDialog()
-  }, [createFromSearch, envConnections, entitlement.isLoading, openCreateDialog])
+  // A create link opens the form only once the plan is known and has room;
+  // at the limit the page explains why instead of opening a form that
+  // cannot be saved. Closing the form ends the link's effect.
+  const [createLinkDismissed, setCreateLinkDismissed] = useState(false)
+  const createLinkActive =
+    createFromSearch && !envConnections && !createLinkDismissed && !entitlement.isLoading
+  const linkAtLimit = createLinkActive && entitlement.capacity('connections.enabled').atLimit
+  const createFormOpen = createDialogOpen || (createLinkActive && !linkAtLimit)
+  const setCreateFormOpen = (open: boolean) => {
+    setCreateDialogOpen(open)
+    if (!open) setCreateLinkDismissed(true)
+  }
 
   // Production first, then by name, so the riskiest rows are always at the top.
   const sortedConnections = useMemo(
@@ -223,6 +231,7 @@ export function ConnectionsSettingsPage({
       }
       actions={isLoading || hasConnections ? addButton : undefined}
     >
+      {linkAtLimit ? <LimitReachedNote limit="connections.enabled" /> : null}
       {isLoading ? (
         <Panel className="divide-y">
           {[0, 1, 2].map((row) => (
@@ -282,8 +291,8 @@ export function ConnectionsSettingsPage({
         <>
           {/* Create Dialog */}
           <ConnectionFormDialog
-            open={createDialogOpen}
-            onOpenChange={setCreateDialogOpen}
+            open={createFormOpen}
+            onOpenChange={setCreateFormOpen}
             mode="create"
           />
 
