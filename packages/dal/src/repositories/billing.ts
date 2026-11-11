@@ -494,43 +494,67 @@ export const billingRepository = {
     return rows.filter((row) => isOwnerRole(row.role)).map(({ role: _role, ...owner }) => owner)
   },
 
-  /** Organizations that currently have at least one paused resource. */
   /**
    * Remove pauses on resources that no longer count against a limit: deleted,
    * disabled, or an invitation that was accepted, revoked or has expired.
    * Mirrors durabull_capacity_usage, which decides what counts.
+   *
+   * Each organization is pruned under the capacity lock the triggers take,
+   * and the check runs on a snapshot taken after the lock is held. A resource
+   * re-enabled concurrently is therefore either seen as live (and its pause
+   * kept for the allocator to restore with a capacity check) or re-enabled
+   * after the pause is gone (and checked by its trigger), never both.
    */
-  async pruneStaleSuspensions(): Promise<number> {
+  async pruneStaleSuspensions(organizationId?: string): Promise<number> {
     const db = await getDb()
     const s = billingResourceSuspension
-    const rows = await db
-      .delete(s)
-      .where(sql`
-        (${s.resourceKind} = 'connection' AND NOT EXISTS (
-          SELECT 1 FROM redis_connection c
-           WHERE c.id::text = ${s.resourceId} AND c.organization_id = ${s.organizationId}
-             AND c.enabled))
-        OR (${s.resourceKind} = 'member' AND NOT EXISTS (
-          SELECT 1 FROM member m
-           WHERE m.id = ${s.resourceId} AND m.organization_id = ${s.organizationId}))
-        OR (${s.resourceKind} = 'invitation' AND NOT EXISTS (
-          SELECT 1 FROM invitation i
-           WHERE i.id = ${s.resourceId} AND i.organization_id = ${s.organizationId}
-             AND i.status = 'pending' AND i.expires_at > now()))
-        OR (${s.resourceKind} = 'alert_rule' AND NOT EXISTS (
-          SELECT 1 FROM alert_rule r
-           WHERE r.id::text = ${s.resourceId} AND r.organization_id = ${s.organizationId}
-             AND r.enabled AND r.deletion_requested_at IS NULL))
-        OR (${s.resourceKind} = 'alert_destination' AND NOT EXISTS (
-          SELECT 1 FROM alert_destination d
-           WHERE d.id::text = ${s.resourceId} AND d.organization_id = ${s.organizationId}))
-        OR (${s.resourceKind} = 'service_account' AND NOT EXISTS (
-          SELECT 1 FROM mcp_service_account a
-           WHERE a.id::text = ${s.resourceId} AND a.organization_id = ${s.organizationId}
-             AND NOT a.disabled))
-      `)
-      .returning({ id: s.id })
-    return rows.length
+    const organizationIds = organizationId
+      ? [organizationId]
+      : (await db.selectDistinct({ organizationId: s.organizationId }).from(s)).map(
+          (row) => row.organizationId
+        )
+    let removed = 0
+    for (const id of organizationIds) {
+      removed += await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`durabull_capacity:${id}`}, 0))`
+        )
+        const rows = await tx
+          .delete(s)
+          .where(
+            and(
+              eq(s.organizationId, id),
+              sql`(
+                (${s.resourceKind} = 'connection' AND NOT EXISTS (
+                  SELECT 1 FROM redis_connection c
+                   WHERE c.id::text = ${s.resourceId} AND c.organization_id = ${s.organizationId}
+                     AND c.enabled))
+                OR (${s.resourceKind} = 'member' AND NOT EXISTS (
+                  SELECT 1 FROM member m
+                   WHERE m.id = ${s.resourceId} AND m.organization_id = ${s.organizationId}))
+                OR (${s.resourceKind} = 'invitation' AND NOT EXISTS (
+                  SELECT 1 FROM invitation i
+                   WHERE i.id = ${s.resourceId} AND i.organization_id = ${s.organizationId}
+                     AND i.status = 'pending' AND i.expires_at > now()))
+                OR (${s.resourceKind} = 'alert_rule' AND NOT EXISTS (
+                  SELECT 1 FROM alert_rule r
+                   WHERE r.id::text = ${s.resourceId} AND r.organization_id = ${s.organizationId}
+                     AND r.enabled AND r.deletion_requested_at IS NULL))
+                OR (${s.resourceKind} = 'alert_destination' AND NOT EXISTS (
+                  SELECT 1 FROM alert_destination d
+                   WHERE d.id::text = ${s.resourceId} AND d.organization_id = ${s.organizationId}))
+                OR (${s.resourceKind} = 'service_account' AND NOT EXISTS (
+                  SELECT 1 FROM mcp_service_account a
+                   WHERE a.id::text = ${s.resourceId} AND a.organization_id = ${s.organizationId}
+                     AND NOT a.disabled))
+              )`
+            )
+          )
+          .returning({ id: s.id })
+        return rows.length
+      })
+    }
+    return removed
   },
 
   /**
@@ -1105,6 +1129,24 @@ export const billingRepository = {
       )
       const restored: Array<{ kind: BillingResourceKind; resourceId: string }> = []
       for (const item of items) {
+        if (item.kind === 'alert_rule') {
+          // A rule only runs with its connection. Items arrive connections
+          // first, so a connection this call could not restore keeps its
+          // rules paused too.
+          const blocked = await tx.execute(
+            sql`SELECT EXISTS (
+              SELECT 1
+                FROM alert_rule r
+                JOIN billing_resource_suspension cs
+                  ON cs.resource_kind = 'connection'
+                 AND cs.resource_id = r.connection_id::text
+               WHERE r.id::text = ${item.resourceId}
+            ) AS blocked`
+          )
+          const blockedRows =
+            (blocked as unknown as { rows?: Array<{ blocked?: unknown }> }).rows ?? []
+          if (blockedRows[0]?.blocked === true) continue
+        }
         if (item.allowed !== null) {
           const result = await tx.execute(
             sql`SELECT durabull_capacity_usage(${organizationId}, ${item.limit}) AS used`

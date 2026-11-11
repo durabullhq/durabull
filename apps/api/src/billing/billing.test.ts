@@ -1167,6 +1167,40 @@ describe('Cloud billing', () => {
     expect(await suspendedIdsOf('connection')).toEqual([])
   })
 
+  it('keeps a rule paused when its connection could not be restored', async () => {
+    const app = await createApp()
+    await subscribe(AUTHLESS_ORG_ID)
+    await createConnection(app, 'first')
+    const second = (await json(await createConnection(app, 'second'))).connection
+    const db = await getDb()
+    const [onSecond] = await db
+      .insert(alertRule)
+      .values({
+        organizationId: AUTHLESS_ORG_ID,
+        connectionId: second.id,
+        name: 'on-second',
+        type: 'job_failed' as const,
+        config: {},
+      })
+      .returning()
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(Date.now() + 8 * 86_400_000),
+    })
+    expect(await suspendedIdsOf('alert_rule')).toEqual([onSecond!.id])
+
+    // A create took the connection slot first: the connection stays paused,
+    // and its rule must not be restored on its own.
+    const restored = await billingRepository.restoreWithinLimits(AUTHLESS_ORG_ID, [
+      { kind: 'connection', resourceId: second.id, limit: 'connections.enabled', allowed: 1 },
+      { kind: 'alert_rule', resourceId: onSecond!.id, limit: 'alerts.enabled', allowed: 3 },
+    ])
+    expect(restored).toEqual([])
+    expect(await suspendedIdsOf('connection')).toEqual([second.id])
+    expect(await suspendedIdsOf('alert_rule')).toEqual([onSecond!.id])
+  })
+
   it('never restores a paused rule above active ones when a connection is disabled', async () => {
     const app = await createApp()
     await subscribe(AUTHLESS_ORG_ID)

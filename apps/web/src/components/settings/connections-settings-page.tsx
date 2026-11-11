@@ -13,7 +13,7 @@ import {
   MoreHorizontal,
   Plus,
 } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BillingLink, CapacityCount, PausedBadge } from '@/components/billing/plan-access'
 import { useConnection } from '@/components/connection-provider'
 import { CopyButton, SettingsPage, useSettingsTopBar } from '@/components/settings/settings-layout'
@@ -153,10 +153,15 @@ export function ConnectionsSettingsPage({
     trackEvent(AnalyticsEvents.CONNECTIONS_VIEWED)
   }, [])
 
+  // A create link goes through the same limit check as the button, once.
+  const openedFromSearch = useRef(false)
   useEffect(() => {
-    if (!createFromSearch || envConnections) return
-    setCreateDialogOpen(true)
-  }, [createFromSearch, envConnections])
+    if (!createFromSearch || envConnections || openedFromSearch.current) return
+    // Wait for the plan, or the check would pass before the limit is known.
+    if (entitlement.isLoading) return
+    openedFromSearch.current = true
+    openCreateDialog()
+  }, [createFromSearch, envConnections, entitlement.isLoading, openCreateDialog])
 
   // Production first, then by name, so the riskiest rows are always at the top.
   const sortedConnections = useMemo(

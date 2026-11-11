@@ -264,7 +264,9 @@ export async function allocateCapacity(
     }
   }
 
-  if (orphans.length > 0) await billingRepository.unsuspend(organizationId, orphans)
+  // Pauses on resources that no longer count are dropped under the capacity
+  // lock, rechecked there, so one re-enabled meanwhile keeps its pause.
+  if (orphans.length > 0) await billingRepository.pruneStaleSuspensions(organizationId)
   // Pausing first frees the room a swap needs; each restore is then checked
   // against the live count under the capacity lock, so a create racing this
   // run, or a stale decision, can never push usage above the limit.
