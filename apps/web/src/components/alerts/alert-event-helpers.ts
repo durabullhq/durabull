@@ -7,13 +7,11 @@ export function getSuppressedCount(event: Pick<AlertEventRecord, 'context'>): nu
 }
 
 /**
- * Installs without accounts (desktop, authless self-hosting) record every
- * action against one synthetic user. Naming it in the UI is noise.
+ * " by Sam Operator" when the acknowledger is known, "" otherwise. In installs
+ * without accounts the API omits the name (see `withVisibleActor` in the API),
+ * so there is nothing to filter here.
  */
-const SYNTHETIC_ACTOR_NAMES = new Set(['Authless User', 'Local user'])
-
-/** " by Sam Operator" for a real person, "" when there is nobody meaningful to credit. */
 export function formatActorSuffix(name: string | null | undefined): string {
-  if (!name || SYNTHETIC_ACTOR_NAMES.has(name)) return ''
-  return ` by ${name}`
+  const trimmed = name?.trim()
+  return trimmed ? ` by ${trimmed}` : ''
 }

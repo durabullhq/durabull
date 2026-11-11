@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate, Outlet, useNavigate } from '@tanstack/react-router'
-import { Loader2, ShieldX } from 'lucide-react'
+import { Loader2, ShieldX, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { TransitionBanner } from '@/components/billing/transition-banner'
@@ -9,7 +9,11 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
-import { useOrganizations, useSetActiveOrganization } from '@/hooks/use-organization'
+import {
+  useActiveOrganization,
+  useOrganizations,
+  useSetActiveOrganization,
+} from '@/hooks/use-organization'
 
 export const Route = createFileRoute('/$orgSlug')({
   // Note: We intentionally don't use beforeLoad for auth calls here.
@@ -31,6 +35,7 @@ function OrgSlugLayout() {
   const { isAuthenticated, isLoading: authLoading, session } = useAuth()
   const { isAuthless } = useAppMode()
   const { data: organizations, isLoading: orgsLoading } = useOrganizations()
+  const { data: activeOrganization } = useActiveOrganization()
   const setActiveOrg = useSetActiveOrganization()
 
   // Track if we've already set the active org to prevent loops
@@ -63,15 +68,7 @@ function OrgSlugLayout() {
 
   // Show loading while checking auth or fetching organizations
   if (authLoading || orgsLoading) {
-    return (
-      <div
-        className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
-        aria-live="polite"
-      >
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
-        <p className="text-[13px] text-muted-foreground">Loading…</p>
-      </div>
-    )
+    return <OrgLoading label="Loading…" />
   }
 
   // Not authenticated - redirect to login
@@ -90,6 +87,32 @@ function OrgSlugLayout() {
     )
   }
 
+  // Organization-scoped API calls use the session's active organization, so pages
+  // must not render (and start reading or writing) until the server has switched
+  // to the organization in the URL. The active-organization query reflects the
+  // server session and is refetched once the switch succeeds. An install without
+  // accounts has exactly one organization, so there is nothing to wait for.
+  const isOrganizationActive = isAuthless || activeOrganization?.id === org.id
+  if (!isOrganizationActive) {
+    if (setActiveOrg.isError) {
+      return (
+        <EmptyState
+          tone="danger"
+          icon={TriangleAlert}
+          title={`Couldn't switch to ${org.name}`}
+          description={setActiveOrg.error.message}
+          className="min-h-[min(420px,60vh)]"
+          actions={
+            <Button onClick={() => setActiveOrg.mutate(org.id)} disabled={setActiveOrg.isPending}>
+              Try again
+            </Button>
+          }
+        />
+      )
+    }
+    return <OrgLoading label={`Switching to ${org.name}…`} />
+  }
+
   // Valid organization - render children
   return (
     <>
@@ -97,6 +120,18 @@ function OrgSlugLayout() {
       <UpgradePromptHost orgSlug={orgSlug} />
       <TransitionBanner orgSlug={orgSlug} />
     </>
+  )
+}
+
+function OrgLoading({ label }: { label: string }) {
+  return (
+    <div
+      className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
+      aria-live="polite"
+    >
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+      <p className="text-[13px] text-muted-foreground">{label}</p>
+    </div>
   )
 }
 
