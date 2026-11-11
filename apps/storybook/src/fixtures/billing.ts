@@ -8,6 +8,16 @@ const teamLimits = {
   'history.redis_health_days': 14,
 }
 
+/** The Free plan's limits, as the catalog defines them. */
+export const freeLimits = {
+  'connections.enabled': 1,
+  'members.reserved': 1,
+  'alerts.enabled': 3,
+  'alerts.destinations': 1,
+  'service_accounts.enabled': 0,
+  'history.redis_health_days': 1,
+}
+
 export const billingOverview = {
   enabled: true,
   enforcement: 'on',
