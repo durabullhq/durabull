@@ -14,7 +14,7 @@ import { SnoozeMenu } from '@/components/alerts/snooze-menu'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { PausedBadge } from '@/components/billing/plan-access'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { isUsableConnection, useConnection } from '@/components/connection-provider'
+import { useConnection } from '@/components/connection-provider'
 import { PageTitle } from '@/components/page-title'
 import { Button } from '@/components/ui/button'
 import {
@@ -45,6 +45,7 @@ import {
 } from '@/hooks/use-alerts'
 import { useEntitlement } from '@/hooks/use-entitlement'
 import { isPlanDenial } from '@/lib/api'
+import { isUsableConnection } from '@/lib/connection-usable'
 import { cn, formatNumber } from '@/lib/utils'
 
 export function ConnectionRulesView({

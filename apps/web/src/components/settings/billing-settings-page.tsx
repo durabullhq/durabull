@@ -183,32 +183,26 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
     const params = new URLSearchParams(window.location.search)
     const checkout = params.get('checkout')
     const sessionId = params.get('session_id')
-    // Leaving Checkout without paying closes the attempt on the server. If
-    // the payment went through after all, say so rather than "canceled".
-    if (checkout === 'canceled' && overview.canManageBilling) {
-      void cancelCheckout
-        .mutateAsync()
-        .then((result) => {
-          if (result?.status === 'complete') setReturnState('confirmed')
-        })
-        .catch(() => {})
+    // What the return turned out to mean, once the server has checked with
+    // Stripe. mutateAsync settles independently of the observer, so a
+    // StrictMode remount cannot leave the page stuck in the confirming state.
+    const settleReturn = async (): Promise<CheckoutReturnState | undefined> => {
+      // Leaving Checkout without paying closes the attempt on the server. If
+      // the payment went through after all, say so rather than "canceled".
+      if (checkout === 'canceled' && overview.canManageBilling) {
+        const result = await cancelCheckout.mutateAsync().catch(() => null)
+        return result?.status === 'complete' ? 'confirmed' : undefined
+      }
+      if (checkout === 'success' && sessionId) {
+        const result = await confirmCheckout.mutateAsync(sessionId).catch(() => null)
+        if (result?.status === 'complete') return 'confirmed'
+        return result?.status === 'expired' ? 'canceled' : 'unconfirmed'
+      }
+      return undefined
     }
-    if (checkout === 'success' && sessionId) {
-      // mutateAsync settles independently of the observer, so a StrictMode
-      // remount cannot leave the page stuck in the confirming state.
-      void confirmCheckout
-        .mutateAsync(sessionId)
-        .then((result) =>
-          setReturnState(
-            result?.status === 'complete'
-              ? 'confirmed'
-              : result?.status === 'expired'
-                ? 'canceled'
-                : 'unconfirmed'
-          )
-        )
-        .catch(() => setReturnState('unconfirmed'))
-    }
+    void settleReturn().then((next) => {
+      if (next) setReturnState(next)
+    })
     // Plan changes made in the hosted Portal are reconciled on return, so
     // the page does not depend on webhook delivery timing.
     if (params.get('portal') && overview.canManageBilling) {

@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useMemo } from 'react'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
 import { ApiError, api, type InferResponseType } from '@/lib/api'
+import { isUsableConnection } from '@/lib/connection-usable'
 
 // Type helpers using Hono's InferResponseType
 type ListConnectionsResponse = InferResponseType<(typeof api.connections)['$get'], 200>
@@ -32,11 +33,6 @@ async function fetchConnections(): Promise<Connection[]> {
   }
   const data = await res.json()
   return data.connections
-}
-
-/** Enabled and not paused by the plan: its queues, workers and alerts are reachable. */
-export function isUsableConnection(connection: Pick<Connection, 'enabled' | 'suspended'>): boolean {
-  return connection.enabled !== false && connection.suspended !== true
 }
 
 export function ConnectionProvider({ children }: { children: ReactNode }) {

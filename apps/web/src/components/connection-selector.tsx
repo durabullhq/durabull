@@ -24,8 +24,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { isUsableConnection } from '@/lib/connection-usable'
 import { cn } from '@/lib/utils'
-import { isUsableConnection, useConnection } from './connection-provider'
+import { useConnection } from './connection-provider'
 
 // Environment configuration - matches the connections page
 const environmentConfig: Record<

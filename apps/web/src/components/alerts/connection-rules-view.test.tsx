@@ -67,8 +67,6 @@ vi.mock('@/components/connection-provider', () => ({
     currentConnection: connectionState.current,
     connections: [connectionState.current],
   }),
-  isUsableConnection: (c: { enabled?: boolean; suspended?: boolean }) =>
-    c.enabled !== false && c.suspended !== true,
 }))
 
 vi.mock('sonner', () => ({

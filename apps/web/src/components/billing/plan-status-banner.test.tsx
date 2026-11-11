@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PlanStatusBanner, planStatus } from '@/components/billing/plan-status-banner'
+import { planStatus } from '@/components/billing/plan-status'
+import { PlanStatusBanner } from '@/components/billing/plan-status-banner'
 import type { EnabledEntitlement } from '@/hooks/use-entitlement'
 import { setTestEntitlement, testEntitlement } from '@/test/entitlement'
 

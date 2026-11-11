@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, useLocation } from '@tanstack/react-router'
-import { isUsableConnection, useConnection } from '@/components/connection-provider'
+import { useConnection } from '@/components/connection-provider'
 import { ConnectionUnavailable } from '@/components/connection-unavailable'
+import { isUsableConnection } from '@/lib/connection-usable'
 
 /**
  * Layout route for connection-scoped pages within an organization.

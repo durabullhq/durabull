@@ -1,4 +1,9 @@
-import { comparePlans, featureForDeliveryType, PLANS } from '@durabull/api-client/billing'
+import {
+  comparePlans,
+  featureForDeliveryType,
+  PLANS,
+  type PlanCode,
+} from '@durabull/api-client/billing'
 import { Link2, Mail, Plus, Send, Webhook } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -396,8 +401,11 @@ function CreateDestinationDialog({
   // The lowest plan that unlocks a locked destination type, if any is locked.
   const unlockPlan = (Object.keys(TYPE_META) as AlertDestinationType[])
     .map(lockedPlan)
-    .filter((plan): plan is NonNullable<typeof plan> => plan !== null)
-    .sort(comparePlans)[0]
+    .reduce<PlanCode | null>(
+      (lowest, plan) =>
+        plan !== null && (lowest === null || comparePlans(plan, lowest) < 0) ? plan : lowest,
+      null
+    )
 
   const reset = () => {
     setType(null)
