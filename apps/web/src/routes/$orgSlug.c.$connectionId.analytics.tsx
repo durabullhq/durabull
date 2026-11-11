@@ -304,6 +304,15 @@ export const Route = createFileRoute('/$orgSlug/c/$connectionId/analytics')({
   component: AnalyticsPage,
 })
 
+/** Chart tooltip formatters; they need nothing from the component, so they live at module scope. */
+function timeTooltipLabel(value: number | string) {
+  return formatMetricTooltipLabel(Number(value))
+}
+
+function queueNameTooltipLabel(_: unknown, payload: Array<{ payload?: unknown }>) {
+  return (payload?.[0]?.payload as { queueName?: string } | undefined)?.queueName ?? ''
+}
+
 function AnalyticsPage() {
   const { orgSlug, connectionId } = Route.useParams()
   const { window } = Route.useSearch()
@@ -556,9 +565,6 @@ function AnalyticsPage() {
   const hasFailures = analytics.failureChartData.some((row) => row.failedInWindow > 0)
   const timeAxisTick = (value: number | string) =>
     formatMetricAxisTime(Number(value), selectedWindow.minutes)
-  const timeTooltipLabel = (value: number | string) => formatMetricTooltipLabel(Number(value))
-  const queueNameTooltipLabel = (_: unknown, payload: Array<{ payload?: unknown }>) =>
-    (payload?.[0]?.payload as { queueName?: string } | undefined)?.queueName ?? ''
 
   return (
     <div className="space-y-4">
