@@ -106,7 +106,8 @@ export function CreateAlertRuleRoute() {
         // One builder can create several rules. Check that all of them fit
         // the plan first, so a limit never leaves half of them created.
         const adding = inputs.filter((input) => input.enabled !== false).length
-        if (!entitlement.canAdd('alerts.enabled', adding)) {
+        // Rules saved disabled use no allowance, even above a limit after a downgrade.
+        if (adding > 0 && !entitlement.canAdd('alerts.enabled', adding)) {
           throw limitDenial('alerts.enabled', entitlement.capacity('alerts.enabled'), adding)
         }
         for (const input of inputs) {

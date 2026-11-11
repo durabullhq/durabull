@@ -159,6 +159,13 @@ export function ConnectionRulesView({
         </Panel>
       ) : rulesQuery.isLoading ? (
         <RulesLoadingState />
+      ) : rules.length === 0 && housekeepingOnly ? (
+        // Rules cannot be created while the connection is paused or disabled.
+        <EmptyState
+          icon={BellOff}
+          title="No alert rules on this connection"
+          description="Rules can be added once the connection is enabled again."
+        />
       ) : rules.length === 0 ? (
         <EmptyRulesState
           linearIntegrationValid={

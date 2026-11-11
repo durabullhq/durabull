@@ -15,7 +15,7 @@ import {
   Loader2,
   RefreshCw,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SettingsPage } from '@/components/settings/settings-layout'
 import { Badge } from '@/components/ui/badge'
@@ -173,7 +173,19 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
   const openPortal = useOpenBillingPortal()
   const [returnState, setReturnState] = useState<CheckoutReturnState>(readCheckoutReturn)
   const handledReturn = useRef(false)
+  // Kept after the URL is cleaned up, so "Check again" can retry the same session.
+  const checkoutSession = useRef<string | null>(null)
   const state = describeBilling(overview)
+
+  // Asks the server to confirm the session with Stripe and says what it means.
+  const confirmReturn = useCallback(
+    async (sessionId: string): Promise<CheckoutReturnState> => {
+      const result = await confirmCheckout.mutateAsync(sessionId).catch(() => null)
+      if (result?.status === 'complete') return 'confirmed'
+      return result?.status === 'expired' ? 'canceled' : 'unconfirmed'
+    },
+    [confirmCheckout]
+  )
 
   // The return from hosted Checkout only starts a server-side confirmation;
   // access changes once Stripe state is reconciled.
@@ -183,6 +195,7 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
     const params = new URLSearchParams(window.location.search)
     const checkout = params.get('checkout')
     const sessionId = params.get('session_id')
+    if (checkout === 'success' && sessionId) checkoutSession.current = sessionId
     // What the return turned out to mean, once the server has checked with
     // Stripe. mutateAsync settles independently of the observer, so a
     // StrictMode remount cannot leave the page stuck in the confirming state.
@@ -193,11 +206,7 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
         const result = await cancelCheckout.mutateAsync().catch(() => null)
         return result?.status === 'complete' ? 'confirmed' : undefined
       }
-      if (checkout === 'success' && sessionId) {
-        const result = await confirmCheckout.mutateAsync(sessionId).catch(() => null)
-        if (result?.status === 'complete') return 'confirmed'
-        return result?.status === 'expired' ? 'canceled' : 'unconfirmed'
-      }
+      if (checkout === 'success' && sessionId) return confirmReturn(sessionId)
       return undefined
     }
     void settleReturn().then((next) => {
@@ -211,7 +220,7 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
     if (checkout || params.get('portal')) {
       window.history.replaceState(null, '', window.location.pathname)
     }
-  }, [confirmCheckout, cancelCheckout, refreshBilling, overview.canManageBilling])
+  }, [confirmReturn, cancelCheckout, refreshBilling, overview.canManageBilling])
 
   const handlePortal = (request: PortalRequest = { intent: 'manage' }) =>
     openPortal.mutate(request, {
@@ -224,6 +233,15 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
       onError: (error) =>
         toast.error('Could not refresh billing', { description: errorMessage(error, '') }),
     })
+  // Retry the same checkout session, so the notice changes once Stripe confirms.
+  const handleCheckAgain = () => {
+    const sessionId = checkoutSession.current
+    if (!sessionId) {
+      handleRefresh()
+      return
+    }
+    void confirmReturn(sessionId).then(setReturnState)
+  }
   const portalBusy = openPortal.isPending
   const showInvoices = overview.canManageBilling && overview.hasBillingAccount
 
@@ -265,8 +283,8 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={refreshBilling.isPending}
-                onClick={handleRefresh}
+                disabled={refreshBilling.isPending || confirmCheckout.isPending}
+                onClick={handleCheckAgain}
               >
                 Check again
               </Button>

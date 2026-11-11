@@ -1,5 +1,5 @@
-import { Hono } from 'hono'
 import { env } from '@durabull/env'
+import { Hono } from 'hono'
 import { getAuth } from '../lib/auth'
 import { getAuthlessContext, isAuthlessMode } from '../lib/authless'
 import { ensureMcpAuthorizeScopes } from './mcp-authorize-scopes'

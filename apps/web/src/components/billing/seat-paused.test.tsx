@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { SeatPaused } from '@/components/billing/seat-paused'
 
+vi.mock('@/components/organization-selector', () => ({
+  CreateOrganizationDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="create-organization-dialog" /> : null,
+}))
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
@@ -26,11 +31,10 @@ describe('SeatPaused', () => {
     expect(screen.getByRole('link', { name: 'Open Globex' })).toHaveAttribute('href', '/globex')
   })
 
-  it('offers to create an organization when there is no other one', () => {
+  it('creates an organization in place when there is no other one', async () => {
     render(<SeatPaused organizationName="Acme" otherOrganizations={[]} />)
-    expect(screen.getByRole('link', { name: 'Create your own organization' })).toHaveAttribute(
-      'href',
-      '/setup-organization'
-    )
+    expect(screen.queryByTestId('create-organization-dialog')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Create your own organization' }))
+    expect(screen.getByTestId('create-organization-dialog')).toBeInTheDocument()
   })
 })

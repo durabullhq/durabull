@@ -33,9 +33,14 @@ export function useBilling(options: { enabled?: boolean } = {}) {
   })
 }
 
-function useInvalidateBilling() {
+/**
+ * Reconciling with Stripe can change the plan, which pauses or restores
+ * connections, rules, destinations, members and service accounts. Refresh
+ * everything, not only billing, so no page keeps a stale paused state.
+ */
+function useInvalidateAfterReconcile() {
   const queryClient = useQueryClient()
-  return () => queryClient.invalidateQueries({ queryKey: billingKeys.all })
+  return () => queryClient.invalidateQueries()
 }
 
 export function useStartCheckout() {
@@ -55,7 +60,7 @@ export function useStartCheckout() {
 }
 
 export function useConfirmCheckout() {
-  const invalidate = useInvalidateBilling()
+  const invalidate = useInvalidateAfterReconcile()
   return useMutation({
     mutationFn: async (sessionId: string) =>
       handleRes<{ status: string }>(
@@ -66,7 +71,7 @@ export function useConfirmCheckout() {
 }
 
 export function useCancelCheckout() {
-  const invalidate = useInvalidateBilling()
+  const invalidate = useInvalidateAfterReconcile()
   return useMutation({
     mutationFn: async () =>
       handleRes<{ status: string }>(await api.billing.checkout.cancel.$post()),
@@ -105,7 +110,7 @@ export function useBillingInvoices(options: { enabled: boolean }) {
 }
 
 export function useRefreshBilling() {
-  const invalidate = useInvalidateBilling()
+  const invalidate = useInvalidateAfterReconcile()
   return useMutation({
     mutationFn: async () => handleRes<{ planCode: string }>(await api.billing.refresh.$post()),
     onSettled: invalidate,

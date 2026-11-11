@@ -400,16 +400,19 @@ export class StripeBillingGateway implements BillingGateway {
 
   async listInvoices(customerId: string, limit: number) {
     const wanted = Math.max(1, Math.min(100, limit))
-    // Drafts (the upcoming renewal, for instance) are dropped below, so ask
-    // for a few extra to still fill the list.
-    const result = await this.stripe.invoices.list({
+    const invoices: InvoiceSummary[] = []
+    // Stripe lists drafts too (the upcoming renewal, for instance), newest
+    // first. Page until enough finalized invoices are found or the history
+    // ends; auto-pagination fetches the next page only when it is needed.
+    for await (const invoice of this.stripe.invoices.list({
       customer: customerId,
-      limit: Math.min(100, wanted + 5),
-    })
-    return result.data
-      .map(normalizeInvoiceSummary)
-      .filter((invoice): invoice is InvoiceSummary => invoice !== null)
-      .slice(0, wanted)
+      limit: Math.min(100, wanted * 2),
+    })) {
+      const summary = normalizeInvoiceSummary(invoice)
+      if (summary) invoices.push(summary)
+      if (invoices.length >= wanted) break
+    }
+    return invoices
   }
 
   async listCustomerSubscriptions(customerId: string) {

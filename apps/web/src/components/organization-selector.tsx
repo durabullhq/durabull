@@ -93,7 +93,7 @@ interface CreateOrganizationDialogProps {
   onSuccess?: (org: Organization) => void
 }
 
-function CreateOrganizationDialog({
+export function CreateOrganizationDialog({
   open,
   onOpenChange,
   onSuccess,

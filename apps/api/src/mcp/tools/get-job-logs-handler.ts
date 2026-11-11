@@ -1,7 +1,7 @@
-import { getQueue } from '../../lib/redis'
-import { toRedisConnectionOptions } from '../../lib/connection-options'
 import type { GetJobLogsHandlerInput, GetJobLogsHandlerOutput } from '@durabull/mcp'
-import { McpToolError, decodeCursor, encodeCursor, requireConnectionForPrincipal } from './shared'
+import { toRedisConnectionOptions } from '../../lib/connection-options'
+import { getQueue } from '../../lib/redis'
+import { decodeCursor, encodeCursor, McpToolError, requireConnectionForPrincipal } from './shared'
 
 interface GetJobLogsHandlerDeps {
   getQueue: typeof getQueue

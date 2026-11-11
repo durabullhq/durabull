@@ -54,9 +54,10 @@ export function planStatus(plan: EnabledEntitlement, today = new Date()): PlanSt
   if (plan.suspended.length > 0) {
     const count = plan.suspended.length
     return {
-      // Keyed by what is paused, so a later, different pause is announced again.
+      // Keyed by what is paused and when each pause began, so a later pause
+      // is announced again, even of a resource whose earlier pause was dismissed.
       id: `paused:${plan.suspended
-        .map((item) => item.id)
+        .map((item) => `${item.id}@${item.since}`)
         .sort()
         .join(',')}`,
       tone: 'warning',

@@ -5,8 +5,8 @@ import {
   getTelemetryQueueDropTotalsForTests,
   resetTelemetryQueueDropTotalsForTests,
 } from '../../lib/telemetry-queue-metrics'
-import { enqueueMcpAnalytics, resetMcpAnalyticsQueueForTests } from './mcp-analytics-queue'
 import type { McpAnalyticsInput } from './mcp-analytics'
+import { enqueueMcpAnalytics, resetMcpAnalyticsQueueForTests } from './mcp-analytics-queue'
 
 const originalInfo = console.info
 const originalWarn = console.warn

@@ -167,8 +167,10 @@ const app = new Hono()
     if (!isBillingEnabled()) {
       return c.json({ enabled: false as const, planCode: 'self_hosted' as const })
     }
-    const [entitlement, usage, subscription, suspensions, membership] = await Promise.all([
-      getEntitlement(organizationId),
+    // Resolved first: a stale entitlement is materialized here, which can
+    // pause or restore resources, so usage and pauses are read afterwards.
+    const entitlement = await getEntitlement(organizationId)
+    const [usage, subscription, suspensions, membership] = await Promise.all([
       billingRepository.getUsage(organizationId),
       billingRepository.findCurrentSubscription(organizationId),
       billingRepository.listSuspensions(organizationId),
@@ -188,7 +190,11 @@ const app = new Hono()
       usage,
       // Unenforced organizations have no paused resources to explain.
       suspended: entitlement.enforced
-        ? suspensions.map((s) => ({ kind: s.resourceKind, id: s.resourceId }))
+        ? suspensions.map((s) => ({
+            kind: s.resourceKind,
+            id: s.resourceId,
+            since: s.createdAt.toISOString(),
+          }))
         : [],
       subscription: serializeSubscription(subscription),
       graceExpiresAt: serializeDate(entitlement.graceExpiresAt),
@@ -253,25 +259,18 @@ const app = new Hono()
       })
     }
 
-    const [
-      entitlement,
-      usage,
-      subscription,
-      account,
-      openAttempt,
-      suspensions,
-      membership,
-      candidates,
-    ] = await Promise.all([
-      getEntitlement(organizationId),
-      billingRepository.getUsage(organizationId),
-      billingRepository.findCurrentSubscription(organizationId),
-      billingRepository.findAccount(organizationId),
-      billingRepository.findOpenCheckoutAttempt(organizationId),
-      billingRepository.listSuspensions(organizationId),
-      user ? billingRepository.findMembership(organizationId, user.id) : null,
-      billingRepository.listCapacityCandidates(organizationId),
-    ])
+    // Resolved first, as above: materialization can change usage and pauses.
+    const entitlement = await getEntitlement(organizationId)
+    const [usage, subscription, account, openAttempt, suspensions, membership, candidates] =
+      await Promise.all([
+        billingRepository.getUsage(organizationId),
+        billingRepository.findCurrentSubscription(organizationId),
+        billingRepository.findAccount(organizationId),
+        billingRepository.findOpenCheckoutAttempt(organizationId),
+        billingRepository.listSuspensions(organizationId),
+        user ? billingRepository.findMembership(organizationId, user.id) : null,
+        billingRepository.listCapacityCandidates(organizationId),
+      ])
 
     // Only the founding owner is never paused; other owners count like any member.
     const foundingOwnerId = findFoundingOwnerId(candidates.members)

@@ -62,7 +62,7 @@ function scenarioOverview() {
         ...free,
         usage: { ...billingOverview.usage, 'connections.enabled': 1 },
         overLimit: [],
-        suspended: [{ kind: 'connection', id: 'demo-staging' }],
+        suspended: [{ kind: 'connection', id: 'demo-staging', since: '2026-11-01T00:00:00Z' }],
         allocation: {
           'connections.enabled': [
             {

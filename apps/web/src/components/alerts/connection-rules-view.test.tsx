@@ -260,6 +260,14 @@ describe('ConnectionRulesView', () => {
     expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
   })
 
+  it('does not offer to create rules on a paused connection with none', () => {
+    connectionState.current = { ...connectionState.current, suspended: true }
+    useConnectionAlertRulesMock.mockReturnValue({ isLoading: false, data: { rules: [] } })
+    render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
+    expect(screen.getByText('No alert rules on this connection')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /scratch/i })).not.toBeInTheDocument()
+  })
+
   it('does not open the rule editor for a paused connection', async () => {
     connectionState.current = { ...connectionState.current, suspended: true }
     const user = userEvent.setup()

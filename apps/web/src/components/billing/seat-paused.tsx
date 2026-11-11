@@ -1,5 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { PauseCircle } from 'lucide-react'
+import { useState } from 'react'
+import { CreateOrganizationDialog } from '@/components/organization-selector'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 
@@ -17,6 +19,9 @@ export function SeatPaused({
   /** The member's other organizations; switching to one leaves this page. */
   otherOrganizations: Array<{ id: string; name: string; slug: string }>
 }) {
+  // The setup page sends existing members back to their first organization,
+  // which is this one, so creating a new organization happens in place.
+  const [creating, setCreating] = useState(false)
   return (
     <div className="mx-auto max-w-2xl px-4 py-10" data-testid="seat-paused">
       <EmptyState
@@ -41,12 +46,13 @@ export function SeatPaused({
               </Button>
             ))
           ) : (
-            <Button asChild variant="outline" size="sm">
-              <Link to="/setup-organization">Create your own organization</Link>
+            <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+              Create your own organization
             </Button>
           )
         }
       />
+      <CreateOrganizationDialog open={creating} onOpenChange={setCreating} />
     </div>
   )
 }

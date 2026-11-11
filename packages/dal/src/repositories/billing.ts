@@ -564,6 +564,19 @@ export const billingRepository = {
             durabull_plan_limit(${s.organizationId}, ${limitKey}) IS NULL
             OR durabull_capacity_usage(${s.organizationId}, ${limitKey})
                < durabull_plan_limit(${s.organizationId}, ${limitKey})
+          )`,
+          // A rule paused with its connection only returns with the
+          // connection, which this query finds through the connection's own
+          // pause; spare rule capacity alone cannot bring it back.
+          sql`NOT (
+            ${s.resourceKind} = 'alert_rule' AND EXISTS (
+              SELECT 1
+                FROM alert_rule r
+                JOIN billing_resource_suspension cs
+                  ON cs.resource_kind = 'connection'
+                 AND cs.resource_id = r.connection_id::text
+               WHERE r.id::text = ${s.resourceId}
+            )
           )`
         )
       )
@@ -1065,6 +1078,56 @@ export const billingRepository = {
       removed += rows.length
     }
     return removed
+  },
+
+  /**
+   * Lift pauses one at a time, each only while its limit still has room.
+   * Runs under the per-organization capacity lock the capacity triggers take,
+   * so a create cannot claim a freed slot between the check and the restore,
+   * and two resources can never be restored into one slot. `allowed` is the
+   * limit being applied (it may not be stored yet during materialization);
+   * null means the plan does not cap the resource. Returns what was restored.
+   */
+  async restoreWithinLimits(
+    organizationId: string,
+    items: Array<{
+      kind: BillingResourceKind
+      resourceId: string
+      limit: string
+      allowed: number | null
+    }>
+  ): Promise<Array<{ kind: BillingResourceKind; resourceId: string }>> {
+    if (items.length === 0) return []
+    const db = await getDb()
+    return db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`durabull_capacity:${organizationId}`}, 0))`
+      )
+      const restored: Array<{ kind: BillingResourceKind; resourceId: string }> = []
+      for (const item of items) {
+        if (item.allowed !== null) {
+          const result = await tx.execute(
+            sql`SELECT durabull_capacity_usage(${organizationId}, ${item.limit}) AS used`
+          )
+          // node-postgres and PGlite both return { rows }.
+          const rows = (result as unknown as { rows?: Array<{ used?: unknown }> }).rows ?? []
+          const used = Number(rows[0]?.used ?? 0)
+          if (used >= item.allowed) continue
+        }
+        const deleted = await tx
+          .delete(billingResourceSuspension)
+          .where(
+            and(
+              eq(billingResourceSuspension.organizationId, organizationId),
+              eq(billingResourceSuspension.resourceKind, item.kind),
+              eq(billingResourceSuspension.resourceId, item.resourceId)
+            )
+          )
+          .returning({ id: billingResourceSuspension.id })
+        if (deleted.length > 0) restored.push({ kind: item.kind, resourceId: item.resourceId })
+      }
+      return restored
+    })
   },
 
   // ---------------------------------------------------------------------------

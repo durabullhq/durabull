@@ -1,6 +1,6 @@
 export {
   allowsInternalConnections,
+  type RedisUrlValidationResult,
   validateRedisUrl,
   validateRedisUrlForEnvironment,
-  type RedisUrlValidationResult,
 } from '@durabull/dal'

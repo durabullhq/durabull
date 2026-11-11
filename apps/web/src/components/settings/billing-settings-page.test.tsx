@@ -450,6 +450,25 @@ describe('BillingSettingsPage', () => {
     expect(screen.queryByText('Purchase complete')).not.toBeInTheDocument()
   })
 
+  it('retries the same checkout when the owner checks again', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/acme/settings/billing?checkout=success&session_id=cs_test_3'
+    )
+    confirmMock.mockResolvedValueOnce({ status: 'open' })
+    useBillingMock.mockReturnValue({ data: overview(), isLoading: false })
+    render(<BillingSettingsPage />)
+    await waitFor(() =>
+      expect(screen.getByText('We could not confirm the purchase yet')).toBeInTheDocument()
+    )
+    confirmMock.mockResolvedValueOnce({ status: 'complete' })
+    await userEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(screen.getByText('Purchase complete')).toBeInTheDocument())
+    expect(confirmMock).toHaveBeenLastCalledWith('cs_test_3')
+    expect(screen.queryByText('We could not confirm the purchase yet')).not.toBeInTheDocument()
+  })
+
   it('reconciles plan changes when the owner returns from the hosted Portal', () => {
     window.history.replaceState(null, '', '/acme/settings/billing?portal=returned')
     refreshMock.mockResolvedValue({ planCode: 'business' })

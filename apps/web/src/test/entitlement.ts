@@ -55,7 +55,7 @@ export function setTestEntitlement(options: {
     features: [...definition.features],
     limits: definition.limits,
     usage,
-    suspended: paused,
+    suspended: paused.map((item) => ({ ...item, since: '2026-11-01T00:00:00.000Z' })),
     subscription: null,
     graceExpiresAt: null,
     capacityAdjustmentExpiresAt: null,

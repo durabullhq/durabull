@@ -171,14 +171,19 @@ export async function allocateCapacity(
 ): Promise<AllocationResult> {
   const { plans, suspended, orphans } = await buildPlans(organizationId, options.preferences ?? {})
   const toSuspend: Array<{ kind: BillingResourceKind; resourceId: string }> = []
-  const toRestore: Array<{ kind: BillingResourceKind; resourceId: string }> = []
+  const toRestore: Array<{
+    kind: BillingResourceKind
+    resourceId: string
+    limit: CapacityLimitKey
+  }> = []
 
   // Connections are decided first, so the rule allowance goes to rules on
   // connections that end up active.
   const connectionsAllocated = !options.only || options.only.includes('connections.enabled')
   let pausedConnections: Set<string> | null = null
-  // Connections that fit the limit, whether or not this run pauses the rest.
-  let fittingConnections: Set<string> | null = null
+  // Enabled connections above the limit, whether or not this run pauses them
+  // (they may still be in their adjustment window).
+  let excessConnections: Set<string> | null = null
   for (const plan of plans) {
     const allocates = !options.only || options.only.includes(plan.limit)
     let candidates = plan.candidates
@@ -212,13 +217,16 @@ export async function allocateCapacity(
         // never brought back.
         candidates = candidates.filter((c) => !stranded(c) || !suspended.has(c.id))
       }
-      if (fittingConnections && !options.preferences?.[plan.limit]) {
+      if (excessConnections && !options.restoreOnly && !options.preferences?.[plan.limit]) {
         // While excess connections are still in their adjustment window,
-        // prefer rules on the connections that will remain.
-        const fitting = fittingConnections
+        // prefer rules on the connections that will remain. Only rules on
+        // those excess connections lose preference: a rule on a connection the
+        // customer disabled still counts and keeps its place. A restore never
+        // reorders, so it cannot rank a paused rule above an active one.
+        const excess = excessConnections
         candidates = candidates.map((c) => ({
           ...c,
-          preferred: Boolean(c.preferred) && (!c.connectionId || fitting.has(c.connectionId)),
+          preferred: Boolean(c.preferred) && !(c.connectionId && excess.has(c.connectionId)),
         }))
       }
     }
@@ -238,13 +246,13 @@ export async function allocateCapacity(
     }
     for (const candidate of candidates) {
       const target = { kind: candidate.kind, resourceId: candidate.resourceId }
-      if (planRestore.has(candidate.id)) toRestore.push(target)
+      if (planRestore.has(candidate.id)) toRestore.push({ ...target, limit: plan.limit })
       if (planSuspend.has(candidate.id)) toSuspend.push(target)
     }
 
     if (plan.limit === 'connections.enabled') {
-      fittingConnections = new Set(
-        candidates.filter((c) => keep.has(c.id)).map((c) => c.resourceId)
+      excessConnections = new Set(
+        candidates.filter((c) => !keep.has(c.id)).map((c) => c.resourceId)
       )
       // Paused by the plan once this run is applied; a disabled connection is
       // not a candidate and so is never in this set.
@@ -257,10 +265,16 @@ export async function allocateCapacity(
   }
 
   if (orphans.length > 0) await billingRepository.unsuspend(organizationId, orphans)
-  if (toRestore.length > 0) await billingRepository.unsuspend(organizationId, toRestore)
+  // Pausing first frees the room a swap needs; each restore is then checked
+  // against the live count under the capacity lock, so a create racing this
+  // run, or a stale decision, can never push usage above the limit.
   if (toSuspend.length > 0)
     await billingRepository.suspend(organizationId, toSuspend, options.reason)
-  return { suspended: toSuspend, restored: toRestore }
+  const restored = await billingRepository.restoreWithinLimits(
+    organizationId,
+    toRestore.map((item) => ({ ...item, allowed: limits[item.limit] }))
+  )
+  return { suspended: toSuspend, restored }
 }
 
 /** Lift every suspension (billing disabled, enforcement off, or unlimited grant). */

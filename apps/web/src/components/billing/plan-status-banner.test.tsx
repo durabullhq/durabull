@@ -6,6 +6,8 @@ import { PlanStatusBanner } from '@/components/billing/plan-status-banner'
 import type { EnabledEntitlement } from '@/hooks/use-entitlement'
 import { setTestEntitlement, testEntitlement } from '@/test/entitlement'
 
+const SINCE = '2026-11-01T00:00:00.000Z'
+
 const { activeState } = vi.hoisted(() => ({ activeState: { slug: 'acme' } }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -46,7 +48,7 @@ describe('planStatus', () => {
         source: 'payment_grace',
         graceExpiresAt: '2026-12-01T00:00:00.000Z',
         subscription: { ...SUBSCRIPTION, status: 'past_due' },
-        suspended: [{ kind: 'connection', id: 'c1' }],
+        suspended: [{ kind: 'connection', id: 'c1', since: SINCE }],
         capacityAdjustmentExpiresAt: '2026-12-05T00:00:00.000Z',
       })
     )
@@ -79,8 +81,8 @@ describe('planStatus', () => {
 
   it('tells everyone about paused resources, with the owner’s options or who to ask', () => {
     const suspended = [
-      { kind: 'connection' as const, id: 'c1' },
-      { kind: 'alert_rule' as const, id: 'r1' },
+      { kind: 'connection' as const, id: 'c1', since: SINCE },
+      { kind: 'alert_rule' as const, id: 'r1', since: SINCE },
     ]
     const owner = planStatus(plan({ suspended }))
     expect(owner?.title).toBe('2 resources are paused by your plan')
@@ -91,9 +93,19 @@ describe('planStatus', () => {
     expect(member?.body).toContain('Your organization owner can restore them')
   })
 
+  it('announces a resource paused again after an earlier pause was dismissed', () => {
+    const first = planStatus(plan({ suspended: [{ kind: 'connection', id: 'c1', since: SINCE }] }))
+    const later = planStatus(
+      plan({
+        suspended: [{ kind: 'connection', id: 'c1', since: '2026-12-01T00:00:00.000Z' }],
+      })
+    )
+    expect(first?.id).not.toBe(later?.id)
+  })
+
   it('announces a different set of paused resources again', () => {
-    const first = planStatus(plan({ suspended: [{ kind: 'connection', id: 'c1' }] }))
-    const second = planStatus(plan({ suspended: [{ kind: 'connection', id: 'c2' }] }))
+    const first = planStatus(plan({ suspended: [{ kind: 'connection', id: 'c1', since: SINCE }] }))
+    const second = planStatus(plan({ suspended: [{ kind: 'connection', id: 'c2', since: SINCE }] }))
     expect(first?.id).not.toBe(second?.id)
   })
 
@@ -127,7 +139,7 @@ describe('PlanStatusBanner', () => {
   })
 
   it('waits until the active organization matches the route', () => {
-    plan({ suspended: [{ kind: 'connection', id: 'c1' }] })
+    plan({ suspended: [{ kind: 'connection', id: 'c1', since: SINCE }] })
     activeState.slug = 'globex'
     const { rerender } = render(<PlanStatusBanner orgSlug="acme" />)
     expect(screen.queryByTestId('plan-status-banner')).not.toBeInTheDocument()
@@ -137,19 +149,19 @@ describe('PlanStatusBanner', () => {
   })
 
   it('gives the owner the action and other members a way to see details', () => {
-    plan({ suspended: [{ kind: 'connection', id: 'c1' }] })
+    plan({ suspended: [{ kind: 'connection', id: 'c1', since: SINCE }] })
     const { unmount } = render(<PlanStatusBanner orgSlug="acme" />)
     expect(screen.getByRole('link', { name: 'Review' })).toBeInTheDocument()
     unmount()
 
-    plan({ suspended: [{ kind: 'connection', id: 'c1' }] }, false)
+    plan({ suspended: [{ kind: 'connection', id: 'c1', since: SINCE }] }, false)
     render(<PlanStatusBanner orgSlug="acme" />)
     expect(screen.getByRole('link', { name: 'See details' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Review' })).not.toBeInTheDocument()
   })
 
   it('stays dismissed for the same occurrence and returns for a new one', async () => {
-    plan({ suspended: [{ kind: 'connection', id: 'c1' }] })
+    plan({ suspended: [{ kind: 'connection', id: 'c1', since: SINCE }] })
     const { unmount } = render(<PlanStatusBanner orgSlug="acme" />)
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByTestId('plan-status-banner')).not.toBeInTheDocument()
@@ -159,7 +171,7 @@ describe('PlanStatusBanner', () => {
     expect(screen.queryByTestId('plan-status-banner')).not.toBeInTheDocument()
     again.unmount()
 
-    plan({ suspended: [{ kind: 'connection', id: 'c2' }] })
+    plan({ suspended: [{ kind: 'connection', id: 'c2', since: SINCE }] })
     render(<PlanStatusBanner orgSlug="acme" />)
     expect(screen.getByTestId('plan-status-banner')).toBeInTheDocument()
   })

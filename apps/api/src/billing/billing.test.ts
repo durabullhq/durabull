@@ -1003,6 +1003,9 @@ describe('Cloud billing', () => {
     expect(await suspendedIdsOf('alert_rule')).toHaveLength(2)
     const usage = await billingRepository.getUsage(AUTHLESS_ORG_ID)
     expect(usage['alerts.enabled']).toBe(1)
+    // Spare rule allowance cannot bring these back while their connection is
+    // paused, and the connection has no room, so the sweep skips this org.
+    expect(await billingRepository.listOrganizationsWithRestorableSuspensions()).toEqual([])
 
     // The paused connection still lists its rules (flagged) and lets them go.
     const queues = await app.request(`/api/c/${second.id}/queues`)
@@ -1143,6 +1146,67 @@ describe('Cloud billing', () => {
     expect(await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).toEqual([])
     const entitlement = await json(await app.request('/api/billing/entitlement'))
     expect(entitlement.suspended).toEqual([])
+  })
+
+  it('restores a paused resource only while its limit still has room', async () => {
+    const app = await createApp()
+    const { second } = await downgradeWithTwoConnections(app)
+    const item = {
+      kind: 'connection' as const,
+      resourceId: second.id,
+      limit: 'connections.enabled',
+    }
+    // A decision made on stale state (or racing a create) cannot overfill the plan.
+    expect(
+      await billingRepository.restoreWithinLimits(AUTHLESS_ORG_ID, [{ ...item, allowed: 1 }])
+    ).toEqual([])
+    expect(await suspendedIdsOf('connection')).toEqual([second.id])
+    expect(
+      await billingRepository.restoreWithinLimits(AUTHLESS_ORG_ID, [{ ...item, allowed: 2 }])
+    ).toEqual([{ kind: 'connection', resourceId: second.id }])
+    expect(await suspendedIdsOf('connection')).toEqual([])
+  })
+
+  it('never restores a paused rule above active ones when a connection is disabled', async () => {
+    const app = await createApp()
+    await subscribe(AUTHLESS_ORG_ID)
+    const active = (await json(await createConnection(app, 'active'))).connection
+    const other = (await json(await createConnection(app, 'other'))).connection
+    const db = await getDb()
+    const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000)
+    const rule = (connectionId: string, name: string, minutesAgo: number) => ({
+      organizationId: AUTHLESS_ORG_ID,
+      connectionId,
+      name,
+      type: 'job_failed' as const,
+      config: {},
+      createdAt: at(minutesAgo),
+    })
+    const [oldest] = await db
+      .insert(alertRule)
+      .values([
+        rule(active.id, 'oldest', 40),
+        rule(other.id, 'on-other-1', 30),
+        rule(other.id, 'on-other-2', 20),
+        rule(active.id, 'newest', 10),
+      ])
+      .returning()
+    // Team covers both connections and all four rules; Free allows one and three.
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    // The owner kept the newer rules and paused the oldest one.
+    await billingRepository.unsuspend(AUTHLESS_ORG_ID)
+    await billingRepository.suspend(
+      AUTHLESS_ORG_ID,
+      [{ kind: 'alert_rule', resourceId: oldest!.id }],
+      'test'
+    )
+    await db.update(redisConnection).set({ enabled: false }).where(eq(redisConnection.id, other.id))
+    invalidateEntitlementCache()
+
+    // Rules on the disabled connection still count, so there is no room.
+    await rebalanceCapacity(AUTHLESS_ORG_ID)
+    expect(await suspendedIdsOf('alert_rule')).toEqual([oldest!.id])
+    expect((await billingRepository.getUsage(AUTHLESS_ORG_ID))['alerts.enabled']).toBe(3)
   })
 
   it('lets rules follow connections chosen in the same allocation', async () => {

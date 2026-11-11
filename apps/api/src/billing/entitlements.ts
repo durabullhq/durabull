@@ -133,6 +133,20 @@ function deadlinePassed(row: OrganizationEntitlement, now: Date): boolean {
  * has passed, so time-based transitions never depend on a background sweep.
  * Stripe is never called on the request path.
  */
+/** The stored entitlement exists and is current; otherwise it must be recomputed before use. */
+function isCurrent(
+  row: OrganizationEntitlement | null,
+  enforced: boolean,
+  now: Date
+): row is OrganizationEntitlement {
+  return (
+    row !== null &&
+    row.catalogVersion === BILLING_CATALOG_VERSION &&
+    row.enforced === enforced &&
+    !deadlinePassed(row, now)
+  )
+}
+
 export async function getEntitlement(
   organizationId: string,
   options: { fresh?: boolean } = {}
@@ -145,12 +159,7 @@ export async function getEntitlement(
 
   let row = await billingRepository.findEntitlement(organizationId)
   const enforced = isEnforcedFor(organizationId)
-  if (
-    !row ||
-    row.catalogVersion !== BILLING_CATALOG_VERSION ||
-    row.enforced !== enforced ||
-    deadlinePassed(row, new Date(now))
-  ) {
+  if (!isCurrent(row, enforced, new Date(now))) {
     row = await materializeEntitlement(organizationId, { reason: 'request' })
   }
   const value = toEffective(row, enforced)
@@ -542,11 +551,20 @@ export async function rebalanceCapacity(organizationId: string): Promise<number>
   if (!isBillingEnabled() || !isEnforcedFor(organizationId)) return 0
   try {
     if ((await billingRepository.listSuspensions(organizationId)).length === 0) return 0
-    // Resolved before taking the lock: a stale snapshot re-materializes under it.
-    const entitlement = await getEntitlement(organizationId, { fresh: true })
-    const result = await billingRepository.withOrganizationLock(organizationId, () =>
-      allocateCapacity(organizationId, entitlement.limits, { reason: 'restore', restoreOnly: true })
-    )
+    const result = await billingRepository.withOrganizationLock(organizationId, async () => {
+      // Read the limits under the lock, so a downgrade materialized in the
+      // meantime is the one applied. A stale row is recomputed here, which
+      // also runs its own restore pass.
+      const enforced = isEnforcedFor(organizationId)
+      let row = await billingRepository.findEntitlement(organizationId)
+      if (!isCurrent(row, enforced, new Date())) {
+        row = await materializeEntitlementLocked(organizationId, { reason: 'restore' })
+      }
+      return allocateCapacity(organizationId, toEffective(row, enforced).limits, {
+        reason: 'restore',
+        restoreOnly: true,
+      })
+    })
     if (result.restored.length > 0) {
       console.log(
         `[billing] Restored ${result.restored.length} paused resource(s) for organization ${organizationId}`

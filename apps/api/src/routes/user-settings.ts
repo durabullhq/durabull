@@ -1,5 +1,5 @@
+import { type Theme, userSettingsRepository } from '@durabull/dal'
 import { zValidator } from '@hono/zod-validator'
-import { userSettingsRepository, type Theme } from '@durabull/dal'
 import { Hono } from 'hono'
 import { z } from 'zod'
 

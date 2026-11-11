@@ -2,11 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resetServerAnalyticsForTests } from '@durabull/analytics/server'
 import { closeDb } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { Hono } from 'hono'
-
-import { resetServerAnalyticsForTests } from '@durabull/analytics/server'
 import {
   bootstrapServerAnalytics,
   resetCachedAnonymousInstanceIdForTests,

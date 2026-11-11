@@ -30,6 +30,8 @@ vi.mock('@/lib/api', async () => {
 import { useEntitlement } from '@/hooks/use-entitlement'
 import { ApiError } from '@/lib/api'
 
+const SINCE = '2026-11-01T00:00:00.000Z'
+
 function wrapper({ children }: PropsWithChildren) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -54,7 +56,7 @@ const FREE_PLAN = {
     'history.redis_health_days': 1,
   },
   usage: { 'connections.enabled': 1, 'members.reserved': 1 },
-  suspended: [{ kind: 'connection', id: 'c2' }],
+  suspended: [{ kind: 'connection', id: 'c2', since: SINCE }],
   subscription: null,
   graceExpiresAt: null,
   capacityAdjustmentExpiresAt: null,

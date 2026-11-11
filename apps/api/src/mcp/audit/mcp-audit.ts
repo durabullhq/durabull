@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto'
 import { mcpPolicyRepository } from '@durabull/dal'
 
 import {
-  mcpAnalyticsContext,
   type McpAnalyticsContext,
+  mcpAnalyticsContext,
 } from '../observability/mcp-analytics-context'
 import { recordMcpTelemetry } from '../observability/mcp-telemetry'
 
