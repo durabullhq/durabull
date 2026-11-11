@@ -177,7 +177,7 @@ async function signUpUser(page: Page, input: { email: string; password: string; 
   await page.getByLabel('Name').fill(input.name)
   await page.getByLabel('Email').fill(input.email)
   await page.getByLabel('Password', { exact: true }).fill(input.password)
-  await page.getByLabel('Confirm Password', { exact: true }).fill(input.password)
+  await page.getByLabel('Confirm password', { exact: true }).fill(input.password)
   await page.getByRole('button', { name: 'Create Account' }).click()
   await page.waitForURL(/\/setup-organization/, { timeout: 20000 })
 }

@@ -12,6 +12,7 @@ import { type Context, Hono } from 'hono'
 import { z } from 'zod'
 import { requireFeature } from '../billing/entitlements'
 import { sanitizeAlertDeliveryForClient } from '../lib/alert-webhook-channels'
+import { withVisibleActor } from '../lib/authless'
 import {
   exchangeLinearOauthCode,
   fetchLinearMetadata,
@@ -150,7 +151,7 @@ const app = new Hono()
       return c.json({ error: 'Only unacknowledged firing events can be acknowledged.' }, 409)
     }
 
-    return c.json({ event: { ...event, acknowledgedByName: user.name } })
+    return c.json({ event: withVisibleActor({ ...event, acknowledgedByName: user.name }) })
   })
   .delete('/events/:eventId/acknowledge', async (c) => {
     const { eventId } = c.req.param()
@@ -423,7 +424,7 @@ async function revokeLinearIntegrationTokens(
 async function attachDeliveries<T extends { id: string }>(events: T[]) {
   return Promise.all(
     events.map(async (event) => ({
-      ...event,
+      ...withVisibleActor(event),
       deliveries: (await alertDeliveryRepository.listByEvent(event.id)).map((delivery) =>
         sanitizeAlertDeliveryForClient(delivery)
       ),

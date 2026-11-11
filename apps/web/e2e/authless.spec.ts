@@ -72,7 +72,10 @@ test.describe('Authless Mode', () => {
     await expect(
       page.getByRole('heading', { name: 'Connections', exact: true, level: 1 })
     ).toBeVisible()
-    await expect(page.getByRole('heading', { name: firstConnection.name })).toBeVisible()
+    // Connections are rows of one table; each row keeps the `connection-card-<id>` test id.
+    await expect(page.getByTestId(`connection-card-${firstConnection.id}`)).toContainText(
+      firstConnection.name
+    )
 
     await expect(page.getByTestId('add-connection-button')).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Team' })).toHaveCount(0)
@@ -96,7 +99,7 @@ test.describe('Authless Mode', () => {
 
     await page.getByRole('link', { name: 'KV Explorer' }).click()
     await expect(
-      page.getByRole('heading', { name: 'Redis Explorer', exact: true, level: 1 })
+      page.getByRole('heading', { name: 'KV Explorer', exact: true, level: 1 })
     ).toBeVisible()
   })
 })

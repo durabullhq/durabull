@@ -1,15 +1,19 @@
 import { organization } from '@durabull/auth/client'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
-import { AlertCircle, Building2, Check, Loader2, LogOut, Mail, Plus, X } from 'lucide-react'
+import { Check, Loader2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { DurabullLogo, DurabullWordmark } from '@/components/durabull-logo'
-import { ElectronTitleBarDragStrip } from '@/components/electron-title-bar-drag-strip'
+import {
+  AuthAccountFooter,
+  AuthDivider,
+  AuthError,
+  AuthField,
+  AuthHeader,
+  AuthLayout,
+  AuthLoading,
+} from '@/components/auth-layout'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/hooks/use-auth'
 import {
   organizationKeys,
@@ -22,6 +26,7 @@ import {
   useSetActiveOrganization,
 } from '@/hooks/use-organization'
 import { api, type InferResponseType } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 type AppConfigResponse = InferResponseType<(typeof api.app.config)['$get'], 200>
 
@@ -156,14 +161,7 @@ function SetupOrganizationPage() {
   }
 
   if (sessionLoading || orgsLoading || invitationsLoading) {
-    return (
-      <div className="flex min-h-screen flex-col bg-background">
-        <ElectronTitleBarDragStrip />
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </div>
-    )
+    return <AuthLoading />
   }
 
   const handleCreateOrganization = async (e: React.FormEvent) => {
@@ -247,177 +245,163 @@ function SetupOrganizationPage() {
 
   const hasInvitations = invitations && invitations.length > 0
 
+  const slugTooShort = formData.slug.length > 0 && formData.slug.length < 3
+
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <ElectronTitleBarDragStrip />
-      <div className="flex flex-1 flex-col items-center justify-center p-4">
-        {/* Subtle background pattern */}
-        <div className="fixed inset-0 -z-10 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(120,119,198,0.15),transparent)]" />
+    <AuthLayout
+      footer={
+        <AuthAccountFooter
+          email={user?.email}
+          onSignOut={() => signOut().then(() => navigate({ to: '/login' }))}
+        />
+      }
+    >
+      <AuthHeader
+        title="Set up your organization"
+        description={
+          hasInvitations
+            ? 'Join an organization you were invited to, or create a new one.'
+            : 'An organization holds your Redis connections, alert rules, and teammates.'
+        }
+      />
 
-        <Card className="w-full max-w-lg border-border bg-card p-8">
-          {/* Logo */}
-          <div className="mb-8 flex flex-col items-center">
-            <div className="flex items-center gap-2">
-              <DurabullLogo className="h-10 w-10 text-primary" />
-              <DurabullWordmark className="h-6" />
-            </div>
-            <h1 className="mt-4 text-2xl font-bold text-foreground">Set Up Your Organization</h1>
-            <p className="mt-2 text-center text-sm text-muted-foreground">
-              {user?.name ? `Welcome, ${user.name}!` : 'Welcome!'} Create or join an organization to
-              get started.
-            </p>
-          </div>
-
-          {/* Pending Invitations */}
-          {hasInvitations && (
-            <>
-              <div className="mb-6">
-                <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-foreground">
-                  <Mail className="h-5 w-5" />
-                  Pending Invitations
-                </h2>
-                <div className="space-y-3">
-                  {invitations.map((invitation) => (
-                    <div
-                      key={invitation.id}
-                      className="flex items-center justify-between rounded-lg border border-border bg-muted/50 p-4"
-                    >
-                      <div>
-                        <p className="font-medium text-foreground">Organization Invitation</p>
-                        <p className="text-sm text-muted-foreground">
-                          Invited as {invitation.role}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleRejectInvitation(invitation.id)}
-                          disabled={rejectInvitation.isPending}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleAcceptInvitation(invitation.id)}
-                          disabled={acceptInvitation.isPending}
-                        >
-                          <Check className="h-4 w-4 mr-1" />
-                          Accept
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="relative my-6">
-                <Separator />
-                <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
-                  OR
-                </span>
-              </div>
-            </>
-          )}
-
-          {/* Create Organization Form */}
-          <div>
-            <h2 className="mb-3 flex items-center gap-2 text-lg font-semibold text-foreground">
-              <Building2 className="h-5 w-5" />
-              Create New Organization
+      {/* Pending Invitations */}
+      {hasInvitations && (
+        <>
+          <section aria-labelledby="pending-invitations-heading">
+            <h2 id="pending-invitations-heading" className="eyebrow mb-1.5">
+              Pending invitations
             </h2>
+            <ul className="divide-y rounded-lg border">
+              {invitations.map((invitation) => {
+                const organizationName = (invitation as { organizationName?: string })
+                  .organizationName
 
-            <form onSubmit={handleCreateOrganization} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Organization Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="My Company"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  disabled={createOrganization.isPending}
-                />
-              </div>
+                return (
+                  <li key={invitation.id} className="flex items-center gap-2 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] font-medium leading-5">
+                        {organizationName ?? 'Organization invitation'}
+                      </p>
+                      <p className="text-xs leading-4 text-muted-foreground">
+                        Invited as <span className="capitalize">{invitation.role}</span>
+                      </p>
+                    </div>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => handleRejectInvitation(invitation.id)}
+                      disabled={rejectInvitation.isPending}
+                    >
+                      Decline
+                    </Button>
+                    <Button
+                      size="xs"
+                      onClick={() => handleAcceptInvitation(invitation.id)}
+                      disabled={acceptInvitation.isPending}
+                    >
+                      Accept
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
 
-              <div className="space-y-2">
-                <Label htmlFor="slug">Organization URL</Label>
-                <div className="relative">
-                  <Input
-                    id="slug"
-                    type="text"
-                    placeholder="my-company"
-                    value={formData.slug}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                      })
-                    }
-                    disabled={createOrganization.isPending}
-                    className={
-                      slugAvailable === true
-                        ? 'border-status-success/30 pr-10'
-                        : slugAvailable === false
-                          ? 'border-status-danger/30 pr-10'
-                          : 'pr-10'
-                    }
-                  />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    {isCheckingSlug && (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    )}
-                    {!isCheckingSlug && slugAvailable === true && (
-                      <Check className="h-4 w-4 text-status-success" />
-                    )}
-                    {!isCheckingSlug && slugAvailable === false && (
-                      <X className="h-4 w-4 text-status-danger" />
-                    )}
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  This will be used in your organization's URL
-                </p>
-              </div>
+          <AuthDivider />
+        </>
+      )}
 
-              {error && (
-                <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                  <p className="text-sm text-destructive">{error}</p>
-                </div>
+      {/* Create Organization Form */}
+      <form onSubmit={handleCreateOrganization} className="space-y-4">
+        <AuthField id="name" label="Organization name">
+          <Input
+            id="name"
+            type="text"
+            autoComplete="organization"
+            placeholder="Acme Inc."
+            className="h-9"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            disabled={createOrganization.isPending}
+            autoFocus={!hasInvitations}
+          />
+        </AuthField>
+
+        <AuthField
+          id="slug"
+          label="URL"
+          hint={
+            <span aria-live="polite">
+              {isCheckingSlug ? (
+                'Checking availability…'
+              ) : slugAvailable === true ? (
+                <span className="text-status-success">Available.</span>
+              ) : slugAvailable === false ? (
+                <span className="text-status-danger">Already taken. Try another.</span>
+              ) : slugTooShort ? (
+                'At least 3 characters.'
+              ) : (
+                'Lowercase letters, numbers, and hyphens. Appears in every link to this organization.'
               )}
-
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={createOrganization.isPending || slugAvailable === false || isCheckingSlug}
-              >
-                {createOrganization.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="mr-2 h-4 w-4" />
-                )}
-                Create Organization
-              </Button>
-            </form>
-          </div>
-
-          {/* Logout option */}
-          <div className="mt-6 pt-6 border-t border-border">
-            <p className="text-center text-sm text-muted-foreground mb-3">
-              Signed in as {user?.email}
-            </p>
-            <Button
-              variant="ghost"
-              className="w-full text-muted-foreground hover:text-foreground"
-              onClick={() => signOut().then(() => navigate({ to: '/login' }))}
+            </span>
+          }
+        >
+          <div className="relative">
+            <span
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 font-mono text-[13px] text-faint"
+              aria-hidden
             >
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out and use a different account
-            </Button>
+              /
+            </span>
+            <Input
+              id="slug"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="acme"
+              value={formData.slug}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                })
+              }
+              disabled={createOrganization.isPending}
+              className={cn(
+                'h-9 pl-5 pr-9 font-mono',
+                slugAvailable === true && 'border-status-success/40',
+                slugAvailable === false && 'border-status-danger/50'
+              )}
+            />
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+              {isCheckingSlug && (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
+              )}
+              {!isCheckingSlug && slugAvailable === true && (
+                <Check className="h-4 w-4 text-status-success" aria-hidden />
+              )}
+              {!isCheckingSlug && slugAvailable === false && (
+                <X className="h-4 w-4 text-status-danger" aria-hidden />
+              )}
+            </div>
           </div>
-        </Card>
-      </div>
-    </div>
+        </AuthField>
+
+        {error ? <AuthError>{error}</AuthError> : null}
+
+        <Button
+          type="submit"
+          variant={hasInvitations ? 'outline' : 'default'}
+          className="h-9 w-full"
+          disabled={createOrganization.isPending || slugAvailable === false || isCheckingSlug}
+        >
+          {createOrganization.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          ) : null}
+          Create organization
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }

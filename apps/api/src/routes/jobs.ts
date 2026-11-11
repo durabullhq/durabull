@@ -133,7 +133,7 @@ const app = new Hono()
 
         if (
           (status && state !== status) ||
-          (name && !job.name.toLowerCase().includes(name.toLowerCase())) ||
+          (name && !(job.name ?? '').toLowerCase().includes(name.toLowerCase())) ||
           (dataSearch && !jobDataMatches(job.data, dataSearch))
         ) {
           return c.json({
@@ -216,7 +216,9 @@ const app = new Hono()
       }
 
       const filtered = jobsWithState
-        .filter(({ job }) => (name ? job.name.toLowerCase().includes(name.toLowerCase()) : true))
+        .filter(({ job }) =>
+          name ? (job.name ?? '').toLowerCase().includes(name.toLowerCase()) : true
+        )
         .filter(({ job }) =>
           jobId
             ? String(job.id ?? '')

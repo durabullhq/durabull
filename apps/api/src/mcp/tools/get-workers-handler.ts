@@ -1,8 +1,8 @@
 import { redisDiscoveredQueueRepository } from '@durabull/dal'
 import type { GetWorkersHandlerInput, GetWorkersHandlerOutput } from '@durabull/mcp'
-
-import { getQueue } from '../../lib/redis'
 import { toRedisConnectionOptions } from '../../lib/connection-options'
+import { getQueue } from '../../lib/redis'
+import { toRedisClientSummary } from '../../lib/redis-client-time'
 import {
   encodeWorkersCursor,
   McpToolError,
@@ -91,14 +91,7 @@ export async function getWorkersHandler(
       }
 
       const worker = sortedWorkers[index]
-      workers.push({
-        id: worker.id ?? '',
-        name: worker.name ?? '',
-        address: worker.addr ?? '',
-        ageMs: Number(worker.age ?? 0) || 0,
-        idleMs: Number(worker.idle ?? 0) || 0,
-        queueName,
-      })
+      workers.push({ ...toRedisClientSummary(worker), queueName })
     }
 
     if (!hasMore) {

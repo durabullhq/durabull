@@ -1,8 +1,8 @@
+import { trackEvent } from '@durabull/analytics/browser'
+import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { Loader2, Zap } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { JsonEditor } from '@/components/json-editor'
 import { Button } from '@/components/ui/button'
 import {
@@ -87,57 +87,43 @@ export function InvokeJobDialog({
         onOpenChange(newOpen)
       }}
     >
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Zap className="h-5 w-5" />
-            Invoke Job
-          </DialogTitle>
-          <DialogDescription>
-            Run this delayed job immediately. You can optionally modify the job payload before
-            invoking.
+          <DialogTitle>Invoke job</DialogTitle>
+          <DialogDescription className="text-[13px] leading-5">
+            Run this delayed job immediately. You can edit the payload before it runs.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Job Info (read-only reference) */}
-          <div className="rounded-lg border bg-muted/50 p-3 space-y-2">
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Job ID:</p>
-              <p className="font-mono text-sm break-all">{jobId}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Job Name:</p>
-              <p className="text-sm font-medium">{jobName}</p>
-            </div>
-          </div>
+        <div className="space-y-4">
+          {/* Read-only reference for the job being run */}
+          <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+            <dt className="text-muted-foreground">Job ID</dt>
+            <dd className="break-all font-mono text-xs leading-5">{jobId}</dd>
+            <dt className="text-muted-foreground">Name</dt>
+            <dd className="break-all font-mono text-xs leading-5">{jobName}</dd>
+          </dl>
 
-          {/* Job Data */}
-          <div className="space-y-2">
-            <Label>Job Payload (JSON)</Label>
-            <p className="text-xs text-muted-foreground">
-              Edit the payload data that will be passed to the job when it runs.
-            </p>
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">Payload (JSON)</Label>
             <JsonEditor value={jobData} onChange={handleJsonChange} minHeight="200px" />
+            <p className="text-xs text-muted-foreground">
+              Passed to the job as its data when it runs.
+            </p>
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit}>
             {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Invoking...
-              </>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-              <>
-                <Zap className="mr-2 h-4 w-4" />
-                Invoke Now
-              </>
+              <Zap className="h-4 w-4" aria-hidden="true" />
             )}
+            {isSubmitting ? 'Invoking…' : 'Invoke now'}
           </Button>
         </DialogFooter>
       </DialogContent>

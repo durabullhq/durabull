@@ -6,6 +6,8 @@ import { z } from 'zod'
 import { useConnection } from '@/components/connection-provider'
 import { NoConnectionConfigured } from '@/components/no-connection-configured'
 import { OrganizationOnboarding } from '@/components/organization-onboarding'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useOrganizations } from '@/hooks/use-organization'
 
 const onboardingSearchSchema = z.object({
@@ -69,24 +71,30 @@ function OrgIndexRoute() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Loading connections...</p>
-        </div>
+      <div
+        className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
+        aria-live="polite"
+      >
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+        <p className="text-[13px] text-muted-foreground">Loading connections…</p>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <div className="rounded-full bg-destructive/10 p-4">
-          <AlertCircle className="h-8 w-8 text-destructive" />
-        </div>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Failed to load connections</h2>
-        <p className="mt-2 max-w-md text-center text-muted-foreground">{error.message}</p>
-      </div>
+      <EmptyState
+        tone="danger"
+        icon={AlertCircle}
+        title="Connections failed to load"
+        description={error.message}
+        className="min-h-[min(420px,60vh)]"
+        actions={
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            Reload
+          </Button>
+        }
+      />
     )
   }
 

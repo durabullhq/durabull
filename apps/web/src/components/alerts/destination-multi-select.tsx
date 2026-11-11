@@ -100,27 +100,27 @@ export function DestinationMultiSelect({
       <div className="relative">
         <button
           type="button"
-          className="flex w-full items-center justify-between rounded-md border border-border/70 bg-background px-3 py-2.5 text-left text-sm"
+          className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-card px-2.5 text-left text-[13px] shadow-xs transition-colors hover:border-border-strong focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
           onClick={() => setOpen((current) => !current)}
           data-testid="destination-multi-select-trigger"
           aria-haspopup="listbox"
           aria-expanded={open}
         >
           <span className="truncate">{summaryLabel}</span>
-          <ChevronDown className="ml-3 h-4 w-4 shrink-0 text-muted-foreground" />
+          <ChevronDown className="ml-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </button>
 
         {open ? (
-          <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-md border border-border/70 bg-background shadow-lg">
+          <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 overflow-hidden rounded-lg border bg-popover shadow-lg">
             {showSearch ? (
-              <div className="border-b border-border/70 p-3">
+              <div className="border-b p-2">
                 <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search destinations"
-                    className="pl-9"
+                    className="pl-8"
                   />
                 </div>
               </div>
@@ -128,7 +128,7 @@ export function DestinationMultiSelect({
 
             <div className="max-h-72 overflow-auto p-2">
               {isLoading ? (
-                <div className="px-3 py-8 text-sm text-muted-foreground">
+                <div className="px-3 py-8 text-center text-[13px] text-muted-foreground">
                   Loading destinations...
                 </div>
               ) : groups.length > 0 ? (
@@ -174,11 +174,11 @@ export function DestinationMultiSelect({
                   )
                 })
               ) : destinations.length > 0 ? (
-                <div className="px-3 py-8 text-sm text-muted-foreground">
+                <div className="px-3 py-8 text-center text-[13px] text-muted-foreground">
                   No destinations match "{query.trim()}".
                 </div>
               ) : (
-                <div className="px-3 py-8 text-sm text-muted-foreground">
+                <div className="px-3 py-8 text-center text-[13px] text-muted-foreground">
                   No saved destinations yet. Create them under Settings → Alert destinations.
                 </div>
               )}
@@ -193,11 +193,7 @@ export function DestinationMultiSelect({
             const Icon = TYPE_META[destination.type].icon
 
             return (
-              <Badge
-                key={destination.id}
-                variant="outline"
-                className="gap-1 border-border/70 bg-background"
-              >
+              <Badge key={destination.id} variant="outline" className="gap-1 bg-card">
                 <Icon className="h-3 w-3 text-muted-foreground" />
                 {destination.name}
                 <button

@@ -3,8 +3,8 @@ import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/anal
 import { Loader2, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { JsonEditor } from '@/components/json-editor'
 import { JobOptionsFields } from '@/components/job-options-fields'
+import { JsonEditor } from '@/components/json-editor'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -22,8 +22,8 @@ import {
   createDefaultJobOptionsFormValue,
   formValueToJobOptions,
   hasJobOptionsValidationErrors,
-  validateJobOptionsFormValue,
   type JobOptionsFormValue,
+  validateJobOptionsFormValue,
 } from '@/lib/job-options'
 
 interface AddJobDialogProps {
@@ -114,33 +114,41 @@ export function AddJobDialog({ open, onOpenChange, queueName, onSuccess }: AddJo
         onOpenChange(newOpen)
       }}
     >
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Plus className="h-5 w-5" />
-            Add Job
-          </DialogTitle>
-          <DialogDescription>Create a new job and add it to this queue.</DialogDescription>
+          <DialogTitle>Add job</DialogTitle>
+          <DialogDescription className="text-[13px] leading-5">
+            Enqueue a new job on{' '}
+            <code className="break-all rounded-[4px] bg-muted px-1 py-px font-mono text-xs text-foreground">
+              {queueName}
+            </code>
+            .
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="job-name">Job Name</Label>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="job-name" className="text-[13px]">
+              Job name
+            </Label>
             <Input
               id="job-name"
               value={jobName}
               onChange={(e) => setJobName(e.target.value)}
-              placeholder="Enter job name"
+              placeholder="e.g. send-email"
+              className="font-mono"
+              autoComplete="off"
+              spellCheck={false}
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Job Data (JSON)</Label>
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">Data (JSON)</Label>
             <JsonEditor value={jobData} onChange={handleJsonChange} minHeight="180px" />
           </div>
 
-          <div className="space-y-4">
-            <Label className="text-sm font-medium">Options</Label>
+          <div className="space-y-3 border-t pt-4">
+            <h3 className="text-[13px] font-medium leading-none">Options</h3>
             <JobOptionsFields
               value={jobOptions}
               onChange={setJobOptions}
@@ -152,22 +160,17 @@ export function AddJobDialog({ open, onOpenChange, queueName, onSuccess }: AddJo
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!canSubmit}>
             {isSubmitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Adding...
-              </>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-              <>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Job
-              </>
+              <Plus className="h-4 w-4" aria-hidden="true" />
             )}
+            {isSubmitting ? 'Adding…' : 'Add job'}
           </Button>
         </DialogFooter>
       </DialogContent>

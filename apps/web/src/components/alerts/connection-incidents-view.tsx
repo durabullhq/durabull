@@ -1,17 +1,31 @@
 import { Link } from '@tanstack/react-router'
-import { BellRing, CheckCheck, CircleCheck, ShieldCheck, Siren, UserCheck } from 'lucide-react'
+import {
+  ArrowUpRight,
+  BellOff,
+  BellRing,
+  CheckCheck,
+  CircleCheck,
+  Plus,
+  ShieldAlert,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertEventsTable } from '@/components/alerts/alert-events-table'
-import { AlertsViewSwitcher } from '@/components/alerts/alerts-view-switcher'
+import { AlertsHeader } from '@/components/alerts/alerts-view-switcher'
 import { BulkResolveDialog } from '@/components/alerts/bulk-resolve-dialog'
+import {
+  eventFiltersForStatus,
+  type IncidentStatusFilter,
+  STATUS_FILTER_OPTIONS,
+} from '@/components/alerts/incident-status-filter'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PageTitle } from '@/components/page-title'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
-import { Select } from '@/components/ui/select'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Panel, PanelHeader } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  type AlertEventFilterOptions,
   useAcknowledgeAlertEvent,
   useAlertSummary,
   useConnectionAlertEvents,
@@ -19,41 +33,6 @@ import {
   useResolveAlertEvent,
 } from '@/hooks/use-alerts'
 import { cn, formatNumber } from '@/lib/utils'
-
-export type IncidentStatusFilter =
-  | 'open'
-  | 'firing'
-  | 'acknowledged'
-  | 'resolved'
-  | 'suppressed'
-  | 'all'
-
-export const STATUS_FILTER_OPTIONS: Array<{ value: IncidentStatusFilter; label: string }> = [
-  { value: 'open', label: 'Open' },
-  { value: 'firing', label: 'Firing (unacknowledged)' },
-  { value: 'acknowledged', label: 'Acknowledged' },
-  { value: 'resolved', label: 'Resolved' },
-  { value: 'suppressed', label: 'Suppressed' },
-  { value: 'all', label: 'All statuses' },
-]
-
-/** Map the UI status filter to alert event query filters. "Open" means firing incl. acknowledged. */
-export function eventFiltersForStatus(status: IncidentStatusFilter): AlertEventFilterOptions {
-  switch (status) {
-    case 'open':
-      return { status: 'firing' }
-    case 'firing':
-      return { status: 'firing', acknowledged: false }
-    case 'acknowledged':
-      return { status: 'firing', acknowledged: true }
-    case 'resolved':
-      return { status: 'resolved' }
-    case 'suppressed':
-      return { status: 'suppressed' }
-    case 'all':
-      return {}
-  }
-}
 
 export function ConnectionIncidentsView({
   orgSlug,
@@ -112,25 +91,21 @@ export function ConnectionIncidentsView({
   }, [resolvedEventsQuery.data?.events])
 
   const events = eventsQuery.data?.events ?? []
+  const rules = rulesQuery.data?.rules ?? []
+  // A rule with no destination still opens incidents here, but tells nobody.
+  const silentRuleCount = rules.filter(
+    (rule) => rule.enabled && rule.notificationChannels.length === 0
+  ).length
+  const hasOtherConnections = (summaryQuery.data?.connections.length ?? 0) > 1
 
   const topBarConfig = useMemo(
     () => ({
-      left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <BellRing className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Alerts</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            Background queue incidents, routing policy, and operator response
-          </span>
-        </div>
-      ),
+      left: <PageTitle title="Alerts" />,
       actions: (
-        <Button asChild size="xs" className="gap-2">
+        <Button asChild size="xs">
           <Link to="/$orgSlug/c/$connectionId/alerts/new" params={{ orgSlug, connectionId }}>
-            <BellRing className="h-4 w-4" />
-            Create rule
+            <Plus className="h-3.5 w-3.5" />
+            New rule
           </Link>
         </Button>
       ),
@@ -172,84 +147,150 @@ export function ConnectionIncidentsView({
     }
   }
 
+  const filterCounts: Partial<Record<IncidentStatusFilter, number>> = {
+    open: openCount,
+    firing: Math.max(openCount - acknowledgedCount, 0),
+    acknowledged: acknowledgedCount,
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <AlertsViewSwitcher orgSlug={orgSlug} connectionId={connectionId} />
-        <div className="flex items-center gap-2">
-          {openCount > 0 ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              onClick={() => {
-                setBulkResolveOpenCount((count) => count + 1)
-                setBulkResolveOpen(true)
-              }}
-            >
-              <CheckCheck className="h-4 w-4" />
-              Bulk resolve
-            </Button>
-          ) : null}
-          <Select
-            value={status}
-            onChange={(event) => onStatusChange(event.target.value as IncidentStatusFilter)}
-            className="h-9 w-[220px]"
-            aria-label="Filter incidents by status"
-          >
-            {STATUS_FILTER_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
+    <div className="space-y-4">
+      <AlertsHeader orgSlug={orgSlug} connectionId={connectionId}>
+        {hasOtherConnections ? (
+          <Button asChild variant="ghost" size="xs">
+            <Link to="/$orgSlug/alerts" params={{ orgSlug }}>
+              All connections
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        ) : null}
+      </AlertsHeader>
+
+      {silentRuleCount > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-2.5 text-[13px]">
+          <span className="flex items-center gap-2">
+            <BellOff className="h-4 w-4 shrink-0 text-status-warning" aria-hidden />
+            <span>
+              {silentRuleCount === 1
+                ? '1 active rule notifies no one.'
+                : `${formatNumber(silentRuleCount)} active rules notify no one.`}{' '}
+              <span className="text-muted-foreground">
+                Their incidents only appear on this page.
+              </span>
+            </span>
+          </span>
+          <Button asChild variant="outline" size="xs">
+            <Link to="/$orgSlug/c/$connectionId/alerts/rules" params={{ orgSlug, connectionId }}>
+              Add a destination
+            </Link>
+          </Button>
         </div>
-      </div>
+      ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <IncidentMetricCard
-          icon={Siren}
-          label="Open"
-          value={openCount}
-          tone={openCount > 0 ? 'critical' : 'good'}
-        />
-        <IncidentMetricCard
-          icon={UserCheck}
-          label="Acknowledged"
-          value={acknowledgedCount}
-          tone={acknowledgedCount > 0 ? 'warn' : 'neutral'}
-        />
-        <IncidentMetricCard
-          icon={CircleCheck}
-          label="Resolved · 24h"
-          value={resolvedLastDayCount}
-          tone={resolvedLastDayCount > 0 ? 'good' : 'neutral'}
-        />
-      </div>
+      <Panel>
+        <PanelHeader>
+          <fieldset
+            aria-label="Filter incidents by status"
+            className="-mx-1 flex flex-wrap items-center gap-0.5"
+          >
+            {STATUS_FILTER_OPTIONS.map((option) => {
+              const count = filterCounts[option.value]
+              const isActive = status === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => onStatusChange(option.value)}
+                  className={cn(
+                    'inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+                    isActive && 'bg-accent text-foreground'
+                  )}
+                >
+                  {option.shortLabel}
+                  {count !== undefined ? (
+                    <span
+                      className={cn(
+                        'font-mono text-[11px] tabular-nums',
+                        option.value === 'firing' && count > 0 ? 'text-status-danger' : 'text-faint'
+                      )}
+                    >
+                      {formatNumber(count)}
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </fieldset>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              <span className="font-mono tabular-nums text-foreground">
+                {formatNumber(resolvedLastDayCount)}
+              </span>{' '}
+              resolved in 24h
+            </span>
+            {queue ? (
+              <Badge variant="neutral" className="font-mono">
+                {queue}
+              </Badge>
+            ) : null}
+            {openCount > 0 ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                onClick={() => {
+                  setBulkResolveOpenCount((count) => count + 1)
+                  setBulkResolveOpen(true)
+                }}
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                Bulk resolve
+              </Button>
+            ) : null}
+          </div>
+        </PanelHeader>
 
-      {eventsQuery.isError ? (
-        <IncidentsErrorCard
-          message="Failed to load alert events. Retry, or refresh the page."
-          onRetry={() => void eventsQuery.refetch()}
-        />
-      ) : eventsQuery.isLoading ? (
-        <IncidentsLoadingState />
-      ) : status === 'open' && events.length === 0 ? (
-        <NoOpenIncidentsState orgSlug={orgSlug} connectionId={connectionId} />
-      ) : (
-        <AlertEventsTable
-          orgSlug={orgSlug}
-          events={events}
-          emptyTitle="No incidents match this filter"
-          emptyCopy="As alert rules evaluate in the background, firing and resolved incidents will appear here with queue-level context."
-          getRuleName={(event) => ruleNameById.get(event.alertRuleId)}
-          onResolve={(event) => handleResolveEvent(event.id)}
-          resolvingEventId={resolvingEventId}
-          onAcknowledge={(eventId) => handleAcknowledgeEvent(eventId)}
-          acknowledgingEventId={acknowledgingEventId}
-        />
-      )}
+        {eventsQuery.isError ? (
+          <EmptyState
+            size="inline"
+            icon={ShieldAlert}
+            tone="danger"
+            title="Unable to load alert data"
+            description="Failed to load alert events. Retry, or refresh the page."
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void eventsQuery.refetch()}
+              >
+                Retry
+              </Button>
+            }
+          />
+        ) : eventsQuery.isLoading ? (
+          <IncidentsLoadingState />
+        ) : status === 'open' && events.length === 0 ? (
+          <NoOpenIncidentsState
+            orgSlug={orgSlug}
+            connectionId={connectionId}
+            hasRules={rulesQuery.isLoading || rules.length > 0}
+          />
+        ) : (
+          <AlertEventsTable
+            orgSlug={orgSlug}
+            events={events}
+            emptyTitle="No incidents match this filter"
+            emptyCopy="As alert rules evaluate in the background, firing and resolved incidents will appear here with queue-level context."
+            getRuleName={(event) => ruleNameById.get(event.alertRuleId)}
+            onResolve={(event) => handleResolveEvent(event.id)}
+            resolvingEventId={resolvingEventId}
+            onAcknowledge={(eventId) => handleAcknowledgeEvent(eventId)}
+            acknowledgingEventId={acknowledgingEventId}
+          />
+        )}
+      </Panel>
 
       <BulkResolveDialog
         key={bulkResolveOpenCount}
@@ -264,22 +305,26 @@ export function ConnectionIncidentsView({
 function NoOpenIncidentsState({
   orgSlug,
   connectionId,
+  hasRules,
 }: {
   orgSlug: string
   connectionId: string
+  hasRules: boolean
 }) {
   return (
-    <Card className="border-border/70 bg-muted/15">
-      <CardContent className="flex flex-col items-center justify-center py-14 text-center">
-        <div className="rounded-full border border-status-success/25 bg-status-success/10 p-4 text-status-success">
-          <CircleCheck className="h-8 w-8" />
-        </div>
-        <h3 className="mt-5 text-xl font-semibold">No open incidents</h3>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-          Nothing is firing on this connection right now. As alert rules evaluate in the background,
-          new incidents will appear here with queue-level context.
-        </p>
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+    <EmptyState
+      size="inline"
+      className="py-16"
+      icon={hasRules ? CircleCheck : BellRing}
+      tone={hasRules ? 'success' : 'neutral'}
+      title="No open incidents"
+      description={
+        hasRules
+          ? 'Nothing is firing on this connection. Rules are evaluated in the background and new incidents appear here with queue-level context.'
+          : 'Nothing is watching this connection yet. Create a rule to open an incident when failures spike, a queue stalls, or Redis runs hot.'
+      }
+      actions={
+        <>
           <Button asChild variant="outline" size="sm">
             <Link to="/$orgSlug/c/$connectionId/alerts/rules" params={{ orgSlug, connectionId }}>
               View rules
@@ -290,71 +335,23 @@ function NoOpenIncidentsState({
               Create rule
             </Link>
           </Button>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-type MetricTone = 'neutral' | 'good' | 'warn' | 'critical'
-
-const METRIC_TONE_CLASSES: Record<MetricTone, string> = {
-  neutral: 'bg-background/75 border-border/70',
-  good: 'bg-status-success/[0.08] border-status-success/30',
-  warn: 'bg-status-warning/[0.1] border-status-warning/35',
-  critical: 'bg-destructive/10 border-destructive/30',
-}
-
-function IncidentMetricCard({
-  icon: Icon,
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  label: string
-  value: number
-  tone?: MetricTone
-}) {
-  return (
-    <Card className={cn('border shadow-sm', METRIC_TONE_CLASSES[tone])}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardDescription className="text-[11px] uppercase tracking-wide">{label}</CardDescription>
-          <Icon className="h-4 w-4 text-muted-foreground" />
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="font-mono text-2xl font-semibold tabular-nums">{formatNumber(value)}</div>
-      </CardContent>
-    </Card>
+        </>
+      }
+    />
   )
 }
 
 function IncidentsLoadingState() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/70">
-      <Skeleton className="h-10 w-full rounded-none" />
-      <div className="space-y-2 p-3">
-        {Array.from({ length: 6 }, (_, index) => (
-          <Skeleton key={index} className="h-12 rounded-lg" />
-        ))}
-      </div>
+    <div className="divide-y">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className="flex items-center gap-4 px-4 py-2.5">
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-4 flex-1" />
+          <Skeleton className="h-4 w-14" />
+        </div>
+      ))}
     </div>
-  )
-}
-
-function IncidentsErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Card className="border-destructive/30 bg-destructive/5">
-      <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-        <ShieldCheck className="h-8 w-8 text-destructive" />
-        <h3 className="mt-4 text-lg font-semibold">Unable to load alert data</h3>
-        <p className="mt-2 max-w-md text-sm text-muted-foreground">{message}</p>
-        <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>
-          Retry
-        </Button>
-      </CardContent>
-    </Card>
   )
 }

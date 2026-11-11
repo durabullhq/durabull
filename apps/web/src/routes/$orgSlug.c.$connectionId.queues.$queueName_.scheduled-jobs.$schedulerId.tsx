@@ -1,16 +1,19 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, ChevronRight, Layers } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowUpRight } from 'lucide-react'
 import { useCallback, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PageTitle } from '@/components/page-title'
 import {
   ScheduledJobForm,
   type ScheduledJobFormInitialValue,
 } from '@/components/scheduled-job-form'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Panel, PanelHeader } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useScheduledJob, useUpdateScheduledJob } from '@/hooks/use-queues'
 import { ApiError } from '@/lib/api'
@@ -56,82 +59,96 @@ function ScheduledJobDetailPage() {
 
   const title = data?.scheduler?.jobName ?? schedulerId
 
-  const topBarConfig = useMemo(
-    () => ({
+  const nextRun = data?.scheduler?.nextRun
+
+  const topBarConfig = useMemo(() => {
+    const nextRunJobId = nextRun ? `repeat:${schedulerId}:${nextRun}` : null
+
+    return {
       left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <Layers className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 flex items-center gap-1.5">
-            <Link
-              to="/$orgSlug/c/$connectionId"
-              params={{ orgSlug, connectionId }}
-              className="shrink-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Queues
-            </Link>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <Link
-              to="/$orgSlug/c/$connectionId/queues/$queueName"
-              params={{ orgSlug, connectionId, queueName }}
-              search={{
-                section: 'jobs',
-                tab: 'scheduled',
-                status: '',
-                jobId: '',
-                hideScheduled: 0,
-                page: 1,
-              }}
-              className="max-w-40 truncate text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {queueName}
-            </Link>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <h1 className="truncate text-base font-semibold md:text-lg">{title}</h1>
-          </div>
-        </div>
+        <PageTitle
+          title={title}
+          mono
+          crumbs={[
+            { label: 'Scheduled Jobs', to: `/${orgSlug}/c/${connectionId}/scheduled-jobs` },
+            {
+              label: queueName,
+              to: `/${orgSlug}/c/${connectionId}/queues/${encodeURIComponent(queueName)}`,
+            },
+          ]}
+        />
       ),
-      actions: (
-        <Button variant="outline" size="xs" onClick={handleBack}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Queue
+      actions: nextRunJobId ? (
+        <Button asChild variant="outline" size="xs">
+          <Link
+            to="/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId"
+            params={{ orgSlug, connectionId, queueName, jobId: nextRunJobId }}
+            search={{ tab: 'data' }}
+          >
+            Inspect next run
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
         </Button>
-      ),
-    }),
-    [connectionId, handleBack, orgSlug, queueName, title]
-  )
+      ) : undefined,
+      mobileActions: nextRunJobId ? (
+        <DropdownMenuItem asChild>
+          <Link
+            to="/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId"
+            params={{ orgSlug, connectionId, queueName, jobId: nextRunJobId }}
+            search={{ tab: 'data' }}
+          >
+            <ArrowUpRight className="mr-2 h-4 w-4" />
+            Inspect next run
+          </Link>
+        </DropdownMenuItem>
+      ) : undefined,
+    }
+  }, [connectionId, nextRun, orgSlug, queueName, schedulerId, title])
 
   useAppTopBar(topBarConfig)
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <Card>
-          <CardContent className="space-y-4 p-6">
-            <Skeleton className="h-6 w-36" />
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </CardContent>
-        </Card>
+      <div className="mx-auto max-w-3xl space-y-4">
+        <Skeleton className="h-[70px] w-full rounded-lg" />
+        <Panel>
+          <PanelHeader>
+            <Skeleton className="h-4 w-24" />
+          </PanelHeader>
+          <div className="space-y-4 p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+            <Skeleton className="h-48 w-full" />
+          </div>
+        </Panel>
+        <Panel>
+          <PanelHeader>
+            <Skeleton className="h-4 w-16" />
+          </PanelHeader>
+          <div className="p-4">
+            <Skeleton className="h-24 w-full" />
+          </div>
+        </Panel>
       </div>
     )
   }
 
   if (error || !data?.scheduler) {
     return (
-      <Card>
-        <CardContent className="space-y-4 p-6">
-          <div className="text-lg font-semibold">Scheduled job not found</div>
-          <p className="text-sm text-muted-foreground">
-            {error?.message ?? `Scheduler "${schedulerId}" could not be loaded.`}
-          </p>
-          <Button variant="outline" onClick={handleBack}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
+      <EmptyState
+        icon={AlertCircle}
+        tone="danger"
+        title="Scheduled job not found"
+        description={error?.message ?? `Scheduler "${schedulerId}" could not be loaded.`}
+        actions={
+          <Button variant="outline" size="sm" onClick={handleBack}>
+            <ArrowLeft className="h-4 w-4" />
             Back to Queue
           </Button>
-        </CardContent>
-      </Card>
+        }
+      />
     )
   }
 

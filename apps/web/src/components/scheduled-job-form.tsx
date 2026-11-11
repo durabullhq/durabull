@@ -1,21 +1,15 @@
-import {
-  CalendarClock,
-  Clock3,
-  Loader2,
-  PencilLine,
-  Repeat,
-  ShieldCheck,
-  Sparkles,
-} from 'lucide-react'
+import { CalendarClock, Loader2, Repeat } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { JsonEditor } from '@/components/json-editor'
 import { JobOptionsFields } from '@/components/job-options-fields'
+import { JsonEditor } from '@/components/json-editor'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Metric, MetricStrip } from '@/components/ui/metric'
+import { Panel, PanelHeader } from '@/components/ui/section'
 import { Select } from '@/components/ui/select'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type {
   ScheduledJobMutationInput,
   ScheduledJobTemplateOptionsInput,
@@ -24,12 +18,13 @@ import {
   createDefaultJobOptionsFormValue,
   formValueToTemplateOptions,
   hasJobOptionsValidationErrors,
+  type JobOptionsFormValue,
   parseOptionalWholeNumber,
   templateOptionsToFormValue,
   validateJobOptionsFormValue,
-  type JobOptionsFormValue,
 } from '@/lib/job-options'
 import {
+  formatScheduleTimeZone,
   fromDateTimeLocalValue,
   getCronDescription,
   getScheduleExpression,
@@ -40,7 +35,7 @@ import {
   slugifySchedulerId,
   toDateTimeLocalValue,
 } from '@/lib/scheduled-jobs'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, formatDateWithTimezone } from '@/lib/utils'
 
 type ScheduleMode = 'cron' | 'every'
 
@@ -85,12 +80,27 @@ const EVERY_PRESETS = [
   { label: '1 hour', value: '3600000' },
 ] as const
 
+const FIELD = 'space-y-1.5'
+const LABEL = 'block text-[13px] font-medium leading-5'
+const HELP = 'text-xs text-muted-foreground'
+const INVALID =
+  'border-status-danger hover:border-status-danger focus-visible:border-status-danger focus-visible:ring-status-danger/25'
+
 function FieldMessage({ message }: { message?: string }) {
   if (!message) {
     return null
   }
 
-  return <p className="text-xs text-destructive">{message}</p>
+  return <p className="text-xs text-status-danger">{message}</p>
+}
+
+function formatShortDateTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 export function ScheduledJobForm({
@@ -107,6 +117,11 @@ export function ScheduledJobForm({
     []
   )
   const timeZoneOptions = useMemo(() => getTimeZoneOptions(), [])
+  // An existing cron scheduler saved without a timezone runs in the worker
+  // host's timezone. Editing it must keep that unless the user picks one:
+  // falling back to the browser's timezone here would silently move the schedule.
+  const storedWithoutTimeZone =
+    mode === 'edit' && Boolean(initialValue?.pattern) && !initialValue?.timezone
 
   const [jobName, setJobName] = useState('')
   const [schedulerId, setSchedulerId] = useState('')
@@ -142,7 +157,7 @@ export function ScheduledJobForm({
     setScheduleMode(scheduleIsCron ? 'cron' : 'every')
     setCronPattern(initialValue?.pattern ?? '0 * * * *')
     setEveryMs(initialValue?.every ? String(initialValue.every) : '900000')
-    setTimeZone(initialValue?.timezone ?? browserTimeZone)
+    setTimeZone(initialValue?.timezone ?? (isEdit && scheduleIsCron ? '' : browserTimeZone))
     setRunImmediately(false)
     setStartDate(toDateTimeLocalValue(initialValue?.startDate))
     setEndDate(toDateTimeLocalValue(initialValue?.endDate))
@@ -224,12 +239,12 @@ export function ScheduledJobForm({
       return undefined
     }
     if (!timeZone.trim()) {
-      return 'Timezone is required for cron schedules.'
+      return storedWithoutTimeZone ? undefined : 'Timezone is required for cron schedules.'
     }
     return isValidTimeZone(timeZone.trim())
       ? undefined
       : 'Choose a valid IANA timezone such as America/Los_Angeles.'
-  }, [scheduleMode, timeZone])
+  }, [scheduleMode, storedWithoutTimeZone, timeZone])
 
   const startDateIso = useMemo(() => fromDateTimeLocalValue(startDate), [startDate])
   const endDateIso = useMemo(() => fromDateTimeLocalValue(endDate), [endDate])
@@ -294,7 +309,8 @@ export function ScheduledJobForm({
           ? {
               type: 'cron',
               pattern: cronPattern.trim(),
-              timezone: timeZone.trim(),
+              // Omitted when none is stored, so the scheduler keeps running on host time.
+              timezone: timeZone.trim() || undefined,
               immediately: mode === 'create' ? runImmediately : false,
               startDate: startDateIso,
               endDate: endDateIso,
@@ -311,63 +327,98 @@ export function ScheduledJobForm({
     })
   }
 
+  const nameMissing = jobName.trim().length === 0
+  const blockingReason = nameMissing
+    ? 'Enter a job name to continue.'
+    : (schedulerIdError ??
+      cronError ??
+      everyError ??
+      timeZoneError ??
+      dateWindowError ??
+      limitError ??
+      (!isJsonValid
+        ? 'Payload must be valid JSON.'
+        : hasJobOptionsValidationErrors(jobOptionsErrors)
+          ? 'Fix the highlighted job options.'
+          : undefined))
+
+  const scheduleExpression = getScheduleExpression({
+    pattern: scheduleMode === 'cron' ? cronPattern : undefined,
+    every: scheduleMode === 'every' ? everyValue : undefined,
+  })
+  const scheduleIsValid = scheduleMode === 'cron' ? !cronError : !everyError
+  const recentFailedCount = initialValue?.recentFailedCount ?? 0
+
   return (
-    <div className="space-y-6 pb-28">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_360px]">
-        <div className="space-y-6">
-          <Card className="overflow-hidden border-border/70 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.16),transparent_35%),radial-gradient(circle_at_top_right,rgba(250,204,21,0.14),transparent_28%),linear-gradient(180deg,rgba(15,23,42,0.04),rgba(15,23,42,0))]">
-            <CardHeader className="pb-4">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="space-y-3">
-                  <Badge variant="outline" className="w-fit">
-                    <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
-                    {mode === 'create' ? 'New scheduler' : 'Edit scheduler'}
-                  </Badge>
-                  <div className="space-y-1">
-                    <CardTitle className="text-xl md:text-2xl">
-                      {mode === 'create'
-                        ? 'Add a scheduled job'
-                        : `Edit ${initialValue?.jobName ?? 'scheduled job'}`}
-                    </CardTitle>
-                    <CardDescription className="max-w-2xl text-sm leading-6">
-                      Configure cadence, payload, and delivery behavior for queue{' '}
-                      <span className="font-mono text-foreground">{queueName}</span>. This page is
-                      designed for deliberate scheduling work, not a quick modal.
-                    </CardDescription>
-                  </div>
-                </div>
+    <div className="flex min-h-full flex-col">
+      <div className="mx-auto w-full max-w-3xl flex-1 space-y-4 pb-4">
+        {mode === 'edit' && initialValue ? (
+          <MetricStrip>
+            <Metric
+              label="Next run"
+              className="col-span-2 sm:col-span-1"
+              value={initialValue.nextRun ? formatShortDateTime(initialValue.nextRun) : '—'}
+              title={
+                initialValue.nextRun ? formatDateWithTimezone(initialValue.nextRun) : undefined
+              }
+            />
+            <Metric
+              label="Iterations"
+              value={
+                typeof initialValue.iterationCount === 'number'
+                  ? initialValue.iterationCount.toLocaleString()
+                  : '—'
+              }
+            />
+            <Metric
+              label="Recent failures"
+              value={recentFailedCount}
+              tone={recentFailedCount > 0 ? 'danger' : 'neutral'}
+              emphasis={recentFailedCount > 0}
+              hint={
+                initialValue.lastFailedAt
+                  ? `last ${formatShortDateTime(initialValue.lastFailedAt)}`
+                  : undefined
+              }
+              title={
+                initialValue.lastFailedAt
+                  ? `Last failure: ${formatDate(initialValue.lastFailedAt)}`
+                  : undefined
+              }
+            />
+          </MetricStrip>
+        ) : null}
 
-                <div className="rounded-2xl border border-white/40 bg-background/80 px-4 py-3 shadow-sm backdrop-blur">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                    Queue Target
-                  </div>
-                  <div className="mt-1 font-mono text-sm text-foreground">{queueName}</div>
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Identity</CardTitle>
-              <CardDescription>
-                Choose the worker-facing job name and the scheduler identity BullMQ will track over
-                time.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="scheduled-job-name">Job Name</Label>
+        <Panel>
+          <PanelHeader>
+            <h2 className="text-sm font-semibold tracking-tight">What runs</h2>
+            <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              Queue
+              <Badge variant="neutral" className="min-w-0 font-mono">
+                <span className="truncate">{queueName}</span>
+              </Badge>
+            </span>
+          </PanelHeader>
+          <div className="space-y-4 p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className={FIELD}>
+                <Label htmlFor="scheduled-job-name" className={LABEL}>
+                  Job name
+                </Label>
                 <Input
                   id="scheduled-job-name"
                   value={jobName}
                   onChange={(event) => setJobName(event.target.value)}
                   placeholder="send-daily-digest"
+                  className="font-mono"
                 />
+                <p className={HELP}>The name your worker's processor receives.</p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="scheduled-job-scheduler-id">Scheduler ID</Label>
+              <div className={FIELD}>
+                <Label htmlFor="scheduled-job-scheduler-id" className={LABEL}>
+                  Scheduler ID
+                </Label>
                 <Input
                   id="scheduled-job-scheduler-id"
                   value={schedulerId}
@@ -377,380 +428,303 @@ export function ScheduledJobForm({
                   }}
                   disabled={mode === 'edit'}
                   placeholder="send-daily-digest-prod"
-                  className={
-                    schedulerIdError
-                      ? 'border-destructive focus-visible:ring-destructive'
-                      : undefined
-                  }
+                  aria-invalid={schedulerIdError ? true : undefined}
+                  className={cn('font-mono', schedulerIdError && INVALID)}
                 />
                 <FieldMessage message={schedulerIdError} />
-                <p className="text-xs text-muted-foreground">
+                <p className={HELP}>
                   {mode === 'create'
-                    ? 'Good IDs are stable and descriptive, like billing-hourly.'
-                    : 'Scheduler IDs stay locked after creation so audit trails and BullMQ references remain stable.'}
+                    ? 'Stable and descriptive, like billing-hourly. Locked after creation.'
+                    : 'Locked after creation so BullMQ references stay stable.'}
                 </p>
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Cadence</CardTitle>
-              <CardDescription>
-                Choose between cron syntax for calendar schedules or a fixed millisecond interval.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid gap-3 md:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setScheduleMode('cron')}
+            <div className={FIELD}>
+              <div className={LABEL}>Payload</div>
+              <JsonEditor
+                value={jobData}
+                onChange={handleJsonChange}
+                minHeight="160px"
+                className="[&_.cm-editor]:max-h-[320px] [&_.cm-scroller]:overflow-auto"
+              />
+              <p className={HELP}>JSON passed as the data of every run.</p>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel>
+          <PanelHeader>
+            <h2 className="text-sm font-semibold tracking-tight">When</h2>
+            <Tabs
+              value={scheduleMode}
+              onValueChange={(next) => setScheduleMode(next as ScheduleMode)}
+            >
+              <TabsList role="group" aria-label="Schedule type">
+                <TabsTrigger value="cron" aria-pressed={scheduleMode === 'cron'}>
+                  <CalendarClock className="h-3.5 w-3.5" aria-hidden />
+                  Cron schedule
+                </TabsTrigger>
+                <TabsTrigger value="every" aria-pressed={scheduleMode === 'every'}>
+                  <Repeat className="h-3.5 w-3.5" aria-hidden />
+                  Fixed interval
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </PanelHeader>
+
+          <div className="space-y-4 p-4">
+            {scheduleMode === 'cron' ? (
+              <>
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+                  <div className={FIELD}>
+                    <Label htmlFor="scheduled-job-pattern" className={LABEL}>
+                      Cron pattern
+                    </Label>
+                    <Input
+                      id="scheduled-job-pattern"
+                      value={cronPattern}
+                      onChange={(event) => setCronPattern(event.target.value)}
+                      placeholder="0 * * * *"
+                      aria-invalid={cronError ? true : undefined}
+                      className={cn('font-mono', cronError && INVALID)}
+                    />
+                    <FieldMessage message={cronError} />
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {CRON_PRESETS.map((preset) => (
+                        <Button
+                          key={preset.value}
+                          type="button"
+                          size="xs"
+                          variant={cronPattern === preset.value ? 'secondary' : 'outline'}
+                          aria-pressed={cronPattern === preset.value}
+                          onClick={() => setCronPattern(preset.value)}
+                        >
+                          {preset.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className={FIELD}>
+                    <Label htmlFor="scheduled-job-timezone" className={LABEL}>
+                      Timezone
+                    </Label>
+                    <Select
+                      id="scheduled-job-timezone"
+                      value={timeZone}
+                      onChange={(event) => setTimeZone(event.target.value)}
+                    >
+                      {storedWithoutTimeZone ? (
+                        <option value="">Not set (worker host time)</option>
+                      ) : null}
+                      {timeZoneOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option === browserTimeZone ? `${option} (browser)` : option}
+                        </option>
+                      ))}
+                    </Select>
+                    {storedWithoutTimeZone && !timeZone ? (
+                      <p className={HELP}>
+                        No timezone is stored, so BullMQ evaluates this pattern in the worker
+                        host&apos;s timezone (usually UTC). Choose one to pin it.
+                      </p>
+                    ) : null}
+                    <FieldMessage message={timeZoneError} />
+                  </div>
+                </div>
+
+                <label
+                  htmlFor="scheduled-job-immediately"
                   className={cn(
-                    'rounded-xl border px-4 py-4 text-left transition-colors',
-                    scheduleMode === 'cron'
-                      ? 'border-primary bg-primary/5 shadow-sm'
-                      : 'border-border/70 hover:bg-muted/30'
+                    'flex w-fit items-start gap-2.5',
+                    mode === 'edit' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
                   )}
                 >
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <CalendarClock className="h-4 w-4" />
-                    Cron schedule
-                  </div>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Best for “every weekday at 9 AM” or “first of the month”.
-                  </p>
-                </button>
+                  <input
+                    id="scheduled-job-immediately"
+                    type="checkbox"
+                    checked={runImmediately}
+                    onChange={(event) => setRunImmediately(event.target.checked)}
+                    disabled={mode === 'edit'}
+                    className="mt-0.5 h-4 w-4 rounded-sm border-input accent-primary"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-medium leading-5">
+                      Run immediately after creation
+                    </span>
+                    <span className={cn(HELP, 'block')}>
+                      {mode === 'edit'
+                        ? 'Only applies when a schedule is first created.'
+                        : 'Enqueue the first run right away, then continue on the cron cadence.'}
+                    </span>
+                  </span>
+                </label>
+              </>
+            ) : (
+              <div className={cn(FIELD, 'md:max-w-sm')}>
+                <Label htmlFor="scheduled-job-every" className={LABEL}>
+                  Interval (ms)
+                </Label>
+                <Input
+                  id="scheduled-job-every"
+                  value={everyMs}
+                  onChange={(event) => setEveryMs(event.target.value)}
+                  inputMode="numeric"
+                  placeholder="900000"
+                  aria-invalid={everyError ? true : undefined}
+                  className={cn('font-mono', everyError && INVALID)}
+                />
+                <FieldMessage message={everyError} />
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {EVERY_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.value}
+                      type="button"
+                      size="xs"
+                      variant={everyMs === preset.value ? 'secondary' : 'outline'}
+                      aria-pressed={everyMs === preset.value}
+                      onClick={() => setEveryMs(preset.value)}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                <button
-                  type="button"
-                  onClick={() => setScheduleMode('every')}
-                  className={cn(
-                    'rounded-xl border px-4 py-4 text-left transition-colors',
-                    scheduleMode === 'every'
-                      ? 'border-primary bg-primary/5 shadow-sm'
-                      : 'border-border/70 hover:bg-muted/30'
-                  )}
-                >
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Repeat className="h-4 w-4" />
-                    Fixed interval
-                  </div>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Best for “every 5 minutes” or “every 30 seconds”.
-                  </p>
-                </button>
+            <div className="grid gap-4 border-t pt-4 md:grid-cols-3">
+              <div className={FIELD}>
+                <Label htmlFor="scheduled-job-start-date" className={LABEL}>
+                  Start date
+                </Label>
+                <Input
+                  id="scheduled-job-start-date"
+                  type="datetime-local"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                />
               </div>
 
-              {scheduleMode === 'cron' ? (
-                <div className="space-y-4 rounded-xl border border-border/70 bg-muted/15 p-4">
-                  <div className="flex flex-wrap gap-2">
-                    {CRON_PRESETS.map((preset) => (
-                      <Button
-                        key={preset.value}
-                        type="button"
-                        size="xs"
-                        variant={cronPattern === preset.value ? 'secondary' : 'outline'}
-                        onClick={() => setCronPattern(preset.value)}
-                      >
-                        {preset.label}
-                      </Button>
-                    ))}
-                  </div>
+              <div className={FIELD}>
+                <Label htmlFor="scheduled-job-end-date" className={LABEL}>
+                  End date
+                </Label>
+                <Input
+                  id="scheduled-job-end-date"
+                  type="datetime-local"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  aria-invalid={dateWindowError ? true : undefined}
+                  className={dateWindowError ? INVALID : undefined}
+                />
+              </div>
 
-                  <div className="grid gap-4 md:grid-cols-[1.5fr,1fr]">
-                    <div className="space-y-2">
-                      <Label htmlFor="scheduled-job-pattern">Cron Pattern</Label>
-                      <Input
-                        id="scheduled-job-pattern"
-                        value={cronPattern}
-                        onChange={(event) => setCronPattern(event.target.value)}
-                        placeholder="0 * * * *"
-                        className={
-                          cronError
-                            ? 'border-destructive focus-visible:ring-destructive'
-                            : undefined
-                        }
-                      />
-                      <FieldMessage message={cronError} />
-                      <p className="text-xs text-muted-foreground">{scheduleSummary}</p>
-                    </div>
+              <div className={FIELD}>
+                <Label htmlFor="scheduled-job-limit" className={LABEL}>
+                  Run limit
+                </Label>
+                <Input
+                  id="scheduled-job-limit"
+                  value={limit}
+                  onChange={(event) => setLimit(event.target.value)}
+                  inputMode="numeric"
+                  placeholder="No limit"
+                  aria-invalid={limitError ? true : undefined}
+                  className={cn('font-mono', limitError && INVALID)}
+                />
+              </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="scheduled-job-timezone">Timezone</Label>
-                      <Select
-                        id="scheduled-job-timezone"
-                        value={timeZone}
-                        onChange={(event) => setTimeZone(event.target.value)}
-                      >
-                        {timeZoneOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option === browserTimeZone ? `${option} (browser)` : option}
-                          </option>
-                        ))}
-                      </Select>
-                      <FieldMessage message={timeZoneError} />
-                    </div>
-                  </div>
-
-                  <label
-                    htmlFor="scheduled-job-immediately"
-                    className={cn(
-                      'flex items-center justify-between rounded-lg border border-border/70 bg-background px-3 py-3',
-                      mode === 'edit' && 'opacity-70'
-                    )}
-                  >
-                    <div>
-                      <p className="text-sm font-medium">Run immediately after creation</p>
-                      <p className="text-xs text-muted-foreground">
-                        Enqueue the first run right away, then continue on the cron cadence.
-                      </p>
-                    </div>
-                    <input
-                      id="scheduled-job-immediately"
-                      type="checkbox"
-                      checked={runImmediately}
-                      onChange={(event) => setRunImmediately(event.target.checked)}
-                      disabled={mode === 'edit'}
-                      className="rounded border-gray-300"
-                    />
-                  </label>
+              {(dateWindowError ?? limitError) ? (
+                <div className="md:col-span-3">
+                  <FieldMessage message={dateWindowError ?? limitError} />
                 </div>
               ) : (
-                <div className="space-y-4 rounded-xl border border-border/70 bg-muted/15 p-4">
-                  <div className="flex flex-wrap gap-2">
-                    {EVERY_PRESETS.map((preset) => (
-                      <Button
-                        key={preset.value}
-                        type="button"
-                        size="xs"
-                        variant={everyMs === preset.value ? 'secondary' : 'outline'}
-                        onClick={() => setEveryMs(preset.value)}
-                      >
-                        {preset.label}
-                      </Button>
-                    ))}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="scheduled-job-every">Interval (ms)</Label>
-                    <Input
-                      id="scheduled-job-every"
-                      value={everyMs}
-                      onChange={(event) => setEveryMs(event.target.value)}
-                      inputMode="numeric"
-                      placeholder="900000"
-                      className={
-                        everyError ? 'border-destructive focus-visible:ring-destructive' : undefined
-                      }
-                    />
-                    <FieldMessage message={everyError} />
-                    <p className="text-xs text-muted-foreground">{scheduleSummary}</p>
-                  </div>
-                </div>
+                <p className={cn(HELP, 'md:col-span-3')}>
+                  Optional. Leave empty to start now and run until removed.
+                </p>
               )}
+            </div>
+          </div>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="scheduled-job-start-date">Start Date</Label>
-                  <Input
-                    id="scheduled-job-start-date"
-                    type="datetime-local"
-                    value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
-                  />
-                </div>
+          <div
+            className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t bg-muted/40 px-4 py-2.5 text-[13px]"
+            aria-live="polite"
+          >
+            <span className="eyebrow">Runs</span>
+            <span className={cn('font-medium', !scheduleIsValid && 'text-status-danger')}>
+              {scheduleSummary}
+            </span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {scheduleExpression}
+              {scheduleMode === 'cron' ? ` · ${formatScheduleTimeZone(timeZone)}` : ''}
+            </span>
+            {startTimestamp ? (
+              <span className="text-xs text-muted-foreground">
+                from <span className="font-mono">{formatShortDateTime(startTimestamp)}</span>
+              </span>
+            ) : null}
+            {endTimestamp ? (
+              <span className="text-xs text-muted-foreground">
+                until <span className="font-mono">{formatShortDateTime(endTimestamp)}</span>
+              </span>
+            ) : null}
+            {typeof limitValue === 'number' && !limitError ? (
+              <span className="text-xs text-muted-foreground">
+                at most <span className="font-mono">{limitValue.toLocaleString()}</span>{' '}
+                {limitValue === 1 ? 'run' : 'runs'}
+              </span>
+            ) : null}
+          </div>
+        </Panel>
 
-                <div className="space-y-2">
-                  <Label htmlFor="scheduled-job-end-date">End Date</Label>
-                  <Input
-                    id="scheduled-job-end-date"
-                    type="datetime-local"
-                    value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
-                    className={
-                      dateWindowError
-                        ? 'border-destructive focus-visible:ring-destructive'
-                        : undefined
-                    }
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="scheduled-job-limit">Run Limit</Label>
-                  <Input
-                    id="scheduled-job-limit"
-                    value={limit}
-                    onChange={(event) => setLimit(event.target.value)}
-                    inputMode="numeric"
-                    placeholder="Optional"
-                    className={
-                      limitError ? 'border-destructive focus-visible:ring-destructive' : undefined
-                    }
-                  />
-                </div>
-              </div>
-
-              <FieldMessage message={dateWindowError ?? limitError} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Payload</CardTitle>
-              <CardDescription>
-                Define the JSON payload every scheduled run should enqueue.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <JsonEditor value={jobData} onChange={handleJsonChange} minHeight="260px" />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Job Options</CardTitle>
-              <CardDescription>
-                Tune retry behavior, priority, and retention for the jobs created by this scheduler.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <JobOptionsFields
-                value={jobOptions}
-                onChange={setJobOptions}
-                errors={jobOptionsErrors}
-                idPrefix="scheduled-job"
-              />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-          <Card className="border-border/70 bg-gradient-to-br from-background to-muted/35">
-            <CardHeader className="pb-4">
-              <CardTitle className="flex items-center gap-2 text-base">
-                {mode === 'create' ? (
-                  <Sparkles className="h-4 w-4 text-status-warning" />
-                ) : (
-                  <PencilLine className="h-4 w-4 text-status-active" />
-                )}
-                Scheduler Preview
-              </CardTitle>
-              <CardDescription>Live summary of the schedule you are configuring.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-xl border border-border/70 bg-background/85 p-4">
-                <div className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
-                  Summary
-                </div>
-                <div className="mt-2 text-base font-semibold">{scheduleSummary}</div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span className="rounded-full bg-muted px-2.5 py-1">
-                    {scheduleMode === 'cron' ? 'Cron' : 'Interval'}
-                  </span>
-                  <span className="rounded-full bg-muted px-2.5 py-1">
-                    {getScheduleExpression({
-                      pattern: scheduleMode === 'cron' ? cronPattern : undefined,
-                      every: scheduleMode === 'every' ? everyValue : undefined,
-                    })}
-                  </span>
-                  {scheduleMode === 'cron' ? (
-                    <span className="rounded-full bg-muted px-2.5 py-1">{timeZone}</span>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="space-y-3 rounded-xl border border-border/70 bg-muted/15 p-4">
-                <div className="flex items-start gap-3">
-                  <Clock3 className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                  <div className="space-y-2 text-sm">
-                    <div>
-                      <div className="font-medium text-foreground">Target job</div>
-                      <div className="text-muted-foreground">
-                        {jobName.trim() || 'Not named yet'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="font-medium text-foreground">Scheduler ID</div>
-                      <div className="font-mono text-xs text-muted-foreground">
-                        {schedulerId.trim() || 'pending-id'}
-                      </div>
-                    </div>
-                    {startDate ? (
-                      <div>
-                        <div className="font-medium text-foreground">Starts</div>
-                        <div className="text-muted-foreground">
-                          {startTimestamp ? formatDate(startTimestamp) : startDate}
-                        </div>
-                      </div>
-                    ) : null}
-                    {endDate ? (
-                      <div>
-                        <div className="font-medium text-foreground">Ends</div>
-                        <div className="text-muted-foreground">
-                          {endTimestamp ? formatDate(endTimestamp) : endDate}
-                        </div>
-                      </div>
-                    ) : null}
-                    {typeof limitValue === 'number' ? (
-                      <div>
-                        <div className="font-medium text-foreground">Run limit</div>
-                        <div className="text-muted-foreground">{limitValue} total runs</div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-
-              {mode === 'edit' && initialValue ? (
-                <div className="space-y-3 rounded-xl border border-border/70 bg-muted/15 p-4 text-sm">
-                  <div className="flex items-center gap-2 font-medium text-foreground">
-                    <ShieldCheck className="h-4 w-4 text-status-success" />
-                    Existing scheduler state
-                  </div>
-                  <div className="space-y-2 text-muted-foreground">
-                    <div>
-                      Next run: {initialValue.nextRun ? formatDate(initialValue.nextRun) : '—'}
-                    </div>
-                    <div>
-                      Iterations:{' '}
-                      {typeof initialValue.iterationCount === 'number'
-                        ? initialValue.iterationCount
-                        : '—'}
-                    </div>
-                    <div>Recent failures: {initialValue.recentFailedCount ?? 0}</div>
-                    {initialValue.lastFailedAt ? (
-                      <div>Last failure: {formatDate(initialValue.lastFailedAt)}</div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-        </div>
+        <Panel>
+          <PanelHeader>
+            <h2 className="text-sm font-semibold tracking-tight">Options</h2>
+            <span className="text-xs text-muted-foreground">Applied to every job it creates</span>
+          </PanelHeader>
+          <div className="p-4">
+            <JobOptionsFields
+              value={jobOptions}
+              onChange={setJobOptions}
+              errors={jobOptionsErrors}
+              idPrefix="scheduled-job"
+            />
+          </div>
+        </Panel>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border/70 bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[min(1200px,calc(100vw-2rem))] items-center justify-between gap-3 px-4 py-3">
-          <div className="text-sm text-muted-foreground">
-            {mode === 'create'
-              ? 'Create a scheduler that your team can audit and refine later.'
-              : 'Changes are applied directly to the existing BullMQ scheduler.'}
-          </div>
-          <div className="flex items-center gap-2">
+      <div className="sticky bottom-0 z-20 -mx-4 -mb-4 border-t bg-background/95 px-4 backdrop-blur md:-mx-5 md:-mb-5 md:px-5">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 py-2.5">
+          <p
+            className={cn(
+              'min-w-0 truncate text-xs',
+              blockingReason && !nameMissing && !isSubmitting
+                ? 'text-status-danger'
+                : 'text-muted-foreground'
+            )}
+            aria-live="polite"
+          >
+            {blockingReason && !isSubmitting
+              ? blockingReason
+              : mode === 'create'
+                ? `Creates a scheduler on ${queueName}.`
+                : 'Saved changes apply to the next run.'}
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
             <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
               Cancel
             </Button>
             <Button type="button" onClick={handleSubmit} disabled={!canSubmit}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   {mode === 'create' ? 'Creating...' : 'Saving...'}
                 </>
+              ) : mode === 'create' ? (
+                'Create scheduled job'
               ) : (
-                <>
-                  <CalendarClock className="mr-2 h-4 w-4" />
-                  {mode === 'create' ? 'Create Scheduled Job' : 'Save Changes'}
-                </>
+                'Save changes'
               )}
             </Button>
           </div>

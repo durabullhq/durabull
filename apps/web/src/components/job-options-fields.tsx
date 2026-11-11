@@ -8,6 +8,7 @@ import type {
   JobOptionsValidationErrors,
   RetentionMode,
 } from '@/lib/job-options'
+import { cn } from '@/lib/utils'
 
 const RETENTION_PRESETS = [25, 100, 500] as const
 
@@ -16,7 +17,7 @@ function FieldMessage({ message }: { message?: string }) {
     return null
   }
 
-  return <p className="text-xs text-destructive">{message}</p>
+  return <p className="text-xs text-status-danger">{message}</p>
 }
 
 function RetentionControl({
@@ -37,43 +38,52 @@ function RetentionControl({
   error?: string
 }) {
   return (
-    <div className="space-y-3 rounded-lg border border-border/70 bg-muted/15 p-4">
-      <div className="space-y-1">
-        <Label className="text-sm font-medium">{label}</Label>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-
-      <Select value={mode} onChange={(event) => onModeChange(event.target.value as RetentionMode)}>
+    <div className="space-y-1.5">
+      <Label className="text-[13px]">{label}</Label>
+      <Select
+        aria-label={label}
+        value={mode}
+        onChange={(event) => onModeChange(event.target.value as RetentionMode)}
+      >
         <option value="keep">Keep all</option>
         <option value="remove">Remove immediately</option>
         <option value="count">Keep latest N</option>
       </Select>
 
       {mode === 'count' ? (
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {RETENTION_PRESETS.map((preset) => (
-              <Button
-                key={preset}
-                type="button"
-                variant={countValue === String(preset) ? 'secondary' : 'outline'}
-                size="xs"
-                onClick={() => onCountChange(String(preset))}
-              >
-                {preset}
-              </Button>
-            ))}
-          </div>
+        <div className="flex items-center gap-1.5">
           <Input
             value={countValue}
             onChange={(event) => onCountChange(event.target.value)}
             inputMode="numeric"
             placeholder="100"
-            className={error ? 'border-destructive focus-visible:ring-destructive' : undefined}
+            aria-label={`${label}: number of jobs to keep`}
+            aria-invalid={error ? true : undefined}
+            className={cn(
+              'w-24 font-mono tabular-nums',
+              error && 'border-destructive focus-visible:ring-destructive'
+            )}
           />
-          <FieldMessage message={error} />
+          {RETENTION_PRESETS.map((preset) => (
+            <Button
+              key={preset}
+              type="button"
+              variant="outline"
+              size="xs"
+              aria-pressed={countValue === String(preset)}
+              className={cn(
+                'h-8 font-mono tabular-nums',
+                countValue === String(preset) && 'bg-accent text-accent-foreground'
+              )}
+              onClick={() => onCountChange(String(preset))}
+            >
+              {preset}
+            </Button>
+          ))}
         </div>
       ) : null}
+      <FieldMessage message={mode === 'count' ? error : undefined} />
+      <p className="text-xs text-muted-foreground">{description}</p>
     </div>
   )
 }
@@ -104,14 +114,17 @@ export function JobOptionsFields({
   idPrefix = 'job-options',
   compact = false,
 }: JobOptionsFieldsProps) {
-  const gridClassName = compact ? 'grid grid-cols-3 gap-4' : 'grid gap-4 md:grid-cols-3'
+  const gridClassName = compact
+    ? 'grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-4'
+    : 'grid gap-x-3 gap-y-4 md:grid-cols-3'
+  const invalidClass = 'border-destructive focus-visible:ring-destructive'
 
   return (
     <div className="space-y-4">
       <div className={gridClassName}>
         {showDelay ? (
-          <div className="space-y-2">
-            <Label htmlFor={`${idPrefix}-delay`} className="text-xs text-muted-foreground">
+          <div className="space-y-1.5">
+            <Label htmlFor={`${idPrefix}-delay`} className="text-[13px]">
               Delay (ms)
             </Label>
             <Input
@@ -121,20 +134,15 @@ export function JobOptionsFields({
               value={value.delay}
               onChange={(event) => updateField(value, onChange, 'delay', event.target.value)}
               placeholder="0"
-              className={
-                errors.delay ? 'border-destructive focus-visible:ring-destructive' : undefined
-              }
+              className={cn('font-mono tabular-nums', errors.delay && invalidClass)}
             />
             <FieldMessage message={errors.delay} />
           </div>
         ) : null}
 
-        <div className="space-y-2">
-          <Label
-            htmlFor={`${idPrefix}-attempts`}
-            className={compact ? 'text-xs text-muted-foreground' : undefined}
-          >
-            {compact ? 'Max Attempts' : 'Attempts'}
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-attempts`} className="text-[13px]">
+            {compact ? 'Max attempts' : 'Attempts'}
           </Label>
           <Input
             id={`${idPrefix}-attempts`}
@@ -142,18 +150,13 @@ export function JobOptionsFields({
             onChange={(event) => updateField(value, onChange, 'attempts', event.target.value)}
             inputMode="numeric"
             min={compact ? '1' : undefined}
-            className={
-              errors.attempts ? 'border-destructive focus-visible:ring-destructive' : undefined
-            }
+            className={cn('font-mono tabular-nums', errors.attempts && invalidClass)}
           />
           <FieldMessage message={errors.attempts} />
         </div>
 
-        <div className="space-y-2">
-          <Label
-            htmlFor={`${idPrefix}-priority`}
-            className={compact ? 'text-xs text-muted-foreground' : undefined}
-          >
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-priority`} className="text-[13px]">
             Priority
           </Label>
           <Input
@@ -162,18 +165,13 @@ export function JobOptionsFields({
             onChange={(event) => updateField(value, onChange, 'priority', event.target.value)}
             inputMode="numeric"
             min={compact ? '0' : undefined}
-            className={
-              errors.priority ? 'border-destructive focus-visible:ring-destructive' : undefined
-            }
+            className={cn('font-mono tabular-nums', errors.priority && invalidClass)}
           />
           <FieldMessage message={errors.priority} />
         </div>
 
-        <div className="space-y-2">
-          <Label
-            htmlFor={`${idPrefix}-backoff-type`}
-            className={compact ? 'text-xs text-muted-foreground' : undefined}
-          >
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-backoff-type`} className="text-[13px]">
             Backoff
           </Label>
           <Select
@@ -191,24 +189,24 @@ export function JobOptionsFields({
       </div>
 
       {value.backoffMode !== 'none' ? (
-        <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-backoff-delay`}>Backoff Delay (ms)</Label>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-backoff-delay`} className="text-[13px]">
+            Backoff delay (ms)
+          </Label>
           <Input
             id={`${idPrefix}-backoff-delay`}
             value={value.backoffDelay}
             onChange={(event) => updateField(value, onChange, 'backoffDelay', event.target.value)}
             inputMode="numeric"
-            className={
-              errors.backoff ? 'border-destructive focus-visible:ring-destructive' : undefined
-            }
+            className={cn('font-mono tabular-nums sm:max-w-48', errors.backoff && invalidClass)}
           />
           <FieldMessage message={errors.backoff} />
         </div>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-x-3 gap-y-4 sm:grid-cols-2">
         <RetentionControl
-          label="Completed Job Retention"
+          label="Completed job retention"
           description="Keep history for successful runs or trim it automatically."
           mode={value.removeOnCompleteMode}
           countValue={value.removeOnCompleteCount}
@@ -217,7 +215,7 @@ export function JobOptionsFields({
           error={errors.removeOnComplete}
         />
         <RetentionControl
-          label="Failed Job Retention"
+          label="Failed job retention"
           description="Control how much failed-run history stays available for debugging."
           mode={value.removeOnFailMode}
           countValue={value.removeOnFailCount}

@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowUpRight, CheckCheck, Eye, Loader2, MoreHorizontal, UserCheck } from 'lucide-react'
 import { useState } from 'react'
 import { AlertEventDetailsDialog } from '@/components/alerts/alert-event-details-dialog'
-import { getSuppressedCount } from '@/components/alerts/alert-event-helpers'
+import { formatActorSuffix, getSuppressedCount } from '@/components/alerts/alert-event-helpers'
 import {
   AlertStatusBadge,
   formatAlertDate,
@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
 import {
   Table,
   TableBody,
@@ -69,19 +70,14 @@ export function AlertEventsTable({
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
 
   if (events.length === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border/70 bg-muted/15 px-6 py-12 text-center">
-        <h3 className="text-lg font-semibold">{emptyTitle}</h3>
-        <p className="mt-2 text-sm text-muted-foreground">{emptyCopy}</p>
-      </div>
-    )
+    return <EmptyState size="inline" title={emptyTitle} description={emptyCopy} />
   }
 
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? null
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/70">
+      <div>
         <AlertEventDetailsDialog
           event={selectedEvent}
           open={selectedEvent !== null}
@@ -99,7 +95,7 @@ export function AlertEventsTable({
               <TableHead className="w-full">Summary</TableHead>
               <TableHead className="hidden md:table-cell">Delivery</TableHead>
               <TableHead className="hidden text-right md:table-cell">Fired</TableHead>
-              <TableHead className="w-12">
+              <TableHead className="w-px">
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
@@ -154,13 +150,14 @@ function AlertEventRow({
     <TableRow
       className={cn(
         'group cursor-pointer',
-        displayStatus === 'firing' && 'border-l-2 border-l-destructive/60',
+        displayStatus === 'firing' && 'shadow-[inset_2px_0_0_0_var(--color-status-danger)]',
+        displayStatus === 'acknowledged' && 'shadow-[inset_2px_0_0_0_var(--color-status-warning)]',
         displayStatus === 'suppressed' && 'opacity-60'
       )}
       onClick={actions.openDetails}
     >
       {showConnectionColumn ? (
-        <TableCell className="whitespace-nowrap text-sm font-medium">
+        <TableCell className="whitespace-nowrap font-medium">
           {connectionName ?? 'Unknown connection'}
         </TableCell>
       ) : null}
@@ -178,18 +175,18 @@ function AlertEventRow({
       </TableCell>
       <TableCell className="hidden md:table-cell">
         {ruleName ? (
-          <span className="block max-w-[180px] truncate text-sm font-medium" title={ruleName}>
+          <span className="block max-w-[180px] truncate font-medium" title={ruleName}>
             {ruleName}
           </span>
         ) : (
-          <span className="block max-w-[180px] truncate text-sm text-muted-foreground">
+          <span className="block max-w-[180px] truncate text-muted-foreground">
             {getAlertTypeMeta(event.type).label}
           </span>
         )}
       </TableCell>
       <TableCell className="whitespace-nowrap">
         {event.type === 'redis_health' ? (
-          <span className="inline-flex max-w-[200px] items-center font-medium">
+          <span className="inline-flex max-w-[200px] items-center text-muted-foreground">
             {event.queueName}
           </span>
         ) : (
@@ -200,21 +197,21 @@ function AlertEventRow({
               connectionId: event.connectionId,
               queueName: event.queueName,
             }}
-            className="inline-flex max-w-[200px] items-center gap-1 font-medium hover:text-primary"
+            className="inline-flex max-w-[200px] items-center gap-1 font-mono text-xs underline decoration-transparent underline-offset-4 transition-colors hover:decoration-border-strong"
             onClick={(clickEvent) => clickEvent.stopPropagation()}
           >
             <span className="truncate">{event.queueName}</span>
-            <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <ArrowUpRight className="h-3 w-3 shrink-0 text-faint" />
           </Link>
         )}
       </TableCell>
       <TableCell className="max-w-0">
-        <p className="truncate text-sm" title={event.summary}>
+        <p className="line-clamp-2 break-words" title={event.summary}>
           {event.summary}
         </p>
         {displayStatus === 'acknowledged' ? (
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            Ack'd by {event.acknowledgedByName ?? 'a teammate'} ·{' '}
+            Ack'd{formatActorSuffix(event.acknowledgedByName)} ·{' '}
             {formatRelativeAlertTime(event.acknowledgedAt)}
           </p>
         ) : null}
@@ -242,60 +239,91 @@ function AlertEventRow({
           <TooltipContent side="left">{formatAlertDate(event.firedAt)}</TooltipContent>
         </Tooltip>
       </TableCell>
-      <TableCell className="pr-3">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+      <TableCell className="whitespace-nowrap py-1 pr-2">
+        <div className="flex items-center justify-end gap-1">
+          {/* The two things an on-call engineer does to an incident are one click away. */}
+          {canAcknowledge ? (
             <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                'h-8 w-8 transition-opacity data-[state=open]:opacity-100',
-                // Hover-reveal only where hovering exists; stay visible on touch devices.
-                isActing
-                  ? 'opacity-100'
-                  : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100'
-              )}
+              type="button"
+              variant="outline"
+              size="xs"
+              className="hidden lg:inline-flex"
               disabled={isActing}
+              aria-label="Acknowledge incident"
+              onClick={(clickEvent) => {
+                clickEvent.stopPropagation()
+                actions.acknowledge?.(event.id)
+              }}
+            >
+              <UserCheck className="h-3.5 w-3.5" />
+              Ack
+            </Button>
+          ) : null}
+          {canResolve ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="hidden lg:inline-flex"
+              disabled={isActing}
+              aria-label="Mark incident resolved"
+              onClick={(clickEvent) => {
+                clickEvent.stopPropagation()
+                actions.resolve?.(event)
+              }}
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              Resolve
+            </Button>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                disabled={isActing}
+                onClick={(clickEvent) => clickEvent.stopPropagation()}
+              >
+                {isActing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MoreHorizontal className="h-4 w-4" />
+                )}
+                <span className="sr-only">
+                  {actions.isResolving
+                    ? 'Resolving incident'
+                    : actions.isAcknowledging
+                      ? 'Acknowledging incident'
+                      : 'Incident actions'}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-44"
               onClick={(clickEvent) => clickEvent.stopPropagation()}
             >
-              {isActing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <MoreHorizontal className="h-4 w-4" />
-              )}
-              <span className="sr-only">
-                {actions.isResolving
-                  ? 'Resolving incident'
-                  : actions.isAcknowledging
-                    ? 'Acknowledging incident'
-                    : 'Incident actions'}
-              </span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="w-44"
-            onClick={(clickEvent) => clickEvent.stopPropagation()}
-          >
-            <DropdownMenuItem onClick={actions.openDetails}>
-              <Eye className="mr-2 h-4 w-4" />
-              View details
-            </DropdownMenuItem>
-            {canAcknowledge || canResolve ? <DropdownMenuSeparator /> : null}
-            {canAcknowledge ? (
-              <DropdownMenuItem onClick={() => actions.acknowledge?.(event.id)}>
-                <UserCheck className="mr-2 h-4 w-4" />
-                Acknowledge
+              <DropdownMenuItem onClick={actions.openDetails}>
+                <Eye className="mr-2 h-4 w-4" />
+                View details
               </DropdownMenuItem>
-            ) : null}
-            {canResolve ? (
-              <DropdownMenuItem onClick={() => actions.resolve?.(event)}>
-                <CheckCheck className="mr-2 h-4 w-4" />
-                Resolve
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              {canAcknowledge || canResolve ? <DropdownMenuSeparator /> : null}
+              {canAcknowledge ? (
+                <DropdownMenuItem onClick={() => actions.acknowledge?.(event.id)}>
+                  <UserCheck className="mr-2 h-4 w-4" />
+                  Acknowledge
+                </DropdownMenuItem>
+              ) : null}
+              {canResolve ? (
+                <DropdownMenuItem onClick={() => actions.resolve?.(event)}>
+                  <CheckCheck className="mr-2 h-4 w-4" />
+                  Resolve
+                </DropdownMenuItem>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -309,7 +337,7 @@ function DeliverySummary({ event }: { event: AlertEventRecord }) {
         href={linearDelivery.externalUrl}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-primary hover:underline"
+        className="inline-flex items-center gap-1 whitespace-nowrap font-mono text-xs font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
         onClick={(clickEvent) => clickEvent.stopPropagation()}
       >
         {linearDelivery.externalIdentifier ?? 'Linear issue'}
@@ -320,7 +348,7 @@ function DeliverySummary({ event }: { event: AlertEventRecord }) {
   if (linearDelivery?.status === 'failed') {
     return (
       <span
-        className="block truncate text-xs text-destructive"
+        className="block truncate text-xs text-status-danger"
         title={linearDelivery.lastError ?? undefined}
       >
         Linear failed{linearDelivery.lastError ? `: ${linearDelivery.lastError}` : ''}
@@ -341,7 +369,7 @@ function DeliverySummary({ event }: { event: AlertEventRecord }) {
     if (webhookDelivery.status === 'failed') {
       return (
         <span
-          className="block truncate text-xs text-destructive"
+          className="block truncate text-xs text-status-danger"
           title={webhookDelivery.lastError ?? undefined}
         >
           Webhook failed{webhookDelivery.lastError ? `: ${webhookDelivery.lastError}` : ''}

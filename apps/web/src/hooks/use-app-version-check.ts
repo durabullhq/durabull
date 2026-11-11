@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchApi, type api, type InferResponseType } from '@/lib/api'
+import { type api, fetchApi, type InferResponseType } from '@/lib/api'
 import { APP_BUILD_INFO } from '@/lib/app-version'
 
 export const APP_VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000

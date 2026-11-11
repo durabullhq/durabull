@@ -42,8 +42,10 @@ test('dashboard navigation and core pages', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Scheduled Jobs', exact: true, level: 1 })
   ).toBeVisible()
-  await expect(page.getByText('Scheduled Jobs by Queue')).toBeVisible()
-  await expect(page.getByText(scheduledJobs.scheduledJobs[0].queueName)).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Search scheduled jobs' })).toBeVisible()
+  await expect(
+    page.getByRole('link', { name: scheduledJobs.scheduledJobs[0].queueName, exact: true }).first()
+  ).toBeVisible()
 
   // Workers page
   await page.goto(`/${TEST_ORG_SLUG}/c/${connectionId}/workers`)

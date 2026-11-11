@@ -13,7 +13,8 @@ test.describe('Settings and alert destinations', () => {
     const updatedName = `${destinationName}-v2`
 
     await page.goto(`/${TEST_ORG_SLUG}/settings/destinations`)
-    await expect(page.getByRole('heading', { name: 'Alert destinations' })).toBeVisible({
+    // The top bar (h1) and the section header (h2) both name the page.
+    await expect(page.getByRole('heading', { name: 'Alert destinations', level: 1 })).toBeVisible({
       timeout: 15000,
     })
 

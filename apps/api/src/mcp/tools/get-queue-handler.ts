@@ -1,6 +1,7 @@
-import { getQueue, safeGetWorkers } from '../../lib/redis'
-import { toRedisConnectionOptions } from '../../lib/connection-options'
 import type { GetQueueHandlerInput, GetQueueHandlerOutput } from '@durabull/mcp'
+import { toRedisConnectionOptions } from '../../lib/connection-options'
+import { getQueue, safeGetWorkers } from '../../lib/redis'
+import { toRedisClientSummary } from '../../lib/redis-client-time'
 import { requireConnectionForPrincipal } from './shared'
 
 export async function getQueueHandler(input: GetQueueHandlerInput): Promise<GetQueueHandlerOutput> {
@@ -36,12 +37,6 @@ export async function getQueueHandler(input: GetQueueHandlerInput): Promise<GetQ
     },
     isPaused,
     scheduledJobsCount: schedulers.length,
-    workers: workers.map((worker) => ({
-      id: worker.id ?? '',
-      name: worker.name ?? '',
-      address: worker.addr ?? '',
-      ageMs: Number(worker.age ?? 0) || 0,
-      idleMs: Number(worker.idle ?? 0) || 0,
-    })),
+    workers: workers.map(toRedisClientSummary),
   }
 }

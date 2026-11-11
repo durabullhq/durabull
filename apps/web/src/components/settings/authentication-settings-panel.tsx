@@ -1,11 +1,11 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
-import { Check, Github, KeyRound, Link2, Link2Off, Loader2, Shield } from 'lucide-react'
+import { Github, KeyRound, Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { SettingsPage } from '@/components/settings/settings-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Panel } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import { linkSocial, listAccounts, unlinkAccount, useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
@@ -24,8 +25,6 @@ const providers = [
     name: 'Google',
     icon: GoogleIcon,
     description: 'Sign in with your Google account',
-    color: 'text-status-danger',
-    bgColor: 'bg-status-danger/10',
     disabled: false,
   },
   {
@@ -33,8 +32,6 @@ const providers = [
     name: 'GitHub',
     icon: Github,
     description: 'Sign in with your GitHub account',
-    color: 'text-status-neutral',
-    bgColor: 'bg-status-neutral/10',
     disabled: false,
   },
 ] as const
@@ -151,79 +148,60 @@ export function AuthenticationSettingsPanel() {
       : hasPasswordAccount || linkedSocialCount > 1
   const isLoading = sessionLoading || isLoadingAccounts
 
-  return (
-    <div className="max-w-3xl space-y-6">
-      <Card>
-        <CardHeader className="border-b bg-muted/30">
-          <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-muted-foreground" />
-            <div>
-              <CardTitle className="text-base">Authentication</CardTitle>
-              <CardDescription>
-                Manage how you sign in to your account. Link additional providers for easier access.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="divide-y">
-              {[1, 2, 3].map((item) => (
-                <div key={item} className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-3">
-                    <Skeleton className="h-10 w-10 rounded-lg" />
-                    <div className="space-y-1.5">
-                      <Skeleton className="h-4 w-24" />
-                      <Skeleton className="h-3 w-40" />
-                    </div>
-                  </div>
-                  <Skeleton className="h-9 w-24" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="divide-y">
-              <AccountRow
-                icon={KeyRound}
-                name="Password"
-                description={
-                  hasPasswordAccount ? 'Sign in with your email and password' : 'No password set'
-                }
-                isLinked={hasPasswordAccount}
-                color="text-status-active"
-                bgColor="bg-status-active/10"
-                canUnlink={false}
-                showActions={false}
-              />
-              {providers.map((provider) => {
-                const linked = isProviderLinked(provider.id)
-                const linkedAccount = getLinkedAccount(provider.id)
+  const connectedCount = (hasPasswordAccount ? 1 : 0) + linkedSocialCount
 
-                return (
-                  <AccountRow
-                    key={provider.id}
-                    icon={provider.icon}
-                    name={provider.name}
-                    description={
-                      linked
-                        ? `Connected${linkedAccount?.accountId ? ` as ${linkedAccount.accountId}` : ''}`
-                        : provider.description
-                    }
-                    isLinked={linked}
-                    color={provider.color}
-                    bgColor={provider.bgColor}
-                    disabled={provider.disabled}
-                    canUnlink={canUnlink(provider.id)}
-                    isLinking={linkingProvider === provider.id}
-                    onLink={() => handleLinkAccount(provider.id)}
-                    onUnlink={() => linkedAccount && setUnlinkingAccount(linkedAccount)}
-                  />
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+  return (
+    <SettingsPage
+      title="Sign-in methods"
+      count={isLoading ? undefined : `${connectedCount} connected`}
+    >
+      <Panel>
+        {isLoading ? (
+          <div className="divide-y">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="flex min-h-14 items-center gap-3 px-4 py-2.5">
+                <Skeleton className="h-4 w-4" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-24" />
+                  <Skeleton className="h-3 w-40" />
+                </div>
+                <Skeleton className="h-7 w-16" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="divide-y">
+            <AccountRow
+              icon={KeyRound}
+              name="Password"
+              description={hasPasswordAccount ? 'Email and password' : 'No password set'}
+              isLinked={hasPasswordAccount}
+              canUnlink={false}
+              showActions={false}
+            />
+            {providers.map((provider) => {
+              const linked = isProviderLinked(provider.id)
+              const linkedAccount = getLinkedAccount(provider.id)
+
+              return (
+                <AccountRow
+                  key={provider.id}
+                  icon={provider.icon}
+                  name={provider.name}
+                  description={linked ? 'Linked account' : provider.description}
+                  accountId={linked ? linkedAccount?.accountId : undefined}
+                  isLinked={linked}
+                  disabled={provider.disabled}
+                  canUnlink={canUnlink(provider.id)}
+                  isLinking={linkingProvider === provider.id}
+                  onLink={() => handleLinkAccount(provider.id)}
+                  onUnlink={() => linkedAccount && setUnlinkingAccount(linkedAccount)}
+                />
+              )
+            })}
+          </div>
+        )}
+      </Panel>
 
       <Dialog
         open={!!unlinkingAccount}
@@ -242,32 +220,26 @@ export function AuthenticationSettingsPanel() {
       >
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Link2Off className="h-5 w-5 text-destructive" />
-              Unlink Account
-            </DialogTitle>
+            <DialogTitle>Unlink account</DialogTitle>
             <DialogDescription>
-              Are you sure you want to unlink this account? You will not be able to sign in with
-              this provider unless you link it again.
+              You will not be able to sign in with this provider unless you link it again.
             </DialogDescription>
           </DialogHeader>
 
           {unlinkingAccount && (
-            <div className="py-4">
-              <div className="flex items-center gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  {unlinkingAccount.providerId === 'google' ? (
-                    <GoogleIcon className="h-5 w-5 text-status-danger" />
-                  ) : (
-                    <Github className="h-5 w-5 text-status-neutral" />
-                  )}
-                </div>
-                <div>
-                  <p className="font-medium capitalize">{unlinkingAccount.providerId}</p>
-                  {unlinkingAccount.accountId ? (
-                    <p className="text-sm text-muted-foreground">{unlinkingAccount.accountId}</p>
-                  ) : null}
-                </div>
+            <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-2">
+              {unlinkingAccount.providerId === 'google' ? (
+                <GoogleIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <Github className="h-4 w-4 shrink-0 text-muted-foreground" />
+              )}
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium capitalize">{unlinkingAccount.providerId}</p>
+                {unlinkingAccount.accountId ? (
+                  <p className="truncate font-mono text-xs text-muted-foreground">
+                    {unlinkingAccount.accountId}
+                  </p>
+                ) : null}
               </div>
             </div>
           )}
@@ -281,22 +253,13 @@ export function AuthenticationSettingsPanel() {
               Cancel
             </Button>
             <Button variant="destructive" onClick={handleUnlinkAccount} disabled={isUnlinking}>
-              {isUnlinking ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Unlinking...
-                </>
-              ) : (
-                <>
-                  <Link2Off className="mr-2 h-4 w-4" />
-                  Unlink Account
-                </>
-              )}
+              {isUnlinking ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {isUnlinking ? 'Unlinking…' : 'Unlink'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SettingsPage>
   )
 }
 
@@ -304,9 +267,9 @@ interface AccountRowProps {
   icon: React.ComponentType<{ className?: string }>
   name: string
   description: string
+  /** Provider-side account id, shown in mono next to the description. */
+  accountId?: string
   isLinked: boolean
-  color: string
-  bgColor: string
   disabled?: boolean
   canUnlink?: boolean
   showActions?: boolean
@@ -319,9 +282,8 @@ function AccountRow({
   icon: Icon,
   name,
   description,
+  accountId,
   isLinked,
-  color,
-  bgColor,
   disabled,
   canUnlink = true,
   showActions = true,
@@ -330,66 +292,38 @@ function AccountRow({
   onUnlink,
 }: AccountRowProps) {
   return (
-    <div className="flex items-center justify-between p-4 transition-colors hover:bg-muted/30">
-      <div className="flex items-center gap-3">
-        <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', bgColor)}>
-          <Icon className={cn('h-5 w-5', color)} />
+    <div className="flex min-h-14 items-center gap-3 px-4 py-2.5">
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="text-[13px] font-medium">{name}</p>
+          {isLinked ? <Badge variant="success">Connected</Badge> : null}
+          {disabled ? <Badge variant="outline">Coming soon</Badge> : null}
         </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="font-medium">{name}</p>
-            {isLinked ? (
-              <Badge
-                variant="outline"
-                className="bg-status-success/10 px-1.5 text-[10px] text-status-success"
-              >
-                <Check className="mr-1 h-3 w-3" />
-                Connected
-              </Badge>
-            ) : null}
-            {disabled ? (
-              <Badge variant="outline" className="px-1.5 text-[10px]">
-                Coming soon
-              </Badge>
-            ) : null}
-          </div>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
+        <p className="truncate text-xs text-muted-foreground">
+          {description}
+          {accountId ? <span className="ml-1.5 font-mono">{accountId}</span> : null}
+        </p>
       </div>
 
       {showActions ? (
-        <div>
-          {isLinked ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onUnlink}
-              disabled={!canUnlink || disabled}
-              className={cn(
-                canUnlink &&
-                  !disabled &&
-                  'border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive'
-              )}
-            >
-              <Link2Off className="mr-2 h-4 w-4" />
-              Unlink
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={onLink} disabled={disabled || isLinking}>
-              {isLinking ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Linking...
-                </>
-              ) : (
-                <>
-                  <Link2 className="mr-2 h-4 w-4" />
-                  Link Account
-                </>
-              )}
-            </Button>
-          )}
-        </div>
+        isLinked ? (
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={onUnlink}
+            disabled={!canUnlink || disabled}
+            title={canUnlink ? undefined : 'Keep at least one way to sign in'}
+            className={cn(canUnlink && !disabled && 'text-status-danger hover:text-status-danger')}
+          >
+            Unlink
+          </Button>
+        ) : (
+          <Button variant="outline" size="xs" onClick={onLink} disabled={disabled || isLinking}>
+            {isLinking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {isLinking ? 'Linking…' : 'Link account'}
+          </Button>
+        )
       ) : null}
     </div>
   )

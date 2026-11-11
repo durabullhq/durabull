@@ -1,11 +1,19 @@
 import { createFileRoute, Navigate, Outlet, useNavigate } from '@tanstack/react-router'
-import { ShieldX } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { Loader2, ShieldX, TriangleAlert } from 'lucide-react'
+import { useEffect, useMemo, useRef } from 'react'
+import { useAppTopBar } from '@/components/app-top-bar'
 import { TransitionBanner } from '@/components/billing/transition-banner'
 import { UpgradePromptHost } from '@/components/billing/upgrade-prompt-host'
+import { PageTitle } from '@/components/page-title'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
-import { useOrganizations, useSetActiveOrganization } from '@/hooks/use-organization'
+import {
+  useActiveOrganization,
+  useOrganizations,
+  useSetActiveOrganization,
+} from '@/hooks/use-organization'
 
 export const Route = createFileRoute('/$orgSlug')({
   // Note: We intentionally don't use beforeLoad for auth calls here.
@@ -27,10 +35,8 @@ function OrgSlugLayout() {
   const { isAuthenticated, isLoading: authLoading, session } = useAuth()
   const { isAuthless } = useAppMode()
   const { data: organizations, isLoading: orgsLoading } = useOrganizations()
+  const { data: activeOrganization } = useActiveOrganization()
   const setActiveOrg = useSetActiveOrganization()
-
-  // Track if we've already set the active org to prevent loops
-  const hasSetActiveRef = useRef(false)
 
   // Find the organization by slug
   const org = organizations?.find((o) => o.slug === orgSlug)
@@ -38,32 +44,26 @@ function OrgSlugLayout() {
   // Get current active org ID from session
   const activeOrgId = (session as { activeOrganizationId?: string })?.activeOrganizationId
 
-  // Set the active organization when we have the data and it's different
-  useEffect(() => {
-    if (org && activeOrgId !== org.id && !hasSetActiveRef.current && !setActiveOrg.isPending) {
-      hasSetActiveRef.current = true
-      setActiveOrg.mutate(org.id, {
-        onError: () => {
-          // Reset on error so we can retry
-          hasSetActiveRef.current = false
-        },
-      })
-    }
-  }, [org, activeOrgId, setActiveOrg])
+  // The organization we last asked the server to switch to. Keyed by id rather than a
+  // boolean so moving to another organization's URL always triggers a new switch.
+  const requestedOrgIdRef = useRef<string | null>(null)
 
-  // Reset the ref when slug changes (orgSlug in deps is intentional)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: we intentionally reset when orgSlug changes
+  // Switch the server session to the URL's organization when it isn't already active.
   useEffect(() => {
-    hasSetActiveRef.current = false
-  }, [orgSlug])
+    if (!org || isAuthless || activeOrgId === org.id) return
+    if (requestedOrgIdRef.current === org.id) return
+    requestedOrgIdRef.current = org.id
+    setActiveOrg.mutate(org.id, {
+      onError: () => {
+        // Allow "Try again" (and the next render) to request the switch again.
+        requestedOrgIdRef.current = null
+      },
+    })
+  }, [org, activeOrgId, isAuthless, setActiveOrg])
 
   // Show loading while checking auth or fetching organizations
   if (authLoading || orgsLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    )
+    return <OrgLoading label="Loading…" />
   }
 
   // Not authenticated - redirect to login
@@ -74,26 +74,52 @@ function OrgSlugLayout() {
   // Organization not found or user doesn't have access - show 403
   if (!org) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-        <div className="text-center max-w-md">
-          <div className="mx-auto w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-6">
-            <ShieldX className="h-8 w-8 text-destructive" />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-          <p className="text-muted-foreground mb-6">
-            You don't have access to the organization "{orgSlug}". This could mean the organization
-            doesn't exist or you haven't been invited.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate({ to: '/' })}
-            className="inline-flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Go to Home
-          </button>
-        </div>
-      </div>
+      <OrganizationUnavailable
+        orgSlug={orgSlug}
+        isAuthless={isAuthless}
+        onGoHome={() => navigate({ to: '/' })}
+      />
     )
+  }
+
+  // Organization-scoped API calls use the session's active organization, so pages
+  // must not render (and start reading or writing) until the server session is on
+  // the organization in the URL: either it already was, or our switch to it has
+  // succeeded. An install without accounts has exactly one organization, so there
+  // is nothing to wait for.
+  const isOrganizationActive =
+    isAuthless ||
+    activeOrgId === org.id ||
+    (setActiveOrg.isSuccess && setActiveOrg.variables === org.id) ||
+    activeOrganization?.id === org.id
+  if (!isOrganizationActive) {
+    if (setActiveOrg.isError) {
+      return (
+        <EmptyState
+          tone="danger"
+          icon={TriangleAlert}
+          title={`Couldn't switch to ${org.name}`}
+          description={setActiveOrg.error.message}
+          className="min-h-[min(420px,60vh)]"
+          actions={
+            <Button
+              onClick={() => {
+                requestedOrgIdRef.current = org.id
+                setActiveOrg.mutate(org.id, {
+                  onError: () => {
+                    requestedOrgIdRef.current = null
+                  },
+                })
+              }}
+              disabled={setActiveOrg.isPending}
+            >
+              Try again
+            </Button>
+          }
+        />
+      )
+    }
+    return <OrgLoading label={`Switching to ${org.name}…`} />
   }
 
   // Valid organization - render children
@@ -103,5 +129,53 @@ function OrgSlugLayout() {
       <UpgradePromptHost orgSlug={orgSlug} />
       <TransitionBanner orgSlug={orgSlug} />
     </>
+  )
+}
+
+function OrgLoading({ label }: { label: string }) {
+  return (
+    <div
+      className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
+      aria-live="polite"
+    >
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+      <p className="text-[13px] text-muted-foreground">{label}</p>
+    </div>
+  )
+}
+
+/** The slug in the URL matches no organization this user can open. */
+function OrganizationUnavailable({
+  orgSlug,
+  isAuthless,
+  onGoHome,
+}: {
+  orgSlug: string
+  isAuthless: boolean
+  onGoHome: () => void
+}) {
+  const topBarConfig = useMemo(
+    () => ({ left: <PageTitle title={`/${orgSlug}`} mono /> }),
+    [orgSlug]
+  )
+
+  useAppTopBar(topBarConfig)
+
+  return (
+    <EmptyState
+      tone="danger"
+      icon={ShieldX}
+      title={isAuthless ? 'Workspace not found' : "You don't have access to this organization"}
+      description={
+        <>
+          <span className="font-mono text-foreground">/{orgSlug}</span>{' '}
+          {isAuthless
+            ? "doesn't exist on this install."
+            : "doesn't exist, or you haven't been invited to it. Ask an owner for an invitation, or switch organization."}
+        </>
+      }
+      className="min-h-[min(420px,60vh)]"
+      actions={<Button onClick={onGoHome}>Go to home</Button>}
+    />
   )
 }

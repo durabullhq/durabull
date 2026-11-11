@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { SEGMENTED_GROUP_CLASS, segmentedItemClass } from '@/components/ui/segmented'
 import { cn } from '@/lib/utils'
 
 interface TabsContextValue {
@@ -26,10 +27,7 @@ const TabsList = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEl
   ({ className, ...props }, ref) => (
     <div
       ref={ref}
-      className={cn(
-        'inline-flex h-9 items-center justify-center rounded-md border bg-muted p-0.5 text-muted-foreground',
-        className
-      )}
+      className={cn(cn(SEGMENTED_GROUP_CLASS, 'justify-center'), className)}
       {...props}
     />
   )
@@ -55,11 +53,7 @@ const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>(
         ref={ref}
         type="button"
         {...props}
-        className={cn(
-          'inline-flex items-center justify-center whitespace-nowrap rounded-[0.25rem] px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 hover:text-foreground',
-          isSelected && 'bg-card text-foreground shadow-sm',
-          className
-        )}
+        className={segmentedItemClass(isSelected, cn('px-2.5 ring-offset-background', className))}
         onClick={handleClick}
       >
         {children}

@@ -31,12 +31,12 @@ test.describe('Scheduled Jobs', () => {
         new RegExp(`/queues/${encodeURIComponent(queueName)}/scheduled-jobs/new$`)
       )
 
-      await page.getByLabel('Job Name').fill(jobName)
+      await page.getByLabel('Job name').fill(jobName)
       await page.getByLabel('Scheduler ID').fill(schedulerId)
       await page.getByRole('button', { name: /Fixed interval/i }).click()
       await page.getByLabel('Interval (ms)').fill('300000')
 
-      await page.getByRole('button', { name: 'Create Scheduled Job' }).click()
+      await page.getByRole('button', { name: 'Create scheduled job' }).click()
 
       await expect(page).toHaveURL(
         new RegExp(`/queues/${encodeURIComponent(queueName)}/scheduled-jobs/${schedulerId}$`),

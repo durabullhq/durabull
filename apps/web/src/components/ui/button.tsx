@@ -4,27 +4,28 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex select-none items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 active:translate-y-px disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-md text-[13px] font-medium ring-offset-background transition-[background-color,border-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
         default:
-          'border border-transparent bg-primary text-primary-foreground shadow-sm hover:bg-primary/90',
+          'border border-transparent bg-primary text-primary-foreground shadow-xs hover:bg-primary/88',
         destructive:
-          'border border-transparent bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90',
+          'border border-transparent bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90',
         outline:
-          'border border-input bg-card shadow-sm hover:bg-accent hover:text-accent-foreground',
+          'border border-input bg-card text-foreground shadow-xs hover:border-border-strong hover:bg-accent hover:text-accent-foreground',
         secondary:
           'border border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        ghost: 'border border-transparent hover:bg-accent hover:text-accent-foreground',
-        link: 'text-primary underline-offset-4 hover:underline active:translate-y-0',
+        ghost:
+          'border border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+        link: 'text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground',
       },
       size: {
         xs: 'h-7 gap-1.5 rounded-md px-2.5 text-xs',
-        default: 'h-9 px-4 py-2',
+        default: 'h-8 px-3.5',
         sm: 'h-8 rounded-md px-3',
-        lg: 'h-10 rounded-md px-8',
-        icon: 'h-9 w-9',
+        lg: 'h-10 rounded-md px-6 text-sm',
+        icon: 'h-8 w-8',
       },
     },
     defaultVariants: {

@@ -12,12 +12,20 @@ import {
   PLANS,
   type PlanCode,
 } from '@durabull/api-client/billing'
-import { AlertTriangle, CheckCircle2, CreditCard, Loader2, RefreshCw, Sparkles } from 'lucide-react'
+import {
+  AlertTriangle,
+  CalendarClock,
+  Check,
+  CreditCard,
+  Loader2,
+  Minus,
+  RefreshCw,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { SettingsPage } from '@/components/settings/settings-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -26,7 +34,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Panel, PanelHeader, SectionHeader } from '@/components/ui/section'
+import { segmentedItemClass } from '@/components/ui/segmented'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   type EnabledBillingOverview,
   useBilling,
@@ -43,16 +62,16 @@ const SALES_EMAIL = 'hello@durabull.io'
 
 const SOURCE_LABELS: Record<
   string,
-  { label: string; variant: 'success' | 'warning' | 'secondary' }
+  { label: string; variant: 'success' | 'warning' | 'info' | 'neutral' }
 > = {
   subscription: { label: 'Active', variant: 'success' },
-  trial: { label: 'Trial', variant: 'secondary' },
+  trial: { label: 'Trial', variant: 'info' },
   payment_grace: { label: 'Payment issue', variant: 'warning' },
   pending_upgrade: { label: 'Upgrade pending payment', variant: 'warning' },
-  migration_grant: { label: 'Beta transition', variant: 'secondary' },
-  override: { label: 'Arranged by Durabull', variant: 'secondary' },
+  migration_grant: { label: 'Beta transition', variant: 'neutral' },
+  override: { label: 'Arranged by Durabull', variant: 'neutral' },
   degraded: { label: 'Unverified', variant: 'warning' },
-  free: { label: 'Free', variant: 'secondary' },
+  free: { label: 'Free', variant: 'neutral' },
 }
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
@@ -94,19 +113,22 @@ export function BillingSettingsPage() {
   if (isLoading) {
     return (
       <div className="max-w-4xl space-y-4" data-testid="billing-loading">
-        <Skeleton className="h-36 w-full" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-56 w-full rounded-lg" />
+        <Skeleton className="h-64 w-full rounded-lg" />
       </div>
     )
   }
 
   if (error || !data) {
     return (
-      <Card className="max-w-4xl">
-        <CardContent className="p-6 text-sm text-muted-foreground">
-          {errorMessage(error, 'Billing information is unavailable right now.')}
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={CreditCard}
+        tone="danger"
+        title="Billing is unavailable"
+        description={errorMessage(error, 'Billing information is unavailable right now.')}
+        className="max-w-4xl"
+      />
     )
   }
 
@@ -116,24 +138,37 @@ export function BillingSettingsPage() {
 
 function SelfHostedBilling() {
   return (
-    <div className="max-w-4xl space-y-6">
-      <Card className="border-muted bg-muted/20">
-        <CardHeader className="border-b bg-muted/30">
-          <CardTitle className="text-base">Self-hosted deployment</CardTitle>
-          <CardDescription>
-            This installation runs Durabull under the Apache License 2.0. Every local feature is
-            available without a subscription, and nothing here contacts Stripe.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 text-sm text-muted-foreground">
-          Durabull Cloud subscriptions apply only to the hosted service. See{' '}
-          <a className="text-primary underline" href={CLOUD_PRICING_URL}>
-            {CLOUD_PRICING_URL.replace('https://', '')}
-          </a>{' '}
-          for Cloud plans and support options.
-        </CardContent>
-      </Card>
-    </div>
+    <SettingsPage title="Self-hosted deployment" description="No subscription is needed.">
+      <Panel>
+        <dl className="divide-y text-[13px]">
+          <div className="flex gap-3 px-4 py-2.5">
+            <dt className="w-32 shrink-0 text-muted-foreground sm:w-40">License</dt>
+            <dd className="min-w-0 flex-1">Apache License 2.0</dd>
+          </div>
+          <div className="flex gap-3 px-4 py-2.5">
+            <dt className="w-32 shrink-0 text-muted-foreground sm:w-40">Features</dt>
+            <dd className="min-w-0 flex-1">Every local feature is available.</dd>
+          </div>
+          <div className="flex gap-3 px-4 py-2.5">
+            <dt className="w-32 shrink-0 text-muted-foreground sm:w-40">Payments</dt>
+            <dd className="min-w-0 flex-1">Nothing here contacts Stripe.</dd>
+          </div>
+          <div className="flex gap-3 px-4 py-2.5">
+            <dt className="w-32 shrink-0 text-muted-foreground sm:w-40">Durabull Cloud</dt>
+            <dd className="min-w-0 flex-1">
+              Subscriptions apply only to the hosted service. Plans and support options are at{' '}
+              <a
+                className="font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+                href={CLOUD_PRICING_URL}
+              >
+                {CLOUD_PRICING_URL.replace('https://', '')}
+              </a>
+              .
+            </dd>
+          </div>
+        </dl>
+      </Panel>
+    </SettingsPage>
   )
 }
 
@@ -179,7 +214,7 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
   const confirming = returnState === 'confirming'
 
   return (
-    <div className="max-w-5xl space-y-6" data-testid="billing-settings">
+    <PlanSummary overview={overview}>
       {confirming ? (
         <Notice tone="info" icon={Loader2} spin title="Confirming your purchase">
           We are waiting for Stripe to confirm payment. Your plan updates here automatically; you
@@ -192,11 +227,10 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
         </Notice>
       ) : null}
       <BillingNotices overview={overview} />
-      <CurrentPlanCard overview={overview} />
-      <UsageCard overview={overview} />
-      {overview.allocation ? <AllocationCard overview={overview} /> : null}
-      <PlansCard overview={overview} />
-    </div>
+      <UsagePanel overview={overview} />
+      {overview.allocation ? <AllocationPanel overview={overview} /> : null}
+      <PlansSection overview={overview} />
+    </PlanSummary>
   )
 }
 
@@ -217,16 +251,24 @@ function Notice({
     <div
       aria-live="polite"
       className={cn(
-        'flex gap-3 rounded-lg border p-4 text-sm',
-        tone === 'warning' && 'border-amber-500/40 bg-amber-500/10',
-        tone === 'info' && 'border-primary/30 bg-primary/5',
-        tone === 'neutral' && 'border-border bg-muted/30'
+        'flex gap-3 rounded-lg border px-4 py-3 text-[13px]',
+        tone === 'warning' && 'border-status-warning/30 bg-status-warning/10',
+        tone === 'info' && 'border-status-active/30 bg-status-active/10',
+        tone === 'neutral' && 'bg-muted/40'
       )}
     >
-      <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', spin && 'animate-spin')} />
-      <div className="space-y-1">
+      <Icon
+        className={cn(
+          'mt-0.5 h-4 w-4 shrink-0',
+          tone === 'warning' && 'text-status-warning',
+          tone === 'info' && 'text-status-active',
+          tone === 'neutral' && 'text-muted-foreground',
+          spin && 'animate-spin'
+        )}
+      />
+      <div className="space-y-0.5">
         <div className="font-medium">{title}</div>
-        <div className="text-muted-foreground">{children}</div>
+        <div className="leading-5 text-muted-foreground">{children}</div>
       </div>
     </div>
   )
@@ -260,7 +302,7 @@ function BillingNotices({ overview }: { overview: EnabledBillingOverview }) {
   }
   if (overview.notices.includes('trial_ending') && overview.subscription?.trialEnd) {
     notices.push(
-      <Notice key="trial" tone="info" icon={Sparkles} title="Your trial is ending">
+      <Notice key="trial" tone="info" icon={CalendarClock} title="Your trial is ending">
         The Business trial ends on {formatDate(overview.subscription.trialEnd)}. Add a payment
         method in Manage billing to continue; otherwise the organization returns to Free.
       </Notice>
@@ -286,7 +328,12 @@ function BillingNotices({ overview }: { overview: EnabledBillingOverview }) {
   if (overview.migrationGrantExpiresAt) {
     const exceeded = overview.freePlanExceeded
     notices.push(
-      <Notice key="grant" tone="info" icon={Sparkles} title="Durabull Cloud plans are starting">
+      <Notice
+        key="grant"
+        tone="info"
+        icon={CalendarClock}
+        title="Durabull Cloud plans are starting"
+      >
         Your current usage stays available until {formatDate(overview.migrationGrantExpiresAt)}.
         Based on today’s usage we suggest the {PLANS[overview.proposedPlanCode as PlanCode].name}{' '}
         plan.
@@ -322,7 +369,14 @@ function BillingNotices({ overview }: { overview: EnabledBillingOverview }) {
   return <div className="space-y-3">{notices}</div>
 }
 
-function CurrentPlanCard({ overview }: { overview: EnabledBillingOverview }) {
+/** Page heading: which plan, its state, when it renews, and the billing actions. */
+function PlanSummary({
+  overview,
+  children,
+}: {
+  overview: EnabledBillingOverview
+  children: React.ReactNode
+}) {
   const openPortal = useOpenBillingPortal()
   const refresh = useRefreshBilling()
   const source = SOURCE_LABELS[overview.source] ?? SOURCE_LABELS.free
@@ -337,100 +391,114 @@ function CurrentPlanCard({ overview }: { overview: EnabledBillingOverview }) {
   const ending = Boolean(subscription?.cancelAtPeriodEnd || subscription?.cancelAt)
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-4 border-b bg-muted/30">
-        <div className="space-y-1">
-          <CardTitle className="flex items-center gap-2 text-base">
-            {overview.planName} plan
-            <Badge variant={source.variant}>{source.label}</Badge>
-          </CardTitle>
-          <CardDescription>
-            {trialEnds
-              ? `Free trial · ends ${trialEnds}. Add a payment method in Manage billing to continue after the trial.`
-              : subscription && renews
-                ? `${subscription.interval === 'year' ? 'Annual' : 'Monthly'} billing · ${
-                    ending ? 'ends' : 'renews'
-                  } ${renews}`
-                : 'Billed per organization. Your workers keep running on your infrastructure.'}
-          </CardDescription>
-        </div>
-        {overview.canManageBilling ? (
-          <div className="flex flex-wrap gap-2">
-            {overview.hasBillingAccount ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={openPortal.isPending}
-                onClick={() =>
-                  openPortal.mutate(undefined, {
-                    onError: (error) =>
-                      toast.error('Could not open billing', {
-                        description: errorMessage(error, ''),
-                      }),
-                  })
-                }
-              >
-                <CreditCard className="mr-1.5 h-4 w-4" />
-                Manage billing
-              </Button>
-            ) : null}
-            {overview.hasBillingAccount ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={refresh.isPending}
-                onClick={() => refresh.mutate()}
-                aria-label="Refresh billing status"
-              >
-                <RefreshCw className={cn('h-4 w-4', refresh.isPending && 'animate-spin')} />
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </CardHeader>
-      <CardContent className="p-4 text-sm text-muted-foreground">
-        {overview.canManageBilling
-          ? 'Invoices, receipts, payment methods, tax IDs and cancellation are managed securely on Stripe.'
-          : 'Only the organization owner can change the plan. Ask your organization owner to upgrade.'}
-      </CardContent>
-    </Card>
+    <SettingsPage
+      data-testid="billing-settings"
+      title={`${overview.planName} plan`}
+      count={
+        // "Free plan · Free" says the same thing twice.
+        overview.source === 'free' ? undefined : (
+          <Badge variant={source.variant} className="font-sans">
+            {source.label}
+          </Badge>
+        )
+      }
+      description={
+        trialEnds
+          ? `Free trial · ends ${trialEnds}. Add a payment method in Manage billing to continue after the trial.`
+          : subscription && renews
+            ? `${subscription.interval === 'year' ? 'Annual' : 'Monthly'} billing · ${
+                ending ? 'ends' : 'renews'
+              } ${renews}`
+            : 'Billed per organization. Your workers keep running on your infrastructure.'
+      }
+      actions={
+        overview.canManageBilling && overview.hasBillingAccount ? (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              disabled={refresh.isPending}
+              onClick={() => refresh.mutate()}
+              aria-label="Refresh billing status"
+              title="Refresh billing status"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', refresh.isPending && 'animate-spin')} />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={openPortal.isPending}
+              onClick={() =>
+                openPortal.mutate(undefined, {
+                  onError: (error) =>
+                    toast.error('Could not open billing', {
+                      description: errorMessage(error, ''),
+                    }),
+                })
+              }
+            >
+              <CreditCard className="h-3.5 w-3.5" aria-hidden />
+              Manage billing
+            </Button>
+          </>
+        ) : undefined
+      }
+    >
+      {children}
+    </SettingsPage>
   )
 }
 
 function UsageMeter({ label, used, limit }: { label: string; used: number; limit: number | null }) {
   const ratio = limit === null || limit === 0 ? (used > 0 && limit === 0 ? 1 : 0) : used / limit
   const over = limit !== null && used > limit
+  const percent = Math.min(100, Math.round(ratio * 100))
   return (
-    <div className="space-y-1.5" data-testid="usage-meter">
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span>{label}</span>
-        <span className={cn('tabular-nums text-muted-foreground', over && 'text-amber-600')}>
-          {used} / {limit === null ? '∞' : limit}
-        </span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+    <div
+      className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-2 text-[13px] sm:grid-cols-[minmax(0,1fr)_minmax(120px,240px)_72px]"
+      data-testid="usage-meter"
+    >
+      <span className="truncate">{label}</span>
+      {/* biome-ignore lint/a11y/useSemanticElements: a native <meter> cannot be styled from tokens */}
+      <div
+        role="meter"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={limit ?? undefined}
+        aria-valuenow={used}
+        aria-valuetext={limit === null ? `${used}, no limit` : `${used} of ${limit}`}
+        className="order-last col-span-2 h-1 overflow-hidden rounded-full bg-muted sm:order-none sm:col-span-1"
+      >
         <div
-          className={cn('h-full rounded-full bg-primary', ratio >= 1 && 'bg-amber-500')}
-          style={{ width: `${Math.min(100, Math.round(ratio * 100))}%` }}
+          className={cn('h-full rounded-full bg-foreground/60', ratio >= 1 && 'bg-status-warning')}
+          style={{ width: `${percent}%` }}
         />
       </div>
+      <span
+        className={cn(
+          'text-right font-mono tabular-nums text-muted-foreground',
+          over && 'text-status-warning'
+        )}
+      >
+        <span className={cn(!over && 'text-foreground')}>{used}</span> /{' '}
+        {limit === null ? '∞' : limit}
+      </span>
     </div>
   )
 }
 
-function UsageCard({ overview }: { overview: EnabledBillingOverview }) {
+function UsagePanel({ overview }: { overview: EnabledBillingOverview }) {
   const historyDays = overview.limits['history.redis_health_days']
   return (
-    <Card>
-      <CardHeader className="border-b bg-muted/30">
-        <CardTitle className="text-base">Usage</CardTitle>
-        <CardDescription>
-          No per-job or per-retry fees. All discovered queues on enabled connections are included.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4 p-4 sm:grid-cols-2">
+    <Panel>
+      <PanelHeader>
+        <h3 className="text-[13px] font-semibold">Usage</h3>
+        <span className="eyebrow">Used / plan limit</span>
+      </PanelHeader>
+      <div className="divide-y">
         {CAPACITY_LIMIT_KEYS.map((key) => (
           <UsageMeter
             key={key}
@@ -439,18 +507,19 @@ function UsageCard({ overview }: { overview: EnabledBillingOverview }) {
             limit={overview.limits[key]}
           />
         ))}
-        <div className="space-y-1.5 text-sm">
-          <div className="flex items-baseline justify-between">
-            <span>{LIMIT_LABELS['history.redis_health_days'].name}</span>
-            <span className="text-muted-foreground">{formatHistoryDays(historyDays)}</span>
-          </div>
+        <div className="flex min-h-10 items-center justify-between gap-4 px-4 py-2 text-[13px]">
+          <span>{LIMIT_LABELS['history.redis_health_days'].name}</span>
+          <span className="font-mono tabular-nums">{formatHistoryDays(historyDays)}</span>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      <p className="border-t bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+        No per-job or per-retry fees. All discovered queues on enabled connections are included.
+      </p>
+    </Panel>
   )
 }
 
-function PlansCard({ overview }: { overview: EnabledBillingOverview }) {
+function PlansSection({ overview }: { overview: EnabledBillingOverview }) {
   const [interval, setInterval] = useState<BillingInterval>(
     overview.subscription?.interval === 'year' ? 'year' : 'month'
   )
@@ -460,6 +529,8 @@ function PlansCard({ overview }: { overview: EnabledBillingOverview }) {
     overview.subscription !== null &&
     !['canceled', 'incomplete_expired'].includes(overview.subscription.status)
   const currentPlan = overview.planCode
+  const busy = startCheckout.isPending || openPortal.isPending
+  const features = Object.keys(FEATURE_LABELS) as FeatureKey[]
 
   const handleChoose = (plan: 'team' | 'business', trial = false) => {
     if (hasLiveSubscription) {
@@ -480,73 +551,200 @@ function PlansCard({ overview }: { overview: EnabledBillingOverview }) {
     )
   }
 
+  const columnClass = (code: PlanCode) => cn(currentPlan === code && 'bg-muted/50')
+  const canBuy = (code: PlanCode) =>
+    overview.canManageBilling &&
+    overview.purchasesEnabled &&
+    (code === 'team' || code === 'business') &&
+    currentPlan !== code
+  const offersTrial = canBuy('business') && overview.trialEligible
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/30">
-        <div>
-          <CardTitle className="text-base">Plans</CardTitle>
-          <CardDescription>
-            Prices in USD per organization, before applicable taxes.
-          </CardDescription>
+    <>
+      <SectionHeader
+        title="Plans"
+        description="Prices in USD per organization, before applicable taxes."
+        className="pt-2"
+        actions={
+          <fieldset className="m-0 inline-flex h-8 min-w-0 items-center gap-0.5 rounded-md border bg-muted p-0.5">
+            <legend className="sr-only">Billing interval</legend>
+            {(['month', 'year'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={interval === value}
+                onClick={() => setInterval(value)}
+                className={segmentedItemClass(interval === value, 'px-2.5')}
+              >
+                {value === 'month' ? 'Monthly' : 'Annual (2 months free)'}
+              </button>
+            ))}
+          </fieldset>
+        }
+      />
+      <Panel>
+        <Table className="min-w-[720px] table-fixed">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-[26%]">
+                <span className="sr-only">Compare</span>
+              </TableHead>
+              {PLAN_CODES.map((code) => (
+                <TableHead
+                  key={code}
+                  className={cn('h-auto py-2.5 align-top', columnClass(code))}
+                  data-testid={`plan-${code}`}
+                >
+                  <span className="flex items-center gap-2 font-sans text-[13px] font-semibold normal-case tracking-normal text-foreground">
+                    {PLANS[code].name}
+                    {currentPlan === code ? <Badge variant="success">Current</Badge> : null}
+                  </span>
+                  <span className="mt-1 block font-sans normal-case tracking-normal">
+                    <PlanPrice code={code} interval={interval} />
+                  </span>
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {HIGHLIGHT_LIMITS.map((key) => (
+              <TableRow key={key} className="hover:bg-transparent">
+                <TableCell className="text-muted-foreground">{LIMIT_LABELS[key].name}</TableCell>
+                {PLAN_CODES.map((code) => (
+                  <TableCell key={code} className={cn('font-mono tabular-nums', columnClass(code))}>
+                    {key === 'history.redis_health_days'
+                      ? formatHistoryDays(PLANS[code].limits[key])
+                      : code === 'enterprise'
+                        ? `From ${PLANS[code].limits[key]}`
+                        : formatLimit(PLANS[code].limits[key], '')}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+            {features.map((feature) => (
+              <TableRow key={feature} className="hover:bg-transparent">
+                <TableCell className="text-muted-foreground">
+                  {FEATURE_LABELS[feature].name}
+                </TableCell>
+                {PLAN_CODES.map((code) => {
+                  const included = PLANS[code].features.includes(feature)
+                  return (
+                    <TableCell key={code} className={columnClass(code)}>
+                      {included ? (
+                        <Check className="h-4 w-4 text-foreground" aria-hidden />
+                      ) : (
+                        <Minus className="h-4 w-4 text-faint" aria-hidden />
+                      )}
+                      <span className="sr-only">{included ? 'Included' : 'Not included'}</span>
+                    </TableCell>
+                  )
+                })}
+              </TableRow>
+            ))}
+            <TableRow className="hover:bg-transparent">
+              <TableCell className="align-top text-muted-foreground">Support</TableCell>
+              {PLAN_CODES.map((code) => (
+                <TableCell key={code} className={cn('align-top text-xs', columnClass(code))}>
+                  {PLANS[code].support}
+                </TableCell>
+              ))}
+            </TableRow>
+            <TableRow className="hover:bg-transparent">
+              <TableCell />
+              {PLAN_CODES.map((code) => (
+                <TableCell key={code} className={cn('py-3 align-top', columnClass(code))}>
+                  <div className="flex flex-col items-start gap-1.5">
+                    {code === 'enterprise' ? (
+                      <Button asChild variant="outline" size="xs">
+                        <a href={`mailto:${SALES_EMAIL}?subject=Durabull%20Enterprise`}>
+                          Contact sales
+                        </a>
+                      </Button>
+                    ) : canBuy(code) ? (
+                      <>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant={code === 'business' ? 'outline' : 'default'}
+                          disabled={busy}
+                          onClick={() => handleChoose(code as 'team' | 'business')}
+                        >
+                          {overview.planCode === 'free'
+                            ? `Upgrade to ${PLANS[code].name}`
+                            : `Switch to ${PLANS[code].name}`}
+                        </Button>
+                        {code === 'business' && overview.trialEligible ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="xs"
+                            disabled={busy}
+                            onClick={() => handleChoose('business', true)}
+                          >
+                            Start {overview.trialDays}-day free trial
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : currentPlan === code ? (
+                      <span className="text-xs text-muted-foreground">Your plan</span>
+                    ) : null}
+                  </div>
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableBody>
+        </Table>
+        <div className="space-y-1 border-t bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+          {overview.canManageBilling ? (
+            <p>
+              Invoices, receipts, payment methods, tax IDs and cancellation are managed securely on
+              Stripe.
+            </p>
+          ) : (
+            <>
+              <p>Only the organization owner can change the plan.</p>
+              <p>Ask your organization owner to upgrade.</p>
+            </>
+          )}
+          {offersTrial ? (
+            <p>
+              The trial needs no card. Without a payment method the organization returns to Free
+              when the trial ends; nothing is charged.
+            </p>
+          ) : null}
         </div>
-        <fieldset className="m-0 inline-flex min-w-0 rounded-md border bg-background p-0.5">
-          <legend className="sr-only">Billing interval</legend>
-          {(['month', 'year'] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={interval === value}
-              onClick={() => setInterval(value)}
-              className={cn(
-                'rounded px-3 py-1 text-xs font-medium',
-                interval === value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
-              )}
-            >
-              {value === 'month' ? 'Monthly' : 'Annual (2 months free)'}
-            </button>
-          ))}
-        </fieldset>
-      </CardHeader>
-      <CardContent className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-4">
-        {PLAN_CODES.map((code) => (
-          <PlanColumn
-            key={code}
-            code={code}
-            interval={interval}
-            current={currentPlan === code}
-            overview={overview}
-            busy={startCheckout.isPending || openPortal.isPending}
-            onChoose={handleChoose}
-          />
-        ))}
-      </CardContent>
-    </Card>
+      </Panel>
+    </>
   )
 }
 
 function PlanPrice({ code, interval }: { code: PlanCode; interval: BillingInterval }) {
   const plan = PLANS[code]
+  const priceClass = 'font-mono text-sm font-medium tabular-nums text-foreground'
+  const unitClass = 'font-sans text-xs font-normal text-muted-foreground'
   if (plan.monthlyPriceUsd === null || plan.annualPriceUsd === null) {
-    return <div className="text-2xl font-semibold">Custom</div>
+    return <div className={priceClass}>Custom</div>
   }
   if (plan.monthlyPriceUsd === 0) {
-    return <div className="text-2xl font-semibold">$0</div>
+    return <div className={priceClass}>$0</div>
   }
   if (interval === 'year') {
     return (
       <div>
-        <div className="text-2xl font-semibold">
+        <div className={priceClass}>
           ${effectiveMonthlyUsd(plan.annualPriceUsd).toFixed(2)}
-          <span className="text-sm font-normal text-muted-foreground">/month</span>
+          <span className={unitClass}>/month</span>
         </div>
-        <div className="text-xs text-muted-foreground">Billed ${plan.annualPriceUsd} annually</div>
+        <div className="text-xs font-normal text-muted-foreground">
+          Billed ${plan.annualPriceUsd} annually
+        </div>
       </div>
     )
   }
   return (
-    <div className="text-2xl font-semibold">
+    <div className={priceClass}>
       ${plan.monthlyPriceUsd}
-      <span className="text-sm font-normal text-muted-foreground">/month</span>
+      <span className={unitClass}>/month</span>
     </div>
   )
 }
@@ -559,116 +757,6 @@ const HIGHLIGHT_LIMITS: LimitKey[] = [
   'history.redis_health_days',
 ]
 
-function PlanColumn({
-  code,
-  interval,
-  current,
-  overview,
-  busy,
-  onChoose,
-}: {
-  code: PlanCode
-  interval: BillingInterval
-  current: boolean
-  overview: EnabledBillingOverview
-  busy: boolean
-  onChoose: (plan: 'team' | 'business', trial?: boolean) => void
-}) {
-  const plan = PLANS[code]
-  const purchasable = code === 'team' || code === 'business'
-  const canBuy = overview.canManageBilling && overview.purchasesEnabled && purchasable && !current
-
-  return (
-    <div
-      className={cn(
-        'flex flex-col rounded-lg border p-4',
-        current && 'border-primary/60 bg-primary/5'
-      )}
-      data-testid={`plan-${code}`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="font-semibold">{plan.name}</div>
-        {current ? <Badge variant="success">Current</Badge> : null}
-      </div>
-      <p className="mt-1 min-h-10 text-xs text-muted-foreground">{plan.description}</p>
-      <div className="mt-3">
-        <PlanPrice code={code} interval={interval} />
-      </div>
-      <ul className="mt-4 flex-1 space-y-1.5 text-xs">
-        {HIGHLIGHT_LIMITS.map((key) => (
-          <li key={key} className="flex justify-between gap-2">
-            <span className="text-muted-foreground">{LIMIT_LABELS[key].name}</span>
-            <span>
-              {key === 'history.redis_health_days'
-                ? formatHistoryDays(plan.limits[key])
-                : code === 'enterprise'
-                  ? `From ${plan.limits[key]}`
-                  : formatLimit(plan.limits[key], '')}
-            </span>
-          </li>
-        ))}
-        {(Object.keys(FEATURE_LABELS) as FeatureKey[]).map((feature) => (
-          <li key={feature} className="flex items-center gap-1.5">
-            <CheckCircle2
-              className={cn(
-                'h-3.5 w-3.5',
-                plan.features.includes(feature) ? 'text-emerald-500' : 'text-muted-foreground/40'
-              )}
-            />
-            <span
-              className={cn(
-                !plan.features.includes(feature) && 'text-muted-foreground line-through'
-              )}
-            >
-              {FEATURE_LABELS[feature].name}
-            </span>
-          </li>
-        ))}
-        <li className="pt-1 text-muted-foreground">{plan.support}</li>
-      </ul>
-      <div className="mt-4 space-y-2">
-        {code === 'enterprise' ? (
-          <Button asChild variant="outline" size="sm" className="w-full">
-            <a href={`mailto:${SALES_EMAIL}?subject=Durabull%20Enterprise`}>Contact sales</a>
-          </Button>
-        ) : canBuy ? (
-          <>
-            <Button
-              type="button"
-              size="sm"
-              className="w-full"
-              disabled={busy}
-              onClick={() => onChoose(code as 'team' | 'business')}
-            >
-              {overview.planCode === 'free' ? `Upgrade to ${plan.name}` : `Switch to ${plan.name}`}
-            </Button>
-            {code === 'business' && overview.trialEligible ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                disabled={busy}
-                onClick={() => onChoose('business', true)}
-              >
-                Start {overview.trialDays}-day free trial
-              </Button>
-            ) : null}
-            {code === 'business' && overview.trialEligible ? (
-              <p className="text-xs text-muted-foreground">
-                No card needed. Without a payment method the organization returns to Free when the
-                trial ends; nothing is charged.
-              </p>
-            ) : null}
-          </>
-        ) : purchasable && !current && !overview.canManageBilling ? (
-          <p className="text-xs text-muted-foreground">Ask your organization owner to upgrade.</p>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
 const ALLOCATION_KIND_LABELS: Record<string, string> = {
   connection: 'Connection',
   member: 'Member',
@@ -678,7 +766,7 @@ const ALLOCATION_KIND_LABELS: Record<string, string> = {
   service_account: 'Service account',
 }
 
-function AllocationCard({ overview }: { overview: EnabledBillingOverview }) {
+function AllocationPanel({ overview }: { overview: EnabledBillingOverview }) {
   const [editing, setEditing] = useState<CapacityLimitKey | null>(null)
   const allocation = overview.allocation
   if (!allocation) return null
@@ -690,39 +778,39 @@ function AllocationCard({ overview }: { overview: EnabledBillingOverview }) {
   if (keys.length === 0) return null
 
   return (
-    <Card>
-      <CardHeader className="border-b bg-muted/30">
-        <CardTitle className="text-base">Choose what stays enabled</CardTitle>
-        <CardDescription>
+    <Panel>
+      <PanelHeader className="flex-col items-start gap-0.5 py-2.5">
+        <h3 className="text-[13px] font-semibold">Choose what stays enabled</h3>
+        <p className="text-xs text-muted-foreground">
           Paused resources keep their configuration and can be restored at any time. Pausing never
           changes your Redis data or queues.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3 p-4">
+        </p>
+      </PanelHeader>
+      <div className="divide-y">
         {keys.map((key) => {
           const options = allocation[key]
           const paused = options.filter((o) => o.suspended).length
           return (
             <div
               key={key}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+              className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2 text-[13px]"
             >
-              <div className="text-sm">
-                <div className="font-medium">{LIMIT_LABELS[key].name}</div>
-                <div className="text-muted-foreground">
-                  {options.length - paused} enabled of {overview.limits[key] ?? '∞'} allowed
-                  {paused > 0 ? ` · ${paused} paused` : ''}
-                </div>
-              </div>
+              <span className="min-w-0 flex-1 basis-full truncate sm:basis-0">
+                {LIMIT_LABELS[key].name}
+              </span>
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                {options.length - paused} enabled of {overview.limits[key] ?? '∞'} allowed
+                {paused > 0 ? ` · ${paused} paused` : ''}
+              </span>
               {overview.canManageBilling ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => setEditing(key)}>
+                <Button type="button" variant="outline" size="xs" onClick={() => setEditing(key)}>
                   Choose
                 </Button>
               ) : null}
             </div>
           )
         })}
-      </CardContent>
+      </div>
       {editing ? (
         <AllocationDialog
           limitKey={editing}
@@ -731,7 +819,7 @@ function AllocationCard({ overview }: { overview: EnabledBillingOverview }) {
           onClose={() => setEditing(null)}
         />
       ) : null}
-    </Card>
+    </Panel>
   )
 }
 
@@ -770,15 +858,15 @@ function AllocationDialog({
             selection.
           </DialogDescription>
         </DialogHeader>
-        <div className="max-h-80 space-y-1 overflow-auto">
+        <div className="max-h-80 divide-y overflow-auto rounded-md border">
           {options.map((option) => (
             <label
               key={option.id}
-              className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50"
+              className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted/60"
             >
               <input
                 type="checkbox"
-                className="h-4 w-4"
+                className="h-3.5 w-3.5 shrink-0 accent-foreground"
                 checked={selected.has(option.id)}
                 disabled={option.pinned}
                 onChange={(event) => {
@@ -792,13 +880,13 @@ function AllocationDialog({
               />
               <span className="min-w-0 flex-1 truncate">{option.name}</span>
               <Badge variant="outline">{ALLOCATION_KIND_LABELS[option.kind] ?? option.kind}</Badge>
-              {option.pinned ? <Badge variant="secondary">Owner</Badge> : null}
+              {option.pinned ? <Badge variant="neutral">Owner</Badge> : null}
             </label>
           ))}
         </div>
         <DialogFooter>
           {tooMany ? (
-            <span className="mr-auto text-xs text-amber-600">
+            <span className="mr-auto self-center text-xs text-status-warning">
               {selected.size} selected; your plan allows {max}.
             </span>
           ) : null}

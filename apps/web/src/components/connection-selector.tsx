@@ -1,14 +1,15 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
+import { Link, useParams } from '@tanstack/react-router'
 import {
   AlertCircle,
   Check,
   ChevronsUpDown,
   Cloud,
   Code,
-  Database,
   Loader2,
   Server,
+  Settings2,
 } from 'lucide-react'
 
 // Connection types - matches API response
@@ -31,28 +32,37 @@ const environmentConfig: Record<
   ConnectionEnvironment,
   {
     label: string
+    /** Three-letter tag shown beside the connection name. */
+    short: string
     icon: typeof Code
     color: string
     bgColor: string
+    dot: string
   }
 > = {
   development: {
     label: 'Development',
+    short: 'DEV',
     icon: Code,
     color: 'text-status-success',
     bgColor: 'bg-status-success/10',
+    dot: 'bg-status-success',
   },
   staging: {
     label: 'Staging',
+    short: 'STG',
     icon: Server,
     color: 'text-status-warning',
     bgColor: 'bg-status-warning/10',
+    dot: 'bg-status-warning',
   },
   production: {
     label: 'Production',
+    short: 'PROD',
     icon: Cloud,
     color: 'text-status-danger',
     bgColor: 'bg-status-danger/10',
+    dot: 'bg-status-danger',
   },
 }
 
@@ -63,46 +73,61 @@ function getEnvironmentConfig(env: ConnectionEnvironment | null) {
   return environmentConfig[env ?? 'development']
 }
 
+const triggerShell =
+  'flex h-9 w-full items-center gap-2 rounded-md border bg-card px-2.5 text-left shadow-xs'
+
+function EnvTag({ env }: { env: ConnectionEnvironment | null }) {
+  const config = getEnvironmentConfig(env)
+  return (
+    <span
+      className={cn('shrink-0 font-mono text-[10px] font-medium tracking-wider', config.color)}
+      title={config.label}
+    >
+      {config.short}
+    </span>
+  )
+}
+
 export function ConnectionSelector() {
   const { connections, currentConnection, setCurrentConnection, isLoading, error } = useConnection()
+  const { orgSlug } = useParams({ strict: false }) as { orgSlug?: string }
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-sidebar-accent/30 px-3 py-2.5">
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        <span className="text-sm text-muted-foreground">Loading...</span>
+      <div className={cn(triggerShell, 'text-muted-foreground')}>
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span className="text-[13px]">Loading…</span>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2.5">
-        <AlertCircle className="h-4 w-4 text-destructive" />
-        <span className="text-sm text-destructive">Connection error</span>
+      <div className={cn(triggerShell, 'border-destructive/40 bg-destructive/5 text-destructive')}>
+        <AlertCircle className="h-3.5 w-3.5" />
+        <span className="text-[13px]">Connection error</span>
       </div>
     )
   }
 
   if (connections.length === 0) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-status-warning/50 bg-status-warning/10 px-3 py-2.5">
-        <AlertCircle className="h-4 w-4 text-status-warning" />
-        <span className="text-sm text-status-warning">No connections</span>
+      <div
+        className={cn(
+          triggerShell,
+          'border-status-warning/40 bg-status-warning/5 text-status-warning'
+        )}
+      >
+        <AlertCircle className="h-3.5 w-3.5" />
+        <span className="text-[13px]">No connections</span>
       </div>
     )
   }
 
-  // Get current connection's environment config
-  const currentEnvConfig = currentConnection
-    ? getEnvironmentConfig(currentConnection.environment)
-    : null
-  const CurrentEnvIcon = currentEnvConfig?.icon ?? Database
-
   // Group connections by environment
   const connectionsByEnv = environmentOrder.reduce(
     (acc, env) => {
-      const envConnections = connections.filter((c) => c.environment === env)
+      const envConnections = connections.filter((c) => (c.environment ?? 'development') === env)
       if (envConnections.length > 0) {
         acc[env] = envConnections
       }
@@ -111,56 +136,63 @@ export function ConnectionSelector() {
     {} as Partial<Record<ConnectionEnvironment, typeof connections>>
   )
 
-  // If only one connection, show it without dropdown
+  // A single connection has nothing to switch to: show it as a static label.
   if (connections.length === 1) {
     const conn = connections[0]
-    const envConfig = getEnvironmentConfig(conn.environment)
-    const EnvIcon = envConfig.icon
-
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-sidebar-accent/30 px-3 py-2.5">
-        <div className={cn('p-1 rounded', envConfig.bgColor)}>
-          <EnvIcon className={cn('h-3.5 w-3.5', envConfig.color)} />
-        </div>
-        <span className="truncate text-sm font-medium text-sidebar-foreground">{conn.name}</span>
+      <div className={triggerShell}>
+        <span
+          className={cn(
+            'h-2 w-2 shrink-0 rounded-full',
+            getEnvironmentConfig(conn.environment).dot
+          )}
+          aria-hidden
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+          {conn.name}
+        </span>
+        <EnvTag env={conn.environment} />
       </div>
     )
   }
+
+  const currentEnv = currentConnection ? getEnvironmentConfig(currentConnection.environment) : null
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         data-testid="connection-selector"
-        className="w-full rounded-lg border border-border/50 bg-sidebar-accent/30 outline-none ring-ring transition-colors hover:bg-sidebar-accent focus-visible:ring-2 data-[state=open]:bg-sidebar-accent"
+        aria-label="Switch connection"
+        className={cn(
+          triggerShell,
+          'outline-none transition-colors hover:border-border-strong hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/40 data-[state=open]:bg-accent'
+        )}
       >
-        <div className="flex items-center gap-2 px-3 py-2.5">
-          <div className={cn('p-1 rounded shrink-0', currentEnvConfig?.bgColor ?? 'bg-muted')}>
-            <CurrentEnvIcon
-              className={cn('h-3.5 w-3.5', currentEnvConfig?.color ?? 'text-muted-foreground')}
-            />
-          </div>
-          <span className="flex-1 truncate text-left text-sm font-medium text-sidebar-foreground">
-            {currentConnection?.name ?? 'Select connection'}
-          </span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        </div>
+        <span
+          className={cn('h-2 w-2 shrink-0 rounded-full', currentEnv?.dot ?? 'bg-status-neutral')}
+          aria-hidden
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
+          {currentConnection?.name ?? 'Select connection'}
+        </span>
+        {currentConnection ? <EnvTag env={currentConnection.environment} /> : null}
+        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-faint" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-64" align="start" side="bottom" sideOffset={4}>
+      <DropdownMenuContent
+        className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-60"
+        align="start"
+        side="bottom"
+        sideOffset={4}
+      >
         {environmentOrder.map((env) => {
           const envConnections = connectionsByEnv[env]
           if (!envConnections || envConnections.length === 0) return null
 
           const envConfig = environmentConfig[env]
-          const EnvIcon = envConfig.icon
 
           return (
             <DropdownMenuGroup key={env}>
-              <DropdownMenuLabel className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                <div className={cn('p-1 rounded', envConfig.bgColor)}>
-                  <EnvIcon className={cn('h-3 w-3', envConfig.color)} />
-                </div>
-                {envConfig.label}
-              </DropdownMenuLabel>
+              <DropdownMenuLabel className="eyebrow pb-1 pt-2">{envConfig.label}</DropdownMenuLabel>
               {envConnections.map((connection) => (
                 <DropdownMenuItem
                   key={connection.id}
@@ -174,22 +206,32 @@ export function ConnectionSelector() {
                     }
                     setCurrentConnection(connection)
                   }}
-                  className={cn(
-                    'cursor-pointer ml-2',
-                    currentConnection?.id === connection.id && 'bg-accent'
-                  )}
+                  className="cursor-pointer"
                 >
-                  <Database className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <span
+                    className={cn('h-2 w-2 shrink-0 rounded-full', envConfig.dot)}
+                    aria-hidden
+                  />
                   <span className="flex-1 truncate">{connection.name}</span>
                   {currentConnection?.id === connection.id && (
-                    <Check className="ml-2 h-4 w-4 text-primary" />
+                    <Check className="ml-2 h-3.5 w-3.5 text-foreground" />
                   )}
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuSeparator />
             </DropdownMenuGroup>
           )
         })}
+        {orgSlug ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild className="cursor-pointer text-muted-foreground">
+              <Link to="/$orgSlug/settings/connections" params={{ orgSlug }}>
+                <Settings2 />
+                Manage connections
+              </Link>
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   )

@@ -1,14 +1,17 @@
 import { Link } from '@tanstack/react-router'
-import { Radar, Siren } from 'lucide-react'
+import { useMemo } from 'react'
+import { CountBadge } from '@/components/ui/count-badge'
+import { getOpenAlertCount, useAlertSummary, useConnectionAlertRules } from '@/hooks/use-alerts'
 
-const linkClassName =
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[0.25rem] px-4 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 hover:text-foreground'
+const tabClassName =
+  'relative -mb-px inline-flex h-9 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-0.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 data-[status=active]:border-foreground data-[status=active]:text-foreground'
 
-const activeLinkProps = {
-  className: 'bg-card text-foreground shadow-sm',
-  'aria-current': 'page',
-} as const
+const activeTabProps = { 'aria-current': 'page' } as const
 
+/**
+ * The alerts area is one place with three views: what is firing (Incidents),
+ * what watches for it (Rules), and who gets told (Destinations).
+ */
 export function AlertsViewSwitcher({
   orgSlug,
   connectionId,
@@ -16,31 +19,63 @@ export function AlertsViewSwitcher({
   orgSlug: string
   connectionId: string
 }) {
+  const { data: summary } = useAlertSummary()
+  const { data: rulesData } = useConnectionAlertRules(connectionId)
+  const openCount = useMemo(
+    () => getOpenAlertCount(summary?.connections, connectionId),
+    [summary?.connections, connectionId]
+  )
+  const ruleCount = rulesData?.rules.length
+
   return (
-    <nav
-      aria-label="Alerts views"
-      className="inline-flex h-11 items-center justify-center rounded-md border bg-muted/40 p-1 text-muted-foreground"
-    >
+    <nav aria-label="Alerts views" className="flex items-center gap-5">
       <Link
         to="/$orgSlug/c/$connectionId/alerts"
         params={{ orgSlug, connectionId }}
         activeOptions={{ exact: true, includeSearch: false }}
-        activeProps={activeLinkProps}
-        className={linkClassName}
+        activeProps={activeTabProps}
+        className={tabClassName}
       >
-        <Siren className="h-4 w-4" />
         Incidents
+        {openCount > 0 ? <CountBadge value={openCount} tone="danger" /> : null}
       </Link>
       <Link
         to="/$orgSlug/c/$connectionId/alerts/rules"
         params={{ orgSlug, connectionId }}
         activeOptions={{ includeSearch: false }}
-        activeProps={activeLinkProps}
-        className={linkClassName}
+        activeProps={activeTabProps}
+        className={tabClassName}
       >
-        <Radar className="h-4 w-4" />
         Rules
+        {ruleCount !== undefined ? <CountBadge value={ruleCount} /> : null}
+      </Link>
+      <Link
+        to="/$orgSlug/c/$connectionId/alerts/destinations"
+        params={{ orgSlug, connectionId }}
+        activeOptions={{ includeSearch: false }}
+        activeProps={activeTabProps}
+        className={tabClassName}
+      >
+        Destinations
       </Link>
     </nav>
+  )
+}
+
+/** Tab row for every alerts view, with an optional right-aligned control slot. */
+export function AlertsHeader({
+  orgSlug,
+  connectionId,
+  children,
+}: {
+  orgSlug: string
+  connectionId: string
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b">
+      <AlertsViewSwitcher orgSlug={orgSlug} connectionId={connectionId} />
+      {children ? <div className="flex items-center gap-2 pb-1.5">{children}</div> : null}
+    </div>
   )
 }

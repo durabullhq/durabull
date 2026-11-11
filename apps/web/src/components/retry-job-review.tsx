@@ -34,9 +34,9 @@ export function RetryJobReview({ jobData, onCancel, onRetry }: RetryJobReviewPro
 
   return (
     <>
-      <div className="space-y-4">
+      <div className="space-y-3">
         <Collapsible open={payloadExpanded} onOpenChange={setPayloadExpanded}>
-          <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 rounded-lg border bg-muted/20 px-4 py-3 text-left text-sm font-medium hover:bg-muted/40">
+          <CollapsibleTrigger className="flex h-9 w-full items-center justify-between gap-3 rounded-md border bg-card px-3 text-left text-[13px] font-medium transition-colors hover:border-border-strong hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
             <span>Edit job payload</span>
             <ChevronDown
               className={cn(
@@ -61,19 +61,19 @@ export function RetryJobReview({ jobData, onCancel, onRetry }: RetryJobReviewPro
         </Collapsible>
 
         {payloadChanged ? (
-          <div className="flex items-start gap-3 rounded-lg border px-4 py-3">
+          <div className="flex items-start gap-2.5 rounded-md border px-3 py-2">
             <input
               id="retry-overwrite-ack"
               type="checkbox"
               aria-labelledby="retry-overwrite-ack-label"
               checked={overwriteAcknowledged}
               onChange={(event) => setOverwriteAcknowledged(event.target.checked)}
-              className="mt-0.5 rounded border-gray-300"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded-[4px] border-input accent-destructive"
             />
             <Label
               id="retry-overwrite-ack-label"
               htmlFor="retry-overwrite-ack"
-              className="text-sm font-normal leading-5"
+              className="text-[13px] font-normal leading-5"
             >
               I understand, overwrite the stored payload and retry with it.
             </Label>

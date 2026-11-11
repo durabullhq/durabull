@@ -4,7 +4,6 @@ import {
   LIMIT_LABELS,
   PLANS,
 } from '@durabull/api-client/billing'
-import { Sparkles } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -57,14 +56,11 @@ export function UpgradePromptHost({ orgSlug }: { orgSlug: string }) {
     <Dialog open onOpenChange={(open) => !open && setDenial(null)}>
       <DialogContent data-testid="upgrade-prompt">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            {title}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {denial.code !== 'billing_state_unverified' ? (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] leading-5 text-muted-foreground">
             {canManage
               ? `Upgrade to ${PLANS[denial.requiredPlan].name} to continue. Your work so far is kept.`
               : 'Ask your organization owner to upgrade. Your work so far is kept.'}

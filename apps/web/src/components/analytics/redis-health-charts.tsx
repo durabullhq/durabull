@@ -1,4 +1,3 @@
-import { Activity } from 'lucide-react'
 import {
   Area,
   AreaChart,
@@ -9,7 +8,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   type ChartConfig,
   ChartContainer,
@@ -18,61 +16,48 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart'
+import { ChartPanel } from './chart-panel'
+import { CHART_HEIGHT_CLASS } from './chart-series'
 import { formatRedisHealthChartTick } from './redis-health-chart-format'
 import { type RedisHealthThreshold, thresholdsForChart } from './redis-health-metrics'
 import type { RedisHealthHistoryPoint } from './redis-health-types'
 
+// Colour follows the entity across the four charts: memory is always chart-2,
+// CPU and allocator signals chart-4, clients chart-1, and loss (evictions,
+// rejected connections) the danger hue. Limits are neutral and dashed.
 const utilizationChartConfig = {
-  memoryUsagePercent: {
-    label: 'Memory',
-    theme: { light: 'hsl(219 86% 48%)', dark: 'hsl(210 94% 68%)' },
-  },
-  cpuUsagePercent: {
-    label: 'CPU',
-    theme: { light: 'hsl(267 72% 50%)', dark: 'hsl(271 96% 72%)' },
-  },
-  connectedClientsPercent: {
-    label: 'Client capacity',
-    theme: { light: 'hsl(146 55% 38%)', dark: 'hsl(145 63% 54%)' },
-  },
+  memoryUsagePercent: { label: 'Memory', color: 'var(--color-chart-2)' },
+  cpuUsagePercent: { label: 'CPU', color: 'var(--color-chart-4)' },
+  connectedClientsPercent: { label: 'Client capacity', color: 'var(--color-chart-1)' },
 } satisfies ChartConfig
 
 const memoryChartConfig = {
-  usedMemoryMiB: {
-    label: 'Allocated',
-    theme: { light: 'hsl(219 86% 48%)', dark: 'hsl(210 94% 68%)' },
-  },
-  residentMemoryMiB: {
-    label: 'Resident',
-    theme: { light: 'hsl(35 90% 46%)', dark: 'hsl(38 98% 61%)' },
-  },
-  memoryCapacityMiB: {
-    label: 'Configured capacity',
-    theme: { light: 'hsl(146 55% 38%)', dark: 'hsl(145 63% 54%)' },
-  },
+  usedMemoryMiB: { label: 'Allocated', color: 'var(--color-chart-2)' },
+  residentMemoryMiB: { label: 'Resident', color: 'var(--color-chart-3)' },
+  memoryCapacityMiB: { label: 'Configured capacity', color: 'var(--color-status-neutral)' },
 } satisfies ChartConfig
 
 const clientPressureChartConfig = {
-  blockedClients: {
-    label: 'Blocked clients',
-    theme: { light: 'hsl(35 90% 46%)', dark: 'hsl(38 98% 61%)' },
-  },
-  rejectedConnectionsPerMinute: {
-    label: 'Rejected/min',
-    theme: { light: 'hsl(267 72% 50%)', dark: 'hsl(271 96% 72%)' },
-  },
+  blockedClients: { label: 'Blocked clients', color: 'var(--color-chart-3)' },
+  rejectedConnectionsPerMinute: { label: 'Rejected/min', color: 'var(--color-chart-5)' },
 } satisfies ChartConfig
 
 const memoryPressureChartConfig = {
-  evictedKeysPerMinute: {
-    label: 'Evictions/min',
-    theme: { light: 'hsl(0 72% 52%)', dark: 'hsl(2 90% 66%)' },
-  },
-  memoryFragmentationRatio: {
-    label: 'Fragmentation ratio',
-    theme: { light: 'hsl(191 72% 38%)', dark: 'hsl(188 74% 55%)' },
-  },
+  evictedKeysPerMinute: { label: 'Evictions/min', color: 'var(--color-chart-5)' },
+  memoryFragmentationRatio: { label: 'Fragmentation ratio', color: 'var(--color-chart-4)' },
 } satisfies ChartConfig
+
+const CHART_MARGIN = { left: 0, right: 8, top: 8, bottom: 0 }
+const DAY_MS = 24 * 60 * 60 * 1000
+
+type ValueFormatter = (value: number, dataKey: string) => string
+
+const formatPercentValue: ValueFormatter = (value) => `${value.toFixed(1)}%`
+const formatMiBValue: ValueFormatter = (value) => `${value.toFixed(1)} MiB`
+const formatClientPressureValue: ValueFormatter = (value, dataKey) =>
+  dataKey === 'rejectedConnectionsPerMinute' ? `${formatDecimal(value)}/min` : formatDecimal(value)
+const formatMemoryPressureValue: ValueFormatter = (value, dataKey) =>
+  dataKey === 'memoryFragmentationRatio' ? `${value.toFixed(2)}×` : `${formatDecimal(value)}/min`
 
 interface RedisHealthChartPoint extends RedisHealthHistoryPoint {
   timestamp: number
@@ -112,29 +97,37 @@ export function RedisHealthCharts({
       (chartData.length > 1 ? bucketMinutes * 60_000 : 0)
   )
 
+  // Multi-day ranges label the axis by date, so tick once per day instead of
+  // repeating the same date on every tick.
+  const dayTicks = rangeDurationMs >= DAY_MS ? firstTimestampPerDay(chartData) : undefined
+  const axis = { rangeDurationMs, ticks: dayTicks }
+
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <MetricChartCard
-        title="Utilization Over Time"
-        description="Peak memory, CPU, and connected-client utilization per bucket. Missing samples remain visible as gaps."
+    <div className="grid gap-4 lg:grid-cols-2">
+      <ChartPanel
+        title="Utilization"
+        meta="% · peak per bucket"
+        hint="Peak memory, CPU, and connected-client utilization per bucket. Missing samples remain visible as gaps."
       >
         <UtilizationChart
           data={chartData}
-          rangeDurationMs={rangeDurationMs}
+          axis={axis}
           thresholds={thresholdsForChart(thresholds, 'utilization')}
         />
-      </MetricChartCard>
+      </ChartPanel>
 
-      <MetricChartCard
-        title="Memory Footprint"
-        description="Peak allocated and resident memory per bucket against the configured maxmemory capacity."
+      <ChartPanel
+        title="Memory footprint"
+        meta="MiB · peak per bucket"
+        hint="Peak allocated and resident memory per bucket against the configured maxmemory capacity."
       >
         <LineMetricChart
           config={memoryChartConfig}
           data={chartData}
-          rangeDurationMs={rangeDurationMs}
+          axis={axis}
           thresholds={thresholdsForChart(thresholds, 'memory')}
           leftUnit=" MiB"
+          formatValue={formatMiBValue}
           lines={[
             { dataKey: 'usedMemoryMiB', color: 'var(--color-usedMemoryMiB)' },
             { dataKey: 'residentMemoryMiB', color: 'var(--color-residentMemoryMiB)' },
@@ -146,18 +139,20 @@ export function RedisHealthCharts({
             },
           ]}
         />
-      </MetricChartCard>
+      </ChartPanel>
 
-      <MetricChartCard
-        title="Client Pressure"
-        description="Blocked clients and rejected connections use separate count and rate axes."
+      <ChartPanel
+        title="Client pressure"
+        meta="left count · right /min"
+        hint="Blocked clients and rejected connections use separate count and rate axes."
       >
         <LineMetricChart
           config={clientPressureChartConfig}
           data={chartData}
-          rangeDurationMs={rangeDurationMs}
+          axis={axis}
           thresholds={thresholdsForChart(thresholds, 'clientPressure')}
           rightUnit="/m"
+          formatValue={formatClientPressureValue}
           thresholdAxis={(threshold) => (threshold.metric === 'blocked_clients' ? 'left' : 'right')}
           lines={[
             { dataKey: 'blockedClients', color: 'var(--color-blockedClients)' },
@@ -168,18 +163,20 @@ export function RedisHealthCharts({
             },
           ]}
         />
-      </MetricChartCard>
+      </ChartPanel>
 
-      <MetricChartCard
-        title="Memory Pressure Signals"
-        description="Eviction rate uses the left axis; allocator fragmentation uses the ratio axis on the right."
+      <ChartPanel
+        title="Memory pressure"
+        meta="left /min · right ratio"
+        hint="Eviction rate uses the left axis; allocator fragmentation uses the ratio axis on the right."
       >
         <LineMetricChart
           config={memoryPressureChartConfig}
           data={chartData}
-          rangeDurationMs={rangeDurationMs}
+          axis={axis}
           thresholds={thresholdsForChart(thresholds, 'memoryPressure')}
           rightUnit="×"
+          formatValue={formatMemoryPressureValue}
           thresholdAxis={(threshold) =>
             threshold.metric === 'memory_fragmentation_ratio' ? 'right' : 'left'
           }
@@ -192,28 +189,33 @@ export function RedisHealthCharts({
             },
           ]}
         />
-      </MetricChartCard>
+      </ChartPanel>
     </div>
   )
 }
 
+interface TimeAxisSpec {
+  rangeDurationMs: number
+  ticks?: number[]
+}
+
 function UtilizationChart({
   data,
-  rangeDurationMs,
+  axis,
   thresholds,
 }: {
   data: RedisHealthChartPoint[]
-  rangeDurationMs: number
+  axis: TimeAxisSpec
   thresholds: RedisHealthThreshold[]
 }) {
   return (
-    <ChartContainer config={utilizationChartConfig} className="h-[300px] w-full">
-      <AreaChart data={data} margin={{ left: 0, right: 14, top: 12, bottom: 6 }}>
+    <ChartContainer config={utilizationChartConfig} className={CHART_HEIGHT_CLASS}>
+      <AreaChart data={data} margin={CHART_MARGIN}>
         <CartesianGrid vertical={false} />
-        <TimeAxis rangeDurationMs={rangeDurationMs} />
+        <TimeAxis {...axis} />
         <YAxis yAxisId="left" unit="%" tickLine={false} axisLine={false} width={44} />
-        <HealthChartTooltip />
-        <ChartLegend content={<ChartLegendContent />} />
+        <HealthChartTooltip formatValue={formatPercentValue} />
+        <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
         {thresholds.map((threshold) => (
           <ThresholdLine key={threshold.ruleId} threshold={threshold} axis="left" />
         ))}
@@ -222,6 +224,7 @@ function UtilizationChart({
           type="monotone"
           dataKey="memoryUsagePercent"
           stroke="var(--color-memoryUsagePercent)"
+          strokeWidth={1.5}
           fill="var(--color-memoryUsagePercent)"
           fillOpacity={0.12}
           connectNulls={false}
@@ -240,33 +243,35 @@ function UtilizationChart({
 function LineMetricChart({
   config,
   data,
-  rangeDurationMs,
+  axis,
   thresholds,
   lines,
   leftUnit,
   rightUnit,
+  formatValue,
   thresholdAxis = () => 'left',
 }: {
   config: ChartConfig
   data: RedisHealthChartPoint[]
-  rangeDurationMs: number
+  axis: TimeAxisSpec
   thresholds: RedisHealthThreshold[]
   lines: MetricLineSpec[]
   leftUnit?: string
   rightUnit?: string
+  formatValue?: ValueFormatter
   thresholdAxis?: (threshold: RedisHealthThreshold) => 'left' | 'right'
 }) {
   return (
-    <ChartContainer config={config} className="h-[300px] w-full">
-      <LineChart data={data} margin={{ left: 0, right: 8, top: 12, bottom: 6 }}>
+    <ChartContainer config={config} className={CHART_HEIGHT_CLASS}>
+      <LineChart data={data} margin={CHART_MARGIN}>
         <CartesianGrid vertical={false} />
-        <TimeAxis rangeDurationMs={rangeDurationMs} />
+        <TimeAxis {...axis} />
         <YAxis
           yAxisId="left"
           unit={leftUnit}
           tickLine={false}
           axisLine={false}
-          width={leftUnit ? 64 : 48}
+          width={leftUnit ? 60 : 40}
         />
         {rightUnit ? (
           <YAxis
@@ -275,11 +280,11 @@ function LineMetricChart({
             unit={rightUnit}
             tickLine={false}
             axisLine={false}
-            width={56}
+            width={44}
           />
         ) : null}
-        <HealthChartTooltip />
-        <ChartLegend content={<ChartLegendContent />} />
+        <HealthChartTooltip formatValue={formatValue} />
+        <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
         {thresholds.map((threshold) => (
           <ThresholdLine
             key={threshold.ruleId}
@@ -308,8 +313,8 @@ function MetricLine({
       type={type}
       dataKey={dataKey}
       stroke={color}
-      strokeWidth={2}
-      strokeDasharray={dashed ? '5 4' : undefined}
+      strokeWidth={1.5}
+      strokeDasharray={dashed ? '4 3' : undefined}
       dot={false}
       connectNulls={false}
       isAnimationActive={false}
@@ -330,56 +335,63 @@ function ThresholdLine({
       y={threshold.threshold}
       ifOverflow="extendDomain"
       stroke="var(--color-destructive)"
-      strokeDasharray="4 4"
+      strokeWidth={1}
+      strokeDasharray="4 3"
     />
   )
 }
 
-function TimeAxis({ rangeDurationMs }: { rangeDurationMs: number }) {
+function TimeAxis({ rangeDurationMs, ticks }: TimeAxisSpec) {
   return (
     <XAxis
       dataKey="timestamp"
+      ticks={ticks}
       tickFormatter={(value) => formatRedisHealthChartTick(Number(value), rangeDurationMs)}
       tickLine={false}
       axisLine={false}
-      minTickGap={24}
+      tickMargin={6}
+      minTickGap={32}
     />
   )
 }
 
-function HealthChartTooltip() {
+function HealthChartTooltip({ formatValue }: { formatValue?: ValueFormatter }) {
   return (
     <ChartTooltip
-      content={<ChartTooltipContent labelFormatter={(value) => formatChartDate(Number(value))} />}
+      content={
+        <ChartTooltipContent
+          labelFormatter={(value) => formatChartDate(Number(value))}
+          formatter={
+            formatValue
+              ? (value, _name, item) =>
+                  typeof value === 'number' ? formatValue(value, String(item.dataKey ?? '')) : value
+              : undefined
+          }
+        />
+      }
     />
   )
 }
 
-function MetricChartCard({
-  title,
-  description,
-  children,
-}: {
-  title: string
-  description: string
-  children: React.ReactNode
-}) {
-  return (
-    <Card className="border-border/70">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Activity className="h-4 w-4 text-muted-foreground" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  )
+function firstTimestampPerDay(data: RedisHealthChartPoint[]) {
+  const ticks: number[] = []
+  let previousDay: string | null = null
+  for (const point of data) {
+    const day = new Date(point.timestamp).toDateString()
+    if (day !== previousDay) {
+      ticks.push(point.timestamp)
+      previousDay = day
+    }
+  }
+  return ticks
 }
 
 function bytesToMiB(value: number | null) {
   return value === null ? null : value / (1024 * 1024)
+}
+
+function formatDecimal(value: number) {
+  return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(1)
 }
 
 function formatChartDate(value: number) {

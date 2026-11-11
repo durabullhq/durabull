@@ -75,9 +75,12 @@ function IndexRoute() {
 
   // Show loading while checking auth and redirecting
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
-      <p className="text-muted-foreground">Loading...</p>
+    <div
+      className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
+      aria-live="polite"
+    >
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+      <p className="text-[13px] text-muted-foreground">Loading…</p>
     </div>
   )
 }

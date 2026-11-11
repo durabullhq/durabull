@@ -60,7 +60,7 @@ describe('PurgeQueueDialog', () => {
     await user.clear(screen.getByTestId('purge-queue-keep-most-recent-input'))
     await user.type(screen.getByTestId('purge-queue-keep-most-recent-input'), '25')
     await user.type(screen.getByTestId('purge-queue-confirm-input'), 'emails')
-    await user.click(screen.getByRole('button', { name: 'Purge Jobs' }))
+    await user.click(screen.getByRole('button', { name: 'Purge jobs' }))
 
     await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledTimes(1))
     expect(mutateAsyncMock).toHaveBeenCalledWith({
@@ -105,9 +105,9 @@ describe('PurgeQueueDialog', () => {
     await user.type(screen.getByTestId('purge-queue-keep-most-recent-input'), 'abc')
 
     expect(screen.getByText('Enter a whole number between 0 and 1,000,000.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Purge Jobs' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Purge jobs' })).toBeDisabled()
 
-    await user.click(screen.getByRole('button', { name: 'Purge Jobs' }))
+    await user.click(screen.getByRole('button', { name: 'Purge jobs' }))
     expect(mutateAsyncMock).not.toHaveBeenCalled()
   })
 })

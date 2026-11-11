@@ -6,6 +6,8 @@ type StatusType =
   | 'paused'
   | 'idle'
   | 'waiting'
+  | 'waiting-children'
+  | 'prioritized'
   | 'completed'
   | 'failed'
   | 'delayed'
@@ -16,181 +18,150 @@ interface StatusBadgeProps {
   status: StatusType
   showPulse?: boolean
   size?: 'sm' | 'md' | 'lg'
+  /** Overrides the default label for the status (e.g. an active *job* reads "Active", not "Running"). */
+  label?: string
   className?: string
 }
 
-const statusConfig: Record<
-  StatusType,
-  {
-    label: string
-    bgColor: string
-    borderColor: string
-    textColor: string
-    dotColor: string
-    pulseColor: string
-  }
-> = {
+type StatusTone = 'success' | 'active' | 'warning' | 'danger' | 'delayed' | 'priority' | 'neutral'
+
+/** Tone classes are spelled out in full so Tailwind can see them. */
+const TONE: Record<StatusTone, { pill: string; text: string; dot: string }> = {
+  success: {
+    pill: 'border-status-success/30 bg-status-success/10 text-status-success',
+    text: 'text-status-success',
+    dot: 'bg-status-success',
+  },
   active: {
-    label: 'Active',
-    bgColor: 'bg-signal/10',
-    borderColor: 'border-signal/25',
-    textColor: 'text-signal',
-    dotColor: 'bg-signal',
-    pulseColor: 'bg-signal',
+    pill: 'border-status-active/30 bg-status-active/10 text-status-active',
+    text: 'text-status-active',
+    dot: 'bg-status-active',
   },
-  running: {
-    label: 'Running',
-    bgColor: 'bg-status-active/10',
-    borderColor: 'border-status-active/25',
-    textColor: 'text-status-active',
-    dotColor: 'bg-status-active',
-    pulseColor: 'bg-status-active',
+  warning: {
+    pill: 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+    text: 'text-status-warning',
+    dot: 'bg-status-warning',
   },
-  paused: {
-    label: 'Paused',
-    bgColor: 'bg-status-warning/10',
-    borderColor: 'border-status-warning/25',
-    textColor: 'text-status-warning',
-    dotColor: 'bg-status-warning',
-    pulseColor: 'bg-status-warning',
-  },
-  idle: {
-    label: 'Idle',
-    bgColor: 'bg-status-neutral/10',
-    borderColor: 'border-status-neutral/25',
-    textColor: 'text-status-neutral',
-    dotColor: 'bg-status-neutral',
-    pulseColor: 'bg-status-neutral',
-  },
-  waiting: {
-    label: 'Waiting',
-    bgColor: 'bg-status-neutral/10',
-    borderColor: 'border-status-neutral/25',
-    textColor: 'text-status-neutral',
-    dotColor: 'bg-status-neutral',
-    pulseColor: 'bg-status-neutral',
-  },
-  completed: {
-    label: 'Completed',
-    bgColor: 'bg-status-success/10',
-    borderColor: 'border-status-success/25',
-    textColor: 'text-status-success',
-    dotColor: 'bg-status-success',
-    pulseColor: 'bg-status-success',
-  },
-  failed: {
-    label: 'Failed',
-    bgColor: 'bg-status-danger/10',
-    borderColor: 'border-status-danger/25',
-    textColor: 'text-status-danger',
-    dotColor: 'bg-status-danger',
-    pulseColor: 'bg-status-danger',
+  danger: {
+    pill: 'border-status-danger/30 bg-status-danger/10 text-status-danger',
+    text: 'text-status-danger',
+    dot: 'bg-status-danger',
   },
   delayed: {
-    label: 'Delayed',
-    bgColor: 'bg-status-delayed/10',
-    borderColor: 'border-status-delayed/25',
-    textColor: 'text-status-delayed',
-    dotColor: 'bg-status-delayed',
-    pulseColor: 'bg-status-delayed',
+    pill: 'border-status-delayed/30 bg-status-delayed/10 text-status-delayed',
+    text: 'text-status-delayed',
+    dot: 'bg-status-delayed',
   },
-  enabled: {
-    label: 'Enabled',
-    bgColor: 'bg-signal/10',
-    borderColor: 'border-signal/25',
-    textColor: 'text-signal',
-    dotColor: 'bg-signal',
-    pulseColor: 'bg-signal',
+  priority: {
+    pill: 'border-status-priority/30 bg-status-priority/10 text-status-priority',
+    text: 'text-status-priority',
+    dot: 'bg-status-priority',
   },
-  disabled: {
-    label: 'Disabled',
-    bgColor: 'bg-status-neutral/10',
-    borderColor: 'border-status-neutral/25',
-    textColor: 'text-status-neutral',
-    dotColor: 'bg-status-neutral',
-    pulseColor: 'bg-status-neutral',
+  neutral: {
+    pill: 'border-border bg-muted text-muted-foreground',
+    text: 'text-muted-foreground',
+    dot: 'bg-status-neutral',
   },
+}
+
+/** Status vocabulary — see the table in docs/design-system.md. */
+const statusConfig: Record<StatusType, { label: string; tone: StatusTone }> = {
+  active: { label: 'Active', tone: 'success' },
+  running: { label: 'Running', tone: 'active' },
+  paused: { label: 'Paused', tone: 'warning' },
+  idle: { label: 'Idle', tone: 'neutral' },
+  waiting: { label: 'Waiting', tone: 'neutral' },
+  'waiting-children': { label: 'Waiting on children', tone: 'warning' },
+  prioritized: { label: 'Prioritized', tone: 'priority' },
+  completed: { label: 'Completed', tone: 'success' },
+  failed: { label: 'Failed', tone: 'danger' },
+  delayed: { label: 'Delayed', tone: 'delayed' },
+  enabled: { label: 'Enabled', tone: 'success' },
+  disabled: { label: 'Disabled', tone: 'neutral' },
 }
 
 const sizeConfig = {
-  sm: {
-    badge: 'px-2 py-0.5 text-xs gap-1.5',
-    dot: 'h-1.5 w-1.5',
-  },
-  md: {
-    badge: 'px-2.5 py-1 text-xs gap-2',
-    dot: 'h-2 w-2',
-  },
-  lg: {
-    badge: 'px-3 py-1.5 text-sm gap-2',
-    dot: 'h-2.5 w-2.5',
-  },
+  sm: { badge: 'gap-1 px-1.5 text-[11px] leading-[16px]', dot: 'h-1.5 w-1.5' },
+  md: { badge: 'gap-1.5 px-1.5 text-[11px] leading-[18px]', dot: 'h-1.5 w-1.5' },
+  lg: { badge: 'gap-1.5 px-2 text-xs leading-[22px]', dot: 'h-2 w-2' },
 }
 
-export function StatusBadge({
-  status,
-  showPulse = true,
-  size = 'md',
-  className,
-}: StatusBadgeProps) {
-  const config = statusConfig[status]
-  const sizeStyles = sizeConfig[size]
-  const shouldPulse = showPulse && (status === 'active' || status === 'running')
+function isLive(status: StatusType): boolean {
+  return status === 'active' || status === 'running'
+}
 
+function Dot({
+  tone,
+  pulse,
+  sizeClass,
+  className,
+}: {
+  tone: StatusTone
+  pulse: boolean
+  sizeClass: string
+  className?: string
+}) {
   return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-md border font-medium transition-all',
-        config.bgColor,
-        config.borderColor,
-        config.textColor,
-        sizeStyles.badge,
-        className
-      )}
-    >
-      <span className="relative flex">
-        <span className={cn('rounded-full', config.dotColor, sizeStyles.dot)} />
-        {shouldPulse && (
-          <span
-            className={cn(
-              'absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping',
-              config.pulseColor
-            )}
-          />
-        )}
-      </span>
-      {config.label}
+    <span className={cn('relative inline-flex shrink-0', sizeClass, className)} aria-hidden>
+      {pulse ? (
+        <span
+          className={cn(
+            'absolute inline-flex h-full w-full animate-ping rounded-full opacity-70',
+            TONE[tone].dot
+          )}
+        />
+      ) : null}
+      <span className={cn('relative inline-flex rounded-full', sizeClass, TONE[tone].dot)} />
     </span>
   )
 }
 
-// Simple animated dot for inline use
+/** Compact dot + label pill. The one status pill for jobs, queues, workers and schedules. */
+export function StatusBadge({
+  status,
+  showPulse = true,
+  size = 'md',
+  label,
+  className,
+}: StatusBadgeProps) {
+  const config = statusConfig[status]
+  const sizeStyles = sizeConfig[size]
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center whitespace-nowrap rounded-[5px] border py-px font-medium',
+        TONE[config.tone].pill,
+        sizeStyles.badge,
+        className
+      )}
+    >
+      <Dot tone={config.tone} pulse={showPulse && isLive(status)} sizeClass={sizeStyles.dot} />
+      {label ?? config.label}
+    </span>
+  )
+}
+
+/** Bare state dot for inline use next to a name or number. */
 export function StatusDot({
   status,
   showPulse = true,
   size = 'md',
   className,
-}: Omit<StatusBadgeProps, 'showLabel'>) {
+}: Omit<StatusBadgeProps, 'label'>) {
   const config = statusConfig[status]
-  const sizeStyles = sizeConfig[size]
-  const shouldPulse = showPulse && (status === 'active' || status === 'running')
 
   return (
-    <span className={cn('relative inline-flex', className)}>
-      <span className={cn('rounded-full', config.dotColor, sizeStyles.dot)} />
-      {shouldPulse && (
-        <span
-          className={cn(
-            'absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping',
-            config.pulseColor
-          )}
-        />
-      )}
-    </span>
+    <Dot
+      tone={config.tone}
+      pulse={showPulse && isLive(status)}
+      sizeClass={sizeConfig[size].dot}
+      className={className}
+    />
   )
 }
 
-// Inline status indicator (dot + text) - matches Worker Details table style
+// Inline status indicator (dot + text) for table cells.
 interface StatusIndicatorProps {
   status: StatusType
   showPulse?: boolean
@@ -199,24 +170,11 @@ interface StatusIndicatorProps {
 
 export function StatusIndicator({ status, showPulse = true, className }: StatusIndicatorProps) {
   const config = statusConfig[status]
-  const shouldPulse = showPulse && (status === 'active' || status === 'running')
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
-      {shouldPulse ? (
-        <span className="relative flex h-2.5 w-2.5">
-          <span
-            className={cn(
-              'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
-              config.pulseColor
-            )}
-          />
-          <span className={cn('relative inline-flex rounded-full h-2.5 w-2.5', config.dotColor)} />
-        </span>
-      ) : (
-        <span className={cn('flex h-2.5 w-2.5 rounded-full', config.dotColor)} />
-      )}
-      <span className={cn('text-xs font-medium leading-none', config.textColor)}>
+    <div className={cn('flex items-center gap-1.5', className)}>
+      <Dot tone={config.tone} pulse={showPulse && isLive(status)} sizeClass="h-2 w-2" />
+      <span className={cn('text-xs font-medium leading-none', TONE[config.tone].text)}>
         {config.label}
       </span>
     </div>

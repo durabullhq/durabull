@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   brandMacAppBundlePlist,
   buildDesktopLauncherEnv,
   DESKTOP_RESOURCE_ROOT_ENV,
+  DESKTOP_WINDOW_CHROME,
   resolveDesktopResourceRoot,
 } from './desktop-launcher'
 
@@ -75,5 +78,26 @@ describe('brandMacAppBundlePlist', () => {
       '<key>CFBundleIdentifier</key>\n  <string>com.durabull.desktop.dev</string>'
     )
     expect(branded).toContain('<key>CFBundleName</key>\n  <string>Durabull</string>')
+  })
+})
+
+describe('DESKTOP_WINDOW_CHROME', () => {
+  const webRoot = join(import.meta.dir, '..', '..', 'web', 'src')
+  const styles = readFileSync(join(webRoot, 'styles.css'), 'utf8')
+
+  it('uses the dark theme background so the window does not flash before paint', () => {
+    const darkBlock = styles.slice(styles.indexOf('.dark {'))
+    const darkBackground = /--color-background:\s*([^;]+);/.exec(darkBlock)?.[1]?.trim()
+    expect(darkBackground).toBe(DESKTOP_WINDOW_CHROME.backgroundColor)
+  })
+
+  it('centres the traffic lights in the 48px title row', () => {
+    const topBar = readFileSync(join(webRoot, 'components', 'app-top-bar.tsx'), 'utf8')
+    expect(topBar).toContain("APP_TOP_BAR_HEIGHT_CLASS = 'h-12'")
+    const trafficLightSize = 12
+    const rowHeight = 48
+    expect<number>(DESKTOP_WINDOW_CHROME.trafficLightPosition.y).toBe(
+      (rowHeight - trafficLightSize) / 2
+    )
   })
 })

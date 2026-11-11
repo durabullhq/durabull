@@ -1,19 +1,26 @@
-import { AlertCircle, Cpu, Database, Gauge, MemoryStick, Network, Users } from 'lucide-react'
+import { AlertCircle, Database } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Metric, MetricStrip } from '@/components/ui/metric'
+import { Panel, SectionHeader } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
+import { CHART_HEIGHT_CLASS } from './chart-series'
 import { formatRedisHealthThreshold, type RedisHealthMetric } from './redis-health-metrics'
 import type { RedisHealthHistoryResponse } from './redis-health-types'
 
 // The charts pull in recharts, which is heavy. Load that chunk only once there is history to
-// draw, so the summary cards above render without waiting for it.
+// draw, so the metric strip above renders without waiting for it.
 const RedisHealthCharts = lazy(() =>
   import('./redis-health-charts').then((module) => ({ default: module.RedisHealthCharts }))
 )
 
 const COUNT_FORMATTER = new Intl.NumberFormat()
+// Two rows of three between `lg` and `xl`, where six cells are too narrow for "31.8 MiB".
+const STRIP_CLASS = 'lg:grid-flow-row lg:grid-cols-3 xl:grid-flow-col xl:grid-cols-none'
+const SECTION_TITLE = 'Redis resource health'
+const SECTION_DESCRIPTION =
+  'Server memory, CPU, and client capacity, sampled independently of alert rules.'
 
 interface RedisHealthObservabilityProps {
   data?: RedisHealthHistoryResponse
@@ -30,15 +37,18 @@ export function RedisHealthObservability({
 
   if (error && !data) {
     return (
-      <Card className="border-status-danger/35 bg-status-danger/[0.06]">
-        <CardContent className="flex items-start gap-3 py-5">
-          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-status-danger" />
-          <div>
-            <p className="font-medium">Redis telemetry unavailable</p>
-            <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
-          </div>
-        </CardContent>
-      </Card>
+      <section aria-label={SECTION_TITLE} className="space-y-4">
+        <SectionHeader className="mb-3" title={SECTION_TITLE} description={SECTION_DESCRIPTION} />
+        <Panel>
+          <EmptyState
+            size="inline"
+            tone="danger"
+            icon={AlertCircle}
+            title="Redis telemetry unavailable"
+            description={error.message}
+          />
+        </Panel>
+      </section>
     )
   }
 
@@ -49,135 +59,119 @@ export function RedisHealthObservability({
   const sampleAgeMs = latest ? Math.max(0, Date.now() - Date.parse(latest.capturedAt)) : null
   const isStale = sampleAgeMs !== null && sampleAgeMs > data.staleAfterMs
   const gaps = Math.max(0, data.range.totalBuckets - data.range.sampledBuckets)
+  const isHealthy = Boolean(latest) && hasHealthFields && !isStale
 
   return (
-    <section aria-labelledby="redis-resource-health-heading" className="space-y-4">
-      <Card className="overflow-hidden border-border/70">
-        <CardHeader className="border-b border-border/60 bg-muted/20 pb-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <CardTitle id="redis-resource-health-heading" className="text-xl">
-                  Redis Resource Health
-                </CardTitle>
-                <Badge variant={!latest || !hasHealthFields || isStale ? 'warning' : 'success'}>
-                  {!latest
-                    ? 'Awaiting first sample'
-                    : !hasHealthFields
-                      ? 'No health fields'
-                      : isStale
-                        ? 'Data stale'
-                        : 'Live'}
-                </Badge>
-                {!data.collectionEnabled ? (
-                  <Badge variant="destructive">Collection off</Badge>
-                ) : null}
-              </div>
-              <CardDescription className="mt-2 max-w-3xl">
-                Server-level memory, CPU, client capacity, and pressure signals sampled
-                independently of alert rules.
-              </CardDescription>
-            </div>
-            <div className="text-right text-xs text-muted-foreground">
-              <p>{formatCoverage(data.range.coveragePercent, gaps)}</p>
-              <p className="mt-1">
+    <section aria-label={SECTION_TITLE} className="space-y-4">
+      <SectionHeader
+        className="mb-3"
+        title={SECTION_TITLE}
+        description={SECTION_DESCRIPTION}
+        actions={
+          <>
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+              <span className="whitespace-nowrap">
+                {formatCoverage(data.range.coveragePercent, gaps)}
+              </span>
+              <span className="whitespace-nowrap">
                 {data.range.expectedSampleIntervalMinutes}m sampling · {data.range.bucketMinutes}m
                 peak buckets · {data.retentionDays}d retention
-              </p>
-              <p className="mt-1">Latest {formatAge(sampleAgeMs)}</p>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-4 pt-5">
-          {!latest ? (
-            <div className="rounded-lg border border-dashed bg-muted/10 px-6 py-8 text-center text-sm text-muted-foreground">
-              No Redis health samples are available for this window. The first point appears after
-              the next collector poll.
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              <ResourceCard
-                icon={MemoryStick}
-                label="Memory used"
-                value={formatPercent(latest.memoryUsagePercent)}
-                detail={`${formatBytes(latest.usedMemoryBytes)} / ${formatBytes(latest.memoryCapacityBytes)}`}
-                stressed={
-                  isThresholdCrossed(data, 'memory_usage_percent', latest.memoryUsagePercent) ||
-                  isThresholdCrossed(
-                    data,
-                    'used_memory_megabytes',
-                    bytesToMiB(latest.usedMemoryBytes)
-                  )
-                }
-              />
-              <ResourceCard
-                icon={Database}
-                label="Resident set"
-                value={formatBytes(latest.residentMemoryBytes)}
-                detail={`${formatRatio(latest.memoryFragmentationRatio)} fragmentation`}
-                stressed={isThresholdCrossed(
-                  data,
-                  'resident_memory_megabytes',
-                  bytesToMiB(latest.residentMemoryBytes)
-                )}
-              />
-              <ResourceCard
-                icon={Cpu}
-                label="CPU"
-                value={formatPercent(latest.cpuUsagePercent)}
-                detail="Process usage over poll interval"
-                stressed={isThresholdCrossed(data, 'cpu_usage_percent', latest.cpuUsagePercent)}
-              />
-              <ResourceCard
-                icon={Users}
-                label="Client capacity"
-                value={formatPercent(latest.connectedClientsPercent)}
-                detail={`${formatCount(latest.connectedClients)} / ${formatCount(latest.maxClients)} connected`}
-                stressed={isThresholdCrossed(
-                  data,
-                  'connected_clients_percent',
-                  latest.connectedClientsPercent
-                )}
-              />
-              <ResourceCard
-                icon={Network}
-                label="Blocked clients"
-                value={formatCount(latest.blockedClients)}
-                detail={`${formatRate(latest.rejectedConnectionsPerMinute)} rejected`}
-                stressed={isThresholdCrossed(data, 'blocked_clients', latest.blockedClients)}
-              />
-              <ResourceCard
-                icon={Gauge}
-                label="Evictions"
-                value={formatRate(latest.evictedKeysPerMinute)}
-                detail={`${formatBytes(latest.memoryFragmentationBytes)} fragmentation overhead`}
-                stressed={isThresholdCrossed(
-                  data,
-                  'evicted_keys_per_minute',
-                  latest.evictedKeysPerMinute
-                )}
-              />
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Active thresholds
+              </span>
+              <span className="whitespace-nowrap">Latest {formatAge(sampleAgeMs)}</span>
             </span>
-            {data.thresholds.length === 0 ? (
-              <span className="text-xs text-muted-foreground">None configured</span>
-            ) : (
-              data.thresholds.map((threshold) => (
-                <Badge key={threshold.ruleId} variant="outline" className="font-mono text-[11px]">
-                  {threshold.name} ≥{' '}
-                  {formatRedisHealthThreshold(threshold.metric, threshold.threshold)}
-                </Badge>
-              ))
+            {!data.collectionEnabled ? <Badge variant="neutral">Collection off</Badge> : null}
+            <Badge variant={isHealthy ? 'success' : 'warning'}>
+              {!latest
+                ? 'Awaiting first sample'
+                : !hasHealthFields
+                  ? 'No health fields'
+                  : isStale
+                    ? 'Data stale'
+                    : 'Live'}
+            </Badge>
+          </>
+        }
+      />
+
+      {!latest ? (
+        <Panel>
+          <EmptyState
+            size="inline"
+            icon={Database}
+            title="No Redis health samples in this window"
+            description="The first point appears after the next collector poll."
+          />
+        </Panel>
+      ) : (
+        <MetricStrip className={STRIP_CLASS}>
+          <ResourceMetric
+            label="Memory used"
+            value={formatPercent(latest.memoryUsagePercent)}
+            detail={`${formatBytes(latest.usedMemoryBytes)} / ${formatBytes(latest.memoryCapacityBytes)}`}
+            stressed={
+              isThresholdCrossed(data, 'memory_usage_percent', latest.memoryUsagePercent) ||
+              isThresholdCrossed(data, 'used_memory_megabytes', bytesToMiB(latest.usedMemoryBytes))
+            }
+          />
+          <ResourceMetric
+            label="Resident set"
+            value={formatBytes(latest.residentMemoryBytes)}
+            detail={`${formatRatio(latest.memoryFragmentationRatio)} fragmentation`}
+            stressed={isThresholdCrossed(
+              data,
+              'resident_memory_megabytes',
+              bytesToMiB(latest.residentMemoryBytes)
             )}
-          </div>
-        </CardContent>
-      </Card>
+          />
+          <ResourceMetric
+            label="CPU"
+            value={formatPercent(latest.cpuUsagePercent)}
+            detail="over poll interval"
+            title="Process CPU usage over the poll interval"
+            stressed={isThresholdCrossed(data, 'cpu_usage_percent', latest.cpuUsagePercent)}
+          />
+          <ResourceMetric
+            label="Client capacity"
+            value={formatPercent(latest.connectedClientsPercent)}
+            detail={`${formatCount(latest.connectedClients)} / ${formatCount(latest.maxClients)} connected`}
+            stressed={isThresholdCrossed(
+              data,
+              'connected_clients_percent',
+              latest.connectedClientsPercent
+            )}
+          />
+          <ResourceMetric
+            label="Blocked clients"
+            value={formatCount(latest.blockedClients)}
+            detail={`${formatRate(latest.rejectedConnectionsPerMinute)} rejected`}
+            stressed={isThresholdCrossed(data, 'blocked_clients', latest.blockedClients)}
+          />
+          <ResourceMetric
+            label="Evictions"
+            value={formatRate(latest.evictedKeysPerMinute)}
+            detail={`${formatBytes(latest.memoryFragmentationBytes)} frag. overhead`}
+            title="Evicted keys per minute, and the bytes lost to allocator fragmentation"
+            stressed={isThresholdCrossed(
+              data,
+              'evicted_keys_per_minute',
+              latest.evictedKeysPerMinute
+            )}
+          />
+        </MetricStrip>
+      )}
+
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+        <span className="eyebrow">Active thresholds</span>
+        {data.thresholds.length === 0 ? (
+          <span className="text-xs text-muted-foreground">None configured</span>
+        ) : (
+          data.thresholds.map((threshold) => (
+            <Badge key={threshold.ruleId} variant="outline" className="font-mono">
+              {threshold.name} ≥ {formatRedisHealthThreshold(threshold.metric, threshold.threshold)}
+            </Badge>
+          ))
+        )}
+      </div>
 
       {data.range.sampledBuckets > 0 ? (
         <Suspense fallback={<RedisHealthChartsFallback />}>
@@ -192,33 +186,29 @@ export function RedisHealthObservability({
   )
 }
 
-function ResourceCard({
-  icon: Icon,
+/** A resource cell turns into an alarm only when it crosses an active alert threshold. */
+function ResourceMetric({
   label,
   value,
   detail,
+  title,
   stressed = false,
 }: {
-  icon: React.ComponentType<{ className?: string }>
   label: string
   value: string
   detail: string
+  title?: string
   stressed?: boolean
 }) {
   return (
-    <div
-      className={cn(
-        'rounded-lg border border-border/70 bg-card px-3.5 py-3',
-        stressed && 'border-status-danger/45 bg-status-danger/[0.07]'
-      )}
-    >
-      <div className="flex items-center justify-between gap-2 text-muted-foreground">
-        <span className="text-[11px] font-medium uppercase tracking-wide">{label}</span>
-        <Icon className="h-3.5 w-3.5" />
-      </div>
-      <p className="mt-2 font-mono text-xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">{detail}</p>
-    </div>
+    <Metric
+      label={label}
+      value={value}
+      hint={detail}
+      title={stressed ? `${label} is at or above an active alert threshold` : title}
+      tone={stressed ? 'danger' : 'neutral'}
+      emphasis={stressed}
+    />
   )
 }
 
@@ -226,15 +216,14 @@ function RedisHealthChartsFallback() {
   return (
     <div className="grid gap-4 lg:grid-cols-2" aria-busy="true">
       {Array.from({ length: 4 }, (_, index) => (
-        <Card key={index}>
-          <CardHeader className="space-y-2">
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="h-4 w-64 max-w-full" />
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-[220px] w-full" />
-          </CardContent>
-        </Card>
+        <Panel key={index}>
+          <div className="flex min-h-10 items-center border-b px-4">
+            <Skeleton className="h-4 w-32" />
+          </div>
+          <div className="px-3 pb-2 pt-3">
+            <Skeleton className={CHART_HEIGHT_CLASS} />
+          </div>
+        </Panel>
       ))}
     </div>
   )
@@ -242,17 +231,21 @@ function RedisHealthChartsFallback() {
 
 function RedisHealthLoadingState() {
   return (
-    <Card>
-      <CardHeader className="space-y-2">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-4 w-[420px] max-w-full" />
-      </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {Array.from({ length: 6 }, (_, index) => (
-          <Skeleton key={index} className="h-24 w-full" />
+    <section aria-label={SECTION_TITLE} aria-busy="true" className="space-y-4">
+      <SectionHeader className="mb-3" title={SECTION_TITLE} description={SECTION_DESCRIPTION} />
+      <MetricStrip className={STRIP_CLASS}>
+        {[
+          'Memory used',
+          'Resident set',
+          'CPU',
+          'Client capacity',
+          'Blocked clients',
+          'Evictions',
+        ].map((label) => (
+          <Metric key={label} label={label} value="" hint={<>&nbsp;</>} loading />
         ))}
-      </CardContent>
-    </Card>
+      </MetricStrip>
+    </section>
   )
 }
 

@@ -48,24 +48,23 @@ export function AppUpdateBanner({ onUpdate = reloadToLatestBuild }: AppUpdateBan
     <aside
       aria-label="Application update"
       aria-live="polite"
-      className="fixed right-4 bottom-4 z-50 w-[calc(100vw-2rem)] max-w-sm rounded-lg border border-status-warning/30 bg-background/95 p-3 text-foreground shadow-2xl shadow-black/25 backdrop-blur supports-[backdrop-filter]:bg-background/85"
+      className="fixed right-4 bottom-4 z-50 w-[calc(100vw-2rem)] max-w-xs rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg"
     >
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-status-warning/15 text-status-warning">
-          <RefreshCw className="h-4 w-4" aria-hidden="true" />
-        </div>
+      <div className="flex items-center gap-3">
+        <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-status-active opacity-60" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-status-active" />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-5">Update available</p>
-          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+          <p className="text-[13px] font-semibold leading-5">Update available</p>
+          <p className="text-xs leading-5 text-muted-foreground">
             Reload to apply the latest Durabull build.
           </p>
-          <div className="mt-3 flex justify-end">
-            <Button size="sm" onClick={handleUpdate} disabled={isUpdating}>
-              <RefreshCw className={isUpdating ? 'mr-2 h-4 w-4 animate-spin' : 'mr-2 h-4 w-4'} />
-              Update
-            </Button>
-          </div>
         </div>
+        <Button size="xs" onClick={handleUpdate} disabled={isUpdating}>
+          <RefreshCw className={isUpdating ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
+          Update
+        </Button>
       </div>
     </aside>
   )

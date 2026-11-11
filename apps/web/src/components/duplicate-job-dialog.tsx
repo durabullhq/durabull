@@ -1,10 +1,10 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
-import { Copy, Loader2, Play } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { JsonEditor } from '@/components/json-editor'
 import { JobOptionsFields } from '@/components/job-options-fields'
+import { JsonEditor } from '@/components/json-editor'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,9 +20,9 @@ import { useAddJob } from '@/hooks/use-queues'
 import {
   formValueToJobOptions,
   hasJobOptionsValidationErrors,
+  type JobOptionsFormValue,
   jobOptsToFormValue,
   validateJobOptionsFormValue,
-  type JobOptionsFormValue,
 } from '@/lib/job-options'
 
 interface DuplicateJobDialogProps {
@@ -48,7 +48,7 @@ export function DuplicateJobDialog({
   originalDelay = 0,
   onSuccess,
 }: DuplicateJobDialogProps) {
-  const [jobName, setJobName] = useState(originalJobName)
+  const [jobName, setJobName] = useState(originalJobName ?? '')
   const [jobData, setJobData] = useState<unknown>(originalJobData)
   const [isJsonValid, setIsJsonValid] = useState(true)
   const [jobOptions, setJobOptions] = useState<JobOptionsFormValue>(() =>
@@ -63,7 +63,7 @@ export function DuplicateJobDialog({
 
   useEffect(() => {
     if (open) {
-      setJobName(originalJobName)
+      setJobName(originalJobName ?? '')
       setJobData(originalJobData)
       setIsJsonValid(true)
       setJobOptions(jobOptsToFormValue(originalJobOpts, originalDelay))
@@ -120,21 +120,20 @@ export function DuplicateJobDialog({
     >
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Copy className="h-5 w-5" />
-            Duplicate Job
-          </DialogTitle>
+          <DialogTitle>Duplicate Job</DialogTitle>
           <DialogDescription>
-            Create a new job based on the original. You can modify the data and options before
-            adding it to the queue.
+            Adds a new job to this queue with the same name, data and options. Adjust anything
+            before adding it.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          <div className="rounded-lg border bg-muted/50 p-3">
-            <p className="text-xs text-muted-foreground mb-1">Duplicating from job:</p>
-            <p className="font-mono text-sm break-all">{originalJobId}</p>
-          </div>
+        <div className="space-y-4">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs leading-5">
+            <dt className="text-muted-foreground">Queue</dt>
+            <dd className="break-all font-mono">{queueName}</dd>
+            <dt className="text-muted-foreground">Source</dt>
+            <dd className="break-all font-mono">{originalJobId}</dd>
+          </dl>
 
           <div className="space-y-2">
             <Label htmlFor="job-name">Job Name</Label>
@@ -143,6 +142,7 @@ export function DuplicateJobDialog({
               value={jobName}
               onChange={(e) => setJobName(e.target.value)}
               placeholder="Enter job name"
+              className="font-mono"
             />
           </div>
 
@@ -151,8 +151,8 @@ export function DuplicateJobDialog({
             <JsonEditor value={jobData} onChange={handleJsonChange} minHeight="180px" />
           </div>
 
-          <div className="space-y-4">
-            <Label className="text-sm font-medium">Options</Label>
+          <div className="space-y-2">
+            <Label>Options</Label>
             <JobOptionsFields
               value={jobOptions}
               onChange={setJobOptions}
@@ -171,14 +171,11 @@ export function DuplicateJobDialog({
           <Button onClick={handleSubmit} disabled={!canSubmit}>
             {isSubmitting ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
                 Adding...
               </>
             ) : (
-              <>
-                <Play className="mr-2 h-4 w-4" />
-                Add Job
-              </>
+              'Add Job'
             )}
           </Button>
         </DialogFooter>

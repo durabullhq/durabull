@@ -5,7 +5,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron'
-import { DESKTOP_RESOURCE_ROOT_ENV, resolveDesktopResourceRoot } from './desktop-launcher'
+import {
+  DESKTOP_RESOURCE_ROOT_ENV,
+  DESKTOP_WINDOW_CHROME,
+  resolveDesktopResourceRoot,
+} from './desktop-launcher'
 
 const APP_HOST = '127.0.0.1'
 const SERVER_BOOT_TIMEOUT_MS = 30_000
@@ -302,13 +306,14 @@ function createMainWindow(baseUrl: string): BrowserWindow {
     height: 920,
     minWidth: 1120,
     minHeight: 760,
-    backgroundColor: '#0b0e14',
+    backgroundColor: DESKTOP_WINDOW_CHROME.backgroundColor,
     ...(iconPath ? { icon: iconPath } : {}),
     show: false,
     autoHideMenuBar: true,
     ...(isMac
       ? {
           titleBarStyle: 'hiddenInset',
+          trafficLightPosition: DESKTOP_WINDOW_CHROME.trafficLightPosition,
         }
       : {}),
     webPreferences: {

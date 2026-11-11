@@ -1,12 +1,11 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ArrowLeft, ChevronRight, Layers } from 'lucide-react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PageTitle } from '@/components/page-title'
 import { ScheduledJobForm } from '@/components/scheduled-job-form'
-import { Button } from '@/components/ui/button'
 import { useCreateScheduledJob, useQueueScheduledJobs } from '@/hooks/use-queues'
 import { ApiError } from '@/lib/api'
 
@@ -47,47 +46,19 @@ function NewScheduledJobPage() {
   const topBarConfig = useMemo(
     () => ({
       left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <Layers className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 flex items-center gap-1.5">
-            <Link
-              to="/$orgSlug/c/$connectionId"
-              params={{ orgSlug, connectionId }}
-              className="shrink-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Queues
-            </Link>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <Link
-              to="/$orgSlug/c/$connectionId/queues/$queueName"
-              params={{ orgSlug, connectionId, queueName }}
-              search={{
-                section: 'jobs',
-                tab: 'scheduled',
-                status: '',
-                jobId: '',
-                hideScheduled: 0,
-                page: 1,
-              }}
-              className="max-w-40 truncate text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {queueName}
-            </Link>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <h1 className="truncate text-base font-semibold md:text-lg">Add Scheduled Job</h1>
-          </div>
-        </div>
-      ),
-      actions: (
-        <Button variant="outline" size="xs" onClick={handleBack}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Queue
-        </Button>
+        <PageTitle
+          title="New schedule"
+          crumbs={[
+            { label: 'Scheduled Jobs', to: `/${orgSlug}/c/${connectionId}/scheduled-jobs` },
+            {
+              label: queueName,
+              to: `/${orgSlug}/c/${connectionId}/queues/${encodeURIComponent(queueName)}`,
+            },
+          ]}
+        />
       ),
     }),
-    [connectionId, handleBack, orgSlug, queueName]
+    [connectionId, orgSlug, queueName]
   )
 
   useAppTopBar(topBarConfig)

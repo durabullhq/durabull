@@ -13,14 +13,14 @@ interface QueueNameTagProps {
 }
 
 const sizeStyles = {
-  sm: 'px-2.5 py-0.5 text-xs',
-  md: 'px-3 py-1 text-sm',
-  lg: 'px-4 py-1.5 text-base',
+  sm: 'px-1.5 py-px text-xs leading-[18px]',
+  md: 'px-2 py-0.5 text-[13px] leading-5',
+  lg: 'px-2.5 py-1 text-sm',
 }
 
 /**
- * A distinctive tag component for displaying queue names consistently
- * across the application. Matches the original Badge outline style with monospace font.
+ * The one way a queue name is shown outside a table's own name column: a quiet
+ * mono chip, so machine identifiers read as identifiers.
  */
 export function QueueNameTag({ name, asLink = false, className, size = 'md' }: QueueNameTagProps) {
   const { currentConnection } = useConnection()
@@ -30,14 +30,8 @@ export function QueueNameTag({ name, asLink = false, className, size = 'md' }: Q
   const orgSlug = (params as { orgSlug?: string }).orgSlug
 
   const baseStyles = cn(
-    // Core tag styling - matches Badge outline variant
-    'inline-flex items-center rounded-full border font-mono font-semibold',
-    // Text color adapts to theme
-    'text-foreground',
-    // Size variant
+    'inline-flex max-w-full items-center rounded-[5px] border bg-muted/50 font-mono font-medium text-foreground transition-colors duration-150',
     sizeStyles[size],
-    // Transition for hover states
-    'transition-colors duration-150',
     className
   )
 
@@ -47,16 +41,21 @@ export function QueueNameTag({ name, asLink = false, className, size = 'md' }: Q
         to="/$orgSlug/c/$connectionId/queues/$queueName"
         params={{ orgSlug, connectionId, queueName: name }}
         search={{}}
+        title={name}
         className={cn(
           baseStyles,
-          'hover:bg-accent hover:text-accent-foreground',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+          'hover:border-border-strong hover:bg-accent hover:text-accent-foreground',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40'
         )}
       >
-        {name}
+        <span className="truncate">{name}</span>
       </Link>
     )
   }
 
-  return <span className={baseStyles}>{name}</span>
+  return (
+    <span className={baseStyles} title={name}>
+      <span className="truncate">{name}</span>
+    </span>
+  )
 }

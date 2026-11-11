@@ -109,10 +109,12 @@ export function SnoozeMenu({
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="icon"
+            className="h-7 w-7"
             disabled={disabled || isBusy}
             onClick={(event) => event.stopPropagation()}
             aria-label={`Snooze options for ${rule.name}`}
+            title="Snooze"
           >
             <Moon className="h-4 w-4" />
           </Button>
@@ -176,7 +178,7 @@ export function SnoozeMenu({
               </Select>
             </div>
           </div>
-          {customError ? <p className="text-sm text-destructive">{customError}</p> : null}
+          {customError ? <p className="text-sm text-status-danger">{customError}</p> : null}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setCustomOpen(false)}>
               Cancel

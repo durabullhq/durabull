@@ -70,7 +70,7 @@ test('secret visibility toggles without changing its value', async ({ page }) =>
 
 test('scheduled job detail renders the editable production form', async ({ page }) => {
   await page.goto('/iframe.html?id=web-screens-connection-scheduler-detail--default&viewMode=story')
-  await expect(page.getByLabel('Job Name', { exact: true })).toHaveValue('send-summary')
+  await expect(page.getByLabel('Job name', { exact: true })).toHaveValue('send-summary')
 })
 
 test('MCP operation receipts refresh state through read tools', async ({ page }) => {

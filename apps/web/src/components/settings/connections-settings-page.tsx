@@ -2,32 +2,22 @@ import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import {
-  AlertCircle,
-  Check,
-  ChevronDown,
-  Cloud,
-  Code,
+  CircleAlert,
+  CircleCheck,
   Database,
+  ExternalLink,
   Eye,
   EyeOff,
-  Info,
   Loader2,
-  Pencil,
+  MoreHorizontal,
   Plus,
-  Server,
-  ShieldAlert,
-  Star,
-  Trash2,
-  Wifi,
-  WifiOff,
-  Zap,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useAppTopBar } from '@/components/app-top-bar'
 import { useConnection } from '@/components/connection-provider'
+import { CopyButton, SettingsPage, useSettingsTopBar } from '@/components/settings/settings-layout'
+import { StatusIndicator } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -40,10 +30,23 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Panel } from '@/components/ui/section'
+import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
 import {
@@ -75,133 +78,34 @@ interface RedisConnection {
 const CONNECTION_TROUBLESHOOTING_DOCS_URL =
   'https://durabull.io/documentation/getting-started/connection-troubleshooting'
 
+/** Listed production first: the order rows are sorted in and the order of the summary. */
 const environments: {
   value: ConnectionEnvironment
   label: string
-  icon: typeof Code
-  color: string
-  bgColor: string
-  borderColor: string
+  dot: string
+  badge: 'destructive' | 'warning' | 'success'
 }[] = [
-  {
-    value: 'production',
-    label: 'Production',
-    icon: Cloud,
-    color: 'text-status-danger',
-    bgColor: 'bg-status-danger/10',
-    borderColor: 'border-status-danger/30',
-  },
-  {
-    value: 'staging',
-    label: 'Staging',
-    icon: Server,
-    color: 'text-status-warning',
-    bgColor: 'bg-status-warning/10',
-    borderColor: 'border-status-warning/30',
-  },
-  {
-    value: 'development',
-    label: 'Development',
-    icon: Code,
-    color: 'text-status-success',
-    bgColor: 'bg-status-success/10',
-    borderColor: 'border-status-success/30',
-  },
+  { value: 'production', label: 'Production', dot: 'bg-status-danger', badge: 'destructive' },
+  { value: 'staging', label: 'Staging', dot: 'bg-status-warning', badge: 'warning' },
+  { value: 'development', label: 'Development', dot: 'bg-status-success', badge: 'success' },
 ]
 
 const unassignedEnvironment = {
-  value: 'development' as ConnectionEnvironment,
   label: 'Unassigned',
-  icon: Database,
-  color: 'text-muted-foreground',
-  bgColor: 'bg-muted/50',
-  borderColor: 'border-border',
-}
+  dot: 'bg-status-neutral',
+  badge: 'neutral',
+} as const
 
 function getEnvironmentConfig(env: ConnectionEnvironment | null) {
-  if (env === null) {
-    return unassignedEnvironment
-  }
-
-  return environments.find((e) => e.value === env) ?? environments[0]
+  return environments.find((e) => e.value === env) ?? unassignedEnvironment
 }
 
-function EnvironmentSection({
-  envConfig,
-  connections,
-  readOnly,
-  canViewSecrets,
-  onEdit,
-  onDelete,
-}: {
-  envConfig: (typeof environments)[0]
-  connections: RedisConnection[]
-  readOnly: boolean
-  canViewSecrets: boolean
-  onEdit: (connection: RedisConnection) => void
-  onDelete: (connection: RedisConnection) => void
-}) {
-  const EnvIcon = envConfig.icon
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className={cn('p-2.5 rounded-xl', envConfig.bgColor)}>
-          <EnvIcon className={cn('h-5 w-5', envConfig.color)} />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold">{envConfig.label}</h2>
-          <p className="text-sm text-muted-foreground">
-            {connections.length} connection{connections.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {connections.map((connection) => (
-          <ConnectionCard
-            key={connection.id}
-            connection={connection}
-            readOnly={readOnly}
-            canViewSecrets={canViewSecrets}
-            onEdit={() => onEdit(connection)}
-            onDelete={() => onDelete(connection)}
-          />
-        ))}
-      </div>
-    </div>
-  )
+function environmentRank(env: ConnectionEnvironment | null) {
+  const index = environments.findIndex((e) => e.value === env)
+  return index === -1 ? environments.length : index
 }
 
-function EnvironmentSectionSkeleton({ envConfig }: { envConfig: (typeof environments)[0] }) {
-  const EnvIcon = envConfig.icon
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className={cn('p-2.5 rounded-xl', envConfig.bgColor)}>
-          <EnvIcon className={cn('h-5 w-5', envConfig.color)} />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold">{envConfig.label}</h2>
-          <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="animate-pulse">
-          <CardHeader className="pb-3">
-            <div className="h-5 w-32 bg-muted rounded" />
-            <div className="h-4 w-20 bg-muted rounded mt-2" />
-          </CardHeader>
-          <CardContent>
-            <div className="h-4 w-full bg-muted rounded" />
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  )
-}
+const MASKED_URL = 'redis://••••••••••••'
 
 export function ConnectionsSettingsPage({
   createFromSearch = false,
@@ -218,41 +122,18 @@ export function ConnectionsSettingsPage({
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editingConnection, setEditingConnection] = useState<RedisConnection | null>(null)
   const [deletingConnection, setDeletingConnection] = useState<RedisConnection | null>(null)
-  const topBarConfig = useMemo(
-    () => ({
-      left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <Database className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Connections</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            Manage your Redis connection configurations
-          </span>
-        </div>
-      ),
-      actions: !envConnections ? (
-        <Button
-          onClick={() => setCreateDialogOpen(true)}
-          size="xs"
-          className="gap-2"
-          data-testid="add-connection-button"
-        >
-          <Plus className="h-4 w-4" />
-          Add Connection
-        </Button>
-      ) : undefined,
-      mobileActions: !envConnections ? (
+  const mobileActions = useMemo(
+    () =>
+      !envConnections ? (
         <DropdownMenuItem onClick={() => setCreateDialogOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          Add Connection
+          Add connection
         </DropdownMenuItem>
       ) : undefined,
-    }),
     [envConnections]
   )
 
-  useAppTopBar(topBarConfig)
+  useSettingsTopBar('Connections', { mobileActions })
 
   useEffect(() => {
     trackEvent(AnalyticsEvents.CONNECTIONS_VIEWED)
@@ -263,107 +144,116 @@ export function ConnectionsSettingsPage({
     setCreateDialogOpen(true)
   }, [createFromSearch, envConnections])
 
+  // Production first, then by name, so the riskiest rows are always at the top.
+  const sortedConnections = useMemo(
+    () =>
+      [...connections].sort(
+        (a, b) =>
+          environmentRank(a.environment) - environmentRank(b.environment) ||
+          a.name.localeCompare(b.name)
+      ),
+    [connections]
+  )
+
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <div className="rounded-full bg-status-danger/10 p-4 mb-4">
-          <AlertCircle className="h-8 w-8 text-status-danger" />
-        </div>
-        <h2 className="text-xl font-semibold mb-2">Failed to load connections</h2>
-        <p className="text-muted-foreground text-center max-w-md">{error.message}</p>
-      </div>
+      <EmptyState
+        icon={CircleAlert}
+        tone="danger"
+        title="Failed to load connections"
+        description={error.message}
+        className="max-w-6xl"
+      />
     )
   }
 
+  const environmentSummary = [
+    ...environments.map((env) => ({
+      label: env.label.toLowerCase(),
+      count: connections.filter((c) => c.environment === env.value).length,
+    })),
+    {
+      label: 'unassigned',
+      count: connections.filter((c) => c.environment === null).length,
+    },
+  ]
+    .filter((entry) => entry.count > 0)
+    .map((entry) => `${entry.count} ${entry.label}`)
+    .join(' · ')
+
+  const addButton = !envConnections ? (
+    <Button onClick={() => setCreateDialogOpen(true)} size="xs" data-testid="add-connection-button">
+      <Plus className="h-3.5 w-3.5" aria-hidden />
+      Add connection
+    </Button>
+  ) : null
+  const hasConnections = connections.length > 0
+
   return (
-    <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
-          title="Total Connections"
-          value={connections.length}
-          icon={Database}
-          loading={isLoading}
-        />
-        <StatCard
-          title="Production"
-          value={connections.filter((c) => c.environment === 'production').length}
-          icon={Cloud}
-          loading={isLoading}
-          variant="rose"
-        />
-        <StatCard
-          title="Development"
-          value={connections.filter((c) => c.environment === 'development').length}
-          icon={Code}
-          loading={isLoading}
-          variant="emerald"
-        />
-      </div>
-
-      {/* Connections by Environment */}
+    <SettingsPage
+      wide
+      title="Redis connections"
+      count={isLoading ? undefined : connections.length}
+      description={
+        envConnections
+          ? 'Set by DURABULL_REDIS_URL_* environment variables. Restart to apply changes.'
+          : environmentSummary || undefined
+      }
+      actions={isLoading || hasConnections ? addButton : undefined}
+    >
       {isLoading ? (
-        // Skeleton loaders
-        <div className="space-y-6">
-          {environments.map((env) => (
-            <EnvironmentSectionSkeleton key={env.value} envConfig={env} />
-          ))}
-        </div>
-      ) : connections.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <div className="rounded-full bg-muted p-4 mb-4">
-              <Database className="h-8 w-8 text-muted-foreground" />
+        <Panel className="divide-y">
+          {[0, 1, 2].map((row) => (
+            <div key={row} className="flex h-11 items-center gap-4 px-4">
+              <Skeleton className="h-2 w-2 rounded-full" />
+              <Skeleton className="h-3.5 w-40" />
+              <Skeleton className="h-3.5 w-20" />
+              <Skeleton className="ml-auto h-3.5 w-32" />
             </div>
-            <h3 className="text-lg font-semibold mb-1">No connections configured</h3>
-            <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
-              {envConnections
-                ? 'No env-driven Redis connections found. Set DURABULL_REDIS_URL_* variables and restart.'
-                : 'Add your first Redis connection to start managing your queues'}
-            </p>
-            {!envConnections && (
-              <Button onClick={() => setCreateDialogOpen(true)} className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Connection
-              </Button>
-            )}
-          </CardContent>
-        </Card>
+          ))}
+        </Panel>
+      ) : !hasConnections ? (
+        <EmptyState
+          icon={Database}
+          title="No connections configured"
+          description={
+            envConnections
+              ? 'No Redis connections were found in the environment. Set DURABULL_REDIS_URL_* variables and restart.'
+              : 'Add a Redis connection to see its BullMQ queues, jobs and workers.'
+          }
+          actions={addButton}
+        />
       ) : (
-        <div className="space-y-8">
-          {environments.map((env) => {
-            const envScopedConnections = connections.filter((c) => c.environment === env.value)
-            if (envScopedConnections.length === 0) return null
-
-            return (
-              <EnvironmentSection
-                key={env.value}
-                envConfig={env}
-                connections={envScopedConnections}
-                readOnly={envConnections}
-                canViewSecrets={canViewSecrets}
-                onEdit={setEditingConnection}
-                onDelete={setDeletingConnection}
-              />
-            )
-          })}
-          {(() => {
-            const unassignedConnections = connections.filter((c) => c.environment === null)
-            if (unassignedConnections.length === 0) return null
-
-            return (
-              <EnvironmentSection
-                key="unassigned"
-                envConfig={unassignedEnvironment}
-                connections={unassignedConnections}
-                readOnly={envConnections}
-                canViewSecrets={canViewSecrets}
-                onEdit={setEditingConnection}
-                onDelete={setDeletingConnection}
-              />
-            )
-          })()}
-        </div>
+        <Panel>
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Name</TableHead>
+                <TableHead>Environment</TableHead>
+                <TableHead>URL</TableHead>
+                <TableHead>Prefix</TableHead>
+                <TableHead>Status</TableHead>
+                {!envConnections ? (
+                  <TableHead className="w-px">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                ) : null}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sortedConnections.map((connection) => (
+                <ConnectionRow
+                  key={connection.id}
+                  connection={connection}
+                  readOnly={envConnections}
+                  canViewSecrets={canViewSecrets}
+                  onEdit={() => setEditingConnection(connection)}
+                  onDelete={() => setDeletingConnection(connection)}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </Panel>
       )}
 
       {!envConnections && (
@@ -390,11 +280,11 @@ export function ConnectionsSettingsPage({
           />
         </>
       )}
-    </div>
+    </SettingsPage>
   )
 }
 
-function ConnectionCard({
+function ConnectionRow({
   connection,
   readOnly,
   canViewSecrets,
@@ -416,168 +306,137 @@ function ConnectionCard({
   const envConfig = getEnvironmentConfig(connection.environment)
   const enabled = connection.enabled !== false
   const suspended = connection.suspended === true
-  const EnvIcon = envConfig.icon
-
-  const handleSetDefault = () => {
-    if (!connection.isDefault) {
-      setDefaultMutation.mutate(connection.id)
-    }
-  }
-
-  const isSettingDefault = setDefaultMutation.isPending
+  const revealedUrl = showUrl && canViewSecrets ? detail?.url : undefined
 
   return (
-    <Card
-      className={cn(
-        'group relative overflow-hidden transition-all hover:shadow-md',
-        connection.isDefault && 'ring-2 ring-primary/50'
-      )}
-      data-testid={`connection-card-${connection.id}`}
-    >
-      {connection.isDefault && (
-        <div className="absolute top-0 right-0 bg-primary text-primary-foreground px-2 py-1 text-xs font-medium rounded-bl-lg">
-          <Star className="h-3 w-3 inline mr-1" />
-          Default
+    <TableRow data-testid={`connection-card-${connection.id}`}>
+      <TableCell>
+        <div className="flex items-center gap-2.5">
+          <span className={cn('h-2 w-2 shrink-0 rounded-full', envConfig.dot)} aria-hidden />
+          <span className="truncate font-medium">{connection.name}</span>
+          {connection.isDefault ? <Badge variant="neutral">Default</Badge> : null}
         </div>
-      )}
+      </TableCell>
 
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className={cn('p-2 rounded-lg shrink-0', envConfig.bgColor)}>
-              <EnvIcon className={cn('h-4 w-4', envConfig.color)} />
-            </div>
-            <div className="min-w-0">
-              <CardTitle className="text-base truncate">{connection.name}</CardTitle>
-              <div className="mt-1 flex flex-wrap gap-1">
-                <Badge
-                  variant="outline"
-                  className={cn('text-[10px] font-medium', envConfig.borderColor, envConfig.color)}
-                >
-                  {envConfig.label}
-                </Badge>
-                {!enabled ? (
-                  <Badge variant="secondary" className="text-[10px]">
-                    Disabled
-                  </Badge>
-                ) : null}
-                {suspended ? (
-                  <Badge variant="warning" className="text-[10px]">
-                    Paused by plan limit
-                  </Badge>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
-      </CardHeader>
+      <TableCell>
+        <Badge variant={envConfig.badge}>{envConfig.label}</Badge>
+      </TableCell>
 
-      <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs text-muted-foreground">Connection URL</Label>
-            {canViewSecrets && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs gap-1"
-                onClick={() => {
-                  trackEvent(AnalyticsEvents.CONNECTION_URL_TOGGLED, {
-                    visible: !showUrl,
-                    connection_id: connection.id,
-                  })
-                  setShowUrl(!showUrl)
-                }}
-              >
-                {showUrl ? (
-                  <>
-                    <EyeOff className="h-3 w-3" />
-                    Hide
-                  </>
-                ) : (
-                  <>
-                    <Eye className="h-3 w-3" />
-                    Show
-                  </>
-                )}
-              </Button>
+      <TableCell>
+        <div className="flex min-w-44 max-w-md items-center gap-1">
+          <span
+            className={cn(
+              'min-w-0 font-mono text-xs',
+              revealedUrl ? 'break-all' : 'select-none truncate text-faint'
             )}
-          </div>
-          <div className="relative">
-            <div
-              className={cn(
-                'font-mono text-xs p-2 rounded-md bg-muted/50 border overflow-hidden transition-all',
-                (!showUrl || !canViewSecrets) && 'blur-sm select-none'
-              )}
-            >
-              {!canViewSecrets ? (
-                <span className="text-muted-foreground">••••••••••••••••••••••••</span>
-              ) : detailLoading ? (
-                <span className="text-muted-foreground">Loading...</span>
-              ) : showUrl && detail?.url ? (
-                <span className="break-all">{detail.url}</span>
-              ) : (
-                <span className="text-muted-foreground">••••••••••••••••••••••••</span>
-              )}
-            </div>
-          </div>
-          {!canViewSecrets && (
-            <p className="text-[10px] text-muted-foreground">
-              Only organization admins can view connection URLs.
-            </p>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between pt-2 border-t">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-xs gap-1.5"
-            onClick={handleSetDefault}
-            disabled={readOnly || connection.isDefault || isSettingDefault}
+            title={
+              canViewSecrets ? undefined : 'Only organization admins can view connection URLs.'
+            }
           >
-            {isSettingDefault ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : connection.isDefault ? (
-              <Check className="h-3 w-3 text-primary" />
-            ) : (
-              <Star className="h-3 w-3" />
-            )}
-            {connection.isDefault ? 'Default' : 'Set Default'}
-          </Button>
-          <div className="flex items-center gap-1">
-            {!readOnly && (
-              <>
-                {/* Disabled connections stop polling and alert evaluation and
-                    do not count toward the plan's connection limit. */}
+            {detailLoading ? 'Loading…' : (revealedUrl ?? MASKED_URL)}
+          </span>
+          {canViewSecrets ? (
+            <button
+              type="button"
+              onClick={() => {
+                trackEvent(AnalyticsEvents.CONNECTION_URL_TOGGLED, {
+                  visible: !showUrl,
+                  connection_id: connection.id,
+                })
+                setShowUrl(!showUrl)
+              }}
+              aria-label={
+                showUrl
+                  ? `Hide connection URL for ${connection.name}`
+                  : `Show connection URL for ${connection.name}`
+              }
+              aria-pressed={showUrl}
+              title={showUrl ? 'Hide URL' : 'Show URL'}
+              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              {showUrl ? (
+                <EyeOff className="h-3.5 w-3.5" aria-hidden />
+              ) : (
+                <Eye className="h-3.5 w-3.5" aria-hidden />
+              )}
+            </button>
+          ) : null}
+          {revealedUrl ? <CopyButton value={revealedUrl} label="connection URL" /> : null}
+        </div>
+      </TableCell>
+
+      <TableCell className="font-mono text-xs text-muted-foreground">{connection.prefix}</TableCell>
+
+      <TableCell className="whitespace-nowrap">
+        {suspended ? (
+          <Badge variant="warning">Paused by plan limit</Badge>
+        ) : (
+          <StatusIndicator status={enabled ? 'enabled' : 'disabled'} showPulse={false} />
+        )}
+      </TableCell>
+
+      {!readOnly ? (
+        <TableCell>
+          <div className="flex items-center justify-end gap-1">
+            <Button variant="outline" size="xs" onClick={onEdit}>
+              Edit
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 text-xs"
+                  size="icon"
+                  className="h-7 w-7"
+                  aria-label={`More actions for ${connection.name}`}
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={connection.isDefault || setDefaultMutation.isPending}
+                  onClick={() => {
+                    if (!connection.isDefault) setDefaultMutation.mutate(connection.id)
+                  }}
+                >
+                  {connection.isDefault ? 'Default connection' : 'Set as default'}
+                </DropdownMenuItem>
+                {/* Disabled connections stop polling and alert evaluation and
+                    do not count toward the plan's connection limit. */}
+                <DropdownMenuItem
                   disabled={updateMutation.isPending}
                   onClick={() =>
                     updateMutation.mutate({ id: connection.id, data: { enabled: !enabled } })
                   }
                 >
                   {enabled ? 'Disable' : 'Enable'}
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-status-danger focus:text-status-danger"
                   onClick={onDelete}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </>
-            )}
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+        </TableCell>
+      ) : null}
+    </TableRow>
+  )
+}
+
+function FormError({ message }: { message: string | undefined }) {
+  if (!message) return null
+  return (
+    <p
+      role="alert"
+      className="flex items-start gap-2 rounded-md bg-status-danger/10 px-3 py-2 text-[13px] text-status-danger"
+    >
+      <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+      <span>{message}</span>
+    </p>
   )
 }
 
@@ -693,7 +552,6 @@ function ConnectionFormDialog({
     }
   }
 
-  const envConfig = getEnvironmentConfig(environment)
   const queueCountDiscovered = discoveryResult?.indexed.total ?? 0
   const hasDiscoveryCompleted =
     mode === 'create' &&
@@ -707,49 +565,49 @@ function ConnectionFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Database className="h-5 w-5 text-primary" />
-            {mode === 'create' ? 'Add Connection' : 'Edit Connection'}
-          </DialogTitle>
+          <DialogTitle>{mode === 'create' ? 'Add connection' : 'Edit connection'}</DialogTitle>
           <DialogDescription>
             {mode === 'create'
-              ? 'Add a new Redis connection to your workspace'
-              : 'Update the connection configuration'}
+              ? 'Durabull reads BullMQ queues from this Redis instance.'
+              : 'Changes apply to everyone in this workspace.'}
           </DialogDescription>
         </DialogHeader>
 
         {loadingConnection && mode === 'edit' ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : mode === 'create' && discoveryConnectionId ? (
-          <div className="space-y-4 py-3">
+          <div className="space-y-4">
             {isDiscovering ? (
-              <div className="flex flex-col items-center gap-3 py-8 text-center">
-                <Loader2 className="h-7 w-7 animate-spin text-primary" />
-                <div className="space-y-1">
-                  <p className="font-medium">Discovering queues...</p>
-                  <p className="text-sm text-muted-foreground">
-                    We are scanning Redis and indexing queue names for fast loading.
+              <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-3">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                <div>
+                  <p className="text-[13px] font-medium">Discovering queues...</p>
+                  <p className="text-xs text-muted-foreground">
+                    Scanning Redis and indexing queue names for fast loading.
                   </p>
                 </div>
               </div>
             ) : (
               hasDiscoveryCompleted && (
                 <div className="space-y-4">
-                  <div className="rounded-lg border bg-muted/30 p-4">
-                    <h4 className="font-medium">Initial discovery complete</h4>
-                    {queueCountDiscovered > 0 ? (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Found {queueCountDiscovered} queue{queueCountDiscovered === 1 ? '' : 's'}.
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        No queues were discovered yet for this connection.
-                      </p>
-                    )}
+                  <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-3">
+                    <CircleCheck className="h-4 w-4 shrink-0 text-status-success" aria-hidden />
+                    <div>
+                      <h4 className="text-[13px] font-medium">Initial discovery complete</h4>
+                      {queueCountDiscovered > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Found {queueCountDiscovered} queue{queueCountDiscovered === 1 ? '' : 's'}.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          No queues were discovered yet for this connection.
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -766,12 +624,14 @@ function ConnectionFormDialog({
                         onOpenChange(false)
                       }}
                     >
-                      View Queues
+                      View queues
                     </Button>
                   </DialogFooter>
                 </div>
               )
             )}
+
+            {discoveryError ? <FormError message={discoveryErrorMessage} /> : null}
 
             {!isDiscovering && !hasDiscoveryCompleted && discoveryConnectionId && (
               <DialogFooter>
@@ -782,206 +642,174 @@ function ConnectionFormDialog({
                   type="button"
                   onClick={() => runQueueDiscoveryMutation.mutate(discoveryConnectionId)}
                 >
-                  Retry Discovery
+                  Retry discovery
                 </Button>
               </DialogFooter>
-            )}
-
-            {discoveryError && (
-              <div className="flex items-center gap-2 text-sm rounded-md bg-destructive/10 px-3 py-2 text-destructive">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{discoveryErrorMessage}</span>
-              </div>
             )}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Name */}
-            <div className="space-y-2">
-              <Label htmlFor="name">Connection Name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., Production Redis"
-                required
-              />
-            </div>
-
-            {/* URL */}
-            <div className="space-y-2">
-              <Label htmlFor="url">Connection URL</Label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    id="url"
-                    type={showUrl ? 'text' : 'password'}
-                    value={url}
-                    onChange={(e) => {
-                      setUrl(e.target.value)
-                      setTestResult(null)
-                    }}
-                    placeholder="redis://..."
-                    required
-                    className="font-mono text-sm pr-9"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowUrl((v) => !v)}
-                    className="absolute inset-y-0 right-0 flex items-center px-2.5 text-muted-foreground hover:text-foreground transition-colors"
-                    aria-label={showUrl ? 'Hide connection URL' : 'Show connection URL'}
-                  >
-                    {showUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleTestConnection}
-                  disabled={!url || isTesting}
-                  className="shrink-0 gap-1.5"
-                >
-                  {isTesting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Zap className="h-4 w-4" />
-                  )}
-                  Test
-                </Button>
-              </div>
-              {testResult && (
-                <div
-                  className={cn(
-                    'flex items-center gap-2 text-sm p-2 rounded-md',
-                    testResult.success
-                      ? 'bg-status-success/10 text-status-success'
-                      : 'bg-status-danger/10 text-status-danger'
-                  )}
-                >
-                  {testResult.success ? (
-                    <Wifi className="h-4 w-4 shrink-0" />
-                  ) : (
-                    <WifiOff className="h-4 w-4 shrink-0" />
-                  )}
-                  <span>{testResult.message}</span>
-                </div>
-              )}
-              {mode === 'create' && (
-                <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-xs">
-                  <a
-                    href={CONNECTION_TROUBLESHOOTING_DOCS_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Info className="h-3.5 w-3.5 mr-1.5" />
-                    Having trouble connecting? Read connection troubleshooting
-                  </a>
-                </Button>
-              )}
-            </div>
-
-            {/* Prefix */}
-            <div className="space-y-2">
-              <Label htmlFor="prefix">BullMQ Prefix</Label>
-              <Input
-                id="prefix"
-                value={prefix}
-                onChange={(e) => setPrefix(e.target.value)}
-                placeholder="bull"
-                required
-                className="font-mono text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                Use the same prefix configured by your BullMQ producers and workers.
-              </p>
-            </div>
-
-            {/* Environment */}
-            <div className="space-y-2">
-              <Label>Environment</Label>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn('w-full justify-between', envConfig.borderColor)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <envConfig.icon className={cn('h-4 w-4', envConfig.color)} />
-                      <span>{envConfig.label}</span>
-                    </div>
-                    <ChevronDown className="h-4 w-4 opacity-50" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width]">
-                  {environments.map((env) => (
-                    <DropdownMenuItem
-                      key={env.value}
-                      onClick={() => setEnvironment(env.value)}
-                      className="cursor-pointer"
-                    >
-                      <env.icon className={cn('mr-2 h-4 w-4', env.color)} />
-                      {env.label}
-                      {environment === env.value && (
-                        <Check className="ml-auto h-4 w-4 text-primary" />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            {/* Default toggle */}
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">Allow self-signed TLS certificates</Label>
-                <p className="text-xs text-muted-foreground">
-                  Enable for providers like Heroku Key-Value Store that use self-signed TLS certs
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant={allowSelfSignedCerts ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  setAllowSelfSignedCerts(!allowSelfSignedCerts)
-                  setTestResult(null)
-                }}
-                className="gap-1.5"
-              >
-                <ShieldAlert
-                  className={cn('h-3.5 w-3.5', allowSelfSignedCerts && 'fill-current')}
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+              <div className="space-y-1.5">
+                <Label htmlFor="name" className="text-[13px]">
+                  Name
+                </Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Production Redis"
+                  required
                 />
-                {allowSelfSignedCerts ? 'Enabled' : 'Disabled'}
-              </Button>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="environment" className="text-[13px]">
+                  Environment
+                </Label>
+                <Select
+                  id="environment"
+                  value={environment}
+                  onChange={(e) => setEnvironment(e.target.value as ConnectionEnvironment)}
+                >
+                  {environments.map((env) => (
+                    <option key={env.value} value={env.value}>
+                      {env.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border p-3">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium">Set as default</Label>
+            <fieldset className="grid gap-3 border-y py-4">
+              <legend className="sr-only">Redis</legend>
+              <div className="space-y-1.5">
+                <Label htmlFor="url" className="text-[13px]">
+                  Connection URL
+                </Label>
+                <div className="flex gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Input
+                      id="url"
+                      type={showUrl ? 'text' : 'password'}
+                      value={url}
+                      onChange={(e) => {
+                        setUrl(e.target.value)
+                        setTestResult(null)
+                      }}
+                      placeholder="redis://..."
+                      required
+                      autoComplete="off"
+                      className="pr-9 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowUrl((v) => !v)}
+                      className="absolute inset-y-0 right-0 flex items-center rounded-r-md px-2.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
+                      aria-label={showUrl ? 'Hide connection URL' : 'Show connection URL'}
+                    >
+                      {showUrl ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleTestConnection}
+                    disabled={!url || isTesting}
+                    className="shrink-0"
+                  >
+                    {isTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    Test
+                  </Button>
+                </div>
+                {testResult ? (
+                  <p
+                    aria-live="polite"
+                    className={cn(
+                      'flex items-start gap-2 text-xs',
+                      testResult.success ? 'text-status-success' : 'text-status-danger'
+                    )}
+                  >
+                    {testResult.success ? (
+                      <CircleCheck className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+                    ) : (
+                      <CircleAlert className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
+                    )}
+                    <span>{testResult.message}</span>
+                  </p>
+                ) : mode === 'create' ? (
+                  <p className="text-xs text-muted-foreground">
+                    Having trouble connecting?{' '}
+                    <a
+                      href={CONNECTION_TROUBLESHOOTING_DOCS_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+                    >
+                      Read connection troubleshooting
+                      <ExternalLink className="h-3 w-3" aria-hidden />
+                    </a>
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="prefix" className="text-[13px]">
+                  BullMQ prefix
+                </Label>
+                <Input
+                  id="prefix"
+                  value={prefix}
+                  onChange={(e) => setPrefix(e.target.value)}
+                  placeholder="bull"
+                  required
+                  className="max-w-48 font-mono"
+                />
                 <p className="text-xs text-muted-foreground">
-                  This connection will be used by default
+                  The prefix your BullMQ producers and workers use.
                 </p>
               </div>
-              <Button
-                type="button"
-                variant={isDefault ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setIsDefault(!isDefault)}
-                className="gap-1.5"
-              >
-                <Star className={cn('h-3.5 w-3.5', isDefault && 'fill-current')} />
-                {isDefault ? 'Default' : 'Make Default'}
-              </Button>
-            </div>
 
-            {/* Error display */}
-            {(createMutation.error || updateMutation.error) && (
-              <div className="flex items-center gap-2 text-sm p-3 rounded-md bg-destructive/10 text-destructive">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{createMutation.error?.message || updateMutation.error?.message}</span>
-              </div>
-            )}
+              <label className="flex cursor-pointer items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-foreground"
+                  checked={allowSelfSignedCerts}
+                  onChange={(e) => {
+                    setAllowSelfSignedCerts(e.target.checked)
+                    setTestResult(null)
+                  }}
+                />
+                <span>
+                  <span className="block text-[13px] font-medium leading-4">
+                    Allow self-signed TLS certificates
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    For providers such as Heroku Key-Value Store that use self-signed certificates.
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+
+            <label className="flex cursor-pointer items-start gap-2.5">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-foreground"
+                checked={isDefault}
+                onChange={(e) => setIsDefault(e.target.checked)}
+              />
+              <span>
+                <span className="block text-[13px] font-medium leading-4">Make default</span>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  Durabull opens on the default connection.
+                </span>
+              </span>
+            </label>
+
+            <FormError message={createMutation.error?.message || updateMutation.error?.message} />
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -992,22 +820,14 @@ function ConnectionFormDialog({
                 disabled={isLoading || !name || !url || !prefix.trim()}
                 data-testid="connection-form-submit"
               >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {mode === 'create' ? 'Creating...' : 'Saving...'}
-                  </>
-                ) : mode === 'create' ? (
-                  <>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Create Connection
-                  </>
-                ) : (
-                  <>
-                    <Check className="mr-2 h-4 w-4" />
-                    Save Changes
-                  </>
-                )}
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {isLoading
+                  ? mode === 'create'
+                    ? 'Creating...'
+                    : 'Saving...'
+                  : mode === 'create'
+                    ? 'Create connection'
+                    : 'Save changes'}
               </Button>
             </DialogFooter>
           </form>
@@ -1055,75 +875,54 @@ function DeleteConnectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive">
-            <Trash2 className="h-5 w-5" />
-            Delete Connection
-          </DialogTitle>
+          <DialogTitle>Delete connection</DialogTitle>
           <DialogDescription>
-            This action cannot be undone. This will permanently delete the connection.
+            Permanently removes this connection from Durabull. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {/* Connection info */}
-          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
-            <div className="flex items-center gap-3">
-              <div className={cn('p-2 rounded-lg', envConfig.bgColor)}>
-                <envConfig.icon className={cn('h-4 w-4', envConfig.color)} />
-              </div>
-              <div>
-                <p className="font-medium">{connection.name}</p>
-                <Badge
-                  variant="outline"
-                  className={cn('mt-1 text-[10px]', envConfig.borderColor, envConfig.color)}
-                >
-                  {envConfig.label}
-                </Badge>
-              </div>
-            </div>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2.5 rounded-md border bg-muted/40 px-3 py-2">
+            <span className={cn('h-2 w-2 shrink-0 rounded-full', envConfig.dot)} aria-hidden />
+            <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{connection.name}</p>
+            <Badge variant={envConfig.badge}>{envConfig.label}</Badge>
           </div>
 
-          {/* Warning for default connection */}
           {connection.isDefault && (
-            <div className="flex items-start gap-2 text-sm p-3 rounded-md bg-status-warning/10 text-status-warning">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <p className="flex items-start gap-2 rounded-md bg-status-warning/10 px-3 py-2 text-[13px] text-status-warning">
+              <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
               <span>
                 This is the default connection. If other connections remain, one of them will be
                 selected as the new default.
               </span>
-            </div>
+            </p>
           )}
 
-          {/* Confirmation input */}
-          <div className="space-y-2">
-            <Label htmlFor="confirm-name">
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-name" className="text-[13px] leading-5">
               Type{' '}
-              <span className="font-mono font-semibold bg-muted px-1.5 py-0.5 rounded">
+              <span className="rounded-[4px] border bg-muted px-1 py-px font-mono text-xs">
                 {connection.name}
               </span>{' '}
-              to confirm:
+              to confirm
             </Label>
             <Input
               id="confirm-name"
               value={confirmName}
               onChange={(e) => setConfirmName(e.target.value)}
-              placeholder="Enter connection name"
-              className={confirmName && !isConfirmed ? 'border-destructive' : ''}
+              placeholder="Connection name"
+              aria-invalid={Boolean(confirmName && !isConfirmed)}
+              className={confirmName && !isConfirmed ? 'border-status-danger' : ''}
               autoComplete="off"
             />
             {confirmName && !isConfirmed && (
-              <p className="text-sm text-destructive">Name does not match</p>
+              <p className="text-xs text-status-danger">Name does not match</p>
             )}
           </div>
 
-          {deleteMutation.error && (
-            <div className="flex items-center gap-2 text-sm p-3 rounded-md bg-destructive/10 text-destructive">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{deleteMutation.error.message}</span>
-            </div>
-          )}
+          <FormError message={deleteMutation.error?.message} />
         </div>
 
         <DialogFooter>
@@ -1135,82 +934,11 @@ function DeleteConnectionDialog({
             onClick={handleDelete}
             disabled={!isConfirmed || isDeleting}
           >
-            {isDeleting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Deleting...
-              </>
-            ) : (
-              <>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete Connection
-              </>
-            )}
+            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {isDeleting ? 'Deleting...' : 'Delete connection'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-type StatVariant = 'default' | 'emerald' | 'amber' | 'rose' | 'indigo'
-
-interface StatCardProps {
-  title: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  loading?: boolean
-  variant?: StatVariant
-}
-
-const variantStyles: Record<
-  StatVariant,
-  {
-    icon: string
-    accent: string
-  }
-> = {
-  default: {
-    icon: 'text-muted-foreground',
-    accent: 'bg-status-neutral/40',
-  },
-  indigo: {
-    icon: 'text-status-priority',
-    accent: 'bg-status-priority',
-  },
-  emerald: {
-    icon: 'text-status-success',
-    accent: 'bg-status-success',
-  },
-  amber: {
-    icon: 'text-status-warning',
-    accent: 'bg-status-warning',
-  },
-  rose: {
-    icon: 'text-status-danger',
-    accent: 'bg-status-danger',
-  },
-}
-
-function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: StatCardProps) {
-  const styles = variantStyles[variant]
-
-  return (
-    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
-      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-        <CardTitle className="eyebrow">{title}</CardTitle>
-        <Icon className={cn('h-4 w-4', styles.icon)} />
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="h-8 w-12 bg-muted rounded animate-pulse" />
-        ) : (
-          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-            {value}
-          </div>
-        )}
-      </CardContent>
-    </Card>
   )
 }

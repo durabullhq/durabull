@@ -2,6 +2,17 @@ import { join } from 'node:path'
 
 export const DESKTOP_RESOURCE_ROOT_ENV = 'DURABULL_DESKTOP_RESOURCE_ROOT'
 
+/**
+ * Window chrome that has to match the web app. Electron needs literal values, so
+ * these mirror tokens in `apps/web/src/styles.css`; a test keeps them in sync.
+ */
+export const DESKTOP_WINDOW_CHROME = {
+  /** Dark `--color-background` (dark is the default theme), shown before the page paints. */
+  backgroundColor: '#0a0a0a',
+  /** Centres the 12px traffic lights in the 48px sidebar title row (`h-12`). */
+  trafficLightPosition: { x: 16, y: 18 },
+} as const
+
 export function resolveDesktopResourceRoot({
   appPath,
   envRoot,

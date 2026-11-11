@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, ArrowUpRight, BellRing, ShieldAlert, Sparkles } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CircleCheck, ShieldAlert } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { AlertEventsTable } from '@/components/alerts/alert-events-table'
@@ -7,12 +7,14 @@ import {
   eventFiltersForStatus,
   type IncidentStatusFilter,
   STATUS_FILTER_OPTIONS,
-} from '@/components/alerts/connection-incidents-view'
+} from '@/components/alerts/incident-status-filter'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { useConnection } from '@/components/connection-provider'
+import { PageTitle } from '@/components/page-title'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Panel, PanelHeader } from '@/components/ui/section'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -24,7 +26,7 @@ import {
   useGlobalAlertEvents,
   useResolveGlobalAlertEvent,
 } from '@/hooks/use-alerts'
-import { cn, formatNumber } from '@/lib/utils'
+import { formatNumber } from '@/lib/utils'
 
 export interface OrgAlertsFilters {
   status: IncidentStatusFilter
@@ -89,18 +91,20 @@ export function OrgAlertsFeed({
   const topBarConfig = useMemo(
     () => ({
       left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <BellRing className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Alerts</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            Cross-connection incident feed for the active organization
-          </span>
-        </div>
+        <PageTitle
+          title="Alerts"
+          meta={
+            <>
+              <span className="text-[13px] text-muted-foreground">All connections</span>
+              <Badge variant={totalOpenCount > 0 ? 'destructive' : 'success'}>
+                {formatNumber(totalOpenCount)} open
+              </Badge>
+            </>
+          }
+        />
       ),
     }),
-    []
+    [totalOpenCount]
   )
 
   useAppTopBar(topBarConfig)
@@ -149,20 +153,18 @@ export function OrgAlertsFeed({
 
   if (isError) {
     return (
-      <div className="space-y-6">
-        <OrgFeedHeader totalOpenCount={totalOpenCount} />
-        <Card className="border-destructive/30 bg-destructive/5">
-          <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-            <ShieldAlert className="h-8 w-8 text-destructive" />
-            <h3 className="mt-4 text-lg font-semibold">Unable to load alert data</h3>
-            <p className="mt-2 max-w-md text-sm text-muted-foreground">
-              Failed to fetch organization incidents. Retry, or refresh the page.
-            </p>
+      <Panel>
+        <EmptyState
+          size="inline"
+          icon={ShieldAlert}
+          tone="danger"
+          title="Unable to load alert data"
+          description="Failed to fetch organization incidents. Retry, or refresh the page."
+          actions={
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="mt-4"
               onClick={() => {
                 void summaryQuery.refetch()
                 void eventsQuery.refetch()
@@ -170,27 +172,20 @@ export function OrgAlertsFeed({
             >
               Retry
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+          }
+        />
+      </Panel>
     )
   }
 
   if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <OrgFeedHeader totalOpenCount={totalOpenCount} />
-        <OrgFeedLoadingState />
-      </div>
-    )
+    return <OrgFeedLoadingState />
   }
 
   const showCalmEmptyState = status === 'open' && !connection && events.length === 0
 
   return (
-    <div className="space-y-6">
-      <OrgFeedHeader totalOpenCount={totalOpenCount} />
-
+    <div className="space-y-4">
       {stripEntries.length > 0 ? (
         <div className="flex flex-wrap gap-2" data-testid="org-alerts-connection-strip">
           {stripEntries.map((entry) => (
@@ -198,90 +193,75 @@ export function OrgAlertsFeed({
               key={entry.connectionId}
               to="/$orgSlug/c/$connectionId/alerts"
               params={{ orgSlug, connectionId: entry.connectionId }}
-              className={cn(
-                'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
-                'border-destructive/25 bg-destructive/5 hover:border-destructive/50'
-              )}
+              className="inline-flex h-8 items-center gap-2 rounded-md border bg-card px-2.5 text-[13px] transition-colors hover:border-border-strong hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <span className="font-medium">{entry.name}</span>
-              <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">
-                {formatNumber(entry.firing)} firing
-              </Badge>
+              <Badge variant="destructive">{formatNumber(entry.firing)} firing</Badge>
               {entry.acknowledged > 0 ? (
-                <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
-                  {formatNumber(entry.acknowledged)} ack'd
-                </Badge>
+                <Badge variant="warning">{formatNumber(entry.acknowledged)} ack'd</Badge>
               ) : null}
-              <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+              <ArrowUpRight className="h-3.5 w-3.5 text-faint" />
             </Link>
           ))}
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Select
-          value={connection ?? 'all'}
-          onChange={(event) =>
-            onFiltersChange({
-              status,
-              connection: event.target.value === 'all' ? undefined : event.target.value,
-            })
-          }
-          className="h-9 w-[220px]"
-          aria-label="Filter incidents by connection"
-        >
-          <option value="all">All connections</option>
-          {connections.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={status}
-          onChange={(event) =>
-            onFiltersChange({ status: event.target.value as IncidentStatusFilter, connection })
-          }
-          className="h-9 w-[220px]"
-          aria-label="Filter incidents by status"
-        >
-          {STATUS_FILTER_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </Select>
-      </div>
-
-      {showCalmEmptyState ? (
-        <OrgFeedCalmEmptyState orgSlug={orgSlug} connections={connections} />
-      ) : (
-        <AlertEventsTable
-          orgSlug={orgSlug}
-          events={events}
-          emptyTitle="No incidents match these filters"
-          emptyCopy="Adjust the connection or status filters, or wait for alert rules to evaluate in the background."
-          showConnectionColumn
-          connectionNameForEvent={(event) =>
-            connectionNameById.get(event.connectionId) ?? 'Unknown connection'
-          }
-          onResolve={(event) => handleResolveEvent(event)}
-          resolvingEventId={resolvingEventId}
-          onAcknowledge={(eventId) => handleAcknowledgeEvent(eventId)}
-          acknowledgingEventId={acknowledgingEventId}
-        />
-      )}
-    </div>
-  )
-}
-
-function OrgFeedHeader({ totalOpenCount }: { totalOpenCount: number }) {
-  return (
-    <div className="flex flex-wrap items-center gap-3">
-      <h2 className="text-lg font-semibold">Organization incidents</h2>
-      <Badge variant={totalOpenCount > 0 ? 'destructive' : 'success'}>
-        {formatNumber(totalOpenCount)} open
-      </Badge>
+      <Panel>
+        <PanelHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={connection ?? 'all'}
+              onChange={(event) =>
+                onFiltersChange({
+                  status,
+                  connection: event.target.value === 'all' ? undefined : event.target.value,
+                })
+              }
+              className="w-[200px]"
+              aria-label="Filter incidents by connection"
+            >
+              <option value="all">All connections</option>
+              {connections.map((entry) => (
+                <option key={entry.id} value={entry.id}>
+                  {entry.name}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={status}
+              onChange={(event) =>
+                onFiltersChange({ status: event.target.value as IncidentStatusFilter, connection })
+              }
+              className="w-[200px]"
+              aria-label="Filter incidents by status"
+            >
+              {STATUS_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </PanelHeader>
+        {showCalmEmptyState ? (
+          <OrgFeedCalmEmptyState orgSlug={orgSlug} connections={connections} />
+        ) : (
+          <AlertEventsTable
+            orgSlug={orgSlug}
+            events={events}
+            emptyTitle="No incidents match these filters"
+            emptyCopy="Adjust the connection or status filters, or wait for alert rules to evaluate in the background."
+            showConnectionColumn
+            connectionNameForEvent={(event) =>
+              connectionNameById.get(event.connectionId) ?? 'Unknown connection'
+            }
+            onResolve={(event) => handleResolveEvent(event)}
+            resolvingEventId={resolvingEventId}
+            onAcknowledge={(eventId) => handleAcknowledgeEvent(eventId)}
+            acknowledgingEventId={acknowledgingEventId}
+          />
+        )}
+      </Panel>
     </div>
   )
 }
@@ -294,20 +274,21 @@ function OrgFeedCalmEmptyState({
   connections: Array<{ id: string; name: string }>
 }) {
   return (
-    <Card className="border-border/70 bg-muted/15">
-      <CardContent className="flex flex-col items-center justify-center py-14 text-center">
-        <div className="rounded-full border border-status-success/25 bg-status-success/10 p-4 text-status-success">
-          <Sparkles className="h-8 w-8" />
-        </div>
-        <h3 className="mt-5 text-xl font-semibold">No open incidents</h3>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Nothing is firing across your connections right now. As alert rules evaluate in the
-          background, cross-connection incidents will appear here.
-        </p>
-        {connections.length > 0 ? (
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-            {connections.slice(0, 4).map((connection) => (
-              <Button key={connection.id} asChild variant="outline" size="sm" className="gap-1.5">
+    <EmptyState
+      size="inline"
+      className="py-16"
+      icon={CircleCheck}
+      tone="success"
+      title="No open incidents"
+      description={
+        connections.length > 0
+          ? 'Nothing is firing across your connections. Incidents from every connection appear here as rules evaluate in the background.'
+          : 'Add a Redis connection to unlock background alerting and incident history.'
+      }
+      actions={
+        connections.length > 0
+          ? connections.slice(0, 4).map((connection) => (
+              <Button key={connection.id} asChild variant="outline" size="sm">
                 <Link
                   to="/$orgSlug/c/$connectionId/alerts"
                   params={{ orgSlug, connectionId: connection.id }}
@@ -316,37 +297,28 @@ function OrgFeedCalmEmptyState({
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </Button>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-muted-foreground">
-            Add a Redis connection to unlock background alerting and incident history.
-          </p>
-        )}
-      </CardContent>
-    </Card>
+            ))
+          : undefined
+      }
+    />
   )
 }
 
 function OrgFeedLoadingState() {
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap gap-2">
-        {Array.from({ length: 3 }, (_, index) => (
-          <Skeleton key={index} className="h-9 w-48 rounded-full" />
+    <div className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex gap-2 border-b px-4 py-2">
+        <Skeleton className="h-8 w-[200px]" />
+        <Skeleton className="h-8 w-[200px]" />
+      </div>
+      <div className="divide-y">
+        {Array.from({ length: 6 }, (_, index) => (
+          <div key={index} className="flex items-center gap-4 px-4 py-2.5">
+            <Skeleton className="h-5 w-16" />
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-4 flex-1" />
+          </div>
         ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <Skeleton className="h-9 w-[220px]" />
-        <Skeleton className="h-9 w-[220px]" />
-      </div>
-      <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/70">
-        <Skeleton className="h-10 w-full rounded-none" />
-        <div className="space-y-2 p-3">
-          {Array.from({ length: 6 }, (_, index) => (
-            <Skeleton key={index} className="h-12 rounded-lg" />
-          ))}
-        </div>
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -40,6 +40,11 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
+}))
+
+// The tab row has its own queries; these tests cover the view beneath it.
+vi.mock('@/components/alerts/alerts-view-switcher', () => ({
+  AlertsHeader: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }))
 
 vi.mock('@/components/app-top-bar', () => ({
@@ -113,7 +118,7 @@ describe('ConnectionIncidentsView', () => {
     })
   })
 
-  it('renders metric cards from the connection summary', () => {
+  it('shows live counts on the one-click status filters', () => {
     render(
       <ConnectionIncidentsView
         orgSlug="acme"
@@ -123,12 +128,13 @@ describe('ConnectionIncidentsView', () => {
       />
     )
 
-    // "Open" and "Acknowledged" also appear as filter options, so scope to card labels.
-    const openLabels = screen.getAllByText('Open')
-    expect(openLabels.some((element) => element.tagName !== 'OPTION')).toBe(true)
-    const acknowledgedLabels = screen.getAllByText('Acknowledged')
-    expect(acknowledgedLabels.some((element) => element.tagName !== 'OPTION')).toBe(true)
-    expect(screen.getByText('Resolved · 24h')).toBeInTheDocument()
+    const filters = screen.getByRole('group', { name: 'Filter incidents by status' })
+    expect(within(filters).getByRole('button', { name: /^Open/ })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    expect(within(filters).getByRole('button', { name: /^Acknowledged/ })).toBeInTheDocument()
+    expect(screen.getByText('resolved in 24h')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
@@ -270,7 +276,7 @@ describe('ConnectionIncidentsView', () => {
     expect(refetchMock).toHaveBeenCalled()
   })
 
-  it('propagates status filter changes through the select', async () => {
+  it('propagates status filter changes from the filter row', async () => {
     const user = userEvent.setup()
     const onStatusChange = vi.fn()
 
@@ -283,7 +289,7 @@ describe('ConnectionIncidentsView', () => {
       />
     )
 
-    await user.selectOptions(screen.getByRole('combobox'), 'resolved')
+    await user.click(screen.getByRole('button', { name: 'Resolved' }))
 
     expect(onStatusChange).toHaveBeenCalledWith('resolved')
   })

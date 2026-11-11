@@ -1,6 +1,7 @@
-import { Navigate, createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Navigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { z } from 'zod'
+
 export { ConnectionsSettingsPage } from '@/components/settings/connections-settings-page'
 
 const connectionsSearchSchema = z.object({

@@ -1,8 +1,11 @@
 import { useLocation } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { APP_TOP_BAR_HEIGHT_CLASS } from '@/components/app-top-bar'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useIsMacElectronShell } from '@/hooks/use-electron-shell'
+import { cn } from '@/lib/utils'
 
 interface HistoryAvailability {
   canGoBack: boolean
@@ -147,32 +150,60 @@ export function MacDesktopSidebarControls() {
 
   if (!isMacElectronShell) return null
 
+  const buttonClass =
+    'h-6 w-6 rounded-md border border-transparent p-0 text-muted-foreground shadow-none hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:text-faint/50 disabled:hover:bg-transparent'
+
+  // One title-bar row, the same height as the app top bar so their bottom
+  // edges meet. The left 78px belongs to the native traffic lights
+  // (see trafficLightPosition in apps/desktop/src/main.ts).
   return (
-    <div className="flex h-10 shrink-0 items-center justify-end border-b border-border/80 bg-sidebar-background pl-[78px] pr-3 app-region-drag">
-      <div className="flex items-center gap-0.5 app-region-no-drag">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 rounded-md border border-transparent p-0 text-muted-foreground shadow-none hover:bg-accent/70 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:text-muted-foreground/35 disabled:hover:bg-transparent"
-          onClick={handleGoBack}
-          disabled={!canGoBack}
-          aria-label="Go back"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 rounded-md border border-transparent p-0 text-muted-foreground shadow-none hover:bg-accent/70 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:text-muted-foreground/35 disabled:hover:bg-transparent"
-          onClick={handleGoForward}
-          disabled={!canGoForward}
-          aria-label="Go forward"
-        >
-          <ChevronRight className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-end bg-sidebar-background pl-[78px] pr-3 app-region-drag',
+        APP_TOP_BAR_HEIGHT_CLASS
+      )}
+    >
+      <TooltipProvider delayDuration={400}>
+        <div className="flex items-center gap-0.5 app-region-no-drag">
+          <Tooltip>
+            {/* The wrapper keeps the tooltip reachable while the button is disabled. */}
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={buttonClass}
+                  onClick={handleGoBack}
+                  disabled={!canGoBack}
+                  aria-label="Go back"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Back</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={buttonClass}
+                  onClick={handleGoForward}
+                  disabled={!canGoForward}
+                  aria-label="Go forward"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Forward</TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
     </div>
   )
 }

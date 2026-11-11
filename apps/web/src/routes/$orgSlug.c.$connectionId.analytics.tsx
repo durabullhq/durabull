@@ -1,35 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
-import {
-  Activity,
-  AlertCircle,
-  BarChart3,
-  Calendar,
-  Clock,
-  Cpu,
-  Database,
-  Gauge,
-  Layers,
-  LineChart,
-  Network,
-  RefreshCw,
-  Server,
-  Timer,
-  Zap,
-} from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { AlertCircle, CalendarClock, Layers, Server, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Area,
   AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Line,
-  Pie,
-  PieChart,
-  LineChart as RechartsLineChart,
+  LineChart,
   XAxis,
   YAxis,
 } from 'recharts'
@@ -39,12 +20,14 @@ import {
   type AnalyticsWindowValue,
   METRICS_WINDOWS,
 } from '@/components/analytics/analytics-window-options'
+import { ChartEmptyState, ChartPanel } from '@/components/analytics/chart-panel'
+import { CHART_HEIGHT_CLASS, SERIES_COLOR } from '@/components/analytics/chart-series'
 import { RedisHealthObservability } from '@/components/analytics/redis-health-observability'
 import type { RedisHealthHistoryResponse } from '@/components/analytics/redis-health-types'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PageTitle } from '@/components/page-title'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   type ChartConfig,
   ChartContainer,
@@ -53,7 +36,9 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart'
-import { Select } from '@/components/ui/select'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Metric, MetricStrip, type MetricTone } from '@/components/ui/metric'
+import { Panel, PanelHeader, SectionHeader } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -63,152 +48,77 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { QueueNativeMetricsResponse } from '@/hooks/use-queues'
 import { fetchApi } from '@/lib/api'
 import { cn, formatNumber, getTimezoneAbbreviation } from '@/lib/utils'
+import { WORKER_IDLE_AFTER_SECONDS } from '@/lib/worker-activity'
 
 const PRIORITY_BUCKETS = [1, 2, 5, 10, 20, 50, 100, 500]
 const METRICS_PAGE_SIZE = 25
 const SCHEDULES_PAGE_SIZE = 100
 const ANALYTICS_REFRESH_MS = 20000
-const QUEUE_IDLE_ACTIVE_THRESHOLD_MS = 5000
-const QUEUE_IDLE_STALE_THRESHOLD_MS = 60000
+// Worker idle bands. `idleMs` is how long the worker's blocking Redis connection
+// has gone without issuing a command. A healthy worker waiting for jobs re-issues
+// its blocking pop at most every 10 seconds (BullMQ's maximum block timeout), so
+// the active band must sit above that or every waiting worker flickers into Warm.
+// Stale is the Workers page's idle threshold, so "stale" here and "idle" there
+// always describe the same workers.
+const WORKER_IDLE_ACTIVE_SECONDS = 15
+const WORKER_IDLE_STALE_SECONDS = WORKER_IDLE_AFTER_SECONDS
+const QUEUE_IDLE_ACTIVE_THRESHOLD_MS = WORKER_IDLE_ACTIVE_SECONDS * 1000
+const QUEUE_IDLE_STALE_THRESHOLD_MS = WORKER_IDLE_STALE_SECONDS * 1000
+const METRICS_STALE_THRESHOLD_MS = 5 * 60 * 1000
+const WARNING_GROUP_LIMIT = 12
+const WARNING_QUEUE_LIMIT = 8
 
 const analyticsSearchSchema = z.object({
   window: z.enum(['1h', '6h', '24h', '7d', '14d', '30d']).catch('24h'),
 })
 
+// Six cells need ~160px each to show a 20px mono value and its hint without truncating, so
+// between `lg` and `xl` (where the sidebar takes 240px) a strip wraps to two rows of three.
+const STRIP_SIX_CLASS = 'lg:grid-flow-row lg:grid-cols-3 xl:grid-flow-col xl:grid-cols-none'
+const STRIP_HALF_WIDTH_CLASS = 'lg:grid-flow-row lg:grid-cols-3'
+
+const CHART_MARGIN = { left: 0, right: 8, top: 8, bottom: 0 }
+const RANK_CHART_MARGIN = { left: 0, right: 12, top: 4, bottom: 0 }
+
+// `total` is the top edge of the completed + failed stack. It is drawn without a
+// stroke so it only contributes the "Finished" row to the tooltip.
 const throughputChartConfig = {
-  total: {
-    label: 'Finished/min',
-    theme: {
-      light: 'hsl(219 86% 48%)',
-      dark: 'hsl(210 94% 68%)',
-    },
-  },
-  completed: {
-    label: 'Completed/min',
-    theme: {
-      light: 'hsl(146 55% 42%)',
-      dark: 'hsl(145 63% 54%)',
-    },
-  },
-  failed: {
-    label: 'Failed/min',
-    theme: {
-      light: 'hsl(0 80% 56%)',
-      dark: 'hsl(2 90% 66%)',
-    },
-  },
-  activeQueues: {
-    label: 'Queues With Throughput',
-    theme: {
-      light: 'hsl(41 92% 48%)',
-      dark: 'hsl(44 96% 62%)',
-    },
-  },
-} satisfies ChartConfig
-
-const queueStateChartConfig = {
-  running: {
-    label: 'Running Queues',
-    theme: {
-      light: 'hsl(145 63% 46%)',
-      dark: 'hsl(145 63% 58%)',
-    },
-  },
-  paused: {
-    label: 'Paused Queues',
-    theme: {
-      light: 'hsl(35 96% 51%)',
-      dark: 'hsl(38 98% 61%)',
-    },
-  },
-  rateLimited: {
-    label: 'Rate Limited',
-    theme: {
-      light: 'hsl(350 83% 56%)',
-      dark: 'hsl(352 92% 66%)',
-    },
-  },
-  maxed: {
-    label: 'Queue Maxed',
-    theme: {
-      light: 'hsl(267 84% 59%)',
-      dark: 'hsl(271 96% 72%)',
-    },
-  },
-} satisfies ChartConfig
-
-const backlogChartConfig = {
-  waiting: {
-    label: 'Waiting To Process',
-    theme: {
-      light: 'hsl(219 86% 48%)',
-      dark: 'hsl(210 94% 68%)',
-    },
-  },
-  active: {
-    label: 'Active Jobs',
-    theme: {
-      light: 'hsl(146 55% 42%)',
-      dark: 'hsl(145 63% 54%)',
-    },
-  },
-} satisfies ChartConfig
-
-const failureChartConfig = {
-  failureRate: {
-    label: 'Failure Rate',
-    theme: {
-      light: 'hsl(0 80% 56%)',
-      dark: 'hsl(2 90% 66%)',
-    },
-  },
-  failedInWindow: {
-    label: 'Failed In Window',
-    theme: {
-      light: 'hsl(35 96% 51%)',
-      dark: 'hsl(38 98% 61%)',
-    },
-  },
+  completed: { label: 'Completed/min', color: SERIES_COLOR.completed },
+  failed: { label: 'Failed/min', color: SERIES_COLOR.failed },
+  total: { label: 'Finished/min', color: 'transparent' },
 } satisfies ChartConfig
 
 const breadthChartConfig = {
-  activeQueues: {
-    label: 'Queues With Throughput',
-    theme: {
-      light: 'hsl(145 63% 46%)',
-      dark: 'hsl(145 63% 58%)',
-    },
-  },
-  queuesWithFailures: {
-    label: 'Queues With Failures',
-    theme: {
-      light: 'hsl(0 80% 56%)',
-      dark: 'hsl(2 90% 66%)',
-    },
-  },
+  activeQueues: { label: 'Queues with throughput', color: SERIES_COLOR.active },
+  queuesWithFailures: { label: 'Queues with failures', color: SERIES_COLOR.failed },
+} satisfies ChartConfig
+
+const backlogChartConfig = {
+  waiting: { label: 'Waiting to process', color: SERIES_COLOR.waiting },
+  active: { label: 'Active', color: SERIES_COLOR.active },
+} satisfies ChartConfig
+
+const failureChartConfig = {
+  failureRate: { label: 'Failure rate', color: SERIES_COLOR.failed },
 } satisfies ChartConfig
 
 const schedulesChartConfig = {
-  schedules: {
-    label: 'Scheduled Jobs',
-    theme: {
-      light: 'hsl(219 86% 48%)',
-      dark: 'hsl(210 94% 68%)',
-    },
-  },
-  recentFailures: {
-    label: 'Recent Failures',
-    theme: {
-      light: 'hsl(0 80% 56%)',
-      dark: 'hsl(2 90% 66%)',
-    },
-  },
+  schedules: { label: 'Scheduled jobs', color: SERIES_COLOR.active },
+  recentFailures: { label: 'Recent failures', color: SERIES_COLOR.failed },
 } satisfies ChartConfig
 
-type QueueSortMode = 'health' | 'backlog' | 'failures' | 'throughput'
+const QUEUE_SORT_OPTIONS = [
+  { value: 'health', label: 'Health' },
+  { value: 'backlog', label: 'Backlog' },
+  { value: 'failures', label: 'Failures' },
+  { value: 'throughput', label: 'Throughput' },
+] as const
+
+type QueueSortMode = (typeof QUEUE_SORT_OPTIONS)[number]['value']
 type HealthTone = 'healthy' | 'watch' | 'critical'
 
 interface DetailedMetricsPageResponse {
@@ -394,6 +304,15 @@ export const Route = createFileRoute('/$orgSlug/c/$connectionId/analytics')({
   component: AnalyticsPage,
 })
 
+/** Chart tooltip formatters; they need nothing from the component, so they live at module scope. */
+function timeTooltipLabel(value: number | string) {
+  return formatMetricTooltipLabel(Number(value))
+}
+
+function queueNameTooltipLabel(_: unknown, payload: Array<{ payload?: unknown }>) {
+  return (payload?.[0]?.payload as { queueName?: string } | undefined)?.queueName ?? ''
+}
+
 function AnalyticsPage() {
   const { orgSlug, connectionId } = Route.useParams()
   const { window } = Route.useSearch()
@@ -463,15 +382,7 @@ function AnalyticsPage() {
   )
 
   const sortedQueueRows = useMemo(() => {
-    const rows = showOnlyRisky
-      ? analytics.queueRows.filter(
-          (row) =>
-            row.healthScore < 80 ||
-            row.warningCount > 0 ||
-            row.failureRate >= 0.05 ||
-            row.waitingToProcess > 0
-        )
-      : [...analytics.queueRows]
+    const rows = showOnlyRisky ? analytics.queueRows.filter(isRiskyQueue) : analytics.queueRows
 
     const nextRows = [...rows]
 
@@ -491,54 +402,110 @@ function AnalyticsPage() {
     return nextRows
   }, [analytics.queueRows, queueSort, showOnlyRisky])
 
+  const riskyQueueCount = useMemo(
+    () => analytics.queueRows.filter(isRiskyQueue).length,
+    [analytics.queueRows]
+  )
+
+  const warningGroups = useMemo(
+    () =>
+      analytics.warningInsights.map((insight) => ({
+        ...insight,
+        queueNames: analytics.warningRows
+          .filter((warning) => warning.message === insight.message)
+          .map((warning) => warning.queueName),
+      })),
+    [analytics.warningInsights, analytics.warningRows]
+  )
+
+  const handleRefresh = useCallback(() => {
+    void Promise.all([refetchMetrics(), refetchSchedules(), refetchRedisHealth()])
+  }, [refetchMetrics, refetchRedisHealth, refetchSchedules])
+
+  const handleWindowChange = useCallback(
+    (nextWindow: AnalyticsWindowValue) => {
+      void navigate({
+        to: '.',
+        search: { window: nextWindow },
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const isLoading = isLoadingMetrics && !metricsData
+  const isRefreshing = isFetchingMetrics || isFetchingSchedules || isFetchingRedisHealth
+  const hasQueues = analytics.queueRows.length > 0
+  const hasNoQueues = !isLoading && !hasQueues
+  const sampleAgeMs = analytics.totals.metricsLatestSampleAgeMs
+  const isStale = sampleAgeMs !== null && sampleAgeMs > METRICS_STALE_THRESHOLD_MS
+  const sampleAgeLabel = sampleAgeMs === null ? 'No samples' : formatAgeFromMs(sampleAgeMs)
+  const { healthTone, fleetHealthScore } = analytics
+  const showFleetMeta = hasQueues && !metricsError
+
+  const windowControls = useMemo(
+    () => (
+      <AnalyticsWindowControls
+        selectedWindow={selectedWindow.value}
+        isRefreshing={isRefreshing}
+        onWindowChange={handleWindowChange}
+        onRefresh={handleRefresh}
+        refreshTitle={`Refresh now · auto every ${ANALYTICS_REFRESH_MS / 1000}s`}
+      />
+    ),
+    [handleRefresh, handleWindowChange, isRefreshing, selectedWindow.value]
+  )
+
+  const freshnessBadge = useMemo(
+    () => (
+      <Badge
+        variant={isStale ? 'warning' : 'neutral'}
+        className="font-mono"
+        title="Age of the newest BullMQ metrics point across all queues"
+      >
+        {/* The narrow layout keeps only the age so the badge fits beside the range control. */}
+        {sampleAgeMs === null ? null : <span className="hidden sm:inline">Updated</span>}
+        {sampleAgeLabel}
+      </Badge>
+    ),
+    [isStale, sampleAgeLabel, sampleAgeMs]
+  )
+
   const topBarConfig = useMemo(
     () => ({
       left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <BarChart3 className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Analytics</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            Cross-queue BullMQ fleet health and capacity intelligence
-          </span>
-        </div>
+        <PageTitle
+          title="Analytics"
+          meta={
+            showFleetMeta ? (
+              <>
+                <Badge
+                  variant={healthToneToBadgeVariant(healthTone)}
+                  title={`Fleet health ${fleetHealthScore}/100`}
+                >
+                  {HEALTH_TONE_LABEL[healthTone]}
+                </Badge>
+                <span className="hidden sm:inline-flex">{freshnessBadge}</span>
+              </>
+            ) : undefined
+          }
+        />
       ),
+      actions: windowControls,
     }),
-    []
+    [fleetHealthScore, freshnessBadge, healthTone, showFleetMeta, windowControls]
   )
 
   useAppTopBar(topBarConfig)
 
-  const isLoading = isLoadingMetrics && !metricsData
-  const isRefreshing = isFetchingMetrics || isFetchingSchedules || isFetchingRedisHealth
-  const hasNoQueues = !isLoading && analytics.queueRows.length === 0
-  const freshnessLabel = formatAgeFromMs(analytics.totals.metricsLatestSampleAgeMs)
-  const staleThresholdMs = 5 * 60 * 1000
-  const isStale =
-    analytics.totals.metricsLatestSampleAgeMs !== null &&
-    analytics.totals.metricsLatestSampleAgeMs > staleThresholdMs
-
-  const handleRefresh = () => {
-    void Promise.all([refetchMetrics(), refetchSchedules(), refetchRedisHealth()])
-  }
-
-  const handleWindowChange = (nextWindow: AnalyticsWindowValue) => {
-    void navigate({
-      to: '.',
-      search: { window: nextWindow },
-      replace: true,
-    })
-  }
-
-  const windowControls = (
-    <AnalyticsWindowControls
-      selectedWindow={selectedWindow.value}
-      isRefreshing={isRefreshing}
-      onWindowChange={handleWindowChange}
-      onRefresh={handleRefresh}
-    />
+  // The top bar hides its actions below `md`, so the range control moves into the page there.
+  const mobileControls = (
+    <div className="flex flex-wrap items-center justify-between gap-2 md:hidden">
+      {windowControls}
+      {showFleetMeta ? <span className="sm:hidden">{freshnessBadge}</span> : null}
+    </div>
   )
+
   const redisHealthPanel = (
     <RedisHealthObservability
       data={redisHealthData}
@@ -548,965 +515,865 @@ function AnalyticsPage() {
   )
 
   if (isLoading) {
-    return <AnalyticsLoadingState />
+    return (
+      <div className="space-y-4">
+        {mobileControls}
+        <AnalyticsLoadingState />
+      </div>
+    )
   }
 
   if (metricsError) {
     return (
-      <div className="space-y-6">
-        {windowControls}
+      <div className="space-y-4">
+        {mobileControls}
+        <EmptyState
+          tone="danger"
+          icon={AlertCircle}
+          title="Unable to load queue analytics"
+          description={metricsError.message}
+          actions={
+            <Button size="sm" onClick={handleRefresh}>
+              Retry
+            </Button>
+          }
+        />
         {redisHealthPanel}
-        <div className="flex flex-col items-center justify-center py-16">
-          <div className="mb-4 rounded-full bg-destructive/10 p-4 text-destructive">
-            <AlertCircle className="h-8 w-8" />
-          </div>
-          <h2 className="text-xl font-semibold">Unable to load queue analytics</h2>
-          <p className="mt-2 max-w-xl text-center text-sm text-muted-foreground">
-            {metricsError.message}
-          </p>
-          <Button className="mt-5" onClick={handleRefresh}>
-            Retry
-          </Button>
-        </div>
       </div>
     )
   }
 
   if (hasNoQueues) {
     return (
-      <div className="space-y-6">
-        {windowControls}
+      <div className="space-y-4">
+        {mobileControls}
+        <EmptyState
+          icon={Layers}
+          title="No queues detected"
+          description="Connect at least one BullMQ queue to unlock queue-level analytics. Redis resource health remains available below."
+        />
         {redisHealthPanel}
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 py-16">
-          <div className="mb-4 rounded-full bg-muted p-4">
-            <Layers className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h3 className="text-lg font-semibold">No queues detected</h3>
-          <p className="mt-1 max-w-lg text-center text-sm text-muted-foreground">
-            Connect at least one BullMQ queue to unlock queue-level analytics. Redis server
-            observability remains available above.
-          </p>
-        </div>
       </div>
     )
   }
 
+  const { totals, workers, schedules } = analytics
+  const failureRateIsAlarm = totals.failureRateInWindow >= 0.08
+  const schedulesUnavailable = Boolean(schedulesError) && !schedulesData
+  const scheduleValue = (value: number) => (schedulesUnavailable ? '—' : formatNumber(value))
+  const hasBacklog = analytics.backlogChartData.some((row) => row.waiting > 0 || row.active > 0)
+  const hasFailures = analytics.failureChartData.some((row) => row.failedInWindow > 0)
+  const timeAxisTick = (value: number | string) =>
+    formatMetricAxisTime(Number(value), selectedWindow.minutes)
+
   return (
-    <div className="space-y-6">
-      <Card className="relative overflow-hidden border-border/70 bg-gradient-to-br from-background via-muted/10 to-background">
-        <div className="pointer-events-none absolute -top-28 left-1/3 h-56 w-56 rounded-full bg-[hsl(210_100%_60%_/_0.16)] blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-28 right-0 h-56 w-56 rounded-full bg-[hsl(145_90%_45%_/_0.15)] blur-3xl" />
+    <div className="space-y-4">
+      {mobileControls}
 
-        <CardHeader className="relative border-b border-border/60 pb-5">
-          <div className="flex flex-wrap items-start justify-between gap-6">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={healthToneToBadgeVariant(analytics.healthTone)}>
-                  Fleet Health: {analytics.healthTone.toUpperCase()}
-                </Badge>
-                <Badge variant={isStale ? 'warning' : 'success'}>Freshness: {freshnessLabel}</Badge>
-                <Badge variant="outline">
-                  Queues Scanned: {formatNumber(metricsData?.totalQueues ?? 0)}
-                </Badge>
-                <Badge variant="outline">
-                  Metrics Pages: {formatNumber(metricsData?.totalPages ?? 0)}
-                </Badge>
-              </div>
-              <CardTitle className="text-2xl md:text-3xl">BullMQ Fleet Analytics</CardTitle>
-              <CardDescription className="max-w-3xl text-sm md:text-base">
-                Deep observability across every queue on this connection: throughput dynamics,
-                backlog pressure, worker health, schedule risk, and control-plane anomalies.
-              </CardDescription>
-            </div>
+      <MetricStrip className={STRIP_SIX_CLASS}>
+        <Metric
+          label="Fleet health"
+          value={fleetHealthScore}
+          hint={`${HEALTH_TONE_LABEL[healthTone]} · of 100`}
+          tone={HEALTH_TONE_METRIC[healthTone]}
+          emphasis={healthTone !== 'healthy'}
+          title="Average of per-queue health scores (0–100), weighted by finished jobs and backlog"
+        />
+        <Metric
+          label="Throughput"
+          value={formatRatePerMinute(totals.avgFinishedPerMinute)}
+          hint={`peak ${formatNumber(totals.peakFinishedPerMinute)}/min`}
+          title="Average finished jobs per minute in the selected window"
+        />
+        <Metric
+          label="Failure rate"
+          value={formatPercentage(totals.failureRateInWindow)}
+          hint={`${formatPercentage(totals.successRateInWindow)} success`}
+          tone={failureRateIsAlarm ? 'danger' : 'neutral'}
+          emphasis={failureRateIsAlarm}
+          title="Failed share of finished jobs in the selected window"
+        />
+        <Metric
+          label="Backlog"
+          value={formatNumber(totals.waitingToProcess)}
+          hint={`${formatNumber(totals.active)} active · ${formatNumber(totals.delayed)} delayed`}
+          tone={totals.active > 0 ? 'active' : 'neutral'}
+          pulse={totals.active > 0}
+          title="Jobs waiting to process across all queues"
+        />
+        <Metric
+          label="Failed jobs"
+          value={formatNumber(totals.failed)}
+          hint={`${formatNumber(totals.failedInWindow)} in window`}
+          tone={totals.failed > 0 ? 'danger' : 'neutral'}
+          emphasis={totals.failed > 0}
+          title="Jobs currently in the failed set"
+        />
+        <Metric
+          label="Workers"
+          value={formatNumber(totals.workers)}
+          hint={`${formatNumber(workers.active)} active · ${formatNumber(workers.stale)} stale`}
+          title="Connected worker clients"
+        />
+      </MetricStrip>
 
-            <div className="flex min-w-[220px] flex-col items-end gap-3">
-              <FleetHealthDial score={analytics.fleetHealthScore} />
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <Clock className="h-3.5 w-3.5" />
-                {isRefreshing ? 'Refreshing...' : `Auto refresh ${ANALYTICS_REFRESH_MS / 1000}s`}
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="pt-5">{windowControls}</CardContent>
-      </Card>
-
-      {redisHealthPanel}
-
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-        <AnalyticsMetricCard
-          icon={Layers}
-          title="Queues"
-          value={formatNumber(analytics.queueRows.length)}
-          subtitle="Total queue surfaces"
+      <section aria-label="Throughput" className="space-y-4 pt-2">
+        <SectionHeader
+          className="mb-3"
+          title="Throughput"
+          description="Jobs finished per minute, summed across every queue on this connection."
+          actions={
+            <SectionMeta>
+              {formatNumber(analytics.throughputSeries.length)} points · 1m buckets · times in{' '}
+              {getTimezoneAbbreviation()}
+            </SectionMeta>
+          }
         />
-        <AnalyticsMetricCard
-          icon={Activity}
-          title="Running Queues"
-          value={formatNumber(analytics.totals.runningQueues)}
-          subtitle="Not paused"
-          tone="good"
-        />
-        <AnalyticsMetricCard
-          icon={Timer}
-          title="Paused Queues"
-          value={formatNumber(analytics.totals.pausedQueues)}
-          subtitle="Administrative pause"
-          tone={analytics.totals.pausedQueues > 0 ? 'warn' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={Server}
-          title="Workers"
-          value={formatNumber(analytics.totals.workers)}
-          subtitle="Connected worker clients"
-        />
-        <AnalyticsMetricCard
-          icon={Calendar}
-          title="Schedulers"
-          value={formatNumber(analytics.totals.schedulers)}
-          subtitle="Detected queue schedulers"
-        />
-        <AnalyticsMetricCard
-          icon={Database}
-          title="Queue Events"
-          value={formatNumber(analytics.totals.queueEvents)}
-          subtitle="Queue event clients"
-        />
-        <AnalyticsMetricCard
-          icon={Gauge}
-          title="Waiting To Process"
-          value={formatNumber(analytics.totals.waitingToProcess)}
-          subtitle="Fleet backlog depth"
-          tone={analytics.totals.waitingToProcess > 0 ? 'warn' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={Activity}
-          title="Active Jobs"
-          value={formatNumber(analytics.totals.active)}
-          subtitle="Currently processing"
-          tone={analytics.totals.active > 0 ? 'good' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={Clock}
-          title="Delayed Jobs"
-          value={formatNumber(analytics.totals.delayed)}
-          subtitle="Scheduled for later"
-        />
-        <AnalyticsMetricCard
-          icon={AlertCircle}
-          title="Failed Jobs"
-          value={formatNumber(analytics.totals.failed)}
-          subtitle="Current failed set"
-          tone={analytics.totals.failed > 0 ? 'critical' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={LineChart}
-          title="Avg Throughput"
-          value={formatRatePerMinute(analytics.totals.avgFinishedPerMinute)}
-          subtitle="Finished jobs per minute"
-          tone="good"
-        />
-        <AnalyticsMetricCard
-          icon={Zap}
-          title="Peak Throughput"
-          value={formatNumber(analytics.totals.peakFinishedPerMinute)}
-          subtitle="Highest minute burst"
-          tone="good"
-        />
-        <AnalyticsMetricCard
-          icon={AlertCircle}
-          title="Failure Rate"
-          value={formatPercentage(analytics.totals.failureRateInWindow)}
-          subtitle="Across selected window"
-          tone={analytics.totals.failureRateInWindow >= 0.08 ? 'critical' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={Gauge}
-          title="Success Rate"
-          value={formatPercentage(analytics.totals.successRateInWindow)}
-          subtitle="Across selected window"
-          tone={analytics.totals.successRateInWindow >= 0.96 ? 'good' : 'warn'}
-        />
-        <AnalyticsMetricCard
-          icon={Network}
-          title="Rate-Limited"
-          value={formatNumber(analytics.totals.rateLimitedQueues)}
-          subtitle="Queues with active TTL"
-          tone={analytics.totals.rateLimitedQueues > 0 ? 'warn' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={Cpu}
-          title="Queue Maxed"
-          value={formatNumber(analytics.totals.maxedQueues)}
-          subtitle="At max processing guard"
-          tone={analytics.totals.maxedQueues > 0 ? 'warn' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={AlertCircle}
-          title="Warning Signals"
-          value={formatNumber(analytics.totals.warningSignals)}
-          subtitle="Metric collection warnings"
-          tone={analytics.totals.warningSignals > 0 ? 'critical' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={RefreshCw}
-          title="Stale Queues"
-          value={formatNumber(analytics.totals.staleQueues)}
-          subtitle="Sample age > 5 minutes"
-          tone={analytics.totals.staleQueues > 0 ? 'warn' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={Calendar}
-          title="Schedules (24h)"
-          value={formatNumber(analytics.schedules.next24h)}
-          subtitle="Next-run jobs upcoming"
-          tone={analytics.schedules.next24h > 0 ? 'good' : 'neutral'}
-        />
-        <AnalyticsMetricCard
-          icon={AlertCircle}
-          title="Failing Schedules"
-          value={formatNumber(analytics.schedules.failingSchedules)}
-          subtitle="Recent scheduler-linked failures"
-          tone={analytics.schedules.failingSchedules > 0 ? 'critical' : 'neutral'}
-        />
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2 border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <LineChart className="h-4.5 w-4.5 text-muted-foreground" />
-              Fleet Throughput Dynamics
-            </CardTitle>
-            <CardDescription>
-              Aggregated BullMQ native metrics across all queues in the selected time window.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ChartPanel
+            title="Finished jobs"
+            meta="jobs/min"
+            hint="Completed stacked on failed, so the top edge is every job that finished in that minute. Aggregated from BullMQ native metrics."
+          >
             {!analytics.throughputSeries.length ? (
-              <EmptyChartState message="No metric points returned for this window." />
+              <ChartEmptyState
+                title="No metric points in this window"
+                description="BullMQ records a point for each minute a queue finishes jobs."
+              />
             ) : (
-              <ChartContainer config={throughputChartConfig} className="h-[350px] w-full">
+              <ChartContainer config={throughputChartConfig} className={CHART_HEIGHT_CLASS}>
                 <AreaChart
                   data={analytics.throughputSeries}
-                  margin={{ left: 8, right: 12, top: 10, bottom: 10 }}
+                  margin={CHART_MARGIN}
+                  // Failed sits on the baseline so its height reads straight off the axis;
+                  // the legend and tooltip keep the declared completed → failed order.
+                  reverseStackOrder
                 >
-                  <defs>
-                    <linearGradient id="analytics-fill-total" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-total)" stopOpacity={0.45} />
-                      <stop offset="95%" stopColor="var(--color-total)" stopOpacity={0.06} />
-                    </linearGradient>
-                    <linearGradient id="analytics-fill-completed" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-completed)" stopOpacity={0.33} />
-                      <stop offset="95%" stopColor="var(--color-completed)" stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="analytics-fill-failed" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-failed)" stopOpacity={0.34} />
-                      <stop offset="95%" stopColor="var(--color-failed)" stopOpacity={0.04} />
-                    </linearGradient>
-                  </defs>
                   <CartesianGrid vertical={false} />
                   <XAxis
                     dataKey="timestamp"
                     tickLine={false}
                     axisLine={false}
-                    minTickGap={26}
-                    tickFormatter={(value) =>
-                      formatMetricAxisTime(Number(value), selectedWindow.minutes)
-                    }
+                    tickMargin={6}
+                    minTickGap={40}
+                    tickFormatter={timeAxisTick}
                   />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
-                    width={46}
-                    tickFormatter={(value) => formatCompactCount(Number(value))}
-                  />
-                  <YAxis
-                    yAxisId="queues"
-                    orientation="right"
-                    tickLine={false}
-                    axisLine={false}
-                    width={44}
+                    width={40}
+                    allowDecimals={false}
                     tickFormatter={(value) => formatCompactCount(Number(value))}
                   />
                   <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(value) => formatMetricTooltipLabel(Number(value))}
-                      />
-                    }
+                    content={<ChartTooltipContent labelFormatter={timeTooltipLabel} />}
                   />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Area
-                    dataKey="total"
-                    type="monotone"
-                    fill="url(#analytics-fill-total)"
-                    fillOpacity={1}
-                    stroke="var(--color-total)"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
+                  <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
                   <Area
                     dataKey="completed"
+                    stackId="finished"
                     type="monotone"
-                    fill="url(#analytics-fill-completed)"
-                    fillOpacity={1}
                     stroke="var(--color-completed)"
-                    strokeWidth={1.8}
+                    strokeWidth={1.5}
+                    fill="var(--color-completed)"
+                    fillOpacity={0.14}
                     dot={false}
                     isAnimationActive={false}
                   />
                   <Area
                     dataKey="failed"
+                    stackId="finished"
                     type="monotone"
-                    fill="url(#analytics-fill-failed)"
-                    fillOpacity={1}
                     stroke="var(--color-failed)"
-                    strokeWidth={1.8}
+                    strokeWidth={1.5}
+                    fill="var(--color-failed)"
+                    fillOpacity={0.3}
                     dot={false}
                     isAnimationActive={false}
                   />
                   <Line
-                    yAxisId="queues"
-                    dataKey="activeQueues"
-                    type="monotone"
-                    stroke="var(--color-activeQueues)"
-                    strokeWidth={2}
+                    dataKey="total"
+                    stroke="var(--color-total)"
+                    strokeWidth={0}
+                    legendType="none"
                     dot={false}
+                    activeDot={false}
                     isAnimationActive={false}
                   />
                 </AreaChart>
               </ChartContainer>
             )}
-          </CardContent>
-        </Card>
+          </ChartPanel>
 
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Queue State Mix</CardTitle>
-            <CardDescription>Control-plane posture across discovered queues.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <ChartContainer config={queueStateChartConfig} className="h-[240px] w-full">
-              <PieChart>
-                <ChartTooltip content={<ChartTooltipContent hideIndicator />} />
-                <Pie
-                  data={analytics.queueStateData}
-                  dataKey="value"
-                  nameKey="key"
-                  innerRadius={52}
-                  outerRadius={84}
-                  strokeWidth={3}
-                >
-                  {analytics.queueStateData.map((entry) => (
-                    <Cell key={entry.key} fill={`var(--color-${entry.key})`} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ChartContainer>
-            <div className="space-y-2 text-xs">
-              {analytics.queueStateData.map((entry) => (
-                <div key={entry.key} className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 rounded-[2px]"
-                      style={{ backgroundColor: `var(--color-${entry.key})` }}
-                    />
-                    <span className="capitalize text-muted-foreground">{entry.key}</span>
-                  </div>
-                  <span className="font-mono tabular-nums">{formatNumber(entry.value)}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Backlog Pressure By Queue</CardTitle>
-            <CardDescription>
-              Queues with the highest `waitingToProcess` and active work.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!analytics.backlogChartData.length ? (
-              <EmptyChartState message="No backlog pressure detected." />
-            ) : (
-              <ChartContainer config={backlogChartConfig} className="h-[340px] w-full">
-                <BarChart
-                  data={analytics.backlogChartData}
-                  layout="vertical"
-                  margin={{ left: 8, right: 16, top: 8, bottom: 8 }}
-                >
-                  <CartesianGrid horizontal={false} />
-                  <XAxis
-                    type="number"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value) => formatCompactCount(Number(value))}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="queueLabel"
-                    width={122}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(_, payload) =>
-                          (payload?.[0]?.payload as { queueName?: string } | undefined)
-                            ?.queueName ?? ''
-                        }
-                      />
-                    }
-                  />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Bar dataKey="waiting" fill="var(--color-waiting)" radius={[0, 6, 6, 0]} />
-                  <Bar dataKey="active" fill="var(--color-active)" radius={[0, 6, 6, 0]} />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Failure Risk By Queue</CardTitle>
-            <CardDescription>Highest failure-rate queues for the selected window.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {!analytics.failureChartData.length ? (
-              <EmptyChartState message="No queue has finished jobs in this window yet." />
-            ) : (
-              <ChartContainer config={failureChartConfig} className="h-[340px] w-full">
-                <BarChart
-                  data={analytics.failureChartData}
-                  layout="vertical"
-                  margin={{ left: 8, right: 16, top: 8, bottom: 8 }}
-                >
-                  <CartesianGrid horizontal={false} />
-                  <XAxis
-                    type="number"
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(value) => `${Number(value).toFixed(1)}%`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="queueLabel"
-                    width={122}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(_, payload) =>
-                          (payload?.[0]?.payload as { queueName?: string } | undefined)
-                            ?.queueName ?? ''
-                        }
-                        formatter={(value, name, item) => {
-                          if (name === 'failureRate') {
-                            return `${Number(value).toFixed(1)}%`
-                          }
-                          return formatNumber(Number(item.payload?.failedInWindow ?? 0))
-                        }}
-                      />
-                    }
-                  />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Bar
-                    dataKey="failureRate"
-                    fill="var(--color-failureRate)"
-                    radius={[0, 6, 6, 0]}
-                  />
-                  <Bar
-                    dataKey="failedInWindow"
-                    fill="var(--color-failedInWindow)"
-                    radius={[0, 6, 6, 0]}
-                  />
-                </BarChart>
-              </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Queue Activity Breadth</CardTitle>
-            <CardDescription>
-              How many queues are producing throughput and failures over time.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+          <ChartPanel
+            title="Queue activity"
+            meta="queues"
+            hint="How many queues produced throughput, and how many produced failures, in each minute."
+          >
             {!analytics.breadthSeries.length ? (
-              <EmptyChartState message="No activity breadth samples available." />
+              <ChartEmptyState title="No activity samples in this window" />
             ) : (
-              <ChartContainer config={breadthChartConfig} className="h-[300px] w-full">
-                <RechartsLineChart
-                  data={analytics.breadthSeries}
-                  margin={{ left: 8, right: 12, top: 10, bottom: 10 }}
-                >
+              <ChartContainer config={breadthChartConfig} className={CHART_HEIGHT_CLASS}>
+                <LineChart data={analytics.breadthSeries} margin={CHART_MARGIN}>
                   <CartesianGrid vertical={false} />
                   <XAxis
                     dataKey="timestamp"
                     tickLine={false}
                     axisLine={false}
-                    minTickGap={26}
-                    tickFormatter={(value) =>
-                      formatMetricAxisTime(Number(value), selectedWindow.minutes)
-                    }
+                    tickMargin={6}
+                    minTickGap={40}
+                    tickFormatter={timeAxisTick}
                   />
                   <YAxis
                     tickLine={false}
                     axisLine={false}
+                    width={40}
+                    allowDecimals={false}
                     tickFormatter={(value) => formatCompactCount(Number(value))}
-                    width={44}
                   />
                   <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(value) => formatMetricTooltipLabel(Number(value))}
-                      />
-                    }
+                    content={<ChartTooltipContent labelFormatter={timeTooltipLabel} />}
                   />
-                  <ChartLegend content={<ChartLegendContent />} />
+                  <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
                   <Line
                     dataKey="activeQueues"
-                    type="monotone"
+                    type="stepAfter"
                     stroke="var(--color-activeQueues)"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     dot={false}
                     isAnimationActive={false}
                   />
                   <Line
                     dataKey="queuesWithFailures"
-                    type="monotone"
+                    type="stepAfter"
                     stroke="var(--color-queuesWithFailures)"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     dot={false}
                     isAnimationActive={false}
                   />
-                </RechartsLineChart>
+                </LineChart>
               </ChartContainer>
             )}
-          </CardContent>
-        </Card>
+          </ChartPanel>
+        </div>
+      </section>
 
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Schedule Pressure By Queue</CardTitle>
-            <CardDescription>
-              Scheduled workloads and recent schedule-linked failures.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {schedulesError ? (
-              <div className="rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
-                Scheduled jobs analytics unavailable: {schedulesError.message}
+      <section aria-label="Queues" className="space-y-4 pt-2">
+        <SectionHeader
+          className="mb-3"
+          title="Queues"
+          count={formatNumber(analytics.queueRows.length)}
+          description="State, backlog, and failure risk per queue. Worst health first."
+          actions={
+            <SectionMeta>
+              {formatNumber(metricsData?.totalQueues ?? 0)} scanned ·{' '}
+              {formatNumber(metricsData?.totalPages ?? 0)} metrics{' '}
+              {metricsData?.totalPages === 1 ? 'page' : 'pages'}
+            </SectionMeta>
+          }
+        />
+
+        <MetricStrip className={STRIP_SIX_CLASS}>
+          <Metric
+            label="At risk"
+            value={formatNumber(riskyQueueCount)}
+            hint={showOnlyRisky ? 'showing only these' : 'filter the table'}
+            tone={riskyQueueCount > 0 ? 'warning' : 'neutral'}
+            onClick={() => setShowOnlyRisky((prev) => !prev)}
+            active={showOnlyRisky}
+            title="Health below 80, any backlog, failure rate of 5% or more, or a collection warning"
+          />
+          <Metric
+            label="Paused"
+            value={formatNumber(totals.pausedQueues)}
+            hint={`${formatNumber(totals.runningQueues)} running`}
+            tone={totals.pausedQueues > 0 ? 'warning' : 'neutral'}
+            title="Queues under an administrative pause; the rest are running"
+          />
+          <Metric
+            label="Rate-limited"
+            value={formatNumber(totals.rateLimitedQueues)}
+            hint="limiter TTL active"
+            tone={totals.rateLimitedQueues > 0 ? 'warning' : 'neutral'}
+          />
+          <Metric
+            label="Maxed"
+            value={formatNumber(totals.maxedQueues)}
+            hint="at concurrency guard"
+            tone={totals.maxedQueues > 0 ? 'warning' : 'neutral'}
+          />
+          <Metric
+            label="Stale"
+            value={formatNumber(totals.staleQueues)}
+            hint="sample older than 5m"
+            tone={totals.staleQueues > 0 ? 'warning' : 'neutral'}
+          />
+          <Metric
+            label="Warnings"
+            value={formatNumber(totals.warningSignals)}
+            hint="metrics collection"
+            tone={totals.warningSignals > 0 ? 'danger' : 'neutral'}
+            emphasis={totals.warningSignals > 0}
+          />
+        </MetricStrip>
+
+        {warningGroups.length > 0 ? (
+          <Panel>
+            <PanelHeader className="min-h-10 py-1.5">
+              <div className="flex items-center gap-2">
+                <h3 className="text-[13px] font-semibold tracking-tight">Collection warnings</h3>
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                  {formatNumber(analytics.warningRows.length)}
+                </span>
               </div>
-            ) : !analytics.scheduleChartData.length ? (
-              <EmptyChartState message="No scheduled jobs were discovered." />
+              <SectionMeta>BullMQ native metrics</SectionMeta>
+            </PanelHeader>
+            <ul className="divide-y text-[13px]">
+              {warningGroups.slice(0, WARNING_GROUP_LIMIT).map((group) => (
+                <li
+                  key={group.message}
+                  className="grid gap-x-4 gap-y-1.5 px-4 py-2.5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"
+                >
+                  <div className="flex min-w-0 items-start gap-2">
+                    <Badge variant="destructive" className="shrink-0 font-mono">
+                      {formatNumber(group.count)} {group.count === 1 ? 'queue' : 'queues'}
+                    </Badge>
+                    <span className="min-w-0 break-words leading-5">{group.message}</span>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs">
+                    {group.queueNames.slice(0, WARNING_QUEUE_LIMIT).map((queueName, index) => (
+                      <Link
+                        key={`${queueName}:${index}`}
+                        to="/$orgSlug/c/$connectionId/queues/$queueName"
+                        params={{ orgSlug, connectionId, queueName }}
+                        className="truncate rounded-sm text-muted-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:text-foreground hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                      >
+                        {queueName}
+                      </Link>
+                    ))}
+                    {group.queueNames.length > WARNING_QUEUE_LIMIT ? (
+                      <span className="text-faint">
+                        +{formatNumber(group.queueNames.length - WARNING_QUEUE_LIMIT)} more
+                      </span>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {warningGroups.length > WARNING_GROUP_LIMIT ? (
+              <p className="border-t px-4 py-2 text-xs text-muted-foreground">
+                +{formatNumber(warningGroups.length - WARNING_GROUP_LIMIT)} more warning types.
+              </p>
+            ) : null}
+          </Panel>
+        ) : null}
+
+        <Panel>
+          <PanelHeader>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="text-[13px] font-semibold tracking-tight">Breakdown</h3>
+              {showOnlyRisky ? (
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                  {formatNumber(sortedQueueRows.length)} of{' '}
+                  {formatNumber(analytics.queueRows.length)}
+                </span>
+              ) : null}
+              {showOnlyRisky ? (
+                <button
+                  type="button"
+                  onClick={() => setShowOnlyRisky(false)}
+                  className="inline-flex h-6 items-center gap-1 rounded-md border border-status-warning/30 bg-status-warning/10 pl-2 pr-1 text-[11px] font-medium text-status-warning transition-colors hover:bg-status-warning/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  At risk only
+                  <X className="h-3 w-3" aria-hidden />
+                  <span className="sr-only">Clear filter</span>
+                </button>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="eyebrow">Sort</span>
+              <Tabs
+                value={queueSort}
+                onValueChange={(value) => setQueueSort(value as QueueSortMode)}
+              >
+                <TabsList role="group" aria-label="Sort queues by" className="h-7">
+                  {QUEUE_SORT_OPTIONS.map((option) => (
+                    <TabsTrigger
+                      key={option.value}
+                      value={option.value}
+                      aria-pressed={queueSort === option.value}
+                      className="px-2 text-xs"
+                    >
+                      {option.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </div>
+          </PanelHeader>
+
+          {sortedQueueRows.length === 0 ? (
+            <EmptyState
+              size="inline"
+              tone="success"
+              title="No queues at risk"
+              description="Every queue is above a health score of 80 with no backlog, warnings, or elevated failure rate."
+              actions={
+                <Button size="xs" variant="outline" onClick={() => setShowOnlyRisky(false)}>
+                  Show all queues
+                </Button>
+              }
+            />
+          ) : (
+            <div className="max-h-[560px] overflow-auto">
+              <table className="w-full caption-bottom text-[13px] [&_td]:px-3 [&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th]:px-3 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4">
+                <TableHeader className="border-b-0 [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted [&_th]:shadow-[inset_0_-1px_0_0_var(--color-border)]">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Queue</TableHead>
+                    <TableHead>Health</TableHead>
+                    <TableHead>Signals</TableHead>
+                    <TableHead className="text-right">Waiting</TableHead>
+                    <TableHead className="text-right">Active</TableHead>
+                    <TableHead className="text-right">Workers</TableHead>
+                    <TableHead className="text-right" title="Jobs waiting per connected worker">
+                      Per worker
+                    </TableHead>
+                    <TableHead className="text-right">Throughput</TableHead>
+                    <TableHead className="text-right">Finished</TableHead>
+                    <TableHead className="text-right">Failure rate</TableHead>
+                    <TableHead
+                      className="text-right"
+                      title="Age of the queue's newest metrics point"
+                    >
+                      Sample
+                    </TableHead>
+                    <TableHead
+                      className="text-right"
+                      title="Queue scheduler and queue-event clients"
+                    >
+                      Sched · Ev
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedQueueRows.map((row) => {
+                    const unattended = row.workersCount === 0 && row.waitingToProcess > 0
+                    return (
+                      <TableRow
+                        key={row.queueName}
+                        className="cursor-pointer"
+                        onClick={() => {
+                          void navigate({
+                            to: '/$orgSlug/c/$connectionId/queues/$queueName',
+                            params: { orgSlug, connectionId, queueName: row.queueName },
+                          })
+                        }}
+                      >
+                        <TableCell className="max-w-[220px]">
+                          <Link
+                            to="/$orgSlug/c/$connectionId/queues/$queueName"
+                            params={{ orgSlug, connectionId, queueName: row.queueName }}
+                            onClick={(event) => event.stopPropagation()}
+                            className="block truncate rounded-sm font-mono font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                          >
+                            {row.queueName}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <HealthBadge score={row.healthScore} />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            {row.isPaused ? <Badge variant="warning">Paused</Badge> : null}
+                            {row.rateLimited ? <Badge variant="warning">Rate limited</Badge> : null}
+                            {row.isMaxed ? <Badge variant="neutral">Maxed</Badge> : null}
+                            {row.warningCount > 0 ? (
+                              <Badge variant="destructive">
+                                {row.warningCount} warning{row.warningCount === 1 ? '' : 's'}
+                              </Badge>
+                            ) : null}
+                            {!row.isPaused &&
+                            !row.rateLimited &&
+                            !row.isMaxed &&
+                            row.warningCount === 0 ? (
+                              <span className="text-faint" title="No control or warning signals">
+                                —
+                              </span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <NumericCell>{formatNumber(row.waitingToProcess)}</NumericCell>
+                        <NumericCell>{formatNumber(row.active)}</NumericCell>
+                        <NumericCell
+                          className={unattended ? 'text-status-warning' : undefined}
+                          title={unattended ? 'Backlog with no connected workers' : undefined}
+                        >
+                          {formatNumber(row.workersCount)}
+                        </NumericCell>
+                        <NumericCell>{formatDecimal(row.backlogPerWorker)}</NumericCell>
+                        <NumericCell>
+                          {formatRatePerMinute(row.avgThroughput)}
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            peak {formatNumber(row.peakThroughput)}
+                          </span>
+                        </NumericCell>
+                        <NumericCell>{formatNumber(row.finishedInWindow)}</NumericCell>
+                        <NumericCell>
+                          <span
+                            className={row.failureRate >= 0.05 ? 'text-status-danger' : undefined}
+                          >
+                            {formatPercentage(row.failureRate)}
+                          </span>
+                          <span className="ml-1.5 text-xs text-muted-foreground">
+                            {formatNumber(row.failedInWindow)} failed
+                          </span>
+                        </NumericCell>
+                        <NumericCell
+                          className="text-muted-foreground"
+                          title={
+                            row.latestPointAgeMs === null
+                              ? 'No metrics point in this window'
+                              : `Latest sample ${formatAgeFromMs(row.latestPointAgeMs)}`
+                          }
+                        >
+                          {row.latestPointAgeMs === null
+                            ? '—'
+                            : formatDurationFromMs(row.latestPointAgeMs)}
+                        </NumericCell>
+                        <NumericCell className="text-muted-foreground">
+                          {formatNumber(row.schedulersCount)} · {formatNumber(row.queueEventsCount)}
+                        </NumericCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </table>
+            </div>
+          )}
+        </Panel>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ChartPanel
+            title="Backlog by queue"
+            meta="jobs · top 10"
+            hint="Queues with the most jobs waiting to process, with their active jobs stacked on top."
+          >
+            {!hasBacklog ? (
+              <ChartEmptyState
+                tone="success"
+                title="No backlog"
+                description="No queue has jobs waiting or in flight right now."
+              />
             ) : (
-              <ChartContainer config={schedulesChartConfig} className="h-[300px] w-full">
+              <ChartContainer config={backlogChartConfig} className={CHART_HEIGHT_CLASS}>
                 <BarChart
-                  data={analytics.scheduleChartData}
+                  data={analytics.backlogChartData}
                   layout="vertical"
-                  margin={{ left: 8, right: 16, top: 8, bottom: 8 }}
+                  margin={RANK_CHART_MARGIN}
+                  barCategoryGap="28%"
                 >
                   <CartesianGrid horizontal={false} />
                   <XAxis
                     type="number"
                     tickLine={false}
                     axisLine={false}
+                    allowDecimals={false}
                     tickFormatter={(value) => formatCompactCount(Number(value))}
                   />
                   <YAxis
                     type="category"
                     dataKey="queueLabel"
-                    width={122}
+                    width={148}
+                    interval={0}
                     tickLine={false}
                     axisLine={false}
                   />
                   <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(_, payload) =>
-                          (payload?.[0]?.payload as { queueName?: string } | undefined)
-                            ?.queueName ?? ''
-                        }
-                      />
-                    }
+                    cursor={{ fillOpacity: 0.6 }}
+                    content={<ChartTooltipContent labelFormatter={queueNameTooltipLabel} />}
                   />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Bar dataKey="schedules" fill="var(--color-schedules)" radius={[0, 6, 6, 0]} />
+                  <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
                   <Bar
-                    dataKey="recentFailures"
-                    fill="var(--color-recentFailures)"
-                    radius={[0, 6, 6, 0]}
+                    dataKey="waiting"
+                    stackId="backlog"
+                    fill="var(--color-waiting)"
+                    isAnimationActive={false}
+                  />
+                  <Bar
+                    dataKey="active"
+                    stackId="backlog"
+                    fill="var(--color-active)"
+                    radius={[0, 2, 2, 0]}
+                    isAnimationActive={false}
                   />
                 </BarChart>
               </ChartContainer>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </ChartPanel>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Highest Queue Risk</CardTitle>
-            <CardDescription>Queues sorted by lowest health score.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {analytics.topRiskQueues.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No risk-ranked queues yet.</p>
+          <ChartPanel
+            title="Failure rate by queue"
+            meta="% of finished · top 10"
+            hint="Queues with the highest share of failed jobs among those finished in the selected window."
+          >
+            {!analytics.failureChartData.length ? (
+              <ChartEmptyState
+                title="No finished jobs in this window"
+                description="Failure rate needs at least one completed or failed job."
+              />
+            ) : !hasFailures ? (
+              <ChartEmptyState
+                tone="success"
+                title="No failures in this window"
+                description={`${formatNumber(totals.finishedInWindow)} jobs finished without a failure.`}
+              />
             ) : (
-              analytics.topRiskQueues.map((row) => (
-                <div
-                  key={row.queueName}
-                  className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5"
+              <ChartContainer config={failureChartConfig} className={CHART_HEIGHT_CLASS}>
+                <BarChart
+                  data={analytics.failureChartData}
+                  layout="vertical"
+                  margin={RANK_CHART_MARGIN}
+                  barCategoryGap="28%"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <Link
-                      to="/$orgSlug/c/$connectionId/queues/$queueName"
-                      params={{ orgSlug, connectionId, queueName: row.queueName }}
-                      className="truncate text-sm font-medium hover:text-primary"
-                    >
-                      {row.queueName}
-                    </Link>
-                    <HealthBadge score={row.healthScore} />
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-                    <span>Waiting: {formatNumber(row.waitingToProcess)}</span>
-                    <span>Failed/min: {formatNumber(row.failedInWindow)}</span>
-                    <span>Failure rate: {formatPercentage(row.failureRate)}</span>
-                    <span>Workers: {formatNumber(row.workersCount)}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Top Throughput Queues</CardTitle>
-            <CardDescription>Queues carrying the highest per-minute load.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {analytics.topThroughputQueues.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No throughput-ranked queues yet.</p>
-            ) : (
-              analytics.topThroughputQueues.map((row) => (
-                <div
-                  key={row.queueName}
-                  className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <Link
-                      to="/$orgSlug/c/$connectionId/queues/$queueName"
-                      params={{ orgSlug, connectionId, queueName: row.queueName }}
-                      className="truncate text-sm font-medium hover:text-primary"
-                    >
-                      {row.queueName}
-                    </Link>
-                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                      {formatRatePerMinute(row.avgThroughput)}
-                    </span>
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-                    <span>Peak/min: {formatNumber(row.peakThroughput)}</span>
-                    <span>Finished: {formatNumber(row.finishedInWindow)}</span>
-                    <span>Success: {formatPercentage(row.successRate)}</span>
-                    <span>Backlog/worker: {formatDecimal(row.backlogPerWorker)}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/70">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Worker Health</CardTitle>
-            <CardDescription>Idle distribution and oldest idle workers.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              {analytics.workerStateData.map((state) => {
-                const total = Math.max(analytics.workers.total, 1)
-                const pct = (state.value / total) * 100
-                const barColor =
-                  state.key === 'active'
-                    ? 'bg-status-success'
-                    : state.key === 'warm'
-                      ? 'bg-status-warning'
-                      : 'bg-status-danger'
-
-                return (
-                  <div key={state.key} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{state.label}</span>
-                      <span className="font-mono tabular-nums">
-                        {formatNumber(state.value)} ({pct.toFixed(1)}%)
-                      </span>
-                    </div>
-                    <div className="h-1.5 w-full rounded-full bg-muted">
-                      <div
-                        className={cn('h-1.5 rounded-full', barColor)}
-                        style={{ width: `${pct}%` }}
+                  <CartesianGrid horizontal={false} />
+                  <XAxis
+                    type="number"
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(value) => formatPercentTick(Number(value))}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="queueLabel"
+                    width={148}
+                    interval={0}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <ChartTooltip
+                    cursor={{ fillOpacity: 0.6 }}
+                    content={
+                      <ChartTooltipContent
+                        labelFormatter={queueNameTooltipLabel}
+                        formatter={(value, _name, item) =>
+                          `${Number(value).toFixed(1)}% · ${formatNumber(
+                            Number(item.payload?.failedInWindow ?? 0)
+                          )} failed`
+                        }
                       />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                    }
+                  />
+                  <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
+                  <Bar
+                    dataKey="failureRate"
+                    fill="var(--color-failureRate)"
+                    radius={[0, 2, 2, 0]}
+                    isAnimationActive={false}
+                  />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </ChartPanel>
+        </div>
+      </section>
 
-            <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              <div className="flex items-center justify-between gap-3">
-                <span>Average idle</span>
-                <span className="font-mono tabular-nums">
-                  {formatDurationFromMs(analytics.workers.averageIdleMs)}
-                </span>
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-3">
-                <span>Oldest client age</span>
-                <span className="font-mono tabular-nums">
-                  {formatDurationFromMs(analytics.workers.oldestAgeMs)}
-                </span>
-              </div>
-            </div>
+      <div className="pt-2">{redisHealthPanel}</div>
 
-            <div className="space-y-2">
-              {analytics.topIdleWorkers.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No worker clients discovered.</p>
-              ) : (
-                analytics.topIdleWorkers.map((worker) => (
-                  <div
-                    key={`${worker.queueName}:${worker.id}:${worker.address}`}
-                    className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="truncate font-mono">
+      <div className="grid gap-x-4 gap-y-6 pt-2 xl:grid-cols-2">
+        <section aria-label="Workers" className="min-w-0 space-y-4">
+          <SectionHeader
+            className="mb-3"
+            title="Workers"
+            count={formatNumber(workers.total)}
+            description="Connected worker clients, grouped by how long they have been idle."
+          />
+          <MetricStrip className={STRIP_HALF_WIDTH_CLASS}>
+            {analytics.workerStateData.map((state) => (
+              <Metric
+                key={state.key}
+                label={WORKER_STATE_LABEL[state.key]}
+                value={formatNumber(state.value)}
+                hint={`${WORKER_STATE_RANGE[state.key]} · ${formatShare(state.value, workers.total)}`}
+                tone={
+                  state.value === 0
+                    ? 'neutral'
+                    : state.key === 'active'
+                      ? 'active'
+                      : state.key === 'stale'
+                        ? 'warning'
+                        : 'neutral'
+                }
+              />
+            ))}
+            <Metric
+              label="Average idle"
+              value={formatDurationFromMs(workers.averageIdleMs)}
+              hint="across clients"
+            />
+            <Metric
+              label="Oldest client"
+              value={formatDurationFromMs(workers.oldestAgeMs)}
+              hint="connection age"
+            />
+            <Metric
+              label="Queue events"
+              value={formatNumber(totals.queueEvents)}
+              hint="listener clients"
+            />
+          </MetricStrip>
+          <Panel>
+            <PanelHeader className="min-h-10 py-1.5">
+              <h3 className="text-[13px] font-semibold tracking-tight">Longest idle</h3>
+              <SectionMeta>top {analytics.topIdleWorkers.length || 8}</SectionMeta>
+            </PanelHeader>
+            {analytics.topIdleWorkers.length === 0 ? (
+              <EmptyState
+                size="inline"
+                icon={Server}
+                title="No worker clients discovered"
+                description="Workers appear here once they connect to a queue on this connection."
+              />
+            ) : (
+              <Table className="table-fixed">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Worker</TableHead>
+                    <TableHead>Queue</TableHead>
+                    <TableHead className="w-24 text-right">Idle</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics.topIdleWorkers.map((worker) => (
+                    <TableRow key={`${worker.queueName}:${worker.id}:${worker.address}`}>
+                      <TableCell className="truncate font-mono" title={worker.address}>
                         {worker.name || worker.id || 'worker-client'}
-                      </span>
-                      <span className="font-mono tabular-nums text-muted-foreground">
-                        idle {formatDurationFromMs(worker.idleMs)}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-muted-foreground">
-                      <span className="truncate">{worker.queueName}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="border-border/70">
-        <CardHeader className="pb-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-lg">Queue Risk Matrix</CardTitle>
-              <CardDescription>
-                Queue-by-queue breakdown of health, throughput, backlog, and control signals.
-              </CardDescription>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value={queueSort}
-                onChange={(event) => setQueueSort(event.target.value as QueueSortMode)}
-                className="h-8 w-[170px] text-xs"
-              >
-                <option value="health">Sort: Health Score</option>
-                <option value="backlog">Sort: Backlog</option>
-                <option value="failures">Sort: Failure Rate</option>
-                <option value="throughput">Sort: Throughput</option>
-              </Select>
-
-              <Button
-                size="xs"
-                variant={showOnlyRisky ? 'default' : 'outline'}
-                onClick={() => setShowOnlyRisky((prev) => !prev)}
-              >
-                {showOnlyRisky ? 'Show All Queues' : 'Only Risky Queues'}
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent>
-          <div className="max-h-[560px] overflow-auto rounded-md border border-border/60">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Queue</TableHead>
-                  <TableHead>Health</TableHead>
-                  <TableHead>Waiting</TableHead>
-                  <TableHead>Active</TableHead>
-                  <TableHead>Workers</TableHead>
-                  <TableHead>Throughput</TableHead>
-                  <TableHead>Failure Rate</TableHead>
-                  <TableHead>Latest Sample</TableHead>
-                  <TableHead>Signals</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedQueueRows.map((row) => (
-                  <TableRow key={row.queueName}>
-                    <TableCell className="max-w-[260px]">
-                      <div className="flex min-w-0 flex-col">
+                      </TableCell>
+                      <TableCell className="truncate font-mono">
                         <Link
                           to="/$orgSlug/c/$connectionId/queues/$queueName"
-                          params={{ orgSlug, connectionId, queueName: row.queueName }}
-                          className="truncate font-medium hover:text-primary"
+                          params={{ orgSlug, connectionId, queueName: worker.queueName }}
+                          className="rounded-sm text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                         >
-                          {row.queueName}
+                          {worker.queueName}
                         </Link>
-                        <span className="text-xs text-muted-foreground">
-                          schedulers {formatNumber(row.schedulersCount)} • queue-events{' '}
-                          {formatNumber(row.queueEventsCount)}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <HealthBadge score={row.healthScore} />
-                    </TableCell>
-                    <TableCell className="font-mono text-xs tabular-nums">
-                      {formatNumber(row.waitingToProcess)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs tabular-nums">
-                      {formatNumber(row.active)}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs tabular-nums">
-                      {formatNumber(row.workersCount)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-mono text-xs tabular-nums">
-                        {formatRatePerMinute(row.avgThroughput)}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        peak {formatNumber(row.peakThroughput)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-mono text-xs tabular-nums">
-                        {formatPercentage(row.failureRate)}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">
-                        failed {formatNumber(row.failedInWindow)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
-                      {formatAgeFromMs(row.latestPointAgeMs)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {row.isPaused && (
-                          <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
-                            Paused
-                          </Badge>
-                        )}
-                        {row.rateLimited && (
-                          <Badge variant="warning" className="px-1.5 py-0 text-[10px]">
-                            Rate Limited
-                          </Badge>
-                        )}
-                        {row.isMaxed && (
-                          <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                            Maxed
-                          </Badge>
-                        )}
-                        {row.warningCount > 0 && (
-                          <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">
-                            {row.warningCount} warning{row.warningCount === 1 ? '' : 's'}
-                          </Badge>
-                        )}
-                        {!row.isPaused &&
-                        !row.rateLimited &&
-                        !row.isMaxed &&
-                        row.warningCount === 0 ? (
-                          <span className="text-xs text-muted-foreground">Clean</span>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                      </TableCell>
+                      <NumericCell>{formatDurationFromMs(worker.idleMs)}</NumericCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Panel>
+        </section>
 
-      <Card className="border-border/70">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Warning Intelligence</CardTitle>
-          <CardDescription>
-            Native metrics collection warnings across queues. Timezone: {getTimezoneAbbreviation()}.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {analytics.warningRows.length === 0 ? (
-            <div className="rounded-md border border-status-success/30 bg-status-success/10 px-3 py-2 text-xs text-status-success">
-              No queue-level metrics warnings were reported in this sample.
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                {analytics.warningInsights.slice(0, 8).map((insight) => (
-                  <div
-                    key={insight.message}
-                    className="rounded-md border border-border/60 bg-muted/20 px-3 py-2"
-                  >
-                    <div className="text-xs text-muted-foreground">{insight.message}</div>
-                    <div className="mt-1 font-mono text-sm tabular-nums">
-                      {formatNumber(insight.count)} queues
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-2">
-                {analytics.warningRows.slice(0, 24).map((warning, index) => (
-                  <div
-                    key={`${warning.queueName}:${warning.message}:${index}`}
-                    className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium">{warning.queueName}</span>
-                      <Link
-                        to="/$orgSlug/c/$connectionId/queues/$queueName"
-                        params={{ orgSlug, connectionId, queueName: warning.queueName }}
-                        className="text-primary hover:underline"
-                      >
-                        open queue
-                      </Link>
-                    </div>
-                    <p className="mt-1 text-muted-foreground">{warning.message}</p>
-                  </div>
-                ))}
-                {analytics.warningRows.length > 24 ? (
-                  <p className="text-xs text-muted-foreground">
-                    +{formatNumber(analytics.warningRows.length - 24)} more warning entries.
-                  </p>
-                ) : null}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+        <section aria-label="Schedules" className="min-w-0 space-y-4">
+          <SectionHeader
+            className="mb-3"
+            title="Schedules"
+            count={schedulesUnavailable ? undefined : formatNumber(schedules.total)}
+            description="Scheduled jobs and the failures recently linked to them."
+          />
+          <MetricStrip className={STRIP_HALF_WIDTH_CLASS}>
+            <Metric
+              label="Next 24h"
+              value={scheduleValue(schedules.next24h)}
+              hint="upcoming runs"
+            />
+            <Metric
+              label="Failing"
+              value={scheduleValue(schedules.failingSchedules)}
+              hint="schedules with failures"
+              tone={schedules.failingSchedules > 0 ? 'danger' : 'neutral'}
+              emphasis={schedules.failingSchedules > 0}
+            />
+            <Metric
+              label="Recent failures"
+              value={scheduleValue(schedules.recentFailures)}
+              hint="schedule-linked jobs"
+              tone={schedules.recentFailures > 0 ? 'danger' : 'neutral'}
+            />
+            <Metric
+              label="Scheduled jobs"
+              value={scheduleValue(schedules.total)}
+              hint="all queues"
+            />
+            <Metric
+              label="Queues"
+              value={scheduleValue(schedules.queuesWithSchedules)}
+              hint="with schedules"
+            />
+            <Metric
+              label="Schedulers"
+              value={formatNumber(totals.schedulers)}
+              hint="detected by BullMQ"
+            />
+          </MetricStrip>
+          <ChartPanel
+            title="Schedules by queue"
+            meta="count · top 10"
+            hint="Scheduled jobs per queue next to the failed jobs recently produced by those schedules."
+          >
+            {schedulesUnavailable ? (
+              <ChartEmptyState
+                tone="warning"
+                icon={AlertCircle}
+                title="Scheduled jobs unavailable"
+                description={schedulesError?.message}
+              />
+            ) : !analytics.scheduleChartData.length ? (
+              <ChartEmptyState
+                icon={CalendarClock}
+                title="No scheduled jobs"
+                description="Repeatable and cron jobs on this connection will be ranked here."
+              />
+            ) : (
+              <ChartContainer config={schedulesChartConfig} className={CHART_HEIGHT_CLASS}>
+                <BarChart
+                  data={analytics.scheduleChartData}
+                  layout="vertical"
+                  margin={RANK_CHART_MARGIN}
+                  barCategoryGap="22%"
+                  barGap={1}
+                >
+                  <CartesianGrid horizontal={false} />
+                  <XAxis
+                    type="number"
+                    tickLine={false}
+                    axisLine={false}
+                    allowDecimals={false}
+                    tickFormatter={(value) => formatCompactCount(Number(value))}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="queueLabel"
+                    width={148}
+                    interval={0}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <ChartTooltip
+                    cursor={{ fillOpacity: 0.6 }}
+                    content={<ChartTooltipContent labelFormatter={queueNameTooltipLabel} />}
+                  />
+                  <ChartLegend itemSorter={null} content={<ChartLegendContent />} />
+                  <Bar
+                    dataKey="schedules"
+                    fill="var(--color-schedules)"
+                    radius={[0, 2, 2, 0]}
+                    isAnimationActive={false}
+                  />
+                  <Bar
+                    dataKey="recentFailures"
+                    fill="var(--color-recentFailures)"
+                    radius={[0, 2, 2, 0]}
+                    isAnimationActive={false}
+                  />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </ChartPanel>
+        </section>
+      </div>
     </div>
   )
 }
@@ -1923,9 +1790,17 @@ function buildFleetAnalytics(
     breadthSeries: throughputSeries,
     queueStateData,
     workerStateData: [
-      { key: 'active', label: 'Active (<= 5s idle)', value: workerActive },
-      { key: 'warm', label: 'Warm (5s-60s idle)', value: workerWarm },
-      { key: 'stale', label: 'Stale (> 60s idle)', value: workerStale },
+      {
+        key: 'active',
+        label: `Active (<= ${WORKER_IDLE_ACTIVE_SECONDS}s idle)`,
+        value: workerActive,
+      },
+      {
+        key: 'warm',
+        label: `Warm (${WORKER_IDLE_ACTIVE_SECONDS}s-${WORKER_IDLE_STALE_SECONDS}s idle)`,
+        value: workerWarm,
+      },
+      { key: 'stale', label: `Stale (> ${WORKER_IDLE_STALE_SECONDS}s idle)`, value: workerStale },
     ],
     scheduleChartData,
     topRiskQueues,
@@ -2003,6 +1878,42 @@ function computeQueueHealthScore({
   return clamp(Math.round(100 - penalty), 0, 100)
 }
 
+const HEALTH_TONE_LABEL: Record<HealthTone, string> = {
+  healthy: 'Healthy',
+  watch: 'Watch',
+  critical: 'Critical',
+}
+
+const HEALTH_TONE_METRIC: Record<HealthTone, MetricTone> = {
+  healthy: 'success',
+  watch: 'warning',
+  critical: 'danger',
+}
+
+type WorkerStateKey = FleetAnalytics['workerStateData'][number]['key']
+
+const WORKER_STATE_LABEL: Record<WorkerStateKey, string> = {
+  active: 'Active',
+  warm: 'Warm',
+  stale: 'Stale',
+}
+
+const WORKER_STATE_RANGE: Record<WorkerStateKey, string> = {
+  active: `≤ ${WORKER_IDLE_ACTIVE_SECONDS}s idle`,
+  warm: `${WORKER_IDLE_ACTIVE_SECONDS}–${WORKER_IDLE_STALE_SECONDS}s idle`,
+  stale: `> ${WORKER_IDLE_STALE_SECONDS}s idle`,
+}
+
+/** The "at risk" filter: anything an operator should look at before the healthy queues. */
+function isRiskyQueue(row: QueueAnalyticsRow) {
+  return (
+    row.healthScore < 80 ||
+    row.warningCount > 0 ||
+    row.failureRate >= 0.05 ||
+    row.waitingToProcess > 0
+  )
+}
+
 function healthToneToBadgeVariant(tone: HealthTone): 'success' | 'warning' | 'destructive' {
   switch (tone) {
     case 'healthy':
@@ -2017,119 +1928,80 @@ function healthToneToBadgeVariant(tone: HealthTone): 'success' | 'warning' | 'de
 function HealthBadge({ score }: { score: number }) {
   const tone = score >= 80 ? 'success' : score >= 60 ? 'warning' : 'destructive'
   return (
-    <Badge variant={tone} className="font-mono text-[11px] tabular-nums">
+    <Badge variant={tone} className="min-w-8 justify-center font-mono">
       {score}
     </Badge>
   )
 }
 
-function FleetHealthDial({ score }: { score: number }) {
-  const clampedScore = clamp(score, 0, 100)
-  const trackColor = 'hsl(var(--color-border))'
-  const fillColor =
-    clampedScore >= 80
-      ? 'hsl(145 63% 48%)'
-      : clampedScore >= 60
-        ? 'hsl(38 98% 61%)'
-        : 'hsl(2 90% 66%)'
-
+/** Small mono context line used on the right of section and panel headers. */
+function SectionMeta({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative">
-      <div
-        className="flex h-28 w-28 items-center justify-center rounded-full border border-border/60"
-        style={{
-          background: `conic-gradient(${fillColor} ${clampedScore * 3.6}deg, ${trackColor} ${clampedScore * 3.6}deg)`,
-        }}
-      >
-        <div className="flex h-[78px] w-[78px] flex-col items-center justify-center rounded-full bg-background/95 shadow-sm">
-          <span className="font-mono text-2xl font-semibold tabular-nums">{clampedScore}</span>
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Health</span>
-        </div>
-      </div>
-    </div>
+    <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{children}</span>
   )
 }
 
-function AnalyticsMetricCard({
-  icon: Icon,
-  title,
-  value,
-  subtitle,
-  tone = 'neutral',
-}: {
-  icon: React.ComponentType<{ className?: string }>
-  title: string
-  value: string
-  subtitle: string
-  tone?: 'neutral' | 'good' | 'warn' | 'critical'
-}) {
-  const toneClasses: Record<typeof tone, string> = {
-    neutral: 'bg-card/70',
-    good: 'bg-status-success/[0.08] border-status-success/30',
-    warn: 'bg-status-warning/[0.1] border-status-warning/35',
-    critical: 'bg-status-danger/[0.12] border-status-danger/40',
-  }
-
+function NumericCell({ className, ...props }: React.ComponentProps<typeof TableCell>) {
   return (
-    <Card className={cn('border-border/70 shadow-sm', toneClasses[tone])}>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardDescription className="text-[11px] uppercase tracking-wide">{title}</CardDescription>
-          <Icon className="h-4 w-4 text-muted-foreground" />
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="font-mono text-xl font-semibold tabular-nums">{value}</div>
-        <p className="mt-1 text-[11px] text-muted-foreground">{subtitle}</p>
-      </CardContent>
-    </Card>
+    <TableCell
+      className={cn('whitespace-nowrap text-right font-mono tabular-nums', className)}
+      {...props}
+    />
   )
 }
 
 function AnalyticsLoadingState() {
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="space-y-3">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-8 w-72" />
-          <Skeleton className="h-4 w-[460px] max-w-full" />
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5, 6].map((id) => (
-              <Skeleton key={id} className="h-8 w-12" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-        {Array.from({ length: 12 }, (_, index) => (
-          <Card key={index}>
-            <CardHeader className="pb-2">
-              <Skeleton className="h-4 w-20" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-6 w-24" />
-              <Skeleton className="mt-2 h-3 w-28" />
-            </CardContent>
-          </Card>
-        ))}
+    <div className="space-y-4" aria-busy="true">
+      <MetricStrip className={STRIP_SIX_CLASS}>
+        {['Fleet health', 'Throughput', 'Failure rate', 'Backlog', 'Failed jobs', 'Workers'].map(
+          (label) => (
+            <Metric key={label} label={label} value="" hint={<>&nbsp;</>} loading />
+          )
+        )}
+      </MetricStrip>
+      <div className="space-y-3 pt-2">
+        <div className="space-y-1.5">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-72 max-w-full" />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {[0, 1].map((id) => (
+            <Panel key={id}>
+              <div className="flex min-h-10 items-center border-b px-4">
+                <Skeleton className="h-4 w-32" />
+              </div>
+              <div className="px-3 pb-2 pt-3">
+                <Skeleton className={CHART_HEIGHT_CLASS} />
+              </div>
+            </Panel>
+          ))}
+        </div>
       </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Skeleton className="h-[320px] w-full rounded-lg" />
-        <Skeleton className="h-[320px] w-full rounded-lg" />
-      </div>
+      <Panel>
+        <div className="flex min-h-11 items-center border-b px-4">
+          <Skeleton className="h-4 w-36" />
+        </div>
+        <div className="divide-y">
+          {[0, 1, 2, 3, 4, 5].map((id) => (
+            <div key={id} className="flex h-9 items-center gap-4 px-4">
+              <Skeleton className="h-3.5 w-40" />
+              <Skeleton className="h-3.5 w-10" />
+              <Skeleton className="ml-auto h-3.5 w-64 max-w-[40%]" />
+            </div>
+          ))}
+        </div>
+      </Panel>
     </div>
   )
 }
 
-function EmptyChartState({ message }: { message: string }) {
-  return (
-    <div className="flex h-[240px] items-center justify-center rounded-lg border border-border/60 bg-muted/10 px-6 text-center">
-      <p className="text-sm text-muted-foreground">{message}</p>
-    </div>
-  )
+function formatPercentTick(value: number) {
+  return `${Number.isInteger(value) ? value : value.toFixed(1)}%`
+}
+
+function formatShare(value: number, total: number) {
+  return `${((value / Math.max(total, 1)) * 100).toFixed(1)}%`
 }
 
 function formatPercentage(value: number | null | undefined, digits = 1) {
@@ -2202,12 +2074,8 @@ function formatAgeFromMs(value: number | null | undefined) {
 function formatMetricAxisTime(timestamp: number, windowMinutes: number) {
   const date = new Date(timestamp)
 
-  if (windowMinutes <= 360) {
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  }
-
   if (windowMinutes <= 1440) {
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }
 
   if (windowMinutes <= 10080) {
@@ -2221,14 +2089,13 @@ function formatMetricAxisTime(timestamp: number, windowMinutes: number) {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
+// Points are one-minute buckets, so the label stops at the minute.
 function formatMetricTooltipLabel(timestamp: number) {
   return new Date(timestamp).toLocaleString([], {
     month: 'short',
     day: 'numeric',
-    hour: 'numeric',
+    hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
   })
 }
 

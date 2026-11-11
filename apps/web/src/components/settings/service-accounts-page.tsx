@@ -1,11 +1,11 @@
 import { Link } from '@tanstack/react-router'
-import { Bot, Copy, Lock, Plus } from 'lucide-react'
-import { useState } from 'react'
+import { Bot, Check, Copy, KeyRound, Lock, MoreHorizontal, Plus } from 'lucide-react'
+import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { SettingsPage } from '@/components/settings/settings-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -14,9 +14,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Panel } from '@/components/ui/section'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { useAuth } from '@/hooks/use-auth'
 import { useBilling } from '@/hooks/use-billing'
 import { useActiveOrganization, useOrganizationMembers } from '@/hooks/use-organization'
@@ -60,6 +78,11 @@ function formatDate(value: string | null): string {
   return DATE_FORMAT.format(new Date(value))
 }
 
+/** `mcp:jobs:read` reads as `jobs:read` in a table where every scope is an MCP scope. */
+function shortScope(scope: string): string {
+  return scope.replace(/^mcp:/, '')
+}
+
 export function ServiceAccountsPage() {
   const { user } = useAuth()
   const { data: members } = useOrganizationMembers()
@@ -78,152 +101,200 @@ export function ServiceAccountsPage() {
   const [creating, setCreating] = useState(false)
   const [revealedToken, setRevealedToken] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ServiceAccount | null>(null)
+  const [rotateTarget, setRotateTarget] = useState<ServiceAccount | null>(null)
   const rotate = useRotateServiceAccountToken()
   const setDisabled = useSetServiceAccountDisabled()
   const remove = useDeleteServiceAccount()
 
+  const accounts = data?.serviceAccounts ?? []
+  const canCreate = canManage && !planLocked
+  const createButton = canCreate ? (
+    <Button type="button" size="xs" onClick={() => setCreating(true)}>
+      <Plus className="h-3.5 w-3.5" aria-hidden />
+      New service account
+    </Button>
+  ) : null
+
   return (
-    <div className="max-w-4xl space-y-6" data-testid="service-accounts">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 border-b bg-muted/30">
-          <div className="space-y-1">
-            <CardTitle className="text-base">Service accounts</CardTitle>
-            <CardDescription>
-              Persistent MCP identities for unattended automation. Each account is limited to the
-              scopes you grant here; write scopes are always opt-in.
-            </CardDescription>
-          </div>
-          {canManage && !planLocked ? (
-            <Button type="button" size="sm" onClick={() => setCreating(true)}>
-              <Plus className="mr-1.5 h-4 w-4" />
-              New service account
-            </Button>
-          ) : null}
-        </CardHeader>
-        <CardContent className="space-y-3 p-4">
-          {planLocked ? (
-            <div
-              className="flex gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm"
-              data-testid="service-accounts-plan-locked"
-            >
-              <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              <div className="space-y-1">
-                <div className="font-medium">Service accounts need the Team plan</div>
-                <p className="text-muted-foreground">
-                  Existing accounts are kept, but their MCP calls are refused until the organization
-                  upgrades.{' '}
-                  {activeOrganization?.slug ? (
-                    <Link
-                      to="/$orgSlug/settings/billing"
-                      params={{ orgSlug: activeOrganization.slug }}
-                      className="text-primary underline"
-                    >
-                      See plans
-                    </Link>
-                  ) : null}
-                </p>
-              </div>
-            </div>
-          ) : null}
-          {isLoading ? (
-            <Skeleton className="h-20 w-full" />
-          ) : data && data.serviceAccounts.length > 0 ? (
-            data.serviceAccounts.map((account) => (
-              <div
-                key={account.id}
-                className="flex flex-wrap items-start justify-between gap-3 rounded-lg border p-4"
-                data-testid="service-account-row"
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Bot className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-semibold">{account.name}</span>
-                    {account.suspended ? (
-                      <Badge variant="warning">Paused by plan limit</Badge>
-                    ) : planLocked && !account.disabled ? (
-                      <Badge variant="warning">Locked by plan</Badge>
-                    ) : (
-                      <Badge variant={account.disabled ? 'secondary' : 'success'}>
-                        {account.disabled ? 'Disabled' : 'Enabled'}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Token …{account.tokenLastFour ?? '????'} · expires{' '}
-                    {formatDate(account.tokenExpiresAt)}
-                  </div>
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {account.scopes.map((scope) => (
-                      <Badge
-                        key={scope}
-                        variant={SCOPE_LABELS[scope]?.write ? 'warning' : 'outline'}
-                      >
-                        {scope}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-                {canManage ? (
-                  <div className="flex shrink-0 gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      disabled={rotate.isPending}
-                      onClick={() =>
-                        rotate.mutate(
-                          { id: account.id, expiresInDays: 90 },
-                          {
-                            onSuccess: ({ token }) => setRevealedToken(token),
-                            onError: (error) =>
-                              toast.error('Could not rotate token', {
-                                description: errorMessage(error, ''),
-                              }),
-                          }
-                        )
-                      }
-                    >
-                      Rotate token
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      disabled={setDisabled.isPending}
-                      onClick={() =>
-                        setDisabled.mutate(
-                          { id: account.id, disabled: !account.disabled },
-                          {
-                            onError: (error) =>
-                              toast.error('Could not update service account', {
-                                description: errorMessage(error, ''),
-                              }),
-                          }
-                        )
-                      }
-                    >
-                      {account.disabled ? 'Enable' : 'Disable'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => setDeleteTarget(account)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No service accounts yet. Use one when a CI job or agent needs MCP access without a
-              personal login.
+    <SettingsPage
+      wide
+      title="Service accounts"
+      count={isLoading ? undefined : accounts.length}
+      description="MCP tokens for CI jobs and agents. Write scopes are opt-in."
+      actions={accounts.length > 0 ? createButton : undefined}
+      data-testid="service-accounts"
+    >
+      {planLocked ? (
+        <div
+          className="flex gap-3 rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-[13px]"
+          data-testid="service-accounts-plan-locked"
+        >
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-status-warning" aria-hidden="true" />
+          <div className="space-y-0.5">
+            <div className="font-medium">Service accounts need the Team plan</div>
+            <p className="text-muted-foreground">
+              Existing accounts are kept, but their MCP calls are refused until the organization
+              upgrades.{' '}
+              {activeOrganization?.slug ? (
+                <Link
+                  to="/$orgSlug/settings/billing"
+                  params={{ orgSlug: activeOrganization.slug }}
+                  className="font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+                >
+                  See plans
+                </Link>
+              ) : null}
             </p>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <Panel className="divide-y">
+          {[0, 1].map((row) => (
+            <div key={row} className="flex h-11 items-center gap-4 px-4">
+              <Skeleton className="h-3.5 w-32" />
+              <Skeleton className="h-3.5 w-48" />
+              <Skeleton className="ml-auto h-3.5 w-20" />
+            </div>
+          ))}
+        </Panel>
+      ) : accounts.length > 0 ? (
+        <Panel>
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Name</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Token</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead>Created</TableHead>
+                {canManage ? (
+                  <TableHead className="w-px text-right">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                ) : null}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {accounts.map((account) => (
+                <Fragment key={account.id}>
+                  {/* Two rows per account: facts on top, the scope list across the full width. */}
+                  <TableRow
+                    data-testid="service-account-row"
+                    className="border-b-0 hover:bg-transparent"
+                  >
+                    <TableCell className="whitespace-nowrap pb-1 pt-2.5 font-mono font-medium">
+                      {account.name}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap pb-1 pt-2.5">
+                      {account.suspended ? (
+                        <Badge variant="warning">Paused by plan limit</Badge>
+                      ) : planLocked && !account.disabled ? (
+                        <Badge variant="warning">Locked by plan</Badge>
+                      ) : (
+                        <Badge variant={account.disabled ? 'neutral' : 'success'}>
+                          {account.disabled ? 'Disabled' : 'Enabled'}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap pb-1 pt-2.5 font-mono tabular-nums text-muted-foreground">
+                      …{account.tokenLastFour ?? '????'}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap pb-1 pt-2.5 font-mono tabular-nums text-muted-foreground">
+                      {formatDate(account.tokenExpiresAt)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap pb-1 pt-2.5 font-mono tabular-nums text-muted-foreground">
+                      {formatDate(account.createdAt)}
+                    </TableCell>
+                    {canManage ? (
+                      <TableCell className="pb-1 pt-2.5">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="xs"
+                            disabled={rotate.isPending}
+                            onClick={() => setRotateTarget(account)}
+                          >
+                            Rotate token
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                aria-label={`More actions for ${account.name}`}
+                              >
+                                <MoreHorizontal className="h-4 w-4" aria-hidden />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                disabled={setDisabled.isPending}
+                                onClick={() =>
+                                  setDisabled.mutate(
+                                    { id: account.id, disabled: !account.disabled },
+                                    {
+                                      onError: (error) =>
+                                        toast.error('Could not update service account', {
+                                          description: errorMessage(error, ''),
+                                        }),
+                                    }
+                                  )
+                                }
+                              >
+                                {account.disabled ? 'Enable' : 'Disable'}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-status-danger focus:text-status-danger"
+                                onClick={() => setDeleteTarget(account)}
+                              >
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={canManage ? 6 : 5} className="pb-2.5 pt-0">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="sr-only">Scopes:</span>
+                        {account.scopes.map((scope) => (
+                          <Badge
+                            key={scope}
+                            variant={SCOPE_LABELS[scope]?.write ? 'warning' : 'outline'}
+                            className="font-mono font-normal"
+                            title={SCOPE_LABELS[scope]?.label ?? scope}
+                          >
+                            {shortScope(scope)}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                </Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </Panel>
+      ) : (
+        <EmptyState
+          icon={Bot}
+          title="No service accounts"
+          description={
+            planLocked
+              ? 'A service account gives a CI job or agent MCP access without a personal login.'
+              : 'Create one when a CI job or agent needs MCP access without a personal login. Each account only gets the scopes you grant.'
+          }
+          actions={createButton}
+        />
+      )}
 
       {creating ? (
         <CreateServiceAccountDialog
@@ -239,6 +310,33 @@ export function ServiceAccountsPage() {
       {revealedToken ? (
         <TokenRevealDialog token={revealedToken} onClose={() => setRevealedToken(null)} />
       ) : null}
+
+      <ConfirmDialog
+        open={rotateTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRotateTarget(null)
+        }}
+        title="Rotate token"
+        description={`Issue a new 90-day token for "${rotateTarget?.name ?? ''}"? The current token stops working immediately.`}
+        confirmLabel="Rotate token"
+        isConfirming={rotate.isPending}
+        onConfirm={() =>
+          rotateTarget &&
+          rotate.mutate(
+            { id: rotateTarget.id, expiresInDays: 90 },
+            {
+              onSuccess: ({ token }) => {
+                setRotateTarget(null)
+                setRevealedToken(token)
+              },
+              onError: (error) =>
+                toast.error('Could not rotate token', {
+                  description: errorMessage(error, ''),
+                }),
+            }
+          )
+        }
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}
@@ -261,7 +359,30 @@ export function ServiceAccountsPage() {
           })
         }
       />
-    </div>
+    </SettingsPage>
+  )
+}
+
+function ScopeCheckbox({
+  scope,
+  checked,
+  onChange,
+}: {
+  scope: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[13px] hover:bg-muted/60">
+      <input
+        type="checkbox"
+        className="h-3.5 w-3.5 shrink-0 accent-foreground"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="min-w-0 flex-1">{SCOPE_LABELS[scope]?.label ?? scope}</span>
+      <span className="font-mono text-[11px] text-faint">{shortScope(scope)}</span>
+    </label>
   )
 }
 
@@ -279,6 +400,15 @@ function CreateServiceAccountDialog({
   const [scopes, setScopes] = useState<Set<string>>(() => new Set(DEFAULT_SCOPES))
   const [expiresInDays, setExpiresInDays] = useState<ServiceAccountExpiry>(90)
   const selectable = availableScopes.filter((scope) => scope !== 'mcp:discover')
+  const readScopes = selectable.filter((scope) => !SCOPE_LABELS[scope]?.write)
+  const writeScopes = selectable.filter((scope) => SCOPE_LABELS[scope]?.write)
+  const toggleScope = (scope: string, checked: boolean) =>
+    setScopes((current) => {
+      const next = new Set(current)
+      if (checked) next.add(scope)
+      else next.delete(scope)
+      return next
+    })
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -299,56 +429,76 @@ function CreateServiceAccountDialog({
             )
           }}
         >
-          <div className="space-y-1.5">
-            <Label htmlFor="service-account-name">Name</Label>
-            <Input
-              id="service-account-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="ci-failure-triage"
-              maxLength={100}
-              required
-            />
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_150px]">
+            <div className="space-y-1.5">
+              <Label htmlFor="service-account-name" className="text-[13px]">
+                Name
+              </Label>
+              <Input
+                id="service-account-name"
+                className="font-mono"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="ci-failure-triage"
+                maxLength={100}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="service-account-expiry" className="text-[13px]">
+                Token expires after
+              </Label>
+              <Select
+                id="service-account-expiry"
+                value={expiresInDays}
+                onChange={(event) =>
+                  setExpiresInDays(Number(event.target.value) as ServiceAccountExpiry)
+                }
+              >
+                <option value={30}>30 days</option>
+                <option value={90}>90 days</option>
+                <option value={365}>365 days</option>
+              </Select>
+            </div>
           </div>
           <fieldset className="space-y-1.5">
-            <legend className="text-sm font-medium">Scopes</legend>
-            {selectable.map((scope) => (
-              <label key={scope} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={scopes.has(scope)}
-                  onChange={(event) =>
-                    setScopes((current) => {
-                      const next = new Set(current)
-                      if (event.target.checked) next.add(scope)
-                      else next.delete(scope)
-                      return next
-                    })
-                  }
-                />
-                <span>{SCOPE_LABELS[scope]?.label ?? scope}</span>
-                {SCOPE_LABELS[scope]?.write ? <Badge variant="warning">Write</Badge> : null}
-              </label>
-            ))}
+            <legend className="mb-1.5 text-[13px] font-medium">Scopes</legend>
+            <div className="divide-y overflow-hidden rounded-md border">
+              {readScopes.length > 0 ? (
+                <div className="py-1">
+                  <div className="eyebrow px-3 py-1">Read</div>
+                  {readScopes.map((scope) => (
+                    <ScopeCheckbox
+                      key={scope}
+                      scope={scope}
+                      checked={scopes.has(scope)}
+                      onChange={(checked) => toggleScope(scope, checked)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              {writeScopes.length > 0 ? (
+                <div className="py-1">
+                  <div className="eyebrow flex items-center gap-2 px-3 py-1">
+                    Write
+                    <span className="normal-case tracking-normal text-status-warning">
+                      changes jobs, queues and alerts
+                    </span>
+                  </div>
+                  {writeScopes.map((scope) => (
+                    <ScopeCheckbox
+                      key={scope}
+                      scope={scope}
+                      checked={scopes.has(scope)}
+                      onChange={(checked) => toggleScope(scope, checked)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </fieldset>
-          <div className="space-y-1.5">
-            <Label htmlFor="service-account-expiry">Token expires after</Label>
-            <select
-              id="service-account-expiry"
-              className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-              value={expiresInDays}
-              onChange={(event) =>
-                setExpiresInDays(Number(event.target.value) as ServiceAccountExpiry)
-              }
-            >
-              <option value={30}>30 days</option>
-              <option value={90}>90 days</option>
-              <option value={365}>365 days</option>
-            </select>
-          </div>
           {create.error ? (
-            <p className="text-sm text-destructive">
+            <p className="text-[13px] text-status-danger">
               {errorMessage(create.error, 'Could not create the service account.')}
             </p>
           ) : null}
@@ -367,42 +517,63 @@ function CreateServiceAccountDialog({
 }
 
 function TokenRevealDialog({ token, onClose }: { token: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timeout = window.setTimeout(() => setCopied(false), 2000)
+    return () => window.clearTimeout(timeout)
+  }, [copied])
+
+  const copy = () => {
+    if (!navigator.clipboard) {
+      toast.error('Copying is unavailable here. Select the token and copy it manually.')
+      return
+    }
+    navigator.clipboard.writeText(token).then(
+      () => {
+        setCopied(true)
+        toast.success('Token copied')
+      },
+      () => toast.error('Could not copy. Select the token and copy it manually.')
+    )
+  }
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      {/* A stray click outside must not throw away a token that cannot be shown again. */}
+      <DialogContent onInteractOutside={(event) => event.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>Copy your token</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-muted-foreground" aria-hidden />
+            Copy your token
+          </DialogTitle>
           <DialogDescription>
-            This is the only time the token is shown. Use it as a Bearer token for the Durabull MCP
-            endpoint.
+            Use it as a Bearer token for the Durabull MCP endpoint.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded-md border bg-muted px-2 py-1.5 text-xs">
+        <div className="overflow-hidden rounded-lg border border-status-warning/40">
+          <p className="border-b border-status-warning/30 bg-status-warning/10 px-3 py-2 text-[13px] font-medium text-status-warning">
+            This is the only time the token is shown.
+          </p>
+          <code
+            className="block select-all break-all bg-muted/50 px-3 py-3 font-mono text-[13px] leading-5"
+            data-testid="service-account-token"
+          >
             {token}
           </code>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label="Copy token"
-            onClick={() => {
-              if (!navigator.clipboard) {
-                toast.error('Copying is unavailable here. Select the token and copy it manually.')
-                return
-              }
-              navigator.clipboard.writeText(token).then(
-                () => toast.success('Token copied'),
-                () => toast.error('Could not copy. Select the token and copy it manually.')
-              )
-            }}
-          >
-            <Copy className="h-4 w-4" aria-hidden="true" />
-          </Button>
         </div>
         <DialogFooter>
-          <Button type="button" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose}>
             Done
+          </Button>
+          <Button type="button" aria-label="Copy token" onClick={copy}>
+            {copied ? (
+              <Check className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Copy className="h-4 w-4" aria-hidden="true" />
+            )}
+            {copied ? 'Copied' : 'Copy token'}
           </Button>
         </DialogFooter>
       </DialogContent>

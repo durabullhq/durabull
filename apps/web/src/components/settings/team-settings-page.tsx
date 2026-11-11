@@ -1,29 +1,15 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
-import {
-  AlertCircle,
-  Check,
-  ChevronDown,
-  Clock,
-  Crown,
-  Loader2,
-  Mail,
-  MoreHorizontal,
-  Send,
-  Shield,
-  Trash2,
-  User,
-  UserMinus,
-  UserPlus,
-  Users,
-  X,
-} from 'lucide-react'
+import { Loader2, MoreHorizontal, Search, UserPlus, Users } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useAppTopBar } from '@/components/app-top-bar'
+import {
+  LocalInstallNotice,
+  SettingsPage,
+  useSettingsTopBar,
+} from '@/components/settings/settings-layout'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -38,8 +24,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Panel, PanelHeader, SectionHeader } from '@/components/ui/section'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -49,6 +38,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
 import {
   type Invitation,
@@ -64,41 +54,29 @@ import {
   useResendInvitation,
   useUpdateMemberRole,
 } from '@/hooks/use-organization'
-import { cn } from '@/lib/utils'
 
-const roles: {
-  value: MemberRole
-  label: string
-  icon: typeof User
-  color: string
-  bgColor: string
-  description: string
-}[] = [
+const roles: { value: MemberRole; label: string; description: string }[] = [
   {
     value: MEMBER_ROLES.OWNER,
     label: 'Owner',
-    icon: Crown,
-    color: 'text-status-warning',
-    bgColor: 'bg-status-warning/10',
     description: 'Full access including billing and danger zone',
   },
   {
     value: MEMBER_ROLES.ADMIN,
     label: 'Admin',
-    icon: Shield,
-    color: 'text-status-priority',
-    bgColor: 'bg-status-priority/10',
     description: 'Can manage members and settings',
   },
   {
     value: MEMBER_ROLES.MEMBER,
     label: 'Member',
-    icon: User,
-    color: 'text-status-active',
-    bgColor: 'bg-status-active/10',
     description: 'Can view and use resources',
   },
 ]
+
+const assignableRoles = roles.filter((role) => role.value !== MEMBER_ROLES.OWNER)
+
+/** Members beyond this count get a search box above the table. */
+const MEMBER_SEARCH_THRESHOLD = 8
 
 function getRoleConfig(role: MemberRole) {
   return roles.find((r) => r.value === role) ?? roles[2]
@@ -113,7 +91,37 @@ function formatDate(value: string | Date | null | undefined) {
   })
 }
 
+function initials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+}
+
+function MemberAvatar({ member }: { member: OrganizationMember }) {
+  return (
+    <Avatar className="border">
+      <AvatarImage src={member.user.image ?? undefined} alt={member.user.name} />
+      <AvatarFallback className="bg-secondary font-mono text-[10px] font-medium text-secondary-foreground">
+        {initials(member.user.name)}
+      </AvatarFallback>
+    </Avatar>
+  )
+}
+
+function MutationError({ error }: { error: Error | null }) {
+  if (!error) return null
+  return (
+    <p role="alert" className="text-[13px] text-status-danger">
+      {error.message}
+    </p>
+  )
+}
+
 export function TeamSettingsPage() {
+  const { isAuthless } = useAppMode()
   const { user } = useAuth()
   const { data: activeOrg, isLoading: orgLoading } = useActiveOrganization()
   const { data: members, isLoading: membersLoading } = useOrganizationMembers()
@@ -126,54 +134,50 @@ export function TeamSettingsPage() {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
   const [removingMember, setRemovingMember] = useState<OrganizationMember | null>(null)
   const [cancelingInvitation, setCancelingInvitation] = useState<Invitation | null>(null)
+  const [search, setSearch] = useState('')
 
   const isLoading = orgLoading || membersLoading || invitationsLoading
 
   const currentMembership = members?.find((m) => m.userId === user?.id)
   const canManageMembers =
-    currentMembership?.role === MEMBER_ROLES.OWNER || currentMembership?.role === MEMBER_ROLES.ADMIN
-  const topBarConfig = useMemo(
-    () => ({
-      left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <Users className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Team</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            {`Manage members of ${activeOrg?.name ?? 'your organization'}`}
-          </span>
-        </div>
-      ),
-      actions: canManageMembers ? (
-        <Button onClick={() => setInviteDialogOpen(true)} size="xs" className="gap-2">
-          <UserPlus className="h-4 w-4" />
-          Invite Member
-        </Button>
-      ) : undefined,
-      mobileActions: canManageMembers ? (
+    !isAuthless &&
+    (currentMembership?.role === MEMBER_ROLES.OWNER ||
+      currentMembership?.role === MEMBER_ROLES.ADMIN)
+  const mobileActions = useMemo(
+    () =>
+      canManageMembers ? (
         <DropdownMenuItem onClick={() => setInviteDialogOpen(true)}>
           <UserPlus className="mr-2 h-4 w-4" />
-          Invite Member
+          Invite member
         </DropdownMenuItem>
       ) : undefined,
-    }),
-    [activeOrg?.name, canManageMembers]
+    [canManageMembers]
   )
 
-  useAppTopBar(topBarConfig)
+  useSettingsTopBar('Team', { mobileActions })
+
+  const filteredMembers = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!members || !query) return members ?? []
+    return members.filter(
+      (member) =>
+        member.user.name.toLowerCase().includes(query) ||
+        member.user.email.toLowerCase().includes(query)
+    )
+  }, [members, search])
+
+  // A local install has no accounts, so there is no team to manage.
+  if (isAuthless) return <LocalInstallNotice />
 
   if (!activeOrg && !orgLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <div className="rounded-full bg-status-warning/10 p-4 mb-4">
-          <AlertCircle className="h-8 w-8 text-status-warning" />
-        </div>
-        <h2 className="text-xl font-semibold mb-2">No Organization Selected</h2>
-        <p className="text-muted-foreground text-center max-w-md">
-          Please select an organization to view team members.
-        </p>
-      </div>
+      <EmptyState
+        icon={Users}
+        tone="warning"
+        title="No organization selected"
+        description="Select an organization to see its members."
+        className="max-w-4xl"
+      />
     )
   }
 
@@ -182,51 +186,63 @@ export function TeamSettingsPage() {
   const admins =
     members?.filter((m) => m.role === MEMBER_ROLES.ADMIN || m.role === MEMBER_ROLES.OWNER).length ??
     0
+  const columnCount = canManageMembers ? 5 : 4
 
   return (
-    <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
-          title="Total Members"
-          value={totalMembers}
-          icon={Users}
-          loading={isLoading}
-          variant="violet"
-        />
-        <StatCard
-          title="Admins"
-          value={admins}
-          icon={Shield}
-          loading={isLoading}
-          variant="purple"
-        />
-        <StatCard
-          title="Pending Invitations"
-          value={pendingInvites}
-          icon={Mail}
-          loading={isLoading}
-          variant="amber"
-        />
-      </div>
-
-      {/* Members Table */}
-      <Card>
-        <CardHeader className="border-b bg-muted/30 py-3">
-          <CardTitle className="text-base font-medium flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground" />
-            Organization Members
-          </CardTitle>
-        </CardHeader>
+    <SettingsPage
+      wide
+      title="Members"
+      count={isLoading ? undefined : totalMembers}
+      description={
+        isLoading
+          ? undefined
+          : `${admins} with admin access${activeOrg?.name ? ` in ${activeOrg.name}` : ''}`
+      }
+      actions={
+        canManageMembers ? (
+          <Button onClick={() => setInviteDialogOpen(true)} size="xs">
+            <UserPlus className="h-3.5 w-3.5" aria-hidden />
+            Invite member
+          </Button>
+        ) : undefined
+      }
+    >
+      <Panel>
+        {totalMembers > MEMBER_SEARCH_THRESHOLD ? (
+          <PanelHeader>
+            <div className="relative w-full sm:w-64">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint"
+                aria-hidden
+              />
+              <Input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Filter by name or email"
+                aria-label="Filter members by name or email"
+                className="pl-8"
+              />
+            </div>
+            {search.trim() ? (
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                {filteredMembers.length} of {totalMembers}
+              </span>
+            ) : null}
+          </PanelHeader>
+        ) : null}
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Member</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead>Joined</TableHead>
-              <TableHead>Last sign in</TableHead>
-              {canManageMembers && <TableHead className="w-[60px]" />}
+              <TableHead>Last sign-in</TableHead>
+              {canManageMembers && (
+                <TableHead className="w-px">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -235,38 +251,32 @@ export function TeamSettingsPage() {
                 <TableRow key={i}>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <Skeleton className="h-8 w-8 rounded-md" />
+                      <Skeleton className="h-7 w-7 rounded-md" />
                       <div className="space-y-1.5">
-                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-3.5 w-32" />
                         <Skeleton className="h-3 w-40" />
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-5 w-16" />
                   </TableCell>
                   <TableCell>
-                    <Skeleton className="h-6 w-16" />
+                    <Skeleton className="h-3.5 w-24" />
                   </TableCell>
                   <TableCell>
-                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-3.5 w-24" />
                   </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-24" />
-                  </TableCell>
-                  {canManageMembers && (
-                    <TableCell>
-                      <Skeleton className="h-8 w-8" />
-                    </TableCell>
-                  )}
+                  {canManageMembers && <TableCell />}
                 </TableRow>
               ))
-            ) : members && members.length > 0 ? (
-              members.map((member) => (
+            ) : filteredMembers.length > 0 ? (
+              filteredMembers.map((member) => (
                 <MemberRow
                   key={member.id}
                   member={member}
                   isCurrentUser={member.userId === user?.id}
+                  showActions={canManageMembers}
                   canManage={canManageMembers && member.role !== MEMBER_ROLES.OWNER}
                   onRemove={() => {
                     trackEvent(AnalyticsEvents.DIALOG_OPENED, {
@@ -277,24 +287,46 @@ export function TeamSettingsPage() {
                 />
               ))
             ) : (
-              <TableRow>
-                <TableCell colSpan={canManageMembers ? 6 : 5} className="h-24 text-center">
-                  <p className="text-muted-foreground">No members found</p>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={columnCount} className="p-0">
+                  <EmptyState
+                    size="inline"
+                    icon={Users}
+                    title={search.trim() ? 'No members match' : 'No members found'}
+                    description={search.trim() ? `Nothing matches "${search.trim()}".` : undefined}
+                    actions={
+                      search.trim() ? (
+                        <Button variant="outline" size="xs" onClick={() => setSearch('')}>
+                          Clear filter
+                        </Button>
+                      ) : undefined
+                    }
+                  />
                 </TableCell>
               </TableRow>
             )}
+          </TableBody>
+        </Table>
+      </Panel>
 
-            {/* Pending Invitations Section */}
-            {invitations && invitations.length > 0 && (
-              <>
-                <TableRow className="hover:bg-transparent bg-muted/30">
-                  <TableCell colSpan={canManageMembers ? 6 : 5} className="py-2">
-                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                      <Clock className="h-4 w-4" />
-                      Pending Invitations ({invitations.length})
-                    </div>
-                  </TableCell>
+      {invitations && invitations.length > 0 ? (
+        <>
+          <SectionHeader title="Pending invitations" count={pendingInvites} className="pt-2" />
+          <Panel>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Expires</TableHead>
+                  {canManageMembers && (
+                    <TableHead className="w-px">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  )}
                 </TableRow>
+              </TableHeader>
+              <TableBody>
                 {invitations.map((invitation) => (
                   <InvitationRow
                     key={invitation.id}
@@ -309,11 +341,11 @@ export function TeamSettingsPage() {
                     }}
                   />
                 ))}
-              </>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+              </TableBody>
+            </Table>
+          </Panel>
+        </>
+      ) : null}
 
       {/* Invite Dialog */}
       <InviteDialog
@@ -354,23 +386,26 @@ export function TeamSettingsPage() {
           }
         }}
       />
-    </div>
+    </SettingsPage>
   )
 }
 
 function MemberRow({
   member,
   isCurrentUser,
+  showActions,
   canManage,
   onRemove,
 }: {
   member: OrganizationMember
   isCurrentUser: boolean
+  /** The viewer can manage members, so the table has an actions column. */
+  showActions: boolean
+  /** This member's role and membership can be changed. */
   canManage: boolean
   onRemove: () => void
 }) {
   const roleConfig = getRoleConfig(member.role)
-  const RoleIcon = roleConfig.icon
   const updateRoleMutation = useUpdateMemberRole()
 
   const handleRoleChange = async (newRole: MemberRole) => {
@@ -383,123 +418,76 @@ function MemberRow({
   }
 
   return (
-    <TableRow className="group">
-      {/* Member Info */}
+    <TableRow>
       <TableCell>
         <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8 rounded-md border">
-            <AvatarImage src={member.user.image ?? undefined} alt={member.user.name} />
-            <AvatarFallback className="rounded-md border bg-secondary font-mono text-xs font-medium text-secondary-foreground">
-              {member.user.name
-                .split(' ')
-                .map((n) => n[0])
-                .join('')
-                .toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div>
+          <MemberAvatar member={member} />
+          <div className="min-w-0 max-w-56 sm:max-w-none">
             <div className="flex items-center gap-2">
-              <p className="font-medium">{member.user.name}</p>
-              {isCurrentUser && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                  You
-                </Badge>
-              )}
+              <p className="truncate font-medium">{member.user.name}</p>
+              {isCurrentUser && <Badge variant="outline">You</Badge>}
             </div>
-            <p className="text-sm text-muted-foreground">{member.user.email}</p>
+            <p className="truncate text-xs text-muted-foreground" title={member.user.email}>
+              {member.user.email}
+            </p>
           </div>
         </div>
       </TableCell>
 
-      {/* Role */}
       <TableCell>
-        {canManage && member.role !== MEMBER_ROLES.OWNER ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn('h-7 gap-1.5 px-2', roleConfig.bgColor)}
-                disabled={updateRoleMutation.isPending}
-              >
-                <RoleIcon className={cn('h-3.5 w-3.5', roleConfig.color)} />
-                <span className={roleConfig.color}>{roleConfig.label}</span>
-                <ChevronDown className="h-3 w-3 opacity-50" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {roles
-                .filter((r) => r.value !== MEMBER_ROLES.OWNER)
-                .map((role) => (
-                  <DropdownMenuItem
-                    key={role.value}
-                    onClick={() => handleRoleChange(role.value)}
-                    className="cursor-pointer"
-                  >
-                    <role.icon className={cn('mr-2 h-4 w-4', role.color)} />
-                    <div>
-                      <p>{role.label}</p>
-                      <p className="text-xs text-muted-foreground">{role.description}</p>
-                    </div>
-                    {member.role === role.value && (
-                      <Check className="ml-auto h-4 w-4 text-primary" />
-                    )}
-                  </DropdownMenuItem>
-                ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {canManage ? (
+          <div className="w-28">
+            <Select
+              value={member.role}
+              onChange={(event) => handleRoleChange(event.target.value as MemberRole)}
+              disabled={updateRoleMutation.isPending}
+              aria-label={`Role for ${member.user.name}`}
+              className="h-7"
+            >
+              {assignableRoles.map((role) => (
+                <option key={role.value} value={role.value} title={role.description}>
+                  {role.label}
+                </option>
+              ))}
+            </Select>
+          </div>
         ) : (
-          <Badge variant="outline" className={cn('gap-1.5', roleConfig.bgColor, roleConfig.color)}>
-            <RoleIcon className="h-3 w-3" />
-            {roleConfig.label}
-          </Badge>
+          <span title={roleConfig.description}>{roleConfig.label}</span>
         )}
       </TableCell>
 
-      {/* Status */}
-      <TableCell>
-        <Badge variant="outline" className="bg-status-success/10 text-status-success">
-          <Check className="mr-1 h-3 w-3" />
-          Active
-        </Badge>
-      </TableCell>
-
-      {/* Joined Date */}
-      <TableCell className="text-sm text-muted-foreground">
+      <TableCell className="whitespace-nowrap font-mono tabular-nums text-muted-foreground">
         {formatDate(member.createdAt)}
       </TableCell>
 
-      {/* Last Sign In */}
-      <TableCell className="text-sm text-muted-foreground">
+      <TableCell className="whitespace-nowrap font-mono tabular-nums text-muted-foreground">
         {formatDate(member.user.lastSignInAt)}
       </TableCell>
 
-      {/* Actions */}
-      {canManage && (
-        <TableCell>
-          {!isCurrentUser && member.role !== MEMBER_ROLES.OWNER && (
+      {showActions && (
+        <TableCell className="text-right">
+          {canManage && !isCurrentUser ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="h-7 w-7"
+                  aria-label={`Actions for ${member.user.name}`}
                 >
-                  <MoreHorizontal className="h-4 w-4" />
-                  <span className="sr-only">Member actions</span>
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   onClick={onRemove}
-                  className="cursor-pointer text-destructive focus:text-destructive"
+                  className="text-status-danger focus:text-status-danger"
                 >
-                  <UserMinus className="mr-2 h-4 w-4" />
                   Remove from team
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
+          ) : null}
         </TableCell>
       )}
     </TableRow>
@@ -518,7 +506,6 @@ function InvitationRow({
   onCancel: () => void
 }) {
   const roleConfig = getRoleConfig(invitation.role)
-  const RoleIcon = roleConfig.icon
   const resendMutation = useResendInvitation()
 
   const handleResend = async () => {
@@ -530,83 +517,51 @@ function InvitationRow({
   }
 
   return (
-    <TableRow className="group bg-muted/10">
-      {/* Invitation Info */}
-      <TableCell>
-        <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8 rounded-md border border-dashed">
-            <AvatarFallback className="rounded-md bg-muted text-muted-foreground">
-              <Mail className="h-4 w-4" />
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-medium text-muted-foreground">{invitation.email}</p>
-            <p className="text-xs text-muted-foreground">
-              Expires{' '}
-              {new Date(invitation.expiresAt).toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-              })}
-            </p>
-          </div>
-        </div>
+    <TableRow>
+      <TableCell className="font-medium">
+        <span className="block max-w-56 truncate sm:max-w-none" title={invitation.email}>
+          {invitation.email}
+        </span>
       </TableCell>
-
-      {/* Role */}
-      <TableCell>
-        <Badge variant="outline" className={cn('gap-1.5', roleConfig.bgColor, roleConfig.color)}>
-          <RoleIcon className="h-3 w-3" />
-          {roleConfig.label}
-        </Badge>
+      <TableCell>{roleConfig.label}</TableCell>
+      <TableCell className="whitespace-nowrap font-mono tabular-nums text-muted-foreground">
+        {formatDate(invitation.expiresAt)}
       </TableCell>
-
-      {/* Status */}
-      <TableCell>
-        <Badge variant="outline" className="bg-status-warning/10 text-status-warning">
-          <Clock className="mr-1 h-3 w-3" />
-          Pending
-        </Badge>
-      </TableCell>
-
-      {/* Joined Date */}
-      <TableCell className="text-sm text-muted-foreground">—</TableCell>
-
-      {/* Last Sign In */}
-      <TableCell className="text-sm text-muted-foreground">—</TableCell>
-
-      {/* Actions */}
       {canManage && (
         <TableCell>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                disabled={resendMutation.isPending}
-              >
-                {resendMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <MoreHorizontal className="h-4 w-4" />
-                )}
-                <span className="sr-only">Invitation actions</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleResend} className="cursor-pointer">
-                <Send className="mr-2 h-4 w-4" />
-                Resend invite email
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={onCancel}
-                className="cursor-pointer text-destructive focus:text-destructive"
-              >
-                <X className="mr-2 h-4 w-4" />
-                Cancel invitation
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={handleResend}
+              disabled={resendMutation.isPending}
+            >
+              {resendMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : null}
+              Resend
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  aria-label={`Actions for the invitation to ${invitation.email}`}
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={onCancel}
+                  className="text-status-danger focus:text-status-danger"
+                >
+                  Cancel invitation
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </TableCell>
       )}
     </TableRow>
@@ -656,21 +611,17 @@ function InviteDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[450px]">
+      <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5 text-primary" />
-            Invite Team Member
-          </DialogTitle>
-          <DialogDescription>
-            Send an invitation email to add a new member to your organization.
-          </DialogDescription>
+          <DialogTitle>Invite team member</DialogTitle>
+          <DialogDescription>They get an email with a link to join.</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email */}
-          <div className="space-y-2">
-            <Label htmlFor="email">Email Address</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="email" className="text-[13px]">
+              Email address
+            </Label>
             <Input
               id="email"
               type="email"
@@ -681,64 +632,33 @@ function InviteDialog({
             />
           </div>
 
-          {/* Role */}
-          <div className="space-y-2">
-            <Label>Role</Label>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full justify-between">
-                  <div className="flex items-center gap-2">
-                    <selectedRole.icon className={cn('h-4 w-4', selectedRole.color)} />
-                    <span>{selectedRole.label}</span>
-                  </div>
-                  <ChevronDown className="h-4 w-4 opacity-50" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width]">
-                {roles
-                  .filter((r) => r.value !== MEMBER_ROLES.OWNER)
-                  .map((r) => (
-                    <DropdownMenuItem
-                      key={r.value}
-                      onClick={() => setRole(r.value)}
-                      className="cursor-pointer"
-                    >
-                      <r.icon className={cn('mr-2 h-4 w-4', r.color)} />
-                      <div className="flex-1">
-                        <p>{r.label}</p>
-                        <p className="text-xs text-muted-foreground">{r.description}</p>
-                      </div>
-                      {role === r.value && <Check className="ml-2 h-4 w-4 text-primary" />}
-                    </DropdownMenuItem>
-                  ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-role" className="text-[13px]">
+              Role
+            </Label>
+            <Select
+              id="invite-role"
+              value={role}
+              onChange={(event) => setRole(event.target.value as MemberRole)}
+            >
+              {assignableRoles.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">{selectedRole.description}.</p>
           </div>
 
-          {/* Error display */}
-          {inviteMutation.error && (
-            <div className="flex items-center gap-2 text-sm p-3 rounded-md bg-destructive/10 text-destructive">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{inviteMutation.error.message}</span>
-            </div>
-          )}
+          <MutationError error={inviteMutation.error} />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={isLoading || !email}>
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending...
-                </>
-              ) : (
-                <>
-                  <Mail className="mr-2 h-4 w-4" />
-                  Send Invitation
-                </>
-              )}
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+              {isLoading ? 'Sending…' : 'Send invitation'}
             </Button>
           </DialogFooter>
         </form>
@@ -776,57 +696,29 @@ function RemoveMemberDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive">
-            <UserMinus className="h-5 w-5" />
-            Remove Team Member
-          </DialogTitle>
+          <DialogTitle>Remove team member</DialogTitle>
           <DialogDescription>
-            Are you sure you want to remove this member from the organization?
+            They lose access to this organization immediately. You can invite them again later.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4">
-          <div className="flex items-center gap-3 p-3 rounded-lg border border-destructive/20 bg-destructive/5">
-            <Avatar className="h-8 w-8 rounded-md border">
-              <AvatarImage src={member.user.image ?? undefined} alt={member.user.name} />
-              <AvatarFallback className="rounded-md border bg-secondary font-mono text-xs font-medium text-secondary-foreground">
-                {member.user.name
-                  .split(' ')
-                  .map((n) => n[0])
-                  .join('')
-                  .toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{member.user.name}</p>
-              <p className="text-sm text-muted-foreground">{member.user.email}</p>
-            </div>
+        <div className="flex items-center gap-3 rounded-md border bg-muted/40 px-3 py-2">
+          <MemberAvatar member={member} />
+          <div className="min-w-0">
+            <p className="truncate text-[13px] font-medium">{member.user.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{member.user.email}</p>
           </div>
         </div>
 
-        {removeMutation.error && (
-          <div className="flex items-center gap-2 text-sm p-3 rounded-md bg-destructive/10 text-destructive">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{removeMutation.error.message}</span>
-          </div>
-        )}
+        <MutationError error={removeMutation.error} />
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isRemoving}>
             Cancel
           </Button>
           <Button variant="destructive" onClick={handleRemove} disabled={isRemoving}>
-            {isRemoving ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Removing...
-              </>
-            ) : (
-              <>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Remove Member
-              </>
-            )}
+            {isRemoving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            {isRemoving ? 'Removing…' : 'Remove member'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -863,113 +755,29 @@ function CancelInvitationDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-destructive">
-            <X className="h-5 w-5" />
-            Cancel Invitation
-          </DialogTitle>
-          <DialogDescription>Are you sure you want to cancel this invitation?</DialogDescription>
+          <DialogTitle>Cancel invitation</DialogTitle>
+          <DialogDescription>The link in the invitation email stops working.</DialogDescription>
         </DialogHeader>
 
-        <div className="py-4">
-          <div className="flex items-center gap-3 p-3 rounded-lg border border-destructive/20 bg-destructive/5">
-            <Avatar className="h-8 w-8 rounded-md border border-dashed">
-              <AvatarFallback className="rounded-md bg-muted text-muted-foreground">
-                <Mail className="h-4 w-4" />
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-medium">{invitation.email}</p>
-              <p className="text-sm text-muted-foreground">
-                Invited as {getRoleConfig(invitation.role).label}
-              </p>
-            </div>
-          </div>
+        <div className="rounded-md border bg-muted/40 px-3 py-2">
+          <p className="truncate text-[13px] font-medium">{invitation.email}</p>
+          <p className="text-xs text-muted-foreground">
+            Invited as {getRoleConfig(invitation.role).label}
+          </p>
         </div>
 
-        {cancelMutation.error && (
-          <div className="flex items-center gap-2 text-sm p-3 rounded-md bg-destructive/10 text-destructive">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{cancelMutation.error.message}</span>
-          </div>
-        )}
+        <MutationError error={cancelMutation.error} />
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isCanceling}>
-            Keep Invitation
+            Keep invitation
           </Button>
           <Button variant="destructive" onClick={handleCancel} disabled={isCanceling}>
-            {isCanceling ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Canceling...
-              </>
-            ) : (
-              <>
-                <X className="mr-2 h-4 w-4" />
-                Cancel Invitation
-              </>
-            )}
+            {isCanceling ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            {isCanceling ? 'Canceling…' : 'Cancel invitation'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-type StatVariant = 'default' | 'violet' | 'purple' | 'amber'
-
-interface StatCardProps {
-  title: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  loading?: boolean
-  variant?: StatVariant
-}
-
-const variantStyles: Record<
-  StatVariant,
-  {
-    icon: string
-    accent: string
-  }
-> = {
-  default: {
-    icon: 'text-muted-foreground',
-    accent: 'bg-status-neutral/40',
-  },
-  violet: {
-    icon: 'text-status-priority',
-    accent: 'bg-status-priority',
-  },
-  purple: {
-    icon: 'text-status-priority',
-    accent: 'bg-status-priority',
-  },
-  amber: {
-    icon: 'text-status-warning',
-    accent: 'bg-status-warning',
-  },
-}
-
-function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: StatCardProps) {
-  const styles = variantStyles[variant]
-
-  return (
-    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
-      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-        <CardTitle className="eyebrow">{title}</CardTitle>
-        <Icon className={cn('h-4 w-4', styles.icon)} />
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <Skeleton className="h-8 w-12" />
-        ) : (
-          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-            {value}
-          </div>
-        )}
-      </CardContent>
-    </Card>
   )
 }

@@ -3,12 +3,6 @@ import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/anal
 import { Loader2, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  type PurgeQueueStatus,
-  type PurgeQueueStatusOption,
-  PURGE_QUEUE_STATUSES,
-  usePurgeQueue,
-} from '@/hooks/use-queues'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -20,6 +14,16 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  PURGE_QUEUE_STATUSES,
+  type PurgeQueueStatus,
+  type PurgeQueueStatusOption,
+  usePurgeQueue,
+} from '@/hooks/use-queues'
+import { cn } from '@/lib/utils'
+
+const CHECKBOX_CLASS =
+  'h-3.5 w-3.5 shrink-0 cursor-pointer accent-foreground disabled:cursor-not-allowed'
 
 interface QueueJobCounts {
   waiting: number
@@ -195,35 +199,29 @@ export function PurgeQueueDialog({
         onOpenChange(newOpen)
       }}
     >
-      <DialogContent className="sm:max-w-[620px]">
+      <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">Purge Queue Jobs</DialogTitle>
-          <DialogDescription>
-            Permanently remove jobs from selected statuses. Optionally retain the most recent N
-            matching jobs.
+          <DialogTitle>Purge queue jobs</DialogTitle>
+          <DialogDescription className="text-[13px] leading-5">
+            Permanently remove jobs from{' '}
+            <code className="break-all rounded-[4px] bg-muted px-1 py-px font-mono text-xs text-foreground">
+              {queueName}
+            </code>{' '}
+            by status. You can keep the most recent matches.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          <div className="rounded-lg border border-border/70 bg-muted/20 p-4">
-            <p className="text-sm text-muted-foreground mb-2">Queue:</p>
-            <p className="font-mono font-semibold break-all">{queueName}</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Total jobs detected:{' '}
-              <span className="font-semibold">{totalJobs.toLocaleString()}</span>
-            </p>
-          </div>
+        <div className="space-y-4">
+          <fieldset className="space-y-1.5">
+            <legend className="mb-1.5 text-[13px] font-medium leading-none">
+              Statuses to purge
+            </legend>
 
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">Select statuses to purge</Label>
-
-            <label
-              htmlFor="purge-all-jobs"
-              className="flex items-center justify-between rounded-md border border-border/70 bg-background px-3 py-2 cursor-pointer transition-colors hover:bg-muted/40"
-            >
-              <span className="text-sm font-medium">All jobs</span>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground">{totalJobs.toLocaleString()}</span>
+            <div className="grid gap-px overflow-hidden rounded-md border bg-border sm:grid-cols-2">
+              <label
+                htmlFor="purge-all-jobs"
+                className="flex h-9 cursor-pointer items-center gap-2.5 bg-card px-3 text-[13px] transition-colors hover:bg-muted/60 sm:col-span-2"
+              >
                 <input
                   id="purge-all-jobs"
                   type="checkbox"
@@ -234,85 +232,93 @@ export function PurgeQueueDialog({
                       setSelectedStatuses(new Set())
                     }
                   }}
-                  className="rounded border-gray-300"
+                  className={CHECKBOX_CLASS}
                 />
-              </div>
-            </label>
+                <span className="font-medium">All jobs</span>
+                <span className="ml-auto font-mono text-xs tabular-nums text-muted-foreground">
+                  {totalJobs.toLocaleString()}
+                </span>
+              </label>
 
-            <div className="grid gap-2 sm:grid-cols-2">
               {PURGE_QUEUE_STATUSES.map((status) => (
                 <label
                   key={status}
                   htmlFor={`purge-status-${status}`}
-                  className={`flex items-center justify-between rounded-md border border-border/70 bg-background px-3 py-2 transition-colors ${
-                    purgeAll ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                  }`}
+                  className={cn(
+                    'flex h-9 items-center gap-2.5 bg-card px-3 text-[13px] transition-colors',
+                    purgeAll
+                      ? 'cursor-not-allowed text-muted-foreground'
+                      : 'cursor-pointer hover:bg-muted/60'
+                  )}
                 >
-                  <span className="text-sm">{STATUS_LABELS[status]}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">
-                      {jobCounts[status].toLocaleString()}
-                    </span>
-                    <input
-                      id={`purge-status-${status}`}
-                      type="checkbox"
-                      checked={selectedStatuses.has(status)}
-                      onChange={() => toggleStatus(status)}
-                      disabled={purgeAll}
-                      className="rounded border-gray-300"
-                    />
-                  </div>
+                  <input
+                    id={`purge-status-${status}`}
+                    type="checkbox"
+                    checked={purgeAll || selectedStatuses.has(status)}
+                    onChange={() => toggleStatus(status)}
+                    disabled={purgeAll}
+                    className={CHECKBOX_CLASS}
+                  />
+                  <span>{STATUS_LABELS[status]}</span>
+                  <span
+                    className={cn(
+                      'ml-auto font-mono text-xs tabular-nums',
+                      jobCounts[status] === 0 ? 'text-faint' : 'text-muted-foreground'
+                    )}
+                  >
+                    {jobCounts[status].toLocaleString()}
+                  </span>
                 </label>
               ))}
+              {PURGE_QUEUE_STATUSES.length % 2 === 1 ? (
+                <div className="hidden bg-card sm:block" aria-hidden="true" />
+              ) : null}
             </div>
-          </div>
+          </fieldset>
 
-          <div className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
-            <div className="space-y-1">
-              <Label htmlFor="purge-queue-keep-most-recent-input" className="text-sm font-medium">
-                Retain most recent N jobs
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Use <span className="font-mono">0</span> to remove all matched jobs.
-              </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="purge-queue-keep-most-recent-input" className="text-[13px]">
+              Keep most recent
+            </Label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Input
+                id="purge-queue-keep-most-recent-input"
+                data-testid="purge-queue-keep-most-recent-input"
+                value={keepMostRecentInput}
+                onChange={(event) => setKeepMostRecentInput(event.target.value)}
+                inputMode="numeric"
+                placeholder="0"
+                min={0}
+                max={MAX_KEEP_MOST_RECENT}
+                aria-invalid={keepMostRecentError ? true : undefined}
+                className={cn(
+                  'w-28 font-mono tabular-nums',
+                  keepMostRecentError && 'border-destructive focus-visible:ring-destructive'
+                )}
+              />
+              {KEEP_MOST_RECENT_PRESETS.map((value) => {
+                const isSelected = keepMostRecentError === null && keepMostRecentValue === value
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    aria-pressed={isSelected}
+                    className={cn(
+                      'h-8 font-mono tabular-nums',
+                      isSelected && 'bg-accent text-accent-foreground'
+                    )}
+                    onClick={() => setKeepMostRecentInput(String(value))}
+                  >
+                    {value === 0 ? 'None' : value.toLocaleString()}
+                  </Button>
+                )
+              })}
             </div>
-
-            <div className="flex flex-wrap gap-2">
-              {KEEP_MOST_RECENT_PRESETS.map((value) => (
-                <Button
-                  key={value}
-                  type="button"
-                  variant={
-                    keepMostRecentError === null && keepMostRecentValue === value
-                      ? 'secondary'
-                      : 'outline'
-                  }
-                  size="xs"
-                  onClick={() => setKeepMostRecentInput(String(value))}
-                >
-                  {value === 0 ? 'Keep 0' : `Keep ${value.toLocaleString()}`}
-                </Button>
-              ))}
-            </div>
-
-            <Input
-              id="purge-queue-keep-most-recent-input"
-              data-testid="purge-queue-keep-most-recent-input"
-              value={keepMostRecentInput}
-              onChange={(event) => setKeepMostRecentInput(event.target.value)}
-              inputMode="numeric"
-              placeholder="0"
-              min={0}
-              max={MAX_KEEP_MOST_RECENT}
-              className={
-                keepMostRecentError
-                  ? 'border-destructive focus-visible:ring-destructive'
-                  : undefined
-              }
-            />
 
             {keepMostRecentError ? (
-              <p className="text-sm text-destructive">{keepMostRecentError}</p>
+              <p className="text-xs text-status-danger">{keepMostRecentError}</p>
             ) : hasStatusSelection ? (
               <p className="text-xs text-muted-foreground">
                 Estimated outcome: purge {formatJobCount(estimatedPurgedJobs)} and retain{' '}
@@ -325,50 +331,39 @@ export function PurgeQueueDialog({
             )}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Label
               htmlFor="purge-queue-confirm-input"
-              className="flex flex-wrap items-center gap-1.5 leading-normal"
+              className="flex flex-wrap items-center gap-1 text-[13px] leading-5"
             >
               <span>Type</span>
-              <span className="inline-flex max-w-full items-center rounded bg-muted px-1.5 py-0.5 font-mono font-semibold break-all">
+              <code className="max-w-full break-all rounded-[4px] bg-muted px-1 py-px font-mono text-xs">
                 {queueName}
-              </span>
-              <span>to confirm purge</span>
+              </code>
+              <span>to confirm</span>
             </Label>
             <Input
               id="purge-queue-confirm-input"
               data-testid="purge-queue-confirm-input"
               value={confirmInput}
               onChange={(e) => setConfirmInput(e.target.value)}
-              placeholder={
-                hasStatusSelection ? 'Enter queue name to confirm' : 'Select statuses first'
-              }
+              placeholder={hasStatusSelection ? 'Queue name' : 'Select statuses first'}
               disabled={!hasStatusSelection}
-              className={
-                confirmInput && !isConfirmed
-                  ? 'border-destructive focus-visible:ring-destructive'
-                  : ''
-              }
+              aria-invalid={confirmInput && !isConfirmed ? true : undefined}
+              className={cn(
+                'font-mono',
+                confirmInput && !isConfirmed && 'border-destructive focus-visible:ring-destructive'
+              )}
               autoComplete="off"
+              spellCheck={false}
             />
-            {!hasStatusSelection && (
-              <p className="text-xs text-muted-foreground">
-                Select one or more statuses (or All jobs) to enable confirmation.
-              </p>
-            )}
-            {hasStatusSelection && keepMostRecentError === null && selectedJobsEstimate > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Matching jobs before retention: {selectedJobsEstimate.toLocaleString()}
-              </p>
-            )}
-            {confirmInput && !isConfirmed && (
-              <p className="text-sm text-destructive">Queue name does not match.</p>
-            )}
+            {confirmInput && !isConfirmed ? (
+              <p className="text-xs text-status-danger">Queue name does not match.</p>
+            ) : null}
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPurging}>
             Cancel
           </Button>
@@ -379,16 +374,11 @@ export function PurgeQueueDialog({
             data-testid="purge-queue-confirm-button"
           >
             {isPurging ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Purging...
-              </>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-              <>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Purge Jobs
-              </>
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
             )}
+            {isPurging ? 'Purging…' : 'Purge jobs'}
           </Button>
         </DialogFooter>
       </DialogContent>
