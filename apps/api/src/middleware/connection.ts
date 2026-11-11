@@ -2,6 +2,7 @@ import type { Auth } from '@durabull/auth'
 import { redisConnectionRepository, shouldUseEnvConnections } from '@durabull/dal'
 import type { Session } from 'better-auth/types'
 import { createMiddleware } from 'hono/factory'
+import { getBillingUrl } from '../billing/config'
 import { isMemberSuspended, isResourceSuspended } from '../billing/entitlements'
 import { getAuthlessContext, isAuthlessMode } from '../lib/authless'
 import { MEMBER_SUSPENDED_BODY } from './auth'
@@ -20,6 +21,34 @@ declare module 'hono' {
 // Extended session type that includes organization plugin fields
 interface SessionWithOrg extends Session {
   activeOrganizationId?: string | null
+}
+
+/**
+ * Alert-rule requests a paused or disabled connection still serves: listing
+ * its rules, turning one off (a rule on a disabled connection still uses the
+ * plan's rule allowance) and deleting one. Everything else on the connection
+ * stays closed.
+ */
+export function isAlertRuleHousekeeping(method: string, path: string, body?: unknown): boolean {
+  if (method === 'GET') return /\/alerts\/rules\/?$/.test(path)
+  if (method === 'DELETE') return /\/alerts\/rules\/[^/]+\/?$/.test(path)
+  if (method === 'PATCH' && /\/alerts\/rules\/[^/]+\/?$/.test(path)) {
+    return (
+      typeof body === 'object' &&
+      body !== null &&
+      Object.keys(body).length === 1 &&
+      (body as { enabled?: unknown }).enabled === false
+    )
+  }
+  return false
+}
+
+async function readJsonBody(request: Request): Promise<unknown> {
+  try {
+    return await request.clone().json()
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -150,28 +179,41 @@ export function createConnectionMiddleware(auth?: Auth) {
     }
 
     // Disabled and plan-suspended connections reject operational access.
-    // Neither state touches the customer's Redis data.
-    if (!connection.enabled) {
-      return c.json(
-        {
-          error: 'Connection disabled',
-          code: 'connection_disabled',
-          message: 'This connection is disabled. Enable it in Settings → Connections to use it.',
-        },
-        409
+    // Neither state touches the customer's Redis data. Listing the
+    // connection's alert rules, turning one off and deleting one stay
+    // possible: they need no Redis access, and a connection cannot be deleted
+    // while it still has rules. The request body is only read in that case.
+    const disabled = !connection.enabled
+    const suspended =
+      !disabled && (await isResourceSuspended(organizationId, 'connection', connection.id))
+    if (disabled || suspended) {
+      const housekeeping = isAlertRuleHousekeeping(
+        c.req.method,
+        c.req.path,
+        c.req.method === 'PATCH' ? await readJsonBody(c.req.raw) : undefined
       )
-    }
-    if (await isResourceSuspended(organizationId, 'connection', connection.id)) {
-      return c.json(
-        {
-          error: 'Connection suspended',
-          code: 'connection_suspended',
-          message:
-            'This connection is above your plan’s connection limit and is paused. Choose which connections stay enabled in Settings → Billing, or upgrade.',
-          billingUrl: '/settings/billing',
-        },
-        403
-      )
+      if (!housekeeping && disabled) {
+        return c.json(
+          {
+            error: 'Connection disabled',
+            code: 'connection_disabled',
+            message: 'This connection is disabled. Enable it in Settings → Connections to use it.',
+          },
+          409
+        )
+      }
+      if (!housekeeping) {
+        return c.json(
+          {
+            error: 'Connection suspended',
+            code: 'connection_suspended',
+            message:
+              'This connection is above your plan’s connection limit and is paused. Choose which connections stay enabled in Settings → Billing, or upgrade.',
+            billingUrl: getBillingUrl(),
+          },
+          403
+        )
+      }
     }
 
     // Set connection info in context

@@ -2,6 +2,7 @@ import {
   and,
   eq,
   getDb,
+  isOwnerOrAdminRole,
   member,
   redisConnectionRepository,
   redisDiscoveredQueueRepository,
@@ -12,7 +13,12 @@ import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { Redis } from 'ioredis'
 import { z } from 'zod'
-import { assertCapacity, isResourceSuspended, suspendedResourceIds } from '../billing/entitlements'
+import {
+  assertCapacity,
+  isResourceSuspended,
+  rebalanceCapacity,
+  suspendedResourceIds,
+} from '../billing/entitlements'
 import { buildIoRedisConnectionOptions } from '../lib/connection-options'
 import { resetQueueDiscoveryState } from '../lib/queue-discovery'
 import { assertHostnameResolves } from '../lib/redis'
@@ -27,8 +33,7 @@ async function isOrgAdmin(userId: string, organizationId: string): Promise<boole
     .from(member)
     .where(and(eq(member.userId, userId), eq(member.organizationId, organizationId)))
     .limit(1)
-  const role = rows[0]?.role
-  return role === 'owner' || role === 'admin'
+  return isOwnerOrAdminRole(rows[0]?.role)
 }
 
 const connectionPrefixSchema = z.string().trim().min(1)
@@ -258,6 +263,8 @@ const app = new Hono()
         await redisDiscoveredQueueRepository.deleteByConnection(id)
         resetQueueDiscoveryState(id)
       }
+      // Disabling a connection frees room for one the plan had paused.
+      if (existing.enabled && body.enabled === false) await rebalanceCapacity(organizationId)
 
       return c.json({
         connection: {
@@ -268,6 +275,7 @@ const app = new Hono()
           prefix: conn.prefix,
           allowSelfSignedCerts: conn.allowSelfSignedCerts,
           enabled: conn.enabled,
+          suspended: await isResourceSuspended(organizationId, 'connection', conn.id),
         },
       })
     }
@@ -299,6 +307,7 @@ const app = new Hono()
         {
           error:
             'Delete this connection’s alert rules first and wait for their external incident cleanup to complete.',
+          code: 'connection_has_alert_rules',
         },
         409
       )
@@ -312,6 +321,7 @@ const app = new Hono()
       const [nextDefault] = await redisConnectionRepository.findAll(organizationId)
       if (nextDefault) await redisConnectionRepository.setDefault(nextDefault.id, organizationId)
     }
+    await rebalanceCapacity(organizationId)
 
     return c.json({ success: true, deleted: id })
   })

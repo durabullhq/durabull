@@ -1,7 +1,7 @@
 import { delay, HttpResponse, http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import { metrics, redisHealth } from './analytics'
-import { billingOverview, serviceAccounts } from './billing'
+import { billingInvoices, billingOverview, serviceAccounts } from './billing'
 import {
   connections,
   counts,
@@ -104,7 +104,9 @@ function readFixture(path: string, url: URL): unknown {
     return { connections: state === 'empty-connections' ? [] : connections }
   if (path.startsWith('/connections/')) return { connection: connections[0], ...connections[0] }
   if (path === '/team/members') return { members: list(members) }
-  if (path === '/billing') return billingFixture()
+  // The entitlement lookup is a subset of the overview, so one fixture serves both.
+  if (path === '/billing' || path === '/billing/entitlement') return billingFixture()
+  if (path === '/billing/invoices') return state === 'empty' ? { invoices: [] } : billingInvoices
   if (path === '/service-accounts')
     return state === 'empty' ? { ...serviceAccounts, serviceAccounts: [] } : serviceAccounts
   if (path.startsWith('/invitations/'))

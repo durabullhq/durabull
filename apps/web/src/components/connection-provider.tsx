@@ -27,10 +27,16 @@ async function fetchConnections(): Promise<Connection[]> {
   const res = await api.connections.$get()
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string }
-    throw new ApiError(data.error || data.message || `API error: ${res.status}`, res.status)
+    // The message explains the cause (for example a paused seat); `error` is only its category.
+    throw new ApiError(data.message || data.error || `API error: ${res.status}`, res.status, data)
   }
   const data = await res.json()
   return data.connections
+}
+
+/** Enabled and not paused by the plan: its queues, workers and alerts are reachable. */
+export function isUsableConnection(connection: Pick<Connection, 'enabled' | 'suspended'>): boolean {
+  return connection.enabled !== false && connection.suspended !== true
 }
 
 export function ConnectionProvider({ children }: { children: ReactNode }) {
@@ -64,12 +70,17 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       if (fromUrl) return fromUrl
     }
 
+    // Without an explicit choice, never land on a connection that cannot be
+    // used: one the plan has paused, or one that is disabled.
+    const usable = connections.filter(isUsableConnection)
+    const candidates = usable.length > 0 ? usable : connections
+
     // Otherwise use the default connection from API
-    const defaultConnection = connections.find((c) => c.isDefault)
+    const defaultConnection = candidates.find((c) => c.isDefault)
     if (defaultConnection) return defaultConnection
 
     // Fallback to first connection
-    return connections[0] ?? null
+    return candidates[0] ?? null
   }, [connections, connectionIdFromUrl])
 
   const setCurrentConnection = useCallback(

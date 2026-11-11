@@ -1,5 +1,6 @@
-import { QueryClient } from '@tanstack/react-query'
+import { MutationCache, QueryClient } from '@tanstack/react-query'
 import { createRouter } from '@tanstack/react-router'
+import { isSettledError } from './lib/api'
 import { routeTree } from './routeTree.gen'
 
 // Helper to check if an error is a 401 unauthorized error
@@ -35,8 +36,31 @@ function handleUnauthorized() {
   }
 }
 
+/** Delay that folds a burst of mutations (bulk actions) into one plan refresh. */
+const PLAN_REFRESH_DELAY_MS = 400
+
 export function getRouter() {
-  const queryClient = new QueryClient({
+  // Creating, deleting, enabling or disabling a resource changes plan usage
+  // and what the plan pauses. Mutations that can do that carry
+  // PLAN_USAGE_META; after one succeeds every gate and badge is refreshed.
+  // Invoices are left alone: they are read from Stripe.
+  let planRefresh: ReturnType<typeof setTimeout> | null = null
+  const refreshPlanState = () => {
+    if (planRefresh) clearTimeout(planRefresh)
+    planRefresh = setTimeout(() => {
+      planRefresh = null
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === 'billing' && query.queryKey[2] !== 'invoices',
+      })
+    }, PLAN_REFRESH_DELAY_MS)
+  }
+
+  const queryClient: QueryClient = new QueryClient({
+    mutationCache: new MutationCache({
+      onSuccess: (_data, _variables, _context, mutation) => {
+        if (mutation.meta?.affectsPlanUsage) refreshPlanState()
+      },
+    }),
     defaultOptions: {
       queries: {
         staleTime: 5000,
@@ -44,6 +68,11 @@ export function getRouter() {
           // Don't retry on 401 errors
           if (isUnauthorizedError(error)) {
             handleUnauthorized()
+            return false
+          }
+
+          // A paused seat or connection, or a plan denial, will not change on retry.
+          if (isSettledError(error)) {
             return false
           }
 

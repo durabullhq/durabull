@@ -58,7 +58,47 @@ export const billingOverview = {
   purchasesEnabled: true,
   trialEligible: false,
   trialDays: 14,
+  transition: null,
   catalog: [],
+}
+
+/** Recent invoices as the owner sees them on Settings → Billing. */
+export const billingInvoices = {
+  invoices: [
+    {
+      id: 'in_demo_3',
+      number: 'DURA-0003',
+      status: 'paid',
+      total: 9000,
+      amountDue: 0,
+      currency: 'usd',
+      created: '2026-10-20T00:00:00Z',
+      hostedInvoiceUrl: 'https://invoice.stripe.com/i/demo-3',
+      invoicePdf: 'https://invoice.stripe.com/i/demo-3/pdf',
+    },
+    {
+      id: 'in_demo_2',
+      number: 'DURA-0002',
+      status: 'paid',
+      total: 900,
+      amountDue: 0,
+      currency: 'usd',
+      created: '2026-09-20T00:00:00Z',
+      hostedInvoiceUrl: 'https://invoice.stripe.com/i/demo-2',
+      invoicePdf: 'https://invoice.stripe.com/i/demo-2/pdf',
+    },
+    {
+      id: 'in_demo_1',
+      number: 'DURA-0001',
+      status: 'paid',
+      total: 900,
+      amountDue: 0,
+      currency: 'usd',
+      created: '2026-08-20T00:00:00Z',
+      hostedInvoiceUrl: 'https://invoice.stripe.com/i/demo-1',
+      invoicePdf: 'https://invoice.stripe.com/i/demo-1/pdf',
+    },
+  ],
 }
 
 export const serviceAccounts = {

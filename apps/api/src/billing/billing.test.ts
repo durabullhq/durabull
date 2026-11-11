@@ -7,9 +7,11 @@ import {
   alertRule,
   billingRepository,
   closeDb,
+  eq,
   getDb,
   member,
   organization,
+  redisConnection,
   user,
 } from '@durabull/dal'
 import { BillingEmailError } from '@durabull/email'
@@ -25,16 +27,20 @@ import {
   hasFeature,
   invalidateEntitlementCache,
   materializeEntitlement,
+  rebalanceCapacity,
   syncStoredEnforcement,
 } from './entitlements'
 import {
   type BillingGateway,
   type CheckoutSessionSnapshot,
   type CreateCheckoutInput,
+  type InvoiceSummary,
+  type PortalFlow,
   type SubscriptionSnapshot,
   setBillingGatewayForTests,
   type WebhookEventSnapshot,
 } from './gateway'
+import { runEntitlementSweep } from './lifecycle'
 import { reconcileOrganization } from './reconcile'
 import {
   listTransitionAudience,
@@ -140,8 +146,20 @@ class FakeGateway implements BillingGateway {
     const session = this.sessions.get(id)
     if (session) this.sessions.set(id, { ...session, status: 'expired' })
   }
-  async createPortalSession() {
+  portalCalls: Array<{ customerId: string; returnUrl: string; flow?: PortalFlow | null }> = []
+  invoices = new Map<string, InvoiceSummary[]>()
+  failInvoices = false
+  async createPortalSession(input: {
+    customerId: string
+    returnUrl: string
+    flow?: PortalFlow | null
+  }) {
+    this.portalCalls.push(input)
     return { url: 'https://billing.stripe.test/portal' }
+  }
+  async listInvoices(customerId: string, limit: number) {
+    if (this.failInvoices) throw new Error('stripe unavailable')
+    return (this.invoices.get(customerId) ?? []).slice(0, limit)
   }
   async listCustomerSubscriptions(customerId: string) {
     return this.subscriptions.get(customerId) ?? []
@@ -706,6 +724,45 @@ describe('Cloud billing', () => {
     ).rejects.toMatchObject({ status: 'CONFLICT', body: { code: 'plan_limit_reached' } })
   })
 
+  it('tells an invitee who to ask when the organization is above its seat limit', async () => {
+    const policy = createBillingOrganizationPolicy()
+    const accept = () =>
+      policy?.beforeAcceptInvitation?.({
+        organizationId: AUTHLESS_ORG_ID,
+        invitationId: 'pending-invitation',
+        userId: 'invitee',
+      })
+    // At the limit the reservation already exists, so acceptance goes through.
+    await expect(accept()).resolves.toBeUndefined()
+
+    // A second member from the Team period leaves Free's single seat oversubscribed.
+    await subscribe(AUTHLESS_ORG_ID)
+    const db = await getDb()
+    await db.insert(user).values({
+      id: 'second-member',
+      name: 'Second member',
+      email: 'second-member@example.com',
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    await db.insert(member).values({
+      id: 'second-member-row',
+      organizationId: AUTHLESS_ORG_ID,
+      userId: 'second-member',
+      role: 'member',
+      createdAt: new Date(),
+    })
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    invalidateEntitlementCache()
+
+    // Not the owner's upgrade prompt: the invitee cannot change the plan.
+    await expect(accept()).rejects.toMatchObject({
+      status: 'CONFLICT',
+      body: { code: 'invitation_seat_unavailable' },
+    })
+  })
+
   it('only observes denials in shadow mode', async () => {
     setBillingConfigForTests(billingConfig({ enforcement: 'shadow' }))
     invalidateEntitlementCache()
@@ -733,6 +790,511 @@ describe('Cloud billing', () => {
     expect(billing.migrationGrantExpiresAt).not.toBeNull()
     expect(billing.proposedPlanCode).toBe('free')
   })
+  /** Team organization with two connections, then moved to Free with the window already over. */
+  async function downgradeWithTwoConnections(app: Awaited<ReturnType<typeof createApp>>) {
+    await subscribe(AUTHLESS_ORG_ID)
+    const first = (await json(await createConnection(app, 'first'))).connection
+    const second = (await json(await createConnection(app, 'second'))).connection
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(Date.now() + 8 * 86_400_000),
+    })
+    invalidateEntitlementCache()
+    return { first, second }
+  }
+
+  async function suspendedIdsOf(kind: string): Promise<string[]> {
+    return (await billingRepository.listSuspensions(AUTHLESS_ORG_ID))
+      .filter((s) => s.resourceKind === kind)
+      .map((s) => s.resourceId)
+  }
+
+  it('answers what the organization may use from one small endpoint', async () => {
+    const app = await createApp()
+    await createConnection(app, 'primary')
+    const entitlement = await json(await app.request('/api/billing/entitlement'))
+    expect(entitlement).toMatchObject({
+      enabled: true,
+      enforced: true,
+      planCode: 'free',
+      planName: 'Free',
+      features: [],
+      canManageBilling: true,
+      suspended: [],
+      subscription: null,
+      transition: null,
+    })
+    expect(entitlement.limits['connections.enabled']).toBe(1)
+    expect(entitlement.usage['connections.enabled']).toBe(1)
+
+    await subscribe(AUTHLESS_ORG_ID)
+    const team = await json(await app.request('/api/billing/entitlement'))
+    expect(team.planCode).toBe('team')
+    expect(team.features).toContain('jobs.bulk_recovery')
+    expect(team.subscription).toMatchObject({
+      status: 'active',
+      planCode: 'team',
+      interval: 'month',
+    })
+
+    setBillingConfigForTests({ enabled: false, enforcement: 'off' })
+    invalidateEntitlementCache()
+    expect(await json(await app.request('/api/billing/entitlement'))).toEqual({
+      enabled: false,
+      planCode: 'self_hosted',
+    })
+  })
+
+  it('lists the organization’s invoices for the owner and survives a Stripe failure', async () => {
+    const app = await createApp()
+    // No Stripe customer yet: an empty list, not an error.
+    expect(await json(await app.request('/api/billing/invoices'))).toEqual({ invoices: [] })
+
+    const customerId = await bindCustomer(AUTHLESS_ORG_ID)
+    gateway.invoices.set(customerId, [
+      {
+        id: 'in_2',
+        number: 'DURA-0002',
+        status: 'open',
+        total: 900,
+        amountDue: 900,
+        currency: 'usd',
+        created: new Date('2026-11-01T00:00:00Z'),
+        hostedInvoiceUrl: 'https://invoice.stripe.test/in_2',
+        invoicePdf: 'https://invoice.stripe.test/in_2.pdf',
+      },
+      {
+        id: 'in_1',
+        number: 'DURA-0001',
+        status: 'paid',
+        total: 900,
+        amountDue: 0,
+        currency: 'usd',
+        created: new Date('2026-10-01T00:00:00Z'),
+        hostedInvoiceUrl: 'https://invoice.stripe.test/in_1',
+        invoicePdf: null,
+      },
+    ])
+    const { invoices } = await json(await app.request('/api/billing/invoices'))
+    expect(invoices).toHaveLength(2)
+    expect(invoices[0]).toEqual({
+      id: 'in_2',
+      number: 'DURA-0002',
+      status: 'open',
+      total: 900,
+      amountDue: 900,
+      currency: 'usd',
+      created: '2026-11-01T00:00:00.000Z',
+      hostedInvoiceUrl: 'https://invoice.stripe.test/in_2',
+      invoicePdf: 'https://invoice.stripe.test/in_2.pdf',
+    })
+
+    gateway.failInvoices = true
+    const failed = await app.request('/api/billing/invoices')
+    expect(failed.status).toBe(502)
+    expect((await json(failed)).code).toBe('invoices_unavailable')
+  })
+
+  it('opens the Customer Portal on the screen the owner asked for', async () => {
+    const app = await createApp()
+    const portal = (body: unknown) =>
+      app.request('/api/billing/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    // No Stripe customer: a clear refusal rather than a broken link.
+    const none = await portal({})
+    expect(none.status).toBe(400)
+    expect((await json(none)).code).toBe('no_billing_account')
+
+    await subscribe(AUTHLESS_ORG_ID)
+    const lastFlow = () => gateway.portalCalls.at(-1)?.flow ?? null
+
+    // An old client that posts no body still gets the portal home.
+    expect((await app.request('/api/billing/portal', { method: 'POST' })).status).toBe(200)
+    expect(lastFlow()).toBeNull()
+
+    await portal({ intent: 'change_plan', plan: 'business', interval: 'year' })
+    expect(lastFlow()).toEqual({
+      type: 'subscription_update_confirm',
+      subscriptionId: 'sub_1',
+      itemId: 'si_1',
+      priceId: PRICES.business.year,
+    })
+    // The price they already pay: nothing to confirm, so the plan picker opens.
+    await portal({ intent: 'change_plan', plan: 'team', interval: 'month' })
+    expect(lastFlow()).toEqual({ type: 'subscription_update', subscriptionId: 'sub_1' })
+
+    await portal({ intent: 'payment_method' })
+    expect(lastFlow()).toEqual({ type: 'payment_method_update' })
+
+    await portal({ intent: 'cancel' })
+    expect(lastFlow()).toEqual({ type: 'subscription_cancel', subscriptionId: 'sub_1' })
+
+    // Already ending: the portal home is where the customer can resume it.
+    await subscribe(AUTHLESS_ORG_ID, { cancelAt: new Date(Date.now() + 86_400_000) })
+    await portal({ intent: 'cancel' })
+    expect(lastFlow()).toBeNull()
+    expect(gateway.portalCalls.at(-1)?.returnUrl).toContain('/settings/billing?portal=returned')
+  })
+
+  it('restores a paused connection as soon as the customer makes room', async () => {
+    const app = await createApp()
+    const { first, second } = await downgradeWithTwoConnections(app)
+    expect(await suspendedIdsOf('connection')).toEqual([second.id])
+
+    const removed = await app.request(`/api/connections/${first.id}`, { method: 'DELETE' })
+    expect(removed.status).toBe(200)
+    expect(await suspendedIdsOf('connection')).toEqual([])
+    const listed = await json(await app.request('/api/connections'))
+    expect(listed.connections).toMatchObject([{ id: second.id, suspended: false }])
+  })
+
+  it('drops the pause on a resource the customer disables, and re-enabling needs room', async () => {
+    const app = await createApp()
+    const { first, second } = await downgradeWithTwoConnections(app)
+    const patch = (id: string, enabled: boolean) =>
+      app.request(`/api/connections/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+
+    // Disabling the paused connection clears its pause instead of leaving a stale one.
+    expect((await patch(second.id, false)).status).toBe(200)
+    expect(await suspendedIdsOf('connection')).toEqual([])
+    // The plan's one connection is in use, so it cannot come back yet.
+    expect((await patch(second.id, true)).status).toBe(409)
+    expect((await patch(first.id, false)).status).toBe(200)
+    const enabled = await patch(second.id, true)
+    expect(enabled.status).toBe(200)
+    expect((await json(enabled)).connection).toMatchObject({ enabled: true, suspended: false })
+  })
+
+  it('pauses alert rules with their connection and lets them be cleaned up', async () => {
+    const app = await createApp()
+    await subscribe(AUTHLESS_ORG_ID)
+    const first = (await json(await createConnection(app, 'first'))).connection
+    const second = (await json(await createConnection(app, 'second'))).connection
+    const db = await getDb()
+    const rule = (connectionId: string, name: string) => ({
+      organizationId: AUTHLESS_ORG_ID,
+      connectionId,
+      name,
+      type: 'job_failed' as const,
+      config: {},
+    })
+    await db
+      .insert(alertRule)
+      .values([rule(first.id, 'f1'), rule(second.id, 's1'), rule(second.id, 's2')])
+
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(Date.now() + 8 * 86_400_000),
+    })
+    invalidateEntitlementCache()
+
+    // Three rules fit Free's allowance of three, but two watch a paused
+    // connection: they are paused with it and stop using the allowance.
+    expect(await suspendedIdsOf('connection')).toEqual([second.id])
+    expect(await suspendedIdsOf('alert_rule')).toHaveLength(2)
+    const usage = await billingRepository.getUsage(AUTHLESS_ORG_ID)
+    expect(usage['alerts.enabled']).toBe(1)
+
+    // The paused connection still lists its rules (flagged) and lets them go.
+    const queues = await app.request(`/api/c/${second.id}/queues`)
+    expect(queues.status).toBe(403)
+    expect((await json(queues)).code).toBe('connection_suspended')
+    const listed = await json(await app.request(`/api/c/${second.id}/alerts/rules`))
+    expect(listed.rules).toHaveLength(2)
+    expect(listed.rules.every((r: { suspended: boolean }) => r.suspended)).toBe(true)
+    const active = await json(await app.request(`/api/c/${first.id}/alerts/rules`))
+    expect(active.rules).toMatchObject([{ name: 'f1', suspended: false }])
+
+    const blocked = await app.request(`/api/connections/${second.id}`, { method: 'DELETE' })
+    expect(blocked.status).toBe(409)
+    expect((await json(blocked)).code).toBe('connection_has_alert_rules')
+    for (const paused of listed.rules) {
+      const deleted = await app.request(`/api/c/${second.id}/alerts/rules/${paused.id}`, {
+        method: 'DELETE',
+      })
+      expect(deleted.status).toBe(202)
+    }
+    // Deleting clears the pauses too; nothing stale is left behind.
+    expect(await suspendedIdsOf('alert_rule')).toEqual([])
+  })
+
+  it('lets rules on a paused connection be turned off but not changed otherwise', async () => {
+    const app = await createApp()
+    const { second } = await downgradeWithTwoConnections(app)
+    const db = await getDb()
+    const [paused] = await db
+      .insert(alertRule)
+      .values({
+        organizationId: AUTHLESS_ORG_ID,
+        connectionId: second.id,
+        name: 'on-paused',
+        type: 'job_failed' as const,
+        config: {},
+      })
+      .returning()
+    const patch = (body: unknown) =>
+      app.request(`/api/c/${second.id}/alerts/rules/${paused!.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    expect((await patch({ name: 'renamed' })).status).toBe(403)
+    expect((await patch({ enabled: false, name: 'renamed' })).status).toBe(403)
+    expect((await patch({ enabled: false })).status).toBe(200)
+  })
+
+  it('never pauses anything while only restoring', async () => {
+    const app = await createApp()
+    const { second } = await downgradeWithTwoConnections(app)
+    const db = await getDb()
+    // A rule that predates rule-follows-connection pausing: still running.
+    await db.insert(alertRule).values({
+      organizationId: AUTHLESS_ORG_ID,
+      connectionId: second.id,
+      name: 'legacy',
+      type: 'job_failed' as const,
+      config: {},
+    })
+    expect(await suspendedIdsOf('connection')).toEqual([second.id])
+    expect(await rebalanceCapacity(AUTHLESS_ORG_ID)).toBe(0)
+    expect(await suspendedIdsOf('alert_rule')).toEqual([])
+  })
+
+  it('does not offer or accept rules on a paused connection in the allocation', async () => {
+    const app = await createApp()
+    const { first, second } = await downgradeWithTwoConnections(app)
+    const db = await getDb()
+    const [onPaused] = await db
+      .insert(alertRule)
+      .values([
+        {
+          organizationId: AUTHLESS_ORG_ID,
+          connectionId: second.id,
+          name: 'on-paused',
+          type: 'job_failed' as const,
+          config: {},
+        },
+        {
+          organizationId: AUTHLESS_ORG_ID,
+          connectionId: first.id,
+          name: 'on-active',
+          type: 'job_failed' as const,
+          config: {},
+        },
+      ])
+      .returning()
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(Date.now() + 8 * 86_400_000),
+    })
+    invalidateEntitlementCache()
+
+    const overview = await json(await app.request('/api/billing'))
+    const offered = overview.allocation['alerts.enabled'].map((o: { name: string }) => o.name)
+    expect(offered).toEqual(['on-active'])
+
+    const saved = await app.request('/api/billing/allocation', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keep: { 'alerts.enabled': [onPaused!.id] } }),
+    })
+    expect(saved.status).toBe(400)
+    expect((await json(saved)).code).toBe('allocation_rule_connection_paused')
+  })
+
+  it('leaves rules on a connection the customer disabled out of plan pauses', async () => {
+    const app = await createApp()
+    await subscribe(AUTHLESS_ORG_ID)
+    const first = (await json(await createConnection(app, 'first'))).connection
+    const second = (await json(await createConnection(app, 'second'))).connection
+    const db = await getDb()
+    await db.insert(alertRule).values({
+      organizationId: AUTHLESS_ORG_ID,
+      connectionId: first.id,
+      name: 'on-first',
+      type: 'job_failed' as const,
+      config: {},
+    })
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(Date.now() + 8 * 86_400_000),
+    })
+    invalidateEntitlementCache()
+    expect(await suspendedIdsOf('connection')).toEqual([second.id])
+
+    // Disabling the active connection makes room for the paused one. Its rule
+    // is off because the connection is, not because of the plan.
+    const disabled = await app.request(`/api/connections/${first.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false }),
+    })
+    expect(disabled.status).toBe(200)
+    expect(await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).toEqual([])
+    const entitlement = await json(await app.request('/api/billing/entitlement'))
+    expect(entitlement.suspended).toEqual([])
+  })
+
+  it('lets rules follow connections chosen in the same allocation', async () => {
+    const app = await createApp()
+    await subscribe(AUTHLESS_ORG_ID)
+    const first = (await json(await createConnection(app, 'first'))).connection
+    const second = (await json(await createConnection(app, 'second'))).connection
+    const db = await getDb()
+    const rule = (connectionId: string, name: string) => ({
+      organizationId: AUTHLESS_ORG_ID,
+      connectionId,
+      name,
+      type: 'job_failed' as const,
+      config: {},
+    })
+    const [onFirst, onSecond] = await db
+      .insert(alertRule)
+      .values([rule(first.id, 'on-first'), rule(second.id, 'on-second')])
+      .returning()
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(Date.now() + 8 * 86_400_000),
+    })
+    invalidateEntitlementCache()
+    expect(await suspendedIdsOf('alert_rule')).toEqual([onSecond!.id])
+
+    const allocate = (keep: Record<string, string[]>) =>
+      app.request('/api/billing/allocation', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keep }),
+      })
+
+    // Swapping which connection stays: its rule may be chosen in the same request.
+    const swapped = await allocate({
+      'connections.enabled': [second.id],
+      'alerts.enabled': [onSecond!.id],
+    })
+    expect(swapped.status).toBe(200)
+    expect(await suspendedIdsOf('connection')).toEqual([first.id])
+    expect(await suspendedIdsOf('alert_rule')).toEqual([onFirst!.id])
+
+    // Choosing only connections still moves the rules with them.
+    expect((await allocate({ 'connections.enabled': [first.id] })).status).toBe(200)
+    expect(await suspendedIdsOf('connection')).toEqual([second.id])
+    expect(await suspendedIdsOf('alert_rule')).toEqual([onSecond!.id])
+
+    // A rule whose connection this allocation leaves paused is refused, unchanged.
+    const refused = await allocate({ 'alerts.enabled': [onSecond!.id] })
+    expect(refused.status).toBe(400)
+    expect((await json(refused)).code).toBe('allocation_rule_connection_paused')
+    expect(await suspendedIdsOf('alert_rule')).toEqual([onSecond!.id])
+  })
+
+  it('sweeps only organizations where a paused resource can come back', async () => {
+    const app = await createApp()
+    const { first, second } = await downgradeWithTwoConnections(app)
+    expect(await billingRepository.listOrganizationsWithRestorableSuspensions()).toEqual([])
+
+    // A pause left behind for a resource that no longer exists is pruned.
+    await billingRepository.suspend(
+      AUTHLESS_ORG_ID,
+      [{ kind: 'service_account', resourceId: 'gone' }],
+      'test'
+    )
+    expect(await billingRepository.pruneStaleSuspensions()).toBe(1)
+    expect(await suspendedIdsOf('connection')).toEqual([second.id])
+
+    // Room freed without an API call (the route would rebalance itself).
+    const db = await getDb()
+    await db.update(redisConnection).set({ enabled: false }).where(eq(redisConnection.id, first.id))
+    expect(await billingRepository.listOrganizationsWithRestorableSuspensions()).toEqual([
+      AUTHLESS_ORG_ID,
+    ])
+    await runEntitlementSweep()
+    expect(await suspendedIdsOf('connection')).toEqual([])
+  })
+
+  it('applies only the limits the owner chose and keeps the window for the rest', async () => {
+    const app = await createApp()
+    await subscribe(AUTHLESS_ORG_ID)
+    const first = (await json(await createConnection(app, 'first'))).connection
+    const second = (await json(await createConnection(app, 'second'))).connection
+    const db = await getDb()
+    await db.insert(user).values({
+      id: 'teammate',
+      name: 'Teammate',
+      email: 'teammate@example.com',
+      emailVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
+    await db.insert(member).values({
+      id: 'teammate-member',
+      organizationId: AUTHLESS_ORG_ID,
+      userId: 'teammate',
+      role: 'member',
+      createdAt: new Date(Date.now() + 1000),
+    })
+    // Downgrade now: connections and members are over Free, inside the window.
+    await subscribe(AUTHLESS_ORG_ID, { status: 'canceled', endedAt: new Date() })
+    expect(await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).toEqual([])
+
+    const saved = await app.request('/api/billing/allocation', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keep: { 'connections.enabled': [second.id] } }),
+    })
+    expect(saved.status).toBe(200)
+    expect(await suspendedIdsOf('connection')).toEqual([first.id])
+    // The teammate's seat was not part of the choice and keeps its window.
+    expect(await suspendedIdsOf('member')).toEqual([])
+    const overview = await json(await app.request('/api/billing'))
+    expect(overview.capacityAdjustmentExpiresAt).not.toBeNull()
+  })
+
+  it('hides the beta grant from the overview once it has ended', async () => {
+    const db = await getDb()
+    await db
+      .update(organization)
+      .set({ createdAt: new Date('2026-01-01T00:00:00Z') })
+      .where(eq(organization.id, AUTHLESS_ORG_ID))
+    const grantUntil = new Date(Date.now() + 40 * 86_400_000)
+    setBillingConfigForTests(
+      billingConfig({
+        launchAt: new Date(Date.now() - 86_400_000),
+        migrationGrantUntil: grantUntil,
+      })
+    )
+    invalidateEntitlementCache()
+    const app = await createApp()
+    const during = await json(await app.request('/api/billing'))
+    expect(during.source).toBe('migration_grant')
+    expect(during.migrationGrantExpiresAt).toBe(grantUntil.toISOString())
+
+    await materializeEntitlement(AUTHLESS_ORG_ID, {
+      reason: 'test',
+      now: new Date(grantUntil.getTime() + 1000),
+    })
+    invalidateEntitlementCache()
+    // The stored expiry is now in the past; getEntitlement would re-materialize
+    // on every read, so the overview must not present it as upcoming.
+    const stored = await billingRepository.findEntitlement(AUTHLESS_ORG_ID)
+    expect(stored?.source).toBe('free')
+    expect(stored?.migrationGrantExpiresAt).not.toBeNull()
+    const afterExpiry = new Date(grantUntil.getTime() + 60_000)
+    // An ended grant is history, not a deadline: the organization must not be
+    // recomputed on every sweep and every read from then on.
+    expect(await billingRepository.listEntitlementsDue(afterExpiry)).not.toContain(AUTHLESS_ORG_ID)
+  })
+
   describe('beta transition notices', () => {
     const day = 86_400_000
     let sentEmails: Array<{

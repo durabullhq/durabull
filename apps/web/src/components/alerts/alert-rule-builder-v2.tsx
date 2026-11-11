@@ -36,6 +36,7 @@ import { DestinationMultiSelect } from '@/components/alerts/destination-multi-se
 import { QueueMultiSelect } from '@/components/alerts/queue-multi-select'
 import { RuleTemplateCards } from '@/components/alerts/rule-template-cards'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PlanBadge } from '@/components/billing/plan-access'
 import { PageTitle } from '@/components/page-title'
 import { SecretInput } from '@/components/secret-input'
 import { Badge } from '@/components/ui/badge'
@@ -53,6 +54,9 @@ import type {
   AlertTestResult,
 } from '@/hooks/use-alerts'
 import { useAlertDestinations, useLinearMetadata, useTestWebhook } from '@/hooks/use-alerts'
+import { useEntitlement } from '@/hooks/use-entitlement'
+import { isPlanDenial } from '@/lib/api'
+import { requestUpgrade } from '@/lib/billing'
 import { cn } from '@/lib/utils'
 
 const EMPTY_DESTINATIONS: AlertDestinationRecord[] = []
@@ -277,6 +281,8 @@ export function AlertRuleBuilder({
     try {
       await onSave(serializeAlertRuleDraftsForMode(draft, mode))
     } catch (error) {
+      // A plan denial is explained by the upgrade prompt; the draft is kept.
+      if (isPlanDenial(error)) return
       setFormError(error instanceof Error ? error.message : 'Unable to save the alert rule.')
     }
   }
@@ -903,6 +909,9 @@ function NotifyPanelBody({
 }) {
   const activeLinearRoutes = draft.notificationRoutes.filter((route) => route.type === 'linear')
   const routeLimitReached = draft.notificationRoutes.length >= 10
+  const entitlement = useEntitlement()
+  const linearPlan = entitlement.feature('alerts.linear').requiredPlan
+  const webhookPlan = entitlement.feature('alerts.webhook').requiredPlan
 
   const destinationRoutes = draft.notificationRoutes.filter((route) => route.type === 'destination')
   const oneOffRoutes = draft.notificationRoutes.filter((route) => route.type !== 'destination')
@@ -1015,6 +1024,12 @@ function NotifyPanelBody({
           variant="outline"
           size="sm"
           onClick={() => {
+            // Say that the plan is the reason before a whole rule is built
+            // around a route that cannot be saved.
+            if (linearPlan) {
+              requestUpgrade('alerts.linear')
+              return
+            }
             if (routeLimitReached || activeLinearRoutes.length >= 1) return
             updateDraft({
               notificationRoutes: [
@@ -1024,17 +1039,23 @@ function NotifyPanelBody({
             })
           }}
           disabled={
-            !linearIntegrationConfigured || routeLimitReached || activeLinearRoutes.length >= 1
+            !linearPlan &&
+            (!linearIntegrationConfigured || routeLimitReached || activeLinearRoutes.length >= 1)
           }
         >
           <Plus className="mr-1.5 h-4 w-4" />
           Linear
+          {linearPlan ? <PlanBadge plan={linearPlan} className="ml-1.5" /> : null}
         </Button>
         <Button
           type="button"
           variant="outline"
           size="sm"
           onClick={() => {
+            if (webhookPlan) {
+              requestUpgrade('alerts.webhook')
+              return
+            }
             if (routeLimitReached) return
             updateDraft({
               notificationRoutes: [
@@ -1043,10 +1064,11 @@ function NotifyPanelBody({
               ],
             })
           }}
-          disabled={routeLimitReached}
+          disabled={!webhookPlan && routeLimitReached}
         >
           <Plus className="mr-1.5 h-4 w-4" />
           Webhook
+          {webhookPlan ? <PlanBadge plan={webhookPlan} className="ml-1.5" /> : null}
         </Button>
         <span className="text-sm text-muted-foreground">
           Up to 10 routes total, one Linear route per rule.
@@ -1102,6 +1124,7 @@ function NotificationRouteFields({
         })
       }
     } catch (testError) {
+      if (isPlanDenial(testError)) return
       toast.error('Test webhook failed', {
         description:
           testError instanceof Error ? testError.message : 'Unable to send test webhook.',

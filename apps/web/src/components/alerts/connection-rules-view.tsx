@@ -12,8 +12,9 @@ import { AlertsHeader } from '@/components/alerts/alerts-view-switcher'
 import { RuleTemplateCards } from '@/components/alerts/rule-template-cards'
 import { SnoozeMenu } from '@/components/alerts/snooze-menu'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PausedBadge } from '@/components/billing/plan-access'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { useConnection } from '@/components/connection-provider'
+import { isUsableConnection, useConnection } from '@/components/connection-provider'
 import { PageTitle } from '@/components/page-title'
 import { Button } from '@/components/ui/button'
 import {
@@ -42,6 +43,8 @@ import {
   useLinearIntegration,
   useUpdateAlertRule,
 } from '@/hooks/use-alerts'
+import { useEntitlement } from '@/hooks/use-entitlement'
+import { isPlanDenial } from '@/lib/api'
 import { cn, formatNumber } from '@/lib/utils'
 
 export function ConnectionRulesView({
@@ -52,7 +55,11 @@ export function ConnectionRulesView({
   connectionId: string
 }) {
   const navigate = useNavigate()
-  const { currentConnection } = useConnection()
+  const { currentConnection, connections } = useConnection()
+  // A paused or disabled connection only lets its rules be turned off or
+  // deleted, so the other actions are not offered there.
+  const thisConnection = connections.find((candidate) => candidate.id === connectionId)
+  const housekeepingOnly = thisConnection ? !isUsableConnection(thisConnection) : false
   const [mutatingRuleId, setMutatingRuleId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AlertRuleRecord | null>(null)
 
@@ -72,7 +79,7 @@ export function ConnectionRulesView({
   const topBarConfig = useMemo(
     () => ({
       left: <PageTitle title="Alerts" />,
-      actions: (
+      actions: housekeepingOnly ? null : (
         <Button asChild size="xs">
           <Link to="/$orgSlug/c/$connectionId/alerts/new" params={{ orgSlug, connectionId }}>
             <Plus className="h-3.5 w-3.5" />
@@ -81,7 +88,7 @@ export function ConnectionRulesView({
         </Button>
       ),
     }),
-    [connectionId, orgSlug]
+    [connectionId, orgSlug, housekeepingOnly]
   )
 
   useAppTopBar(topBarConfig)
@@ -98,6 +105,8 @@ export function ConnectionRulesView({
         description: `${rule.name} is ${enabled ? 'live again' : 'now muted'} for ${currentConnection?.name ?? 'this connection'}.`,
       })
     } catch (error) {
+      // The upgrade prompt already explains a plan limit.
+      if (isPlanDenial(error)) return
       toast.error('Failed to update rule', {
         description: error instanceof Error ? error.message : 'An unexpected error occurred.',
       })
@@ -175,6 +184,7 @@ export function ConnectionRulesView({
           destinationNamesById={destinationNamesById}
           destinations={ruleDestinations ?? []}
           mutatingRuleId={mutatingRuleId}
+          housekeepingOnly={housekeepingOnly}
           onRowOpen={(ruleId) =>
             navigate({
               to: '/$orgSlug/c/$connectionId/alerts/rules/$ruleId',
@@ -217,6 +227,7 @@ function RulesTable({
   destinationNamesById,
   destinations,
   mutatingRuleId,
+  housekeepingOnly,
   onRowOpen,
   onToggleRule,
   onDuplicateRule,
@@ -227,11 +238,14 @@ function RulesTable({
   destinationNamesById: Map<string, string>
   destinations: RuleDestinations
   mutatingRuleId: string | null
+  /** Only turning rules off and deleting them is possible on this connection. */
+  housekeepingOnly: boolean
   onRowOpen: (ruleId: string) => void
   onToggleRule: (rule: AlertRuleRecord, enabled: boolean) => void
   onDuplicateRule: (rule: AlertRuleRecord) => void
   onDeleteRule: (rule: AlertRuleRecord) => void
 }) {
+  const { isPaused } = useEntitlement()
   return (
     <Panel>
       <Table>
@@ -276,9 +290,15 @@ function RulesTable({
               <TableRow
                 key={rule.id}
                 data-testid="alert-rule-row"
-                className={cn('cursor-pointer', !rule.enabled && 'text-muted-foreground')}
-                onClick={() => onRowOpen(rule.id)}
+                className={cn(
+                  !housekeepingOnly && 'cursor-pointer',
+                  !rule.enabled && 'text-muted-foreground'
+                )}
+                // The rule editor needs the connection, which is not reachable
+                // while it is paused or disabled.
+                onClick={housekeepingOnly ? undefined : () => onRowOpen(rule.id)}
                 onKeyDown={(event) => {
+                  if (housekeepingOnly) return
                   // Ignore keys bubbling from nested action buttons/menus.
                   if (event.target !== event.currentTarget) return
                   if (event.key === 'Enter' || event.key === ' ') {
@@ -286,7 +306,7 @@ function RulesTable({
                     onRowOpen(rule.id)
                   }
                 }}
-                tabIndex={0}
+                tabIndex={housekeepingOnly ? undefined : 0}
               >
                 <TableCell className="min-w-[260px] py-2.5">
                   <div className="flex items-start gap-2.5">
@@ -295,7 +315,10 @@ function RulesTable({
                       aria-label={meta.label}
                     />
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{rule.name}</div>
+                      <div className="flex min-w-0 items-center gap-2 font-medium">
+                        <span className="truncate">{rule.name}</span>
+                        {isPaused('alert_rule', rule.id) ? <PausedBadge /> : null}
+                      </div>
                       <div className="mt-0.5 truncate text-xs text-muted-foreground">
                         {condition ?? meta.description}
                         {cooldown ? <span className="text-faint"> · {cooldown}</span> : null}
@@ -348,20 +371,24 @@ function RulesTable({
                 </TableCell>
                 <TableCell className="py-1 pr-2 text-right">
                   <div className="flex items-center justify-end gap-1">
-                    <SnoozeMenu rule={rule} connectionId={connectionId} disabled={isBusy} />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      className="w-[58px]"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        onToggleRule(rule, !rule.enabled)
-                      }}
-                      disabled={isBusy}
-                    >
-                      {rule.enabled ? 'Mute' : 'Enable'}
-                    </Button>
+                    {housekeepingOnly ? null : (
+                      <SnoozeMenu rule={rule} connectionId={connectionId} disabled={isBusy} />
+                    )}
+                    {housekeepingOnly && !rule.enabled ? null : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="xs"
+                        className="w-[58px]"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onToggleRule(rule, !rule.enabled)
+                        }}
+                        disabled={isBusy}
+                      >
+                        {rule.enabled ? 'Mute' : 'Enable'}
+                      </Button>
+                    )}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -380,15 +407,20 @@ function RulesTable({
                         className="w-40"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <DropdownMenuItem onClick={() => onRowOpen(rule.id)}>
-                          <Pencil />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onDuplicateRule(rule)}>
-                          <Copy />
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
+                        {/* Editing and duplicating need a usable connection. */}
+                        {housekeepingOnly ? null : (
+                          <>
+                            <DropdownMenuItem onClick={() => onRowOpen(rule.id)}>
+                              <Pencil />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onDuplicateRule(rule)}>
+                              <Copy />
+                              Duplicate
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                          </>
+                        )}
                         <DropdownMenuItem
                           className="text-status-danger focus:text-status-danger"
                           onClick={() => onDeleteRule(rule)}

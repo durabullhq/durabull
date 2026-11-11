@@ -7,6 +7,7 @@ import {
   evaluateCapacityTransition,
   FEATURE_KEYS,
   type FeatureKey,
+  featureForDeliveryType,
   HISTORY_RECOVERY_WINDOW_MS,
   isFeatureKey,
   isPlanCode,
@@ -117,7 +118,10 @@ function deadlinePassed(row: OrganizationEntitlement, now: Date): boolean {
     row.reevaluateAt,
     row.graceExpiresAt,
     row.capacityAdjustmentExpiresAt,
-    row.migrationGrantExpiresAt,
+    // An ended grant stays stored (so it is never re-applied). It is only a
+    // deadline while access still comes from it; afterwards it would make
+    // every read recompute the organization.
+    row.source === 'migration_grant' ? row.migrationGrantExpiresAt : null,
     row.historyRetentionFloorExpiresAt,
   ]
   return deadlines.some((date) => date !== null && date.getTime() <= now.getTime())
@@ -405,6 +409,17 @@ export async function requireFeature(organizationId: string, feature: FeatureKey
   if (entitlement.enforced) throw new FeatureNotEntitledError(feature)
 }
 
+/**
+ * Require the feature a delivery type needs (webhook, Linear); email and other
+ * types included in every plan pass. Every route that creates, enables, tests
+ * or routes to a delivery channel goes through this, so a new paid type is
+ * added in one place: DELIVERY_TYPE_FEATURES in the billing catalog.
+ */
+export async function requireDeliveryFeature(organizationId: string, type: string): Promise<void> {
+  const feature = featureForDeliveryType(type)
+  if (feature) await requireFeature(organizationId, feature)
+}
+
 /** Non-throwing check for background work (deliveries, evaluation). */
 export async function hasFeature(organizationId: string, feature: FeatureKey): Promise<boolean> {
   const entitlement = await getEntitlement(organizationId)
@@ -511,6 +526,40 @@ export async function filterPlanAccessibleConnections<
     result.push(connection)
   }
   return result
+}
+
+/**
+ * Restore paused resources that fit again. Call after a write that frees
+ * capacity (deleting or disabling a resource, removing a member, cancelling an
+ * invitation), so customers who make room get their paused resources back
+ * without visiting the billing page.
+ *
+ * Best effort and never throws: the write that freed the capacity already
+ * succeeded, and the entitlement sweep repeats this for every organization
+ * with paused resources.
+ */
+export async function rebalanceCapacity(organizationId: string): Promise<number> {
+  if (!isBillingEnabled() || !isEnforcedFor(organizationId)) return 0
+  try {
+    if ((await billingRepository.listSuspensions(organizationId)).length === 0) return 0
+    // Resolved before taking the lock: a stale snapshot re-materializes under it.
+    const entitlement = await getEntitlement(organizationId, { fresh: true })
+    const result = await billingRepository.withOrganizationLock(organizationId, () =>
+      allocateCapacity(organizationId, entitlement.limits, { reason: 'restore', restoreOnly: true })
+    )
+    if (result.restored.length > 0) {
+      console.log(
+        `[billing] Restored ${result.restored.length} paused resource(s) for organization ${organizationId}`
+      )
+    }
+    return result.restored.length
+  } catch (error) {
+    console.error(
+      `[billing] Restoring paused resources failed for organization ${organizationId}:`,
+      error instanceof Error ? error.message : String(error)
+    )
+    return 0
+  }
 }
 
 /**

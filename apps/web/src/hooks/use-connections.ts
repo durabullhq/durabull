@@ -8,6 +8,7 @@ import { AnalyticsEvents } from '@durabull/analytics/events'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { connectionsQueryKey } from '@/components/connection-provider'
 import { api, handleRes, type InferResponseType } from '@/lib/api'
+import { PLAN_USAGE_META } from '@/lib/plan-usage'
 
 // Type helpers using Hono's InferResponseType
 type GetConnectionResponse = InferResponseType<(typeof api.connections)[':id']['$get'], 200>
@@ -49,6 +50,7 @@ export function useCreateConnection() {
   const queryClient = useQueryClient()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (data: {
       name: string
       url: string
@@ -90,6 +92,7 @@ export function useUpdateConnection() {
   const queryClient = useQueryClient()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async ({
       id,
       data,
@@ -140,6 +143,7 @@ export function useDeleteConnection() {
   const queryClient = useQueryClient()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (id: string) => {
       const res = await api.connections[':id'].$delete({
         param: { id },

@@ -29,6 +29,14 @@ export interface PlanLimitReachedBody {
   billingUrl: string
 }
 
+/** Body of a 409 from a capacity boundary whose limit could not be identified. */
+export interface PlanLimitUnspecifiedBody {
+  error: string
+  message: string
+  code: 'plan_limit_unspecified'
+  billingUrl: string
+}
+
 /** Body of a 503 returned while billing state cannot be verified. */
 export interface BillingStateUnverifiedBody {
   error: string
@@ -40,6 +48,7 @@ export interface BillingStateUnverifiedBody {
 export type BillingErrorBody =
   | FeatureNotEntitledBody
   | PlanLimitReachedBody
+  | PlanLimitUnspecifiedBody
   | BillingStateUnverifiedBody
 
 export function isBillingErrorBody(value: unknown): value is BillingErrorBody {
@@ -56,5 +65,5 @@ export function isBillingErrorBody(value: unknown): value is BillingErrorBody {
       isPlanCode(body.requiredPlan)
     )
   }
-  return body.code === 'billing_state_unverified'
+  return body.code === 'billing_state_unverified' || body.code === 'plan_limit_unspecified'
 }

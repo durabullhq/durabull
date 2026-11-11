@@ -1267,8 +1267,11 @@ async function runJobAutoResolveCycle(): Promise<void> {
     })
     if (events.length === 0) return
 
+    // Plan-suspended connections are never dialed, here or in the poll cycle.
+    const suspended = await loadBillingSuspensions()
     const eventsByConnection = new Map<string, AlertEvent[]>()
     for (const event of events) {
+      if (suspended.connections.has(event.connectionId)) continue
       const existing = eventsByConnection.get(event.connectionId) ?? []
       existing.push(event)
       eventsByConnection.set(event.connectionId, existing)

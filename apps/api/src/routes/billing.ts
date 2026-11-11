@@ -8,7 +8,7 @@ import {
   PURCHASABLE_PLAN_CODES,
   smallestPlanForUsage,
 } from '@durabull/billing'
-import { billingRepository } from '@durabull/dal'
+import { billingRepository, isOwnerRole } from '@durabull/dal'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -18,14 +18,23 @@ import {
   cancelCheckoutAttempt,
   confirmCheckoutReturn,
   createPortalSession,
+  listInvoices,
   MAX_TRIALS_PER_USER,
   startCheckout,
 } from '../billing/checkout'
 import { getBillingConfig, isBillingEnabled, TRIAL_PERIOD_DAYS } from '../billing/config'
-import { getEntitlement, materializeEntitlement } from '../billing/entitlements'
+import {
+  type EffectiveEntitlement,
+  getEntitlement,
+  materializeEntitlementLocked,
+} from '../billing/entitlements'
 import { nudgeWebhookInbox } from '../billing/lifecycle'
 import { reconcileOrganization } from '../billing/reconcile'
-import { allocateCapacity } from '../billing/suspension'
+import {
+  AllocationPreferenceError,
+  allocateCapacity,
+  findFoundingOwnerId,
+} from '../billing/suspension'
 import { getTransitionStatus } from '../billing/transition'
 import { receiveStripeWebhook, WebhookSignatureError } from '../billing/webhooks'
 import { requireOrganization } from '../middleware/auth'
@@ -40,7 +49,45 @@ const OWNER_ONLY_MESSAGE =
 async function requireOwner(organizationId: string, userId: string | undefined) {
   if (!userId) return false
   const membership = await billingRepository.findMembership(organizationId, userId)
-  return membership?.role === 'owner'
+  return isOwnerRole(membership?.role)
+}
+
+const OWNER_REQUIRED_BODY = {
+  error: 'Forbidden',
+  message: OWNER_ONLY_MESSAGE,
+  code: 'billing_owner_required',
+} as const
+
+function planName(entitlement: EffectiveEntitlement): string {
+  return entitlement.planCode === 'self_hosted' ? 'Self-hosted' : PLANS[entitlement.planCode].name
+}
+
+type SubscriptionRow = Awaited<ReturnType<typeof billingRepository.findCurrentSubscription>>
+
+/** The current subscription as shown to members: no Stripe identifiers. */
+function serializeSubscription(subscription: SubscriptionRow) {
+  if (!subscription) return null
+  return {
+    status: subscription.status,
+    planCode: subscription.planCode,
+    interval: subscription.billingInterval,
+    currentPeriodEnd: serializeDate(subscription.currentPeriodEnd),
+    // Flexible billing records Portal cancellations as cancel_at.
+    cancelAtPeriodEnd: subscription.cancelAtPeriodEnd || subscription.cancelAt !== null,
+    cancelAt: serializeDate(
+      subscription.cancelAt ??
+        (subscription.cancelAtPeriodEnd ? subscription.currentPeriodEnd : null)
+    ),
+    trialEnd: serializeDate(subscription.trialEnd),
+    collectionMethod: subscription.collectionMethod,
+  }
+}
+
+/** The beta grant end, only while access actually comes from the grant. */
+function activeMigrationGrant(entitlement: EffectiveEntitlement, now = new Date()): string | null {
+  const expiresAt = entitlement.migrationGrantExpiresAt
+  if (entitlement.source !== 'migration_grant' || !expiresAt) return null
+  return expiresAt.getTime() > now.getTime() ? expiresAt.toISOString() : null
 }
 
 function checkoutRefusalStatus(error: CheckoutRefusedError): 400 | 409 | 503 {
@@ -79,6 +126,12 @@ const checkoutSchema = z.object({
   trial: z.boolean().optional(),
 })
 
+const portalSchema = z.object({
+  intent: z.enum(['manage', 'payment_method', 'cancel', 'change_plan']).optional(),
+  plan: z.enum(PURCHASABLE_PLAN_CODES).optional(),
+  interval: z.enum(BILLING_INTERVALS).optional(),
+})
+
 const allocationSchema = z.object({
   keep: z.record(z.enum(CAPACITY_LIMIT_KEYS), z.array(z.string().min(1)).max(500)),
 })
@@ -105,6 +158,85 @@ export const billingWebhookRoutes = new Hono().post('/', async (c) => {
 
 const app = new Hono()
   .use('*', requireOrganization)
+
+  // What this organization may use right now. Small enough for every page to
+  // load: the web app gates features and shows plan status from it.
+  .get('/entitlement', async (c) => {
+    const organizationId = c.get('organizationId')!
+    const user = c.get('user')
+    if (!isBillingEnabled()) {
+      return c.json({ enabled: false as const, planCode: 'self_hosted' as const })
+    }
+    const [entitlement, usage, subscription, suspensions, membership] = await Promise.all([
+      getEntitlement(organizationId),
+      billingRepository.getUsage(organizationId),
+      billingRepository.findCurrentSubscription(organizationId),
+      billingRepository.listSuspensions(organizationId),
+      user ? billingRepository.findMembership(organizationId, user.id) : null,
+    ])
+    return c.json({
+      enabled: true as const,
+      enforced: entitlement.enforced,
+      planCode: entitlement.planCode,
+      planName: planName(entitlement),
+      subscribedPlanCode: entitlement.subscribedPlanCode,
+      source: entitlement.source,
+      degraded: entitlement.degraded,
+      notices: entitlement.notices,
+      features: entitlement.features,
+      limits: entitlement.limits,
+      usage,
+      // Unenforced organizations have no paused resources to explain.
+      suspended: entitlement.enforced
+        ? suspensions.map((s) => ({ kind: s.resourceKind, id: s.resourceId }))
+        : [],
+      subscription: serializeSubscription(subscription),
+      graceExpiresAt: serializeDate(entitlement.graceExpiresAt),
+      capacityAdjustmentExpiresAt: serializeDate(entitlement.capacityAdjustmentExpiresAt),
+      canManageBilling: isOwnerRole(membership?.role),
+      // Beta transition banner: only after the notice was sent, until a plan is chosen.
+      transition: await getTransitionStatus(organizationId, entitlement, subscription?.status),
+    })
+  })
+
+  // Recent invoices with Stripe-hosted links, for the owner.
+  .get('/invoices', async (c) => {
+    if (!isBillingEnabled()) return c.json({ error: 'Billing is not enabled' }, 404)
+    const organizationId = c.get('organizationId')!
+    if (!(await requireOwner(organizationId, c.get('user')?.id))) {
+      return c.json(OWNER_REQUIRED_BODY, 403)
+    }
+    try {
+      const invoices = await listInvoices(organizationId)
+      return c.json({
+        invoices: invoices.map((invoice) => ({
+          id: invoice.id,
+          number: invoice.number,
+          status: invoice.status,
+          total: invoice.total,
+          amountDue: invoice.amountDue,
+          currency: invoice.currency,
+          created: invoice.created.toISOString(),
+          hostedInvoiceUrl: invoice.hostedInvoiceUrl,
+          invoicePdf: invoice.invoicePdf,
+        })),
+      })
+    } catch (error) {
+      console.error(
+        `[billing] Listing invoices failed for organization ${organizationId}:`,
+        error instanceof Error ? error.message : String(error)
+      )
+      return c.json(
+        {
+          error: 'Invoices unavailable',
+          message:
+            'Invoices could not be loaded right now. Try again, or open Manage billing to see them on Stripe.',
+          code: 'invoices_unavailable',
+        },
+        502
+      )
+    }
+  })
 
   // Current member: safe plan, limits, usage and billing status.
   .get('/', async (c) => {
@@ -141,6 +273,9 @@ const app = new Hono()
       billingRepository.listCapacityCandidates(organizationId),
     ])
 
+    // Only the founding owner is never paused; other owners count like any member.
+    const foundingOwnerId = findFoundingOwnerId(candidates.members)
+
     const names = new Map<string, string>()
     for (const connection of candidates.connections)
       names.set(`connection:${connection.id}`, connection.name)
@@ -174,11 +309,15 @@ const app = new Hono()
             ),
             'members.reserved': [
               ...candidates.members.map((m) =>
-                allocationOption('member', m.id, { pinned: m.role === 'owner' })
+                allocationOption('member', m.id, { pinned: m.id === foundingOwnerId })
               ),
               ...candidates.invitations.map((i) => allocationOption('invitation', i.id)),
             ],
-            'alerts.enabled': candidates.rules.map((r) => allocationOption('alert_rule', r.id)),
+            // A rule on a paused connection cannot run whichever rules are
+            // chosen, so it is not offered; restoring the connection brings it back.
+            'alerts.enabled': candidates.rules
+              .filter((r) => !suspendedKeys.has(`connection:${r.connectionId}`))
+              .map((r) => allocationOption('alert_rule', r.id)),
             'alerts.destinations': candidates.destinations.map((d) =>
               allocationOption('alert_destination', d.id)
             ),
@@ -188,7 +327,7 @@ const app = new Hono()
           }
         : null
 
-    const canManageBilling = membership?.role === 'owner'
+    const canManageBilling = isOwnerRole(membership?.role)
     const trialEligible =
       config.trialsEnabled &&
       !account?.trialConsumedAt &&
@@ -203,8 +342,7 @@ const app = new Hono()
       enforcement: config.enforcement,
       enforced: entitlement.enforced,
       planCode: entitlement.planCode,
-      planName:
-        entitlement.planCode === 'self_hosted' ? 'Self-hosted' : PLANS[entitlement.planCode].name,
+      planName: planName(entitlement),
       subscribedPlanCode: entitlement.subscribedPlanCode,
       source: entitlement.source,
       degraded: entitlement.degraded,
@@ -214,25 +352,11 @@ const app = new Hono()
       usage,
       overLimit,
       allocation,
-      subscription: subscription
-        ? {
-            status: subscription.status,
-            planCode: subscription.planCode,
-            interval: subscription.billingInterval,
-            currentPeriodEnd: serializeDate(subscription.currentPeriodEnd),
-            // Flexible billing records Portal cancellations as cancel_at.
-            cancelAtPeriodEnd: subscription.cancelAtPeriodEnd || subscription.cancelAt !== null,
-            cancelAt: serializeDate(
-              subscription.cancelAt ??
-                (subscription.cancelAtPeriodEnd ? subscription.currentPeriodEnd : null)
-            ),
-            trialEnd: serializeDate(subscription.trialEnd),
-            collectionMethod: subscription.collectionMethod,
-          }
-        : null,
+      subscription: serializeSubscription(subscription),
       graceExpiresAt: serializeDate(entitlement.graceExpiresAt),
       capacityAdjustmentExpiresAt: serializeDate(entitlement.capacityAdjustmentExpiresAt),
-      migrationGrantExpiresAt: serializeDate(entitlement.migrationGrantExpiresAt),
+      // Null once the grant has ended, so its notice does not outlive it.
+      migrationGrantExpiresAt: activeMigrationGrant(entitlement),
       // Beta transition banner: only after the notice was sent, until a plan is chosen.
       transition: await getTransitionStatus(organizationId, entitlement, subscription?.status),
       historyRetentionFloorExpiresAt: serializeDate(entitlement.historyRetentionFloorExpiresAt),
@@ -268,10 +392,7 @@ const app = new Hono()
     const organizationId = c.get('organizationId')!
     const user = c.get('user')
     if (!user || !(await requireOwner(organizationId, user.id))) {
-      return c.json(
-        { error: 'Forbidden', message: OWNER_ONLY_MESSAGE, code: 'billing_owner_required' },
-        403
-      )
+      return c.json(OWNER_REQUIRED_BODY, 403)
     }
     const organization = await billingRepository.findOrganization(organizationId)
     if (!organization) return c.json({ error: 'Organization not found' }, 404)
@@ -315,28 +436,31 @@ const app = new Hono()
     const organizationId = c.get('organizationId')!
     const user = c.get('user')
     if (!user || !(await requireOwner(organizationId, user.id))) {
-      return c.json(
-        { error: 'Forbidden', message: OWNER_ONLY_MESSAGE, code: 'billing_owner_required' },
-        403
-      )
+      return c.json(OWNER_REQUIRED_BODY, 403)
     }
     return c.json(await cancelCheckoutAttempt(organizationId))
   })
 
-  .post('/portal', async (c) => {
+  .post('/portal', zValidator('json', portalSchema), async (c) => {
     if (!isBillingEnabled()) return c.json({ error: 'Billing is not enabled' }, 404)
     const organizationId = c.get('organizationId')!
     const user = c.get('user')
     if (!user || !(await requireOwner(organizationId, user.id))) {
-      return c.json(
-        { error: 'Forbidden', message: OWNER_ONLY_MESSAGE, code: 'billing_owner_required' },
-        403
-      )
+      return c.json(OWNER_REQUIRED_BODY, 403)
     }
     const organization = await billingRepository.findOrganization(organizationId)
     if (!organization) return c.json({ error: 'Organization not found' }, 404)
+    const body = c.req.valid('json')
     try {
-      return c.json(await createPortalSession(organizationId, organization.slug))
+      return c.json(
+        await createPortalSession(
+          organizationId,
+          organization.slug,
+          body.intent === 'change_plan'
+            ? { intent: 'change_plan', plan: body.plan, interval: body.interval }
+            : { intent: body.intent ?? 'manage' }
+        )
+      )
     } catch (error) {
       if (error instanceof CheckoutRefusedError) {
         return c.json(
@@ -353,10 +477,7 @@ const app = new Hono()
     const organizationId = c.get('organizationId')!
     const user = c.get('user')
     if (!user || !(await requireOwner(organizationId, user.id))) {
-      return c.json(
-        { error: 'Forbidden', message: OWNER_ONLY_MESSAGE, code: 'billing_owner_required' },
-        403
-      )
+      return c.json(OWNER_REQUIRED_BODY, 403)
     }
     const result = await reconcileOrganization(organizationId, { reason: 'owner_refresh' })
     return c.json({ planCode: result.planCode })
@@ -368,10 +489,7 @@ const app = new Hono()
     const organizationId = c.get('organizationId')!
     const user = c.get('user')
     if (!user || !(await requireOwner(organizationId, user.id))) {
-      return c.json(
-        { error: 'Forbidden', message: OWNER_ONLY_MESSAGE, code: 'billing_owner_required' },
-        403
-      )
+      return c.json(OWNER_REQUIRED_BODY, 403)
     }
     const entitlement = await getEntitlement(organizationId, { fresh: true })
     if (!entitlement.enforced) {
@@ -397,12 +515,30 @@ const app = new Hono()
         )
       }
     }
-    const result = await allocateCapacity(organizationId, entitlement.limits, {
-      preferences: keep,
-      reason: 'Owner allocation',
-    })
-    await materializeEntitlement(organizationId, { reason: 'owner_allocation' })
-    return c.json({ suspended: result.suspended.length, restored: result.restored.length })
+    // Only the limits the owner chose are applied now; anything else above a
+    // limit keeps its adjustment window.
+    try {
+      const result = await billingRepository.withOrganizationLock(organizationId, async () => {
+        const allocated = await allocateCapacity(organizationId, entitlement.limits, {
+          preferences: keep,
+          only: Object.keys(keep) as CapacityLimitKey[],
+          reason: 'Owner allocation',
+        })
+        await materializeEntitlementLocked(organizationId, { reason: 'owner_allocation' })
+        return allocated
+      })
+      return c.json({ suspended: result.suspended.length, restored: result.restored.length })
+    } catch (error) {
+      if (!(error instanceof AllocationPreferenceError)) throw error
+      return c.json(
+        {
+          error: 'Rule on a paused connection',
+          message: error.message,
+          code: 'allocation_rule_connection_paused',
+        },
+        400
+      )
+    }
   })
 
   // Client-side upgrade prompts report impressions for funnel analysis.

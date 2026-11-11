@@ -1,5 +1,6 @@
 // Public exports - only expose the repository and types
 
+export { hasMemberRole, isOwnerOrAdminRole, isOwnerRole } from '@durabull/utils/roles'
 // Re-export drizzle-orm utilities to ensure consistent versions across the monorepo
 export { and, eq, or, sql } from 'drizzle-orm'
 
@@ -86,17 +87,17 @@ export type {
 } from './db/schemas/auth/types'
 export {
   type BillingCheckoutAttemptStatus,
+  type BillingLimitsJson,
   type BillingNoticeKind,
   type BillingNoticeStatus,
-  type BillingLimitsJson,
   type BillingResourceKind,
   type BillingWebhookEventStatus,
   billingCheckoutAttempt,
   billingCheckoutAttemptStatuses,
-  billingNoticeKinds,
-  billingNoticeStatuses,
   billingEntitlementOverride,
   billingNoticeDelivery,
+  billingNoticeKinds,
+  billingNoticeStatuses,
   billingOperatorAction,
   billingResourceKinds,
   billingResourceSuspension,

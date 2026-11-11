@@ -1,5 +1,7 @@
+import { requiredPlanForLimit } from '@durabull/api-client/billing'
 import { AlertCircle, Database } from 'lucide-react'
 import { lazy, Suspense } from 'react'
+import { UpgradeNextStep } from '@/components/billing/plan-access'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Metric, MetricStrip } from '@/components/ui/metric'
@@ -26,6 +28,10 @@ interface RedisHealthObservabilityProps {
   data?: RedisHealthHistoryResponse
   error?: Error | null
   isLoading?: boolean
+}
+
+function formatHistoryWindow(days: number): string {
+  return days === 1 ? '24 hours' : `${days} days`
 }
 
 export function RedisHealthObservability({
@@ -92,6 +98,22 @@ export function RedisHealthObservability({
           </>
         }
       />
+
+      {data.rangeClamped && data.planHistoryDays ? (
+        <div
+          className="rounded-lg border bg-muted/40 px-3 py-2 text-[13px] leading-5 text-muted-foreground"
+          data-testid="history-clamped-note"
+        >
+          <span className="font-medium text-foreground">
+            Showing the last {formatHistoryWindow(data.planHistoryDays)}.
+          </span>{' '}
+          Your plan includes {formatHistoryWindow(data.planHistoryDays)} of Redis health history, so
+          the selected range was shortened.{' '}
+          <UpgradeNextStep
+            plan={requiredPlanForLimit('history.redis_health_days', data.planHistoryDays + 1)}
+          />
+        </div>
+      ) : null}
 
       {!latest ? (
         <Panel>

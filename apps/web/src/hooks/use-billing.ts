@@ -13,6 +13,10 @@ export type EnabledBillingOverview = Extract<BillingOverview, { enabled: true }>
 export const billingKeys = {
   all: ['billing'] as const,
   overview: (organizationId: string | undefined) => ['billing', organizationId ?? 'none'] as const,
+  entitlement: (organizationId: string | undefined) =>
+    ['billing', organizationId ?? 'none', 'entitlement'] as const,
+  invoices: (organizationId: string | undefined) =>
+    ['billing', organizationId ?? 'none', 'invoices'] as const,
 }
 
 /**
@@ -70,12 +74,33 @@ export function useCancelCheckout() {
   })
 }
 
+/** Where the hosted Customer Portal opens; Stripe shows that screen directly when it can. */
+export type PortalRequest =
+  | { intent?: 'manage' | 'payment_method' | 'cancel' }
+  | { intent: 'change_plan'; plan?: PurchasablePlanCode; interval?: BillingInterval }
+
 export function useOpenBillingPortal() {
   return useMutation({
-    mutationFn: async () => handleRes<{ url: string }>(await api.billing.portal.$post()),
+    mutationFn: async (request: PortalRequest | undefined) =>
+      handleRes<{ url: string }>(await api.billing.portal.$post({ json: request ?? {} })),
     onSuccess: ({ url }) => {
       window.location.assign(url)
     },
+  })
+}
+
+export type BillingInvoices = InferResponseType<(typeof api.billing.invoices)['$get'], 200>
+export type BillingInvoice = BillingInvoices['invoices'][number]
+
+/** Recent invoices with Stripe-hosted links. Owner only; fetched from Stripe on demand. */
+export function useBillingInvoices(options: { enabled: boolean }) {
+  const { data: activeOrganization } = useActiveOrganization()
+  return useQuery({
+    queryKey: billingKeys.invoices(activeOrganization?.id),
+    queryFn: async () => handleRes<BillingInvoices>(await api.billing.invoices.$get()),
+    enabled: options.enabled && Boolean(activeOrganization?.id),
+    staleTime: 60_000,
+    retry: 1,
   })
 }
 
