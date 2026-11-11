@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto'
 import type { AlertRuleType } from '@durabull/dal'
 import { env } from '@durabull/env'
+import { randomUUID } from 'node:crypto'
 import { deliverWebhook } from './alert-webhook-client'
 import { buildAlertWebhookPayload, serializeAlertWebhookPayload } from './alert-webhook-payload'
 

@@ -6,8 +6,8 @@ import {
   DEFAULT_METRICS_WINDOW_MINUTES,
   MCP_MAX_METRICS_WINDOW_MINUTES,
 } from '../../lib/bullmq-metrics'
-import { toRedisConnectionOptions } from '../../lib/connection-options'
 import { getQueue } from '../../lib/redis'
+import { toRedisConnectionOptions } from '../../lib/connection-options'
 import { McpToolError, requireConnectionForPrincipal } from './shared'
 
 export async function getQueueMetricsHandler(

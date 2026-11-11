@@ -1,6 +1,6 @@
-import { MCP_OAUTH_SCOPES_SUPPORTED } from '@durabull/mcp/auth'
-import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from 'better-auth/plugins'
 import { Hono } from 'hono'
+import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from 'better-auth/plugins'
+import { MCP_OAUTH_SCOPES_SUPPORTED } from '@durabull/mcp/auth'
 
 import { getAuth } from '../../lib/auth'
 import { isAuthlessMode } from '../../lib/authless'

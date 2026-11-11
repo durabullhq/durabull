@@ -3,8 +3,8 @@ import type { IncomingMessage } from 'node:http'
 import http from 'node:http'
 import https from 'node:https'
 import {
-  type ResolvedWebhookEndpoint,
   resolveAllowedWebhookEndpoint,
+  type ResolvedWebhookEndpoint,
   WebhookUrlError,
 } from './alert-webhook-url'
 

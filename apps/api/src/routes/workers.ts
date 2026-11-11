@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
-import { getConnectionRedisOptions } from '../lib/connection-options'
 import { discoverQueues, getQueue, safeGetWorkers } from '../lib/redis'
+import { getConnectionRedisOptions } from '../lib/connection-options'
 
 // Default and max page sizes for pagination
 const DEFAULT_PAGE_SIZE = 50

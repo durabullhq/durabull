@@ -1,7 +1,4 @@
 import {
-  buildMcpInsufficientScopeResponse,
-  buildMcpMissingBearerResponse,
-  buildMcpUnauthorizedResponse,
   createMcpTokenValidationCache,
   extractBearerToken,
   MCP_TRANSPORT_REQUIRED_SCOPES,
@@ -9,11 +6,16 @@ import {
   parseScopeString,
   validateMcpAccessTokenClaims,
 } from '@durabull/mcp/auth'
+import {
+  buildMcpInsufficientScopeResponse,
+  buildMcpMissingBearerResponse,
+  buildMcpUnauthorizedResponse,
+} from '@durabull/mcp/auth'
 import { createMiddleware } from 'hono/factory'
 
 import { isAuthlessMode } from '../../lib/authless'
-import { recordMcpTelemetry } from '../observability/mcp-telemetry'
 import { getAuthlessMcpBearerToken, getMcpAuthConfig } from './mcp-auth-config'
+import { recordMcpTelemetry } from '../observability/mcp-telemetry'
 import { resolveMcpSessionFromAccessToken } from './resolve-mcp-session'
 
 /** OAuth access token session resolved for MCP ingress (Better Auth `oauth_access_token` shape). */
