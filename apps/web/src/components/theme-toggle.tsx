@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from 'lucide-react'
+import { Check, Monitor, Moon, Sun } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 import {
   DropdownMenu,
@@ -6,6 +6,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+
+const OPTIONS = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+] as const
 
 /**
  * Theme toggle button for mobile navigation
@@ -16,26 +22,24 @@ export function ThemeToggle() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="rounded-md p-2 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {resolvedTheme === 'dark' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+      <DropdownMenuTrigger className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
+        {resolvedTheme === 'dark' ? (
+          <Moon className="h-4 w-4" aria-hidden />
+        ) : (
+          <Sun className="h-4 w-4" aria-hidden />
+        )}
         <span className="sr-only">Toggle theme</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => setTheme('light')} className="cursor-pointer">
-          <Sun className="mr-2 h-4 w-4" />
-          Light
-          {theme === 'light' && <span className="ml-auto text-xs">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('dark')} className="cursor-pointer">
-          <Moon className="mr-2 h-4 w-4" />
-          Dark
-          {theme === 'dark' && <span className="ml-auto text-xs">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('system')} className="cursor-pointer">
-          <Monitor className="mr-2 h-4 w-4" />
-          System
-          {theme === 'system' && <span className="ml-auto text-xs">✓</span>}
-        </DropdownMenuItem>
+        {OPTIONS.map(({ value, label, icon: Icon }) => (
+          <DropdownMenuItem key={value} onClick={() => setTheme(value)} className="cursor-pointer">
+            <Icon className="mr-2 h-4 w-4" aria-hidden />
+            {label}
+            {theme === value ? (
+              <Check className="ml-auto h-3.5 w-3.5 text-muted-foreground" aria-label="Selected" />
+            ) : null}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   )

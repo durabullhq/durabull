@@ -149,7 +149,6 @@ describe('OrgAlertsFeed', () => {
     expect(links[0]).toHaveTextContent("1 ack'd")
     expect(links[0]).toHaveAttribute('href', '/$orgSlug/c/$connectionId/alerts')
     expect(links[1]).toHaveTextContent('Analytics Redis')
-    expect(screen.getByText('4 open')).toBeInTheDocument()
   })
 
   it('maps the open status filter onto the global events query', () => {

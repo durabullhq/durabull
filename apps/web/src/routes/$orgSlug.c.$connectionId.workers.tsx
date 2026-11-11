@@ -1,11 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import {
   Background,
   Controls,
   type Edge,
+  type FitViewOptions,
   Handle,
-  MarkerType,
-  MiniMap,
   type Node,
   type NodeProps,
   Position,
@@ -13,39 +12,17 @@ import {
   useEdgesState,
   useNodesState,
 } from '@xyflow/react'
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import '@xyflow/react/dist/style.css'
-
-// Worker type - matches API response
-interface WorkerWithQueue {
-  id: string
-  name: string
-  addr: string
-  age: number
-  idle: number
-  queueName: string
-}
-
-import {
-  Activity,
-  AlertCircle,
-  Clock,
-  Cpu,
-  Database,
-  Layers,
-  Network,
-  Server,
-  Users,
-  Wifi,
-  WifiOff,
-} from 'lucide-react'
+import { AlertCircle, Database, Loader2, Search, ServerOff } from 'lucide-react'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { useConnection } from '@/components/connection-provider'
-import { QueueNameTag } from '@/components/queue-name-tag'
-import { StatusIndicator } from '@/components/status-badge'
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+import { PageTitle } from '@/components/page-title'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Input } from '@/components/ui/input'
+import { Metric, MetricStrip } from '@/components/ui/metric'
+import { Panel, PanelHeader } from '@/components/ui/section'
 import {
   Table,
   TableBody,
@@ -54,200 +31,161 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { type ListWorkersResponse, useAllWorkers } from '@/hooks/use-queues'
-import { cn, formatDuration } from '@/lib/utils'
+import { cn, formatCompactNumber } from '@/lib/utils'
+import {
+  isWorkerActive as isActiveByIdleSeconds,
+  WORKER_IDLE_AFTER_SECONDS,
+} from '@/lib/worker-activity'
+
+type Worker = ListWorkersResponse['workers'][number]
+type WorkerQueue = ListWorkersResponse['queues'][number]
+type WorkerView = 'graph' | 'list'
+type WorkerStateFilter = 'all' | 'active' | 'idle'
 
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/workers')({
   component: WorkersPage,
 })
 
-// Custom Redis Node
+/** `worker.idle` is in seconds; the threshold lives in `lib/worker-activity`. */
+function isWorkerActive(worker: Worker) {
+  return isActiveByIdleSeconds(worker.idle)
+}
+
+/** Redis reports client age and idle time in whole seconds. */
+function formatSeconds(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ${minutes % 60}m`
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`
+}
+
+function workerLabel(worker: Worker) {
+  return worker.name || worker.id.slice(0, 12)
+}
+
+/* ------------------------------------------------------------------ */
+/* Topology nodes: hairline chips, mono names, state as dot + label     */
+/* ------------------------------------------------------------------ */
+
+const CHIP = 'rounded-md border bg-card px-3 py-1.5 text-left transition-colors'
+
+function StateDot({ className, pulse = false }: { className: string; pulse?: boolean }) {
+  return (
+    <span className="relative flex h-1.5 w-1.5 shrink-0">
+      {pulse ? (
+        <span
+          className={cn(
+            'absolute inline-flex h-full w-full animate-ping rounded-full opacity-70',
+            className
+          )}
+        />
+      ) : null}
+      <span className={cn('relative inline-flex h-1.5 w-1.5 rounded-full', className)} />
+    </span>
+  )
+}
+
 function RedisNode({ data }: NodeProps) {
   return (
-    <div className="relative">
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!bg-status-danger !w-3 !h-3 !border-2 !border-status-danger"
-      />
-      <div
-        className={cn(
-          'relative px-6 py-4 rounded-2xl border-2 shadow-2xl min-w-[200px]',
-          'bg-gradient-to-br from-status-danger to-status-danger border-status-danger/30',
-          'animate-pulse-soft'
-        )}
-      >
-        {/* Glow effect */}
-        <div className="absolute inset-0 rounded-2xl bg-status-danger/20 blur-xl -z-10" />
-
-        <div className="flex items-center gap-3 text-white">
-          <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
-            <Database className="h-8 w-8" />
-          </div>
-          <div>
-            <div className="font-bold text-lg">Redis</div>
-            <div className="text-white/80 text-sm font-mono">{data.label as string}</div>
-          </div>
-        </div>
-        <div className="mt-3 flex items-center gap-2 text-white/80">
-          <div className="flex items-center gap-1.5">
-            <Wifi className="h-3.5 w-3.5" />
-            <span className="text-xs font-medium">Connected</span>
-          </div>
-          <span className="text-white/60">•</span>
-          <span className="text-xs">{data.totalQueues as number} queues</span>
-        </div>
+    <div className={cn(CHIP, 'w-[208px] border-border-strong')}>
+      <Handle type="source" position={Position.Right} isConnectable={false} />
+      <div className="flex items-center gap-2">
+        <Database className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="truncate text-xs font-semibold">{data.label as string}</span>
+      </div>
+      <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+        {data.totalQueues as number} queues · {data.totalWorkers as number} workers
       </div>
     </div>
   )
 }
 
-// Custom Queue Node
 function QueueNode({ data }: NodeProps) {
-  const isActive = (data.status as string) === 'active'
+  const paused = (data.status as string) === 'paused'
+  const active = data.activeJobs as number
+  const waiting = data.waitingJobs as number
   const workerCount = data.workerCount as number
-  const hasWorkers = workerCount > 0
-  const queueName = data.label as string
 
   return (
-    <div className="relative">
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!bg-status-active !w-3 !h-3 !border-2 !border-status-active"
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!bg-status-success !w-3 !h-3 !border-2 !border-status-success"
-      />
-      <TooltipProvider delayDuration={200}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div
-              className={cn(
-                'relative px-5 py-4 rounded-xl border-2 shadow-xl w-[260px] transition-all duration-300 cursor-default',
-                isActive
-                  ? 'bg-gradient-to-br from-status-active/10 to-status-active/5 border-status-active/50 dark:from-status-active/20 dark:to-status-active/10'
-                  : 'bg-gradient-to-br from-status-warning/10 to-status-warning/5 border-status-warning/50 dark:from-status-warning/20 dark:to-status-warning/10',
-                hasWorkers && 'ring-2 ring-status-success/30 ring-offset-2 ring-offset-background'
-              )}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className={cn(
-                    'p-2 rounded-lg shrink-0',
-                    isActive
-                      ? 'bg-status-active/20 text-status-active'
-                      : 'bg-status-warning/20 text-status-warning'
-                  )}
-                >
-                  <Layers className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0 overflow-hidden">
-                  <QueueNameTag name={queueName} size="sm" />
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <Badge
-                      variant={isActive ? 'default' : 'warning'}
-                      className="text-[10px] px-1.5 py-0"
-                    >
-                      {isActive ? 'Active' : 'Paused'}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-2 gap-2 text-xs">
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <Users className="h-3 w-3" />
-                  <span>{workerCount} workers</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <Activity className="h-3 w-3" />
-                  <span>{data.activeJobs as number} active</span>
-                </div>
-              </div>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="font-mono text-sm">
-            {queueName}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+    <div
+      className={cn(CHIP, 'w-[236px] cursor-pointer hover:border-border-strong')}
+      title={`Open queue ${data.label as string}`}
+    >
+      <Handle type="target" position={Position.Left} isConnectable={false} />
+      <Handle type="source" position={Position.Right} isConnectable={false} />
+      <div className="truncate font-mono text-xs font-medium">{data.label as string}</div>
+      <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="flex shrink-0 items-center gap-1.5">
+          <StateDot className={paused ? 'bg-status-warning' : 'bg-status-success'} />
+          {paused ? 'Paused' : `${workerCount} ${workerCount === 1 ? 'worker' : 'workers'}`}
+        </span>
+        <span className="truncate font-mono">
+          {waiting > 0 ? `${formatCompactNumber(waiting)} waiting · ` : ''}
+          {formatCompactNumber(active)} active
+        </span>
+      </div>
     </div>
   )
 }
 
-// Custom Worker Node
-function WorkerNode({ data }: NodeProps) {
-  const worker = data.worker as WorkerWithQueue
-  const isIdle = worker.idle > 5000 // Consider idle if > 5 seconds
+/** Queues nobody consumes: one line, dashed, so the gap is visible without the weight. */
+function UnattendedQueueNode({ data }: NodeProps) {
+  const paused = (data.status as string) === 'paused'
+  const waiting = data.waitingJobs as number
 
   return (
-    <div className="relative group">
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!bg-status-success !w-2.5 !h-2.5 !border-2 !border-status-success"
-      />
-      <div
-        className={cn(
-          'relative px-4 py-3 rounded-lg border shadow-lg min-w-[220px] transition-all duration-300',
-          'bg-gradient-to-br from-card to-card/80 hover:shadow-xl',
-          isIdle
-            ? 'border-muted-foreground/30'
-            : 'border-status-success/50 ring-1 ring-status-success/20'
-        )}
-      >
-        {/* Activity indicator */}
-        {!isIdle && (
-          <div className="absolute -top-1 -right-1">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-success opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-status-success" />
-            </span>
-          </div>
-        )}
+    <div
+      className="flex h-7 w-[236px] cursor-pointer items-center gap-2 rounded-md border border-dashed border-border-strong bg-card px-3 transition-colors hover:border-faint"
+      title={`Open queue ${data.label as string}`}
+    >
+      <StateDot className={paused ? 'bg-status-warning' : 'bg-status-neutral'} />
+      <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
+        {data.label as string}
+      </span>
+      {paused ? <span className="text-[11px] text-status-warning">Paused</span> : null}
+      {waiting > 0 ? (
+        <span className="shrink-0 font-mono text-[11px] text-status-warning">
+          {formatCompactNumber(waiting)} waiting
+        </span>
+      ) : null}
+    </div>
+  )
+}
 
-        <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              'p-2 rounded-lg transition-colors',
-              isIdle ? 'bg-muted text-muted-foreground' : 'bg-status-success/10 text-status-success'
-            )}
-          >
-            <Server className="h-4 w-4" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm text-foreground truncate font-mono">
-              {worker.name || worker.id.slice(0, 12)}
-            </div>
-            <div className="text-xs text-muted-foreground font-mono truncate">{worker.addr}</div>
-          </div>
-        </div>
+function GroupLabelNode({ data }: NodeProps) {
+  return <div className="eyebrow whitespace-nowrap">{data.label as string}</div>
+}
 
-        <div className="mt-2 pt-2 border-t border-border/50 flex items-center justify-between text-[11px]">
-          <div className="flex items-center gap-1 text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            <span>Age: {formatDuration(worker.age * 1000)}</span>
-          </div>
-          <div
-            className={cn(
-              'flex items-center gap-1',
-              isIdle ? 'text-status-warning' : 'text-status-success'
-            )}
-          >
-            <Cpu className="h-3 w-3" />
-            <span>{isIdle ? 'Idle' : 'Active'}</span>
-          </div>
-        </div>
+function WorkerNode({ data }: NodeProps) {
+  const worker = data.worker as Worker
+  const active = isWorkerActive(worker)
 
-        {/* Idle time */}
-        {isIdle && (
-          <div className="mt-1 text-[10px] text-muted-foreground text-right">
-            Idle for {formatDuration(worker.idle)}
-          </div>
-        )}
+  return (
+    <div
+      className={cn(CHIP, 'w-[236px]', data.dimmed ? 'opacity-35' : null)}
+      title={`${workerLabel(worker)} · ${worker.addr}`}
+    >
+      <Handle type="target" position={Position.Left} isConnectable={false} />
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate font-mono text-xs font-medium">{workerLabel(worker)}</span>
+        <span className="shrink-0 font-mono text-[11px] text-faint">#{worker.id}</span>
+      </div>
+      <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <StateDot
+            className={active ? 'bg-status-active' : 'bg-status-neutral'}
+            pulse={active && !data.dimmed}
+          />
+          {active ? 'Active' : 'Idle'}
+        </span>
+        <span className="truncate font-mono">
+          {active ? `up ${formatSeconds(worker.age)}` : `idle ${formatSeconds(worker.idle)}`}
+        </span>
       </div>
     </div>
   )
@@ -256,429 +194,464 @@ function WorkerNode({ data }: NodeProps) {
 const nodeTypes = {
   redis: RedisNode,
   queue: QueueNode,
+  unattended: UnattendedQueueNode,
+  groupLabel: GroupLabelNode,
   worker: WorkerNode,
 }
 
-function WorkersPage() {
-  const { data, isLoading, error } = useAllWorkers()
-  const { currentConnection } = useConnection()
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
-  const topBarConfig = useMemo(
-    () => ({
-      left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <Network className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Workers</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            Visualize connected workers and queue assignments
-          </span>
-        </div>
-      ),
-    }),
-    []
+/* Layout: Redis → attended queues → their workers, one row per worker.
+   Queues without workers sit in a compact grid underneath. */
+const ROW = 56
+const QUEUE_X = 288
+const WORKER_X = 604
+const GRID_COLUMNS = [0, 252, 504, 756]
+const GRID_ROW = 34
+
+/** Button cells centre their content; pin it to the top so values align with plain cells. */
+const METRIC_BUTTON = 'flex flex-col justify-start'
+
+/** Leaves a gutter on the left so the zoom controls never sit on top of a chip. */
+const FIT_VIEW: FitViewOptions = {
+  padding: { top: '20px', right: '20px', bottom: '20px', left: '60px' },
+  maxZoom: 1,
+}
+
+const EDGE_IDLE = 'var(--color-border-strong)'
+const EDGE_ACTIVE = 'var(--color-status-active)'
+
+function buildTopology(
+  data: ListWorkersResponse,
+  connectionName: string,
+  stateFilter: WorkerStateFilter
+): { nodes: Node[]; edges: Edge[] } {
+  const nodes: Node[] = []
+  const edges: Edge[] = []
+
+  const workersByQueue = new Map<string, Worker[]>()
+  for (const worker of data.workers) {
+    const list = workersByQueue.get(worker.queueName) ?? []
+    list.push(worker)
+    workersByQueue.set(worker.queueName, list)
+  }
+
+  // Sort by name and id so positions stay put between refreshes.
+  const sortedQueues = [...data.queues].sort((a, b) => a.name.localeCompare(b.name))
+  const attended = sortedQueues.filter((queue) => (workersByQueue.get(queue.name)?.length ?? 0) > 0)
+  const unattended = sortedQueues.filter(
+    (queue) => (workersByQueue.get(queue.name)?.length ?? 0) === 0
   )
 
-  useAppTopBar(topBarConfig)
+  const queueData = (queue: WorkerQueue) => ({
+    label: queue.name,
+    status: queue.status,
+    workerCount: workersByQueue.get(queue.name)?.length ?? 0,
+    activeJobs: queue.jobCounts.active,
+    waitingJobs: queue.jobCounts.waiting,
+  })
 
-  // Build the flow graph - use useMemo for stable positions
-  const buildGraph = useCallback(() => {
-    if (!data) return
+  let row = 0
+  for (const queue of attended) {
+    const queueId = `queue-${queue.name}`
+    const queueWorkers = [...(workersByQueue.get(queue.name) ?? [])].sort((a, b) =>
+      a.id.localeCompare(b.id)
+    )
+    const blockTop = row * ROW
 
-    const newNodes: Node[] = []
-    const newEdges: Edge[] = []
+    nodes.push({
+      id: queueId,
+      type: 'queue',
+      position: { x: QUEUE_X, y: blockTop + ((queueWorkers.length - 1) * ROW) / 2 },
+      data: queueData(queue),
+    })
 
-    // Redis node (center)
-    const redisNode: Node = {
-      id: 'redis',
-      type: 'redis',
-      position: { x: 0, y: 300 },
-      data: {
-        label: currentConnection?.name ?? 'Redis',
-        totalQueues: data.totalQueues,
-        totalWorkers: data.totalWorkers,
-      },
-    }
-    newNodes.push(redisNode)
+    const queueBusy = queue.status === 'active' && queue.jobCounts.active > 0
+    edges.push({
+      id: `redis-${queueId}`,
+      source: 'redis',
+      target: queueId,
+      type: 'smoothstep',
+      animated: queueBusy,
+      style: { stroke: queueBusy ? EDGE_ACTIVE : EDGE_IDLE },
+    })
 
-    // Sort queues alphabetically to ensure stable ordering
-    const sortedQueues = [...data.queues].sort((a, b) => a.name.localeCompare(b.name))
+    queueWorkers.forEach((worker, index) => {
+      const workerId = `worker-${worker.id}`
+      const active = isWorkerActive(worker)
+      const dimmed = stateFilter !== 'all' && (stateFilter === 'active') !== active
 
-    // Calculate layout
-    const queueCount = sortedQueues.length
-    const queueSpacing = 200
-    const queueStartY = 300 - ((queueCount - 1) * queueSpacing) / 2
-
-    // Queue nodes and their workers
-    sortedQueues.forEach((queue, queueIndex) => {
-      const queueId = `queue-${queue.name}`
-      const queueY = queueStartY + queueIndex * queueSpacing
-
-      // Queue node
-      const queueNode: Node = {
-        id: queueId,
-        type: 'queue',
-        position: { x: 350, y: queueY },
-        data: {
-          label: queue.name,
-          status: queue.status,
-          workerCount: queue.workerCount,
-          activeJobs: queue.jobCounts.active,
-          waitingJobs: queue.jobCounts.waiting,
-        },
-      }
-      newNodes.push(queueNode)
-
-      // Edge from Redis to Queue
-      newEdges.push({
-        id: `redis-${queueId}`,
-        source: 'redis',
-        target: queueId,
-        type: 'smoothstep',
-        animated: queue.status === 'active',
-        style: {
-          stroke: queue.status === 'active' ? '#3b82f6' : '#f59e0b',
-          strokeWidth: 2,
-        },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: queue.status === 'active' ? '#3b82f6' : '#f59e0b',
-        },
+      nodes.push({
+        id: workerId,
+        type: 'worker',
+        position: { x: WORKER_X, y: blockTop + index * ROW },
+        data: { label: workerLabel(worker), worker, dimmed },
       })
-
-      // Worker nodes for this queue - sort by ID for stable ordering
-      type Worker = ListWorkersResponse['workers'][number]
-      const queueWorkers = data.workers
-        .filter((w: Worker) => w.queueName === queue.name)
-        .sort((a: Worker, b: Worker) => a.id.localeCompare(b.id))
-      const workerSpacing = 100
-      const workerStartY = queueY - ((queueWorkers.length - 1) * workerSpacing) / 2
-
-      queueWorkers.forEach((worker: Worker, workerIndex: number) => {
-        const workerId = `worker-${worker.id}`
-        const workerY = workerStartY + workerIndex * workerSpacing
-
-        const workerNode: Node = {
-          id: workerId,
-          type: 'worker',
-          position: { x: 720, y: workerY },
-          data: {
-            label: worker.name || worker.id,
-            worker,
-          },
-        }
-        newNodes.push(workerNode)
-
-        // Edge from Queue to Worker
-        const isActive = worker.idle <= 5000
-        newEdges.push({
-          id: `${queueId}-${workerId}`,
-          source: queueId,
-          target: workerId,
-          type: 'smoothstep',
-          animated: isActive,
-          style: {
-            stroke: isActive ? '#22c55e' : '#71717a',
-            strokeWidth: isActive ? 2 : 1,
-          },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: isActive ? '#22c55e' : '#71717a',
-          },
-        })
+      edges.push({
+        id: `${queueId}-${workerId}`,
+        source: queueId,
+        target: workerId,
+        type: 'smoothstep',
+        animated: active && !dimmed,
+        style: { stroke: active ? EDGE_ACTIVE : EDGE_IDLE, opacity: dimmed ? 0.35 : 1 },
       })
     })
 
-    setNodes(newNodes)
-    setEdges(newEdges)
-  }, [data, currentConnection, setNodes, setEdges])
+    row += queueWorkers.length
+  }
+
+  const attendedHeight = Math.max(row, 1) * ROW
+  nodes.unshift({
+    id: 'redis',
+    type: 'redis',
+    position: { x: 0, y: (attendedHeight - ROW) / 2 },
+    data: {
+      label: connectionName,
+      totalQueues: data.totalQueues,
+      totalWorkers: data.totalWorkers,
+    },
+  })
+
+  if (unattended.length > 0) {
+    const gridTop = attendedHeight + 28
+    nodes.push({
+      id: 'unattended-label',
+      type: 'groupLabel',
+      position: { x: 0, y: gridTop },
+      data: { label: `No workers · ${unattended.length}` },
+      draggable: false,
+      selectable: false,
+    })
+    unattended.forEach((queue, index) => {
+      nodes.push({
+        id: `queue-${queue.name}`,
+        type: 'unattended',
+        position: {
+          x: GRID_COLUMNS[index % GRID_COLUMNS.length],
+          y: gridTop + 24 + Math.floor(index / GRID_COLUMNS.length) * GRID_ROW,
+        },
+        data: queueData(queue),
+      })
+    })
+  }
+
+  return { nodes, edges }
+}
+
+function LegendItem({ swatch, children }: { swatch: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      {swatch}
+      {children}
+    </span>
+  )
+}
+
+function WorkersPage() {
+  const { orgSlug, connectionId } = Route.useParams()
+  const navigate = useNavigate()
+  const { data, isLoading, error, refetch } = useAllWorkers()
+  const { currentConnection } = useConnection()
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
+  // A phone cannot show the topology at a legible zoom, so it starts on the list.
+  const [view, setView] = useState<WorkerView>(() =>
+    typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches
+      ? 'list'
+      : 'graph'
+  )
+  const [stateFilter, setStateFilter] = useState<WorkerStateFilter>('all')
+  const [search, setSearch] = useState('')
+
+  const topBarConfig = useMemo(() => ({ left: <PageTitle title="Workers" /> }), [])
+  useAppTopBar(topBarConfig)
+
+  const connectionName = currentConnection?.name ?? 'Redis'
 
   useEffect(() => {
-    buildGraph()
-  }, [buildGraph])
+    if (!data) return
+    const topology = buildTopology(data, connectionName, stateFilter)
+    setNodes(topology.nodes)
+    setEdges(topology.edges)
+  }, [data, connectionName, stateFilter, setNodes, setEdges])
 
-  // Stats
   const stats = useMemo(() => {
     if (!data) return null
-    type Worker = ListWorkersResponse['workers'][number]
-    const activeWorkers = data.workers.filter((w: Worker) => w.idle <= 5000).length
-    const idleWorkers = data.workers.length - activeWorkers
+    const active = data.workers.filter(isWorkerActive).length
+    const attendedQueues = new Set(data.workers.map((worker) => worker.queueName))
     return {
       total: data.totalWorkers,
-      active: activeWorkers,
-      idle: idleWorkers,
+      active,
+      idle: data.workers.length - active,
       queues: data.totalQueues,
+      unattended: data.queues.filter((queue) => !attendedQueues.has(queue.name)).length,
     }
   }, [data])
 
+  const listedWorkers = useMemo(() => {
+    if (!data) return []
+    const term = search.trim().toLowerCase()
+    return data.workers
+      .filter((worker) => {
+        if (stateFilter !== 'all' && (stateFilter === 'active') !== isWorkerActive(worker)) {
+          return false
+        }
+        if (!term) return true
+        return [worker.name, worker.id, worker.queueName, worker.addr].some((value) =>
+          value.toLowerCase().includes(term)
+        )
+      })
+      .sort((a, b) => a.queueName.localeCompare(b.queueName) || a.id.localeCompare(b.id))
+  }, [data, search, stateFilter])
+
+  const toggleStateFilter = useCallback((next: WorkerStateFilter) => {
+    setStateFilter((current) => (current === next ? 'all' : next))
+  }, [])
+
+  const openQueue = useCallback(
+    (queueName: string) => {
+      navigate({
+        to: '/$orgSlug/c/$connectionId/queues/$queueName',
+        params: { orgSlug, connectionId, queueName },
+        search: {},
+      })
+    },
+    [connectionId, navigate, orgSlug]
+  )
+
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <div className="rounded-full bg-status-danger/10 p-4 mb-4">
-          <AlertCircle className="h-8 w-8 text-status-danger" />
-        </div>
-        <h2 className="text-xl font-semibold mb-2">Failed to load workers</h2>
-        <p className="text-muted-foreground text-center max-w-md">{error.message}</p>
-      </div>
+      <EmptyState
+        icon={AlertCircle}
+        tone="danger"
+        title="Failed to load workers"
+        description={error.message}
+        actions={
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        }
+      />
     )
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatCard
-          title="Total Workers"
-          value={stats?.total ?? 0}
-          icon={Server}
-          loading={isLoading}
-        />
-        <StatCard
-          title="Active"
-          value={stats?.active ?? 0}
-          icon={Activity}
-          loading={isLoading}
-          variant="green"
-          showPulse={(stats?.active ?? 0) > 0}
-        />
-        <StatCard
-          title="Idle"
-          value={stats?.idle ?? 0}
-          icon={Clock}
-          loading={isLoading}
-          variant="orange"
-        />
-        <StatCard
-          title="Queues"
-          value={stats?.queues ?? 0}
-          icon={Layers}
-          loading={isLoading}
-          variant="blue"
-        />
-      </div>
+  const hasWorkers = (data?.totalWorkers ?? 0) > 0
+  const filtersActive = stateFilter !== 'all' || search.trim().length > 0
 
-      {/* React Flow Visualization */}
-      <Card className="overflow-hidden">
-        <CardHeader className="border-b bg-muted/30 py-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Network className="h-4 w-4 text-muted-foreground" />
-              Worker Topology
-            </CardTitle>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-status-danger" />
-                Redis
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-status-active" />
-                Queue
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-status-success" />
-                Worker
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-4 h-0.5 bg-gradient-to-r from-status-success to-status-success animate-pulse" />
-                Active
-              </div>
-            </div>
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <MetricStrip className="shrink-0 sm:grid-cols-4">
+        <Metric
+          label="Workers"
+          value={stats?.total ?? 0}
+          loading={isLoading}
+          onClick={stateFilter === 'all' ? undefined : () => setStateFilter('all')}
+          title={stateFilter === 'all' ? undefined : 'Show all workers'}
+          className={METRIC_BUTTON}
+        />
+        <Metric
+          label="Active"
+          value={stats?.active ?? 0}
+          tone={(stats?.active ?? 0) > 0 ? 'active' : 'neutral'}
+          pulse={(stats?.active ?? 0) > 0}
+          loading={isLoading}
+          onClick={() => toggleStateFilter('active')}
+          active={stateFilter === 'active'}
+          hint={`command sent in the last ${WORKER_IDLE_AFTER_SECONDS}s`}
+          title="Highlight active workers"
+          className={METRIC_BUTTON}
+        />
+        <Metric
+          label="Idle"
+          value={stats?.idle ?? 0}
+          tone="neutral"
+          loading={isLoading}
+          onClick={() => toggleStateFilter('idle')}
+          active={stateFilter === 'idle'}
+          hint={`connection quiet for over ${WORKER_IDLE_AFTER_SECONDS}s`}
+          title="Highlight idle workers"
+          className={METRIC_BUTTON}
+        />
+        <Metric
+          label="Queues"
+          value={stats?.queues ?? 0}
+          hint={stats && stats.unattended > 0 ? `${stats.unattended} without a worker` : undefined}
+          loading={isLoading}
+        />
+      </MetricStrip>
+
+      <Panel className="flex min-h-[420px] flex-1 flex-col">
+        <PanelHeader className="shrink-0">
+          <div className="flex items-center gap-3">
+            <Tabs value={view} onValueChange={(next) => setView(next as WorkerView)}>
+              <TabsList role="group" aria-label="Worker view">
+                <TabsTrigger value="graph" aria-pressed={view === 'graph'}>
+                  Graph
+                </TabsTrigger>
+                <TabsTrigger value="list" aria-pressed={view === 'list'}>
+                  List
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {data?.hasMore ? (
+              <span className="text-xs text-muted-foreground">
+                First {data.queues.length} of {data.totalQueues} queues
+              </span>
+            ) : null}
           </div>
-        </CardHeader>
-        <div className="h-[600px] w-full bg-gradient-to-br from-background via-background to-muted/20">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="flex flex-col items-center gap-4">
-                <div className="relative">
-                  <div className="w-16 h-16 border-4 border-muted rounded-full" />
-                  <div className="absolute inset-0 w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                </div>
-                <p className="text-muted-foreground">Loading worker topology...</p>
-              </div>
-            </div>
-          ) : data?.totalWorkers === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full">
-              <div className="rounded-full bg-muted p-6 mb-4">
-                <WifiOff className="h-10 w-10 text-muted-foreground" />
-              </div>
-              <h3 className="text-lg font-semibold mb-1">No Workers Connected</h3>
-              <p className="text-sm text-muted-foreground text-center max-w-md">
-                No workers are currently connected to any queue. Start some workers to see them
-                appear here.
-              </p>
+
+          {!hasWorkers ? null : view === 'graph' ? (
+            <div className="hidden items-center gap-4 text-xs text-muted-foreground md:flex">
+              <LegendItem swatch={<StateDot className="bg-status-active" />}>Active</LegendItem>
+              <LegendItem swatch={<StateDot className="bg-status-neutral" />}>Idle</LegendItem>
+              <LegendItem swatch={<StateDot className="bg-status-warning" />}>Paused</LegendItem>
+              <LegendItem swatch={<span className="h-px w-4 bg-status-active" />}>
+                Jobs in flight
+              </LegendItem>
             </div>
           ) : (
+            <div className="relative w-full sm:w-64">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Filter by worker, queue, or address"
+                aria-label="Filter workers"
+                className="pl-8"
+              />
+            </div>
+          )}
+        </PanelHeader>
+
+        <div className="min-h-0 flex-1">
+          {isLoading ? (
+            <div className="flex h-full items-center justify-center gap-2 text-[13px] text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              Loading worker topology…
+            </div>
+          ) : !hasWorkers ? (
+            <EmptyState
+              icon={ServerOff}
+              title="No workers connected"
+              description={
+                <>
+                  Workers appear here when a BullMQ <code className="font-mono">Worker</code>{' '}
+                  connects to this Redis.{' '}
+                  {stats && stats.queues > 0
+                    ? `${stats.queues} ${stats.queues === 1 ? 'queue is' : 'queues are'} waiting for one.`
+                    : null}
+                </>
+              }
+              className="h-full rounded-none border-0"
+            >
+              <pre className="mt-4 max-w-full overflow-x-auto rounded-md border bg-card px-3 py-2 text-left font-mono text-xs leading-5 text-muted-foreground">
+                {"new Worker('my-queue', async (job) => {\n  // process job\n}, { connection })"}
+              </pre>
+            </EmptyState>
+          ) : view === 'graph' ? (
             <ReactFlow
               nodes={nodes}
               edges={edges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
+              onNodeClick={(_, node) => {
+                if (node.type === 'queue' || node.type === 'unattended') {
+                  openQueue(node.data.label as string)
+                }
+              }}
               nodeTypes={nodeTypes}
+              nodesConnectable={false}
               fitView
-              fitViewOptions={{ padding: 0.2 }}
+              fitViewOptions={FIT_VIEW}
               minZoom={0.3}
               maxZoom={1.5}
               proOptions={{ hideAttribution: true }}
-              className="bg-transparent"
+              className="bg-background"
             >
-              <Background
-                gap={20}
-                size={1}
-                color="currentColor"
-                className="text-muted-foreground/10"
-              />
-              <Controls className="!bg-card !border-border !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground hover:[&>button]:!bg-accent" />
-              <MiniMap
-                className="!bg-card !border-border"
-                nodeColor={(node) => {
-                  if (node.type === 'redis') return '#ef4444'
-                  if (node.type === 'queue') return '#3b82f6'
-                  return '#22c55e'
-                }}
-                maskColor="rgba(0, 0, 0, 0.2)"
-              />
+              <Background gap={24} size={1} />
+              <Controls showInteractive={false} />
             </ReactFlow>
-          )}
-        </div>
-      </Card>
-
-      {/* Worker Details Table */}
-      {data && data.workers.length > 0 && (
-        <Card>
-          <CardHeader className="border-b bg-muted/30 py-3">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Server className="h-4 w-4 text-muted-foreground" />
-              Worker Details
-            </CardTitle>
-          </CardHeader>
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Status</TableHead>
-                <TableHead>Worker ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Queue</TableHead>
-                <TableHead>Address</TableHead>
-                <TableHead>Age</TableHead>
-                <TableHead>Idle Time</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.workers.map((worker: ListWorkersResponse['workers'][number]) => {
-                const isActive = worker.idle <= 5000
-                return (
-                  <TableRow key={worker.id}>
-                    <TableCell>
-                      <StatusIndicator status={isActive ? 'active' : 'idle'} />
-                    </TableCell>
-                    <TableCell>
-                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
-                        {worker.id}
-                      </code>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {worker.name || <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell>
-                      <QueueNameTag name={worker.queueName} asLink size="sm" />
-                    </TableCell>
-                    <TableCell>
-                      <code className="text-xs text-muted-foreground font-mono">{worker.addr}</code>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDuration(worker.age * 1000)}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {formatDuration(worker.idle)}
-                    </TableCell>
+          ) : listedWorkers.length === 0 ? (
+            <EmptyState
+              size="inline"
+              icon={Search}
+              title="No workers match"
+              description="No connected worker matches the current filter."
+              className="h-full"
+              actions={
+                filtersActive ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearch('')
+                      setStateFilter('all')
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div className="h-full overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Worker</TableHead>
+                    <TableHead>Queue</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Address</TableHead>
+                    <TableHead className="text-right">Age</TableHead>
+                    <TableHead className="text-right">Idle</TableHead>
                   </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
-    </div>
-  )
-}
-
-// Stats Card Component
-type StatVariant = 'default' | 'blue' | 'green' | 'orange' | 'red'
-
-interface StatCardProps {
-  title: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  loading?: boolean
-  variant?: StatVariant
-  showPulse?: boolean
-}
-
-const variantStyles: Record<
-  StatVariant,
-  {
-    icon: string
-    accent: string
-  }
-> = {
-  default: {
-    icon: 'text-muted-foreground',
-    accent: 'bg-status-neutral/40',
-  },
-  blue: {
-    icon: 'text-status-active',
-    accent: 'bg-status-active',
-  },
-  green: {
-    icon: 'text-status-success',
-    accent: 'bg-status-success',
-  },
-  orange: {
-    icon: 'text-status-delayed',
-    accent: 'bg-status-delayed',
-  },
-  red: {
-    icon: 'text-status-danger',
-    accent: 'bg-status-danger',
-  },
-}
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  loading,
-  variant = 'default',
-  showPulse,
-}: StatCardProps) {
-  const styles = variantStyles[variant]
-
-  return (
-    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
-      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-        <CardTitle className="eyebrow">{title}</CardTitle>
-        <div className="relative">
-          <Icon className={cn('h-4 w-4', styles.icon)} />
-          {showPulse && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-success opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-status-success" />
-            </span>
+                </TableHeader>
+                <TableBody>
+                  {listedWorkers.map((worker) => {
+                    const active = isWorkerActive(worker)
+                    return (
+                      <TableRow key={`${worker.queueName}-${worker.id}`}>
+                        <TableCell className="whitespace-nowrap">
+                          <span className="font-mono font-medium">{workerLabel(worker)}</span>
+                          <span className="ml-2 font-mono text-xs text-faint">#{worker.id}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Link
+                            to="/$orgSlug/c/$connectionId/queues/$queueName"
+                            params={{ orgSlug, connectionId, queueName: worker.queueName }}
+                            search={{}}
+                            className="whitespace-nowrap rounded-sm font-mono text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                          >
+                            {worker.queueName}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <span className="flex items-center gap-2 whitespace-nowrap text-xs">
+                            <StateDot
+                              className={active ? 'bg-status-active' : 'bg-status-neutral'}
+                              pulse={active}
+                            />
+                            <span className={active ? 'text-foreground' : 'text-muted-foreground'}>
+                              {active ? 'Active' : 'Idle'}
+                            </span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+                          {worker.addr || '—'}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-mono tabular-nums text-muted-foreground">
+                          {formatSeconds(worker.age)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-mono tabular-nums text-muted-foreground">
+                          {formatSeconds(worker.idle)}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </div>
-      </CardHeader>
-      <CardContent className="p-4 pt-0">
-        {loading ? (
-          <Skeleton className="h-8 w-20" />
-        ) : (
-          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-            {value}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      </Panel>
+    </div>
   )
 }

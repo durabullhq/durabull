@@ -1,17 +1,20 @@
 import {
+  type LabeledConsentScope,
   labelConsentScopes,
   type McpOAuthConsentContext,
   parseMcpOAuthConsentSearch,
   submitOAuthConsent,
 } from '@durabull/auth/client'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { AlertCircle, Loader2, ShieldCheck } from 'lucide-react'
+import { Check, Link2Off, Loader2, ShieldAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { AuthLayout } from '@/components/auth-layout'
-import { DurabullLogo, DurabullWordmark } from '@/components/durabull-logo'
+import { AuthError, AuthLayout, AuthLoading } from '@/components/auth-layout'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useAuth } from '@/hooks/use-auth'
+import { useOrganizations } from '@/hooks/use-organization'
+import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/consent')({
   validateSearch: (search: Record<string, unknown>) => parseMcpOAuthConsentSearch(search),
@@ -21,7 +24,9 @@ export const Route = createFileRoute('/consent')({
 function ConsentPage() {
   const search = Route.useSearch()
   const navigate = useNavigate()
-  const { isAuthenticated, isLoading: sessionLoading } = useAuth()
+  const { isAuthenticated, isLoading: sessionLoading, user } = useAuth()
+  // Delegated access follows the signed-in user, so it reaches every organization they belong to.
+  const { data: organizations } = useOrganizations()
   const [context, setContext] = useState<McpOAuthConsentContext | null>(null)
   const [contextError, setContextError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -131,118 +136,234 @@ function ConsentPage() {
   }
 
   if (sessionLoading || !isAuthenticated) {
-    return (
-      <AuthLayout>
-        <div className="flex min-h-screen items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </AuthLayout>
-    )
+    return <AuthLoading />
   }
 
-  return (
-    <AuthLayout>
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <Card className="w-full max-w-lg border-border/60 bg-card/95 p-6 shadow-xl">
-          <div className="mb-6 flex items-center gap-3">
-            <DurabullLogo className="h-9 w-9" />
-            <DurabullWordmark className="h-6" />
-          </div>
+  const readScopes = labeledScopes.filter((entry) => !entry.writeScope && !entry.unknownScope)
+  const writeScopes = labeledScopes.filter((entry) => entry.writeScope)
+  const unknownScopes = labeledScopes.filter((entry) => entry.unknownScope && !entry.writeScope)
+  const organizationNames = (organizations ?? []).map((organization) => organization.name)
 
-          <div className="mb-4 flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-            <div>
-              <h1 className="text-lg font-semibold">Authorize application</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Review the access requested before connecting to Durabull MCP.
+  return (
+    <AuthLayout
+      width="wide"
+      footer={context ? 'Only allow applications you recognize and trust.' : undefined}
+    >
+      {missingConsentCode ? (
+        <>
+          <h1 className="sr-only">Authorize application</h1>
+          <EmptyState
+            size="inline"
+            tone="danger"
+            icon={Link2Off}
+            title="This authorization link is incomplete or expired"
+            description="Start again from your MCP client to get a fresh link."
+            className="px-0 py-2"
+          />
+        </>
+      ) : contextError ? (
+        <>
+          <h1 className="sr-only">Authorize application</h1>
+          <EmptyState
+            size="inline"
+            tone="danger"
+            icon={ShieldAlert}
+            title="This request can't be authorized"
+            description={
+              <>
+                {contextError}
+                <span className="block">Start again from your MCP client to get a fresh link.</span>
+              </>
+            }
+            className="px-0 py-2"
+          />
+        </>
+      ) : !context ? (
+        <>
+          <h1 className="mb-4 text-[13px] font-medium text-muted-foreground">
+            Authorize application
+          </h1>
+          <div
+            className="flex items-center gap-2 text-[13px] text-muted-foreground"
+            aria-live="polite"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            Loading authorization details…
+          </div>
+        </>
+      ) : (
+        <>
+          <h1 className="mb-4 text-[13px] font-medium text-muted-foreground">
+            Authorize application
+          </h1>
+
+          {/* Who is asking */}
+          <div className="flex items-center gap-3">
+            <ClientMark name={context.name} icon={context.icon} />
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold tracking-tight">{context.name}</p>
+              <p className="text-[13px] leading-5 text-muted-foreground">
+                wants to access Durabull on your behalf
               </p>
             </div>
           </div>
 
-          {missingConsentCode ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-              This authorization link is incomplete or expired. Start again from your MCP client.
-            </div>
-          ) : contextError ? (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-              {contextError}
-            </div>
-          ) : !context ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading authorization details…
-            </div>
-          ) : (
-            <>
-              <div className="mb-4 rounded-md border bg-muted/30 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Application
-                </p>
-                <p className="mt-1 text-base font-medium">{context.name}</p>
-                {context.disabled ? (
-                  <p className="mt-2 text-sm text-destructive">
-                    This application has been disabled and cannot be authorized.
-                  </p>
+          {context.disabled ? (
+            <AuthError className="mt-4">
+              This application has been disabled and cannot be authorized.
+            </AuthError>
+          ) : null}
+
+          {/* Whose data it reaches */}
+          <dl className="mt-5 divide-y rounded-lg border text-[13px] leading-5">
+            <ConsentFact label="Account">
+              <span className="truncate">{user?.email ?? user?.name ?? 'Your account'}</span>
+            </ConsentFact>
+            {organizationNames.length > 0 ? (
+              <ConsentFact
+                label={organizationNames.length === 1 ? 'Organization' : 'Organizations'}
+              >
+                <span className="truncate" title={organizationNames.join(', ')}>
+                  {organizationNames.slice(0, 2).join(', ')}
+                </span>
+                {organizationNames.length > 2 ? (
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                    +{organizationNames.length - 2}
+                  </span>
                 ) : null}
-              </div>
+              </ConsentFact>
+            ) : null}
+            <ConsentFact label="Client ID">
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                {context.clientId}
+              </span>
+            </ConsentFact>
+          </dl>
 
-              <div className="mb-6 space-y-3">
-                <p className="text-sm font-medium">Requested access</p>
-                <ul className="space-y-2">
-                  {labeledScopes.map((entry) => (
-                    <li
-                      key={entry.scope}
-                      className="rounded-md border border-border/60 bg-background/60 px-3 py-2"
-                    >
-                      <p className="text-sm font-medium">
-                        {entry.title}
-                        {entry.writeScope ? (
-                          <span className="ml-2 text-xs font-normal text-status-warning">
-                            (can make changes)
-                          </span>
-                        ) : null}
-                        {entry.unknownScope ? (
-                          <span className="ml-2 text-xs font-normal text-status-warning">
-                            (unrecognized scope)
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{entry.description}</p>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+          {/* What it gets */}
+          <div className="mt-5 space-y-4">
+            <ScopeGroup label="Can view" entries={readScopes} />
+            <ScopeGroup
+              label="Can change"
+              entries={writeScopes}
+              tag={<Badge variant="warning">Write</Badge>}
+            />
+            <ScopeGroup
+              label="Unrecognized"
+              entries={unknownScopes}
+              tag={<Badge variant="warning">Unrecognized</Badge>}
+            />
+          </div>
 
-              {actionError ? (
-                <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{actionError}</span>
-                </div>
-              ) : null}
+          {actionError ? <AuthError className="mt-5">{actionError}</AuthError> : null}
 
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  data-testid="mcp-consent-allow"
-                  disabled={isSubmitting || context.disabled}
-                  onClick={() => void handleConsent(true)}
-                >
-                  {isSubmitting ? 'Authorizing…' : 'Allow access'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-testid="mcp-consent-deny"
-                  disabled={isSubmitting}
-                  onClick={() => void handleConsent(false)}
-                >
-                  Deny
-                </Button>
-              </div>
-            </>
-          )}
-        </Card>
-      </div>
+          <div className="mt-6 grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9"
+              data-testid="mcp-consent-deny"
+              disabled={isSubmitting}
+              onClick={() => void handleConsent(false)}
+            >
+              Deny
+            </Button>
+            <Button
+              type="button"
+              className="h-9"
+              data-testid="mcp-consent-allow"
+              disabled={isSubmitting || context.disabled}
+              onClick={() => void handleConsent(true)}
+            >
+              {isSubmitting ? 'Authorizing…' : 'Allow access'}
+            </Button>
+          </div>
+        </>
+      )}
     </AuthLayout>
+  )
+}
+
+/** The requesting client's icon, or its initial when it did not register one. */
+function ClientMark({ name, icon }: { name: string; icon: string | null }) {
+  return (
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted font-mono text-sm font-medium text-muted-foreground">
+      {icon ? (
+        <img src={icon} alt="" className="h-full w-full object-cover" />
+      ) : (
+        (name.trim()[0]?.toUpperCase() ?? '?')
+      )}
+    </span>
+  )
+}
+
+function ConsentFact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <dt className="w-24 shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="flex min-w-0 flex-1 items-center gap-1.5">{children}</dd>
+    </div>
+  )
+}
+
+function ScopeGroup({
+  label,
+  entries,
+  tag,
+}: {
+  label: string
+  entries: LabeledConsentScope[]
+  /**
+   * Marks every row of the group as deserving a second look. Tagged groups
+   * get full-width rows; untagged (read) groups use a compact two-column list.
+   */
+  tag?: React.ReactNode
+}) {
+  if (entries.length === 0) return null
+
+  return (
+    <section>
+      <h2 className="eyebrow mb-1.5 flex items-center gap-1.5">
+        {label}
+        <span className="text-faint">{entries.length}</span>
+      </h2>
+      <ul className="divide-y rounded-lg border">
+        {entries.map((entry) =>
+          tag ? (
+            <li
+              key={entry.scope}
+              className="flex items-start gap-2.5 px-3 py-2"
+              title={entry.scope}
+            >
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p
+                  className={cn(
+                    'text-[13px] font-medium leading-5',
+                    entry.unknownScope && 'break-all font-mono text-xs'
+                  )}
+                >
+                  {entry.title}
+                </p>
+                <p className="text-xs leading-4 text-muted-foreground">{entry.description}</p>
+              </div>
+              <span className="shrink-0">{tag}</span>
+            </li>
+          ) : (
+            <li
+              key={entry.scope}
+              className="grid grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 px-3 py-1.5 sm:grid-cols-[16px_144px_minmax(0,1fr)]"
+              title={entry.scope}
+            >
+              <Check className="mt-0.5 h-4 w-4 text-muted-foreground" aria-hidden />
+              <p className="text-[13px] font-medium leading-5">{entry.title}</p>
+              <p className="col-start-2 text-xs leading-4 text-muted-foreground sm:col-start-3 sm:leading-5">
+                {entry.description}
+              </p>
+            </li>
+          )
+        )}
+      </ul>
+    </section>
   )
 }

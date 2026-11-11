@@ -1,32 +1,26 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
 import { Link } from '@tanstack/react-router'
-import { motion } from 'framer-motion'
 import type { LucideIcon } from 'lucide-react'
-import {
-  ArrowRight,
-  BadgeCheck,
-  Check,
-  ChevronRight,
-  Cloud,
-  Database,
-  Github,
-  Loader2,
-  Mail,
-  Shield,
-  Sparkles,
-  UserPlus,
-  Users,
-  WandSparkles,
-} from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { ArrowUpRight, Check, CircleAlert, Eye, EyeOff, Github, Loader2 } from 'lucide-react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { GoogleIcon } from '@/components/auth-layout'
+import { PageTitle } from '@/components/page-title'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Panel, PanelHeader } from '@/components/ui/section'
+import { Select } from '@/components/ui/select'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { linkSocial, listAccounts, useAuth } from '@/hooks/use-auth'
+import {
+  useCreateConnection,
+  useRunConnectionQueueDiscovery,
+  useTestConnection,
+} from '@/hooks/use-connections'
 import {
   type MemberRole,
   useActiveOrganization,
@@ -49,35 +43,28 @@ interface LinkedAccount {
 }
 
 type ProviderId = 'google' | 'github'
+type ConnectionEnvironment = 'development' | 'staging' | 'production'
 
-const shellTransition = { duration: 0.65, ease: [0.16, 1, 0.3, 1] as const }
+const CONNECTION_TROUBLESHOOTING_DOCS_URL =
+  'https://durabull.io/documentation/getting-started/connection-troubleshooting'
+const CONNECTION_MANAGEMENT_DOCS_URL =
+  'https://durabull.io/documentation/getting-started/connection-management'
 
 const socialProviders: Array<{
   id: ProviderId
   name: string
   icon: LucideIcon | typeof GoogleIcon
-  accent: string
-  bg: string
-  description: string
 }> = [
-  {
-    id: 'google',
-    name: 'Google',
-    icon: GoogleIcon,
-    accent: 'text-status-danger',
-    bg: 'bg-status-danger/12',
-    description: 'Bring Google sign-in online for less friction across the team.',
-  },
-  {
-    id: 'github',
-    name: 'GitHub',
-    icon: Github,
-    accent: 'text-status-neutral',
-    bg: 'bg-status-neutral/12',
-    description: 'Keep engineering access one click away with GitHub auth.',
-  },
+  { id: 'google', name: 'Google', icon: GoogleIcon },
+  { id: 'github', name: 'GitHub', icon: Github },
 ]
 
+/**
+ * First-run flow for a workspace with no Redis connection. Connecting Redis is
+ * the one required step and leads the page; on a hosted workspace two optional
+ * steps follow (invite teammates, link a sign-in provider). A local install has
+ * no accounts, so it shows the connection step alone.
+ */
 export function OrganizationOnboarding({
   orgSlug,
   organizationName,
@@ -105,9 +92,7 @@ export function OrganizationOnboarding({
       account.providerId === 'google' || account.providerId === 'github'
   )
   const linkedProviderIds = new Set(linkedProviders.map((account) => account.providerId))
-  const teamReady = members.length > 1 || invitations.length > 0
   const accountsReady = linkedProviderIds.size > 0
-  const optionalProgress = Number(teamReady) + Number(accountsReady)
 
   useEffect(() => {
     let cancelled = false
@@ -141,24 +126,15 @@ export function OrganizationOnboarding({
 
   const topBarConfig = useMemo(
     () => ({
-      left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <WandSparkles className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Getting Started</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            Bring {organizationName} online
-          </span>
-        </div>
-      ),
+      left: <PageTitle title="Get started" />,
       actions: (
-        <Button variant="ghost" size="xs" onClick={onSkip}>
+        <Button variant="outline" size="xs" onClick={onSkip}>
           Skip for now
         </Button>
       ),
+      mobileActions: <DropdownMenuItem onClick={onSkip}>Skip for now</DropdownMenuItem>,
     }),
-    [onSkip, organizationName]
+    [onSkip]
   )
 
   useAppTopBar(topBarConfig)
@@ -197,541 +173,471 @@ export function OrganizationOnboarding({
     }
   }
 
+  // Steps are numbered only when there is more than one of them.
+  const numbered = !isAuthless
+
   return (
-    <div className="space-y-6">
-      <motion.section
-        className="relative isolate overflow-hidden rounded-[34px] border border-border/70 bg-card/90 shadow-[0_28px_120px_-68px_rgba(15,23,42,0.75)]"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={shellTransition}
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.2),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.15),transparent_24%),linear-gradient(140deg,rgba(14,116,144,0.12),transparent_45%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.22),transparent_30%),radial-gradient(circle_at_82%_18%,rgba(251,191,36,0.16),transparent_24%),linear-gradient(140deg,rgba(6,78,59,0.15),transparent_45%)]" />
-        <div className="pointer-events-none absolute inset-0 opacity-45 [background-image:linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)] [background-size:34px_34px]" />
+    <div className="mx-auto w-full max-w-2xl space-y-4 pb-8 sm:pt-4">
+      {isAuthless ? null : (
+        <p className="text-[13px] leading-5 text-muted-foreground">
+          <span className="font-medium text-foreground">{organizationName}</span> needs one thing
+          before it can show queues: a Redis connection. The other steps can wait.
+        </p>
+      )}
 
-        <div className="relative grid gap-8 px-6 py-8 sm:px-8 sm:py-10 xl:grid-cols-[1.2fr_0.8fr] xl:px-10">
-          <div className="space-y-7">
-            <motion.div
-              className="inline-flex items-center gap-2 rounded-full border border-white/35 bg-background/75 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.26em] text-muted-foreground shadow-sm backdrop-blur"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...shellTransition, delay: 0.06 }}
-            >
-              <Sparkles className="h-3.5 w-3.5 text-status-active" />
-              New Organization
-            </motion.div>
+      <Panel>
+        <StepHeader number={numbered ? 1 : undefined} title="Connect a Redis instance" />
+        {envConnections ? (
+          <EnvConnectionGuide orgSlug={orgSlug} />
+        ) : (
+          <ConnectRedisForm local={isAuthless} />
+        )}
+      </Panel>
 
-            <motion.div
-              className="space-y-4"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...shellTransition, delay: 0.1 }}
-            >
-              <h2
-                className="max-w-4xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl xl:text-[3.7rem]"
-                style={{
-                  fontFamily: '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif',
-                }}
-              >
-                Turn <span className="text-status-active">{organizationName}</span> into a live
-                BullMQ control room.
-              </h2>
-              <p className="max-w-2xl text-base leading-8 text-muted-foreground sm:text-lg">
-                Add your first Redis connection, pull teammates into the workspace, and connect the
-                sign-in providers your team already trusts. The platform is ready. It just needs a
-                signal.
-              </p>
-            </motion.div>
-
-            <motion.div
-              className="flex flex-wrap gap-3"
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...shellTransition, delay: 0.16 }}
-            >
-              <Button asChild size="lg" className="gap-2 rounded-full px-6">
-                <Link
-                  to="/$orgSlug/connections"
-                  params={{ orgSlug }}
-                  search={envConnections ? undefined : { create: 1 }}
-                >
-                  {envConnections ? 'Configure connection source' : 'Add first connection'}
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-              <Button asChild size="lg" variant="outline" className="rounded-full px-6">
-                <Link to="/$orgSlug/connections" params={{ orgSlug }}>
-                  View connection setup
-                </Link>
-              </Button>
-            </motion.div>
-
-            <motion.div
-              className="grid gap-3 md:grid-cols-3"
-              initial={{ opacity: 0, y: 22 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ ...shellTransition, delay: 0.22 }}
-            >
-              <HeroMetric
-                icon={Database}
-                label="Primary launch step"
-                value={envConnections ? 'Wire env vars' : 'Connect Redis'}
-                copy="The only required move before queues and analytics can boot."
-              />
-              <HeroMetric
-                icon={Users}
-                label="Optional accelerators"
-                value={`${optionalProgress}/2 complete`}
-                copy="Invite teammates and link auth providers while the workspace is still fresh."
-              />
-              <HeroMetric
-                icon={BadgeCheck}
-                label="Workspace posture"
-                value={teamReady || accountsReady ? 'Momentum started' : 'Blank slate'}
-                copy="Clean organizations onboard fastest when the first workflow is deliberate."
-              />
-            </motion.div>
-          </div>
-
-          <motion.div
-            className="relative"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ ...shellTransition, delay: 0.2 }}
-          >
-            <div className="absolute inset-0 rounded-[30px] bg-gradient-to-br from-status-active/10 via-transparent to-status-warning/10 blur-3xl" />
-            <Card className="relative overflow-hidden rounded-[30px] border border-border/70 bg-background/80 shadow-[0_24px_90px_-54px_rgba(15,23,42,0.92)] backdrop-blur">
-              <CardContent className="space-y-6 p-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                      Launch Sequence
-                    </p>
-                    <p className="mt-1 text-xl font-semibold text-foreground">
-                      The first ten minutes
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">
-                    Guided
-                  </Badge>
-                </div>
-
-                <div className="space-y-4">
-                  {[
-                    {
-                      step: '01',
-                      title: envConnections
-                        ? 'Point Durabull at Redis'
-                        : 'Create the first connection',
-                      copy: envConnections
-                        ? 'Add the env-backed Redis URLs Durabull should read at boot.'
-                        : 'Save a Redis endpoint and let queue discovery index the surface area.',
-                      progress: 72,
-                      tone: 'bg-status-active/70',
-                    },
-                    {
-                      step: '02',
-                      title: 'Invite collaborators',
-                      copy: 'Loop in teammates before production alerts start landing here.',
-                      progress: teamReady ? 100 : 46,
-                      tone: 'bg-status-success/70',
-                    },
-                    {
-                      step: '03',
-                      title: 'Link Google or GitHub',
-                      copy: 'Reduce auth friction now, not during the first urgent incident.',
-                      progress: accountsReady ? 100 : 38,
-                      tone: 'bg-status-warning/75',
-                    },
-                  ].map((item, index) => (
-                    <div
-                      key={item.step}
-                      className="rounded-[22px] border border-border/65 bg-muted/28 p-4"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-sm font-semibold text-foreground">
-                          {item.step}
-                        </div>
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-foreground">{item.title}</p>
-                              <p className="text-sm leading-6 text-muted-foreground">{item.copy}</p>
-                            </div>
-                            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                          </div>
-                          <div className="h-2 overflow-hidden rounded-full bg-background/80">
-                            <motion.div
-                              className={cn('h-full rounded-full', item.tone)}
-                              initial={{ width: 0 }}
-                              animate={{ width: `${item.progress}%` }}
-                              transition={{ duration: 1, delay: 0.38 + index * 0.12 }}
-                            />
-                          </div>
-                        </div>
+      {isAuthless ? null : (
+        <>
+          <Panel>
+            <StepHeader
+              number={2}
+              title="Invite your team"
+              optional
+              status={
+                membersLoading || invitationsLoading ? null : (
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {members.length} member{members.length === 1 ? '' : 's'}
+                    {invitations.length > 0 ? ` · ${invitations.length} pending` : ''}
+                  </span>
+                )
+              }
+            />
+            <div className="p-4">
+              {canManageMembers ? (
+                <form onSubmit={handleInvite} className="space-y-3">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      type="email"
+                      aria-label="Teammate email"
+                      value={inviteEmail}
+                      onChange={(event) => {
+                        setInviteEmail(event.target.value)
+                        setInviteSuccess(null)
+                      }}
+                      placeholder="teammate@company.com"
+                      className="sm:flex-1"
+                    />
+                    <div className="flex gap-2">
+                      <div className="w-full sm:w-28">
+                        <Select
+                          aria-label="Role"
+                          value={inviteRole}
+                          onChange={(event) => setInviteRole(event.target.value as MemberRole)}
+                        >
+                          <option value="member">Member</option>
+                          <option value="admin">Admin</option>
+                        </Select>
                       </div>
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        className="shrink-0"
+                        disabled={inviteMember.isPending || !inviteEmail}
+                      >
+                        {inviteMember.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                        ) : null}
+                        Send invite
+                      </Button>
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        </div>
-      </motion.section>
+                  </div>
 
-      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr_0.95fr]">
-        <OnboardingCard
-          icon={Database}
-          title={envConnections ? 'Point Durabull at Redis' : 'Add your first connection'}
-          description={
-            envConnections
-              ? 'This workspace uses environment-managed connections. Wire the Redis URLs once and the whole platform wakes up on restart.'
-              : 'Create a connection, kick off queue discovery, and land directly in the queues dashboard.'
-          }
-          accent="from-status-active/18 via-status-active/5 to-transparent"
-        >
-          <div className="space-y-4">
-            <div className="rounded-[24px] border border-border/70 bg-background/75 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Connection path</p>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    {envConnections
-                      ? 'Define env-backed Redis URLs for the environments you want to expose.'
-                      : 'Store a Redis URL, set the environment, and let Durabull discover queues automatically.'}
-                  </p>
-                </div>
-                <Cloud className="h-5 w-5 shrink-0 text-status-active" />
-              </div>
-            </div>
+                  {inviteSuccess ? (
+                    <p className="flex items-center gap-1.5 text-[13px] leading-5 text-status-success">
+                      <Check className="h-4 w-4 shrink-0" aria-hidden />
+                      Invitation sent to {inviteSuccess}
+                    </p>
+                  ) : null}
 
-            {envConnections ? (
-              <div className="rounded-[20px] border border-dashed border-border/70 bg-muted/25 p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Suggested variable
-                </p>
-                <code className="mt-2 block rounded-xl bg-background/80 px-3 py-2 font-mono text-sm text-foreground">
-                  DURABULL_REDIS_URL_PRODUCTION
-                </code>
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap gap-3">
-              <Button asChild className="gap-2">
-                <Link
-                  to="/$orgSlug/connections"
-                  params={{ orgSlug }}
-                  search={envConnections ? undefined : { create: 1 }}
-                >
-                  {envConnections ? 'Open setup guide' : 'Create connection'}
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link to="/$orgSlug/connections" params={{ orgSlug }}>
-                  Review connections
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </OnboardingCard>
-
-        <OnboardingCard
-          icon={UserPlus}
-          title="Invite your team"
-          description="Shared visibility is worth more than a polished dashboard used by one person."
-          accent="from-status-success/18 via-status-success/5 to-transparent"
-        >
-          {isAuthless ? (
-            <div className="rounded-[22px] border border-border/70 bg-muted/25 p-4 text-sm leading-6 text-muted-foreground">
-              Team management is disabled in authless mode.
-            </div>
-          ) : canManageMembers ? (
-            <form onSubmit={handleInvite} className="space-y-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Users className="h-4 w-4 text-status-success" />
-                <span>
-                  {membersLoading || invitationsLoading
-                    ? 'Loading team posture...'
-                    : `${members.length} member${members.length === 1 ? '' : 's'} • ${invitations.length} pending invite${invitations.length === 1 ? '' : 's'}`}
-                </span>
-              </div>
-
-              <Input
-                type="email"
-                value={inviteEmail}
-                onChange={(event) => {
-                  setInviteEmail(event.target.value)
-                  setInviteSuccess(null)
-                }}
-                placeholder="teammate@company.com"
-                className="h-11 rounded-2xl bg-background/80"
-              />
-
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { value: 'member' as const, label: 'Member', icon: Users },
-                  { value: 'admin' as const, label: 'Admin', icon: Shield },
-                ].map((roleOption) => (
-                  <button
-                    key={roleOption.value}
-                    type="button"
-                    onClick={() => setInviteRole(roleOption.value)}
-                    className={cn(
-                      'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors',
-                      inviteRole === roleOption.value
-                        ? 'border-status-success/50 bg-status-success/10 text-status-success'
-                        : 'border-border/70 bg-background/70 text-muted-foreground hover:text-foreground'
-                    )}
+                  {inviteMember.error ? (
+                    <p role="alert" className="text-[13px] leading-5 text-status-danger">
+                      {inviteMember.error.message}
+                    </p>
+                  ) : null}
+                </form>
+              ) : (
+                <p className="text-[13px] leading-5 text-muted-foreground">
+                  {membersLoading
+                    ? 'Loading team permissions…'
+                    : 'Only owners and admins can invite members to this organization.'}{' '}
+                  <Link
+                    to="/$orgSlug/team"
+                    params={{ orgSlug }}
+                    className="font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
                   >
-                    <roleOption.icon className="h-3.5 w-3.5" />
-                    {roleOption.label}
-                  </button>
-                ))}
-              </div>
-
-              {inviteSuccess ? (
-                <div className="flex items-center gap-2 rounded-2xl border border-status-success/30 bg-status-success/10 px-3 py-2 text-sm text-status-success">
-                  <Check className="h-4 w-4" />
-                  Invitation sent to {inviteSuccess}
-                </div>
-              ) : null}
-
-              {inviteMember.error ? (
-                <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {inviteMember.error.message}
-                </div>
-              ) : null}
-
-              <div className="flex gap-3">
-                <Button
-                  type="submit"
-                  className="gap-2"
-                  disabled={inviteMember.isPending || !inviteEmail}
-                >
-                  {inviteMember.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Sending
-                    </>
-                  ) : (
-                    <>
-                      <Mail className="h-4 w-4" />
-                      Send invite
-                    </>
-                  )}
-                </Button>
-                <Button asChild variant="outline">
-                  <Link to="/$orgSlug/team" params={{ orgSlug }}>
                     Open team page
                   </Link>
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <div className="space-y-4">
-              <div className="rounded-[22px] border border-border/70 bg-muted/25 p-4 text-sm leading-6 text-muted-foreground">
-                {membersLoading
-                  ? 'Loading team permissions...'
-                  : 'You do not currently have permission to invite members from this workspace.'}
-              </div>
-              <Button asChild variant="outline">
-                <Link to="/$orgSlug/team" params={{ orgSlug }}>
-                  Open team page
-                </Link>
-              </Button>
+                </p>
+              )}
             </div>
-          )}
-        </OnboardingCard>
+          </Panel>
 
-        <OnboardingCard
-          icon={BadgeCheck}
-          title="Connect Google or GitHub"
-          description="Make future sign-ins boring. That is exactly the point."
-          accent="from-status-warning/18 via-status-warning/5 to-transparent"
-        >
-          {isAuthless ? (
-            <div className="rounded-[22px] border border-border/70 bg-muted/25 p-4 text-sm leading-6 text-muted-foreground">
-              External auth providers are disabled in authless mode.
-            </div>
-          ) : (
-            <div className="space-y-3">
+          <Panel>
+            <StepHeader
+              number={3}
+              title="Link a sign-in provider"
+              optional
+              status={
+                accountsReady ? (
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {linkedProviders.length} linked
+                  </span>
+                ) : null
+              }
+            />
+            <ul className="divide-y">
               {socialProviders.map((provider) => {
                 const ProviderIcon = provider.icon
                 const linked = linkedProviderIds.has(provider.id)
 
                 return (
-                  <div
-                    key={provider.id}
-                    className="rounded-[22px] border border-border/70 bg-background/76 p-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span
-                          className={cn(
-                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl',
-                            provider.bg
-                          )}
-                        >
-                          <ProviderIcon className={cn('h-5 w-5', provider.accent)} />
-                        </span>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-foreground">{provider.name}</p>
-                            {linked ? (
-                              <Badge className="rounded-full bg-status-success/12 text-status-success shadow-none dark:text-status-success">
-                                Connected
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                            {provider.description}
-                          </p>
-                        </div>
-                      </div>
-                      {linked ? (
-                        <Button asChild variant="ghost" size="sm">
+                  <li key={provider.id} className="flex min-h-11 items-center gap-3 px-4 py-2">
+                    <ProviderIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="flex-1 text-[13px] font-medium">{provider.name}</span>
+                    {linked ? (
+                      <>
+                        <Badge variant="success">Linked</Badge>
+                        <Button asChild variant="ghost" size="xs">
                           <Link to="/settings">Manage</Link>
                         </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="gap-2"
-                          disabled={accountsLoading || linkingProvider !== null}
-                          onClick={() => handleLinkProvider(provider.id)}
-                        >
-                          {linkingProvider === provider.id ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Connecting
-                            </>
-                          ) : (
-                            'Connect'
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        disabled={accountsLoading || linkingProvider !== null}
+                        onClick={() => handleLinkProvider(provider.id)}
+                      >
+                        {linkingProvider === provider.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                        ) : null}
+                        {linkingProvider === provider.id ? 'Linking…' : 'Link'}
+                      </Button>
+                    )}
+                  </li>
                 )
               })}
-
-              <div className="rounded-[22px] border border-dashed border-border/70 bg-muted/22 p-4 text-sm leading-6 text-muted-foreground">
-                {accountsLoading
-                  ? 'Loading linked providers...'
-                  : linkedProviders.length > 0
-                    ? `${linkedProviders.length} provider${linkedProviders.length === 1 ? '' : 's'} linked already.`
-                    : 'No external providers linked yet.'}
-              </div>
-            </div>
-          )}
-        </OnboardingCard>
-      </div>
-
-      <motion.div
-        className="flex flex-col items-start justify-between gap-3 rounded-[28px] border border-border/70 bg-card/70 px-5 py-4 sm:flex-row sm:items-center sm:px-6"
-        initial={{ opacity: 0, y: 18 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ ...shellTransition, delay: 0.28 }}
-      >
-        <div>
-          <p className="text-sm font-semibold text-foreground">Prefer to come back later?</p>
-          <p className="text-sm text-muted-foreground">
-            Skip the guided setup now. You can reopen it any time from the empty connection state.
-          </p>
-        </div>
-        <Button variant="ghost" onClick={onSkip}>
-          Skip for now
-        </Button>
-      </motion.div>
+            </ul>
+          </Panel>
+        </>
+      )}
     </div>
   )
 }
 
-function HeroMetric({
-  icon: Icon,
-  label,
-  value,
-  copy,
-}: {
-  icon: LucideIcon
-  label: string
-  value: string
-  copy: string
-}) {
-  return (
-    <Card className="overflow-hidden border border-border/70 bg-background/72 backdrop-blur">
-      <CardContent className="space-y-3 p-4">
-        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
-          <Icon className="h-4 w-4" />
-        </span>
-        <div className="space-y-1.5">
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            {label}
-          </p>
-          <p className="text-lg font-semibold text-foreground">{value}</p>
-          <p className="text-sm leading-6 text-muted-foreground">{copy}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function OnboardingCard({
-  icon: Icon,
+function StepHeader({
+  number,
   title,
-  description,
-  accent,
-  children,
+  optional = false,
+  status,
 }: {
-  icon: LucideIcon
+  number?: number
   title: string
-  description: string
-  accent: string
-  children: React.ReactNode
+  optional?: boolean
+  status?: React.ReactNode
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 18 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={shellTransition}
-    >
-      <Card className="relative isolate h-full overflow-hidden rounded-[30px] border border-border/70 bg-card/88 shadow-[0_24px_85px_-60px_rgba(15,23,42,0.85)]">
-        <div className={cn('absolute inset-0 bg-gradient-to-br opacity-90', accent)} />
-        <CardContent className="relative space-y-5 p-5 sm:p-6">
-          <div className="space-y-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-background/85 text-foreground shadow-sm">
-              <Icon className="h-5 w-5" />
-            </span>
-            <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-foreground">{title}</h3>
-              <p className="text-sm leading-7 text-muted-foreground">{description}</p>
-            </div>
-          </div>
-          {children}
-        </CardContent>
-      </Card>
-    </motion.div>
+    <PanelHeader className="flex-nowrap justify-start gap-2.5">
+      {number ? (
+        <span
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border bg-muted font-mono text-[11px] text-muted-foreground"
+          aria-hidden
+        >
+          {number}
+        </span>
+      ) : null}
+      <h2 className="truncate text-sm font-semibold tracking-tight">{title}</h2>
+      {optional ? <Badge variant="neutral">Optional</Badge> : null}
+      {status ? <div className="ml-auto flex shrink-0 items-center">{status}</div> : null}
+    </PanelHeader>
   )
 }
 
-function GoogleIcon({ className }: { className?: string }) {
+/**
+ * The hero step: name + URL, an inline connectivity test, and a plain
+ * statement of what Durabull will read. Saving the connection makes the
+ * workspace route move on to the queues page by itself.
+ */
+function ConnectRedisForm({ local }: { local: boolean }) {
+  const formId = useId()
+  // A local install usually has one Redis: start with a name so the URL is all that is left.
+  const [name, setName] = useState(local ? 'Local Redis' : '')
+  const [url, setUrl] = useState('')
+  const [showUrl, setShowUrl] = useState(false)
+  const [prefix, setPrefix] = useState('bull')
+  const [environment, setEnvironment] = useState<ConnectionEnvironment>('development')
+  const [allowSelfSignedCerts, setAllowSelfSignedCerts] = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  const createConnection = useCreateConnection()
+  const testConnection = useTestConnection()
+  const runQueueDiscovery = useRunConnectionQueueDiscovery()
+
+  const isSaving = createConnection.isPending || createConnection.isSuccess
+  const isTesting = testConnection.isPending
+  const effectivePrefix = prefix.trim() || 'bull'
+
+  const handleTest = async () => {
+    setTestResult(null)
+    try {
+      const result = await testConnection.mutateAsync({ url, allowSelfSignedCerts })
+      setTestResult(result)
+    } catch (error) {
+      setTestResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Connection test failed',
+      })
+    }
+  }
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    try {
+      const created = await createConnection.mutateAsync({
+        name: name.trim(),
+        url,
+        environment,
+        isDefault: true,
+        prefix: effectivePrefix,
+        allowSelfSignedCerts,
+      })
+      // Index queue names right away so the queues page has something to show.
+      runQueueDiscovery.mutate(created.connection.id)
+    } catch {
+      // Shown inline from the mutation state.
+    }
+  }
+
   return (
-    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-      />
-      <path
-        fill="currentColor"
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-      />
-      <path
-        fill="currentColor"
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-      />
-      <path
-        fill="currentColor"
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-      />
-    </svg>
+    <form onSubmit={handleSubmit} className="space-y-4 p-4">
+      <p className="text-[13px] leading-5 text-muted-foreground">
+        Use the Redis your BullMQ workers connect to. Durabull scans{' '}
+        <code className="rounded-[4px] border bg-muted px-1 py-px font-mono text-xs text-foreground">
+          {effectivePrefix}:*:meta
+        </code>{' '}
+        to find your queues, then reads jobs, workers, and schedules as you browse. The URL is
+        stored encrypted.
+      </p>
+
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_176px]">
+        <div className="space-y-1.5">
+          <Label htmlFor={`${formId}-name`} className="text-[13px]">
+            Name
+          </Label>
+          <Input
+            id={`${formId}-name`}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Production"
+            autoComplete="off"
+            required
+            disabled={isSaving}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${formId}-environment`} className="text-[13px]">
+            Environment
+          </Label>
+          <Select
+            id={`${formId}-environment`}
+            value={environment}
+            onChange={(event) => setEnvironment(event.target.value as ConnectionEnvironment)}
+            disabled={isSaving}
+          >
+            <option value="development">Development</option>
+            <option value="staging">Staging</option>
+            <option value="production">Production</option>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor={`${formId}-url`} className="text-[13px]">
+          Redis URL
+        </Label>
+        <div className="flex gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Input
+              id={`${formId}-url`}
+              type={showUrl ? 'text' : 'password'}
+              value={url}
+              onChange={(event) => {
+                setUrl(event.target.value)
+                setTestResult(null)
+              }}
+              placeholder={local ? 'redis://localhost:6379' : 'redis://default:password@host:6379'}
+              autoComplete="off"
+              spellCheck={false}
+              required
+              disabled={isSaving}
+              className={cn('pr-9', (showUrl || !url) && 'font-mono')}
+            />
+            <button
+              type="button"
+              onClick={() => setShowUrl((value) => !value)}
+              className="absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-r-md text-faint transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              aria-label={showUrl ? 'Hide connection string' : 'Show connection string'}
+              aria-pressed={showUrl}
+            >
+              {showUrl ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleTest}
+            disabled={!url || isTesting || isSaving}
+            className="shrink-0"
+          >
+            {isTesting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            Test
+          </Button>
+        </div>
+        <div aria-live="polite">
+          {testResult ? (
+            <p
+              className={cn(
+                'flex items-start gap-1.5 text-[13px] leading-5',
+                testResult.success ? 'text-status-success' : 'text-status-danger'
+              )}
+            >
+              {testResult.success ? (
+                <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              ) : (
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              )}
+              <span className="min-w-0 break-words">{testResult.message}</span>
+            </p>
+          ) : (
+            <p className="text-xs leading-4 text-muted-foreground">
+              <span className="font-mono">redis://</span> or{' '}
+              <span className="font-mono">rediss://</span> for TLS. Test it before you connect.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <details className="group rounded-md border">
+        <summary className="flex h-8 cursor-pointer list-none items-center gap-2 rounded-md px-3 text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
+          <span className="font-medium">Advanced</span>
+          <span className="truncate font-mono text-xs text-faint">
+            prefix {effectivePrefix}
+            {allowSelfSignedCerts ? ' · self-signed TLS' : ''}
+          </span>
+          <span className="ml-auto text-xs text-faint group-open:hidden">Show</span>
+          <span className="ml-auto hidden text-xs text-faint group-open:inline">Hide</span>
+        </summary>
+        <div className="space-y-4 border-t p-3">
+          <div className="space-y-1.5">
+            <Label htmlFor={`${formId}-prefix`} className="text-[13px]">
+              BullMQ prefix
+            </Label>
+            <Input
+              id={`${formId}-prefix`}
+              value={prefix}
+              onChange={(event) => setPrefix(event.target.value)}
+              placeholder="bull"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={isSaving}
+              className="max-w-48 font-mono"
+            />
+            <p className="text-xs leading-4 text-muted-foreground">
+              Must match the prefix your producers and workers use.
+            </p>
+          </div>
+          <label className="flex items-start gap-2.5 text-[13px] leading-5">
+            <input
+              type="checkbox"
+              checked={allowSelfSignedCerts}
+              onChange={(event) => {
+                setAllowSelfSignedCerts(event.target.checked)
+                setTestResult(null)
+              }}
+              disabled={isSaving}
+              className="mt-[3px] h-3.5 w-3.5 shrink-0 accent-foreground"
+            />
+            <span>
+              Allow self-signed TLS certificates
+              <span className="block text-xs leading-4 text-muted-foreground">
+                For providers that issue their own certificates, such as Heroku Key-Value Store.
+              </span>
+            </span>
+          </label>
+        </div>
+      </details>
+
+      {createConnection.error ? (
+        <p
+          role="alert"
+          className="flex items-start gap-1.5 text-[13px] leading-5 text-status-danger"
+        >
+          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span className="min-w-0 break-words">{createConnection.error.message}</span>
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Button type="submit" disabled={isSaving || !name.trim() || !url}>
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+          {createConnection.isSuccess ? 'Opening queues…' : isSaving ? 'Connecting…' : 'Connect'}
+        </Button>
+        <a
+          href={CONNECTION_TROUBLESHOOTING_DOCS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-sm text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          Connection troubleshooting
+          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+        </a>
+      </div>
+    </form>
+  )
+}
+
+/** Deployments that read connections from the environment get the variables, not a form. */
+function EnvConnectionGuide({ orgSlug }: { orgSlug: string }) {
+  return (
+    <div className="space-y-4 p-4">
+      <p className="text-[13px] leading-5 text-muted-foreground">
+        This deployment reads its Redis connections from environment variables. Add one set per
+        instance, then restart Durabull. It scans{' '}
+        <code className="rounded-[4px] border bg-muted px-1 py-px font-mono text-xs text-foreground">
+          bull:*:meta
+        </code>{' '}
+        to find your queues, then reads jobs, workers, and schedules as you browse.
+      </p>
+      <pre className="overflow-x-auto rounded-md border bg-muted px-3 py-2.5 font-mono text-xs leading-5 text-foreground">
+        {`DURABULL_REDIS_URL_MAIN=redis://default:password@host:6379
+DURABULL_REDIS_URL_MAIN_ENVIRONMENT=production
+DURABULL_REDIS_URL_MAIN_PREFIX=bull`}
+      </pre>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Button asChild>
+          <Link to="/$orgSlug/connections" params={{ orgSlug }}>
+            View connections
+          </Link>
+        </Button>
+        <a
+          href={CONNECTION_MANAGEMENT_DOCS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-sm text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          Connection variables
+          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+        </a>
+      </div>
+    </div>
   )
 }

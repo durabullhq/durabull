@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SEGMENTED_GROUP_CLASS, segmentedItemClass } from '@/components/ui/tabs'
 import type { QueueFilterMode } from '@/hooks/use-alerts'
 import { cn } from '@/lib/utils'
 
@@ -70,16 +71,12 @@ export function QueueMultiSelect({
       : 'Select the queues this rule should watch.'
 
   return (
-    <div className="space-y-4" ref={containerRef}>
-      <div className="inline-flex rounded-md border border-border/70 bg-background">
+    <div className="space-y-3" ref={containerRef}>
+      <div className={SEGMENTED_GROUP_CLASS}>
         <button
           type="button"
-          className={cn(
-            'px-4 py-2 text-sm transition-colors',
-            queueFilterMode === 'include'
-              ? 'bg-foreground text-background'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
+          aria-pressed={queueFilterMode === 'include'}
+          className={segmentedItemClass(queueFilterMode === 'include')}
           onClick={() => {
             if (queueFilterMode !== 'include') {
               onQueueFilterModeChange('include')
@@ -91,12 +88,8 @@ export function QueueMultiSelect({
         </button>
         <button
           type="button"
-          className={cn(
-            'border-l border-border/70 px-4 py-2 text-sm transition-colors',
-            queueFilterMode === 'exclude'
-              ? 'bg-foreground text-background'
-              : 'text-muted-foreground hover:text-foreground'
-          )}
+          aria-pressed={queueFilterMode === 'exclude'}
+          className={segmentedItemClass(queueFilterMode === 'exclude')}
           onClick={() => {
             if (queueFilterMode !== 'exclude') {
               onQueueFilterModeChange('exclude')
@@ -111,23 +104,23 @@ export function QueueMultiSelect({
       <div className="relative">
         <button
           type="button"
-          className="flex w-full items-center justify-between rounded-md border border-border/70 bg-background px-3 py-2.5 text-left text-sm"
+          className="flex h-8 w-full items-center justify-between rounded-md border border-input bg-card px-2.5 text-left text-[13px] shadow-xs transition-colors hover:border-border-strong focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
           onClick={() => setOpen((current) => !current)}
         >
           <span className="truncate">{summaryLabel}</span>
-          <ChevronDown className="ml-3 h-4 w-4 shrink-0 text-muted-foreground" />
+          <ChevronDown className="ml-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </button>
 
         {open ? (
-          <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-md border border-border/70 bg-background shadow-lg">
-            <div className="border-b border-border/70 p-3">
+          <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-20 overflow-hidden rounded-lg border bg-popover shadow-lg">
+            <div className="border-b p-2">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search queue names"
-                  className="pl-9"
+                  className="pl-8"
                 />
               </div>
               <p className="mt-2 text-xs text-muted-foreground">{helperText}</p>
@@ -154,7 +147,7 @@ export function QueueMultiSelect({
                   )
                 })
               ) : (
-                <div className="px-3 py-8 text-sm text-muted-foreground">
+                <div className="px-3 py-8 text-center text-[13px] text-muted-foreground">
                   No queues match "{query.trim()}".
                 </div>
               )}
@@ -164,7 +157,7 @@ export function QueueMultiSelect({
       </div>
 
       {queueFilterMode === 'exclude' && selectedQueueNames.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border/70 bg-muted/10 px-3 py-3 text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
           No queues excluded — this rule watches every discovered queue on the connection.
         </div>
       ) : null}
@@ -173,11 +166,7 @@ export function QueueMultiSelect({
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
             {selectedQueueNames.map((queueName) => (
-              <Badge
-                key={queueName}
-                variant="outline"
-                className="gap-1 border-border/70 bg-background"
-              >
+              <Badge key={queueName} variant="outline" className="gap-1 bg-card">
                 {queueName}
                 <button
                   type="button"
@@ -196,7 +185,7 @@ export function QueueMultiSelect({
           </div>
 
           {selectedQueueNames.length > 1 ? (
-            <div className="flex items-center justify-between rounded-md border border-border/70 bg-muted/10 px-3 py-3 text-sm">
+            <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-3 text-sm">
               <span className="text-muted-foreground">
                 {queueFilterMode === 'exclude'
                   ? `${selectedQueueNames.length} queues excluded from this rule.`
@@ -216,7 +205,7 @@ export function QueueMultiSelect({
       ) : null}
 
       {queueFilterMode === 'include' && availableQueues.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border/70 bg-muted/10 px-3 py-3 text-sm text-muted-foreground">
+        <div className="rounded-md border border-dashed bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
           No queues are currently indexed for this connection yet. You can switch to "all except"
           mode to watch all future queues, or return after discovery finishes.
         </div>

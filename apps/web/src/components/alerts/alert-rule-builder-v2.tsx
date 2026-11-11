@@ -1,9 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import {
-  BellRing,
+  BellOff,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Copy,
   Mail,
   Plus,
@@ -38,6 +36,7 @@ import { DestinationMultiSelect } from '@/components/alerts/destination-multi-se
 import { QueueMultiSelect } from '@/components/alerts/queue-multi-select'
 import { RuleTemplateCards } from '@/components/alerts/rule-template-cards'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PageTitle } from '@/components/page-title'
 import { SecretInput } from '@/components/secret-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -46,6 +45,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { SEGMENTED_GROUP_CLASS, segmentedItemClass } from '@/components/ui/tabs'
 import type {
   AlertDestinationRecord,
   AlertRuleMutationInput,
@@ -185,43 +185,35 @@ export function AlertRuleBuilder({
   const linearRoute = draft.notificationRoutes.find((route) => route.type === 'linear') ?? null
   const linearMetadataQuery = useLinearMetadata(Boolean(linearRoute))
 
+  const rulesPath = `/${orgSlug}/c/${connectionId}/alerts/rules`
+  const pageTitle = mode === 'create' ? 'New rule' : (rule?.name ?? 'Edit rule')
   const topBarConfig = useMemo(
     () => ({
       left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <BellRing className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2 text-sm">
-              <Link
-                to="/$orgSlug/c/$connectionId/alerts"
-                params={{ orgSlug, connectionId }}
-                className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-              >
-                Alerts
-              </Link>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate font-semibold text-foreground">
-                {mode === 'create' ? 'Create Alert Rule' : 'Edit Alert Rule'}
+        <PageTitle
+          title={pageTitle}
+          crumbs={[
+            { label: 'Alerts', to: `/${orgSlug}/c/${connectionId}/alerts` },
+            { label: 'Rules', to: rulesPath },
+          ]}
+          meta={
+            connectionName ? (
+              <span className="hidden text-xs text-muted-foreground lg:inline">
+                on {connectionName}
               </span>
-              <span className="hidden truncate text-muted-foreground xl:inline">
-                {connectionName ?? 'Connection'} incident policy builder
-              </span>
-            </div>
-          </div>
-        </div>
+            ) : null
+          }
+        />
       ),
       actions: (
         <Button asChild size="xs" variant="outline">
-          <Link to="/$orgSlug/c/$connectionId/alerts" params={{ orgSlug, connectionId }}>
-            <ChevronLeft className="mr-1.5 h-4 w-4" />
-            Back to alerts
+          <Link to="/$orgSlug/c/$connectionId/alerts/rules" params={{ orgSlug, connectionId }}>
+            Cancel
           </Link>
         </Button>
       ),
     }),
-    [connectionId, connectionName, mode, orgSlug]
+    [connectionId, connectionName, orgSlug, pageTitle, rulesPath]
   )
 
   useAppTopBar(topBarConfig)
@@ -315,77 +307,105 @@ export function AlertRuleBuilder({
     }
   }
 
-  return (
-    <div className="min-w-0">
-      <div className="z-10 -mt-2 border-b border-border/70 bg-background/95 py-4 backdrop-blur md:sticky md:top-0">
-        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3">
-          <AlertRuleSentence
-            tokens={sentenceTokens}
-            onTokenClick={(token) => {
-              if (token.key === 'cooldown') setAdvancedOpen(true)
-            }}
-          />
-          <div className="flex shrink-0 items-center gap-2">
-            {mode === 'edit' && rule ? (
-              <Button asChild type="button" variant="ghost" size="sm">
-                <Link
-                  to="/$orgSlug/c/$connectionId/alerts/new"
-                  params={{ orgSlug, connectionId }}
-                  search={{ from: rule.id }}
-                >
-                  <Copy className="mr-1.5 h-4 w-4" />
-                  Duplicate
-                </Link>
-              </Button>
-            ) : null}
-            {mode === 'edit' && onTest ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleTest}
-                disabled={isTesting}
-              >
-                <TestTube2 className="mr-1.5 h-4 w-4" />
-                {isTesting ? 'Running live test...' : 'Run live test'}
-              </Button>
-            ) : null}
-            <Button type="button" size="sm" onClick={handleSubmit} disabled={isSaving}>
-              {isSaving ? 'Saving...' : mode === 'create' ? 'Create rule' : 'Save changes'}
-            </Button>
-          </div>
-        </div>
-      </div>
+  const hasNoRoutes = sentenceTokens.find((token) => token.key === 'routes')?.set === false
 
-      <div className="mx-auto mt-6 w-full max-w-3xl space-y-6 pb-16">
+  const summary = (
+    <aside className="space-y-3">
+      <section className="rounded-lg border bg-card">
+        <div className="px-4 pb-3 pt-3.5">
+          <div className="eyebrow">Summary</div>
+          <div className="mt-2">
+            <AlertRuleSentence
+              tokens={sentenceTokens}
+              onTokenClick={(token) => {
+                if (token.key === 'cooldown') setAdvancedOpen(true)
+              }}
+            />
+          </div>
+          {hasNoRoutes ? (
+            <p className="mt-3 flex items-start gap-2 rounded-md border border-status-warning/30 bg-status-warning/10 px-2.5 py-2 text-xs leading-5">
+              <BellOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-warning" aria-hidden />
+              <span>
+                No one is notified yet. Incidents will still open, but only appear in Durabull.
+              </span>
+            </p>
+          ) : null}
+        </div>
+        <div className="space-y-2 border-t px-4 py-3">
+          <Button type="button" className="w-full" onClick={handleSubmit} disabled={isSaving}>
+            {isSaving ? 'Saving...' : mode === 'create' ? 'Create rule' : 'Save changes'}
+          </Button>
+          {mode === 'edit' && onTest ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={handleTest}
+              disabled={isTesting}
+            >
+              <TestTube2 className="h-4 w-4" />
+              {isTesting ? 'Running live test...' : 'Run live test'}
+            </Button>
+          ) : null}
+          {mode === 'edit' && rule ? (
+            <Button asChild type="button" variant="ghost" className="w-full">
+              <Link
+                to="/$orgSlug/c/$connectionId/alerts/new"
+                params={{ orgSlug, connectionId }}
+                search={{ from: rule.id }}
+              >
+                <Copy className="h-4 w-4" />
+                Duplicate
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      </section>
+      {lastTestResult ? <LiveTestResultPanel result={lastTestResult} /> : null}
+    </aside>
+  )
+
+  return (
+    <div className="mx-auto grid w-full max-w-5xl items-start gap-5 pb-16 lg:grid-cols-[minmax(0,1fr)_300px]">
+      {/* On small screens the summary and save action lead; on large ones they sit beside the form. */}
+      <div className="lg:order-2 lg:sticky lg:top-0">{summary}</div>
+
+      <div className="min-w-0 space-y-4 lg:order-1">
         {formError ? (
           <div
-            className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-2.5 text-[13px] text-status-danger"
             data-testid="alert-rule-form-error"
           >
             {formError}
           </div>
         ) : null}
 
-        {lastTestResult ? <LiveTestResultPanel result={lastTestResult} /> : null}
-
         {mode === 'create' ? (
           showTemplatePicker ? (
-            <BuilderPanel
+            <section
               id={ALERT_RULE_PANEL_IDS.template}
-              title="Start from a template"
-              description="Templates preload a sensible condition, scope, and cooldown — everything stays editable."
+              tabIndex={-1}
+              className="rounded-lg border bg-card px-4 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
-              <RuleTemplateCards
-                linearIntegrationValid={linearIntegrationConfigured}
-                onSelectTemplate={(template) => applyTemplateChoice(template)}
-                onStartFromScratch={() => applyTemplateChoice(null)}
-              />
-            </BuilderPanel>
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <h3 className="text-sm font-semibold tracking-tight">Start from a template</h3>
+                <p className="text-xs text-muted-foreground">
+                  Preloads a sensible condition, scope, and cooldown. Everything stays editable.
+                </p>
+              </div>
+              <div className="mt-3">
+                <RuleTemplateCards
+                  variant="chips"
+                  linearIntegrationValid={linearIntegrationConfigured}
+                  onSelectTemplate={(template) => applyTemplateChoice(template)}
+                  onStartFromScratch={() => applyTemplateChoice(null)}
+                />
+              </div>
+            </section>
           ) : (
             <div
               id={ALERT_RULE_PANEL_IDS.template}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/10 px-4 py-3 text-sm"
+              className="flex items-center justify-between gap-3 rounded-lg border bg-card px-4 py-2 text-[13px]"
             >
               <span className="min-w-0 truncate text-muted-foreground">
                 Started from:{' '}
@@ -405,10 +425,11 @@ export function AlertRuleBuilder({
 
         <BuilderPanel
           id={ALERT_RULE_PANEL_IDS.condition}
-          title="Condition"
-          description="Choose a queue or Redis server signal and tune when normal noise becomes an incident."
+          step={1}
+          title="When this happens"
+          description="Pick the signal, then tune when normal noise becomes an incident."
         >
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-wrap gap-1.5">
             {(
               [
                 'failure_threshold',
@@ -419,36 +440,35 @@ export function AlertRuleBuilder({
               ] as const
             ).map((type) => {
               const meta = getAlertTypeMeta(type)
+              const TypeIcon = meta.icon
               const isActive = draft.type === type
 
               return (
                 <button
                   key={type}
                   type="button"
+                  aria-pressed={isActive}
+                  title={meta.description}
                   className={cn(
-                    'rounded-md border px-4 py-3 text-left transition-colors',
+                    'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
                     isActive
                       ? 'border-foreground bg-foreground text-background'
-                      : 'border-border/70 bg-background hover:border-foreground/40'
+                      : 'bg-card text-muted-foreground hover:border-border-strong hover:text-foreground'
                   )}
                   onClick={() => updateDraft({ type })}
                   data-testid={`alert-rule-type-${type}`}
                 >
-                  <div className="text-sm font-semibold">{meta.label}</div>
-                  <p
-                    className={cn(
-                      'mt-1.5 text-sm leading-6',
-                      isActive ? 'text-background/80' : 'text-muted-foreground'
-                    )}
-                  >
-                    {meta.description}
-                  </p>
+                  <TypeIcon className="h-3.5 w-3.5" />
+                  {meta.label}
                 </button>
               )
             })}
           </div>
+          <p className="mt-2.5 text-xs leading-5 text-muted-foreground">
+            {getAlertTypeMeta(draft.type).description}
+          </p>
 
-          <div className="mt-5">
+          <div className="mt-4">
             {draft.type === 'failure_threshold' ? (
               <div className="grid gap-4 sm:grid-cols-2">
                 <NumberField
@@ -525,7 +545,7 @@ export function AlertRuleBuilder({
             ) : null}
 
             {draft.type === 'job_failed' ? (
-              <p className="rounded-md border border-border/70 bg-muted/10 px-4 py-3 text-sm leading-6 text-muted-foreground">
+              <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground">
                 Every failed job opens exactly one deduplicated Linear issue. Tune the per-poll
                 issue cap under Advanced.
               </p>
@@ -556,7 +576,7 @@ export function AlertRuleBuilder({
                       </option>
                     ))}
                   </Select>
-                  <p className="text-sm leading-6 text-muted-foreground">
+                  <p className="text-xs leading-5 text-muted-foreground">
                     {selectedRedisHealthMetric.description}
                   </p>
                 </div>
@@ -577,21 +597,22 @@ export function AlertRuleBuilder({
 
         <BuilderPanel
           id={ALERT_RULE_PANEL_IDS.queues}
-          title={draft.type === 'redis_health' ? 'Redis scope' : 'Queue scope'}
+          step={2}
+          title={draft.type === 'redis_health' ? 'On this Redis server' : 'On these queues'}
           description={
             draft.type === 'redis_health'
               ? 'Redis health rules evaluate once for the whole connection.'
-              : 'Target every discovered queue on the connection or a searchable subset.'
+              : 'Every discovered queue on the connection, or a subset.'
           }
         >
           {draft.type === 'redis_health' ? (
-            <div className="flex items-start gap-3 rounded-md border border-border/70 bg-muted/10 px-4 py-3">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground shadow-sm">
-                <ServerCog className="h-4 w-4" />
-              </span>
+            <div className="flex items-start gap-3 rounded-md border bg-muted/40 px-3 py-2.5">
+              <ServerCog className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div>
-                <div className="text-sm font-semibold">{connectionName ?? 'Redis connection'}</div>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                <div className="text-[13px] font-semibold">
+                  {connectionName ?? 'Redis connection'}
+                </div>
+                <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
                   One lightweight INFO sample covers memory, CPU, clients, and Redis resource
                   pressure without polling each queue.
                 </p>
@@ -615,7 +636,7 @@ export function AlertRuleBuilder({
                 }
               />
               {fieldError('queues') ? (
-                <p className="text-sm text-destructive">{fieldError('queues')}</p>
+                <p className="text-xs text-status-danger">{fieldError('queues')}</p>
               ) : null}
             </div>
           )}
@@ -623,8 +644,9 @@ export function AlertRuleBuilder({
 
         <BuilderPanel
           id={ALERT_RULE_PANEL_IDS.notify}
-          title="Notify"
-          description="Route incidents to saved destinations, or add one-off email and webhook routes. Linear uses the organization defaults unless this rule overrides them under Advanced."
+          step={3}
+          title="Tell these people"
+          description="Saved destinations, or a one-off email or webhook. Linear uses the organization defaults unless overridden under Advanced."
         >
           <NotifyPanelBody
             draft={draft}
@@ -641,8 +663,9 @@ export function AlertRuleBuilder({
 
         <BuilderPanel
           id={ALERT_RULE_PANEL_IDS.name}
-          title="Name & status"
-          description="Name the policy so responders understand the intent at a glance."
+          step={4}
+          title="Name it"
+          description="Responders see this name on every incident the rule opens."
         >
           <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto]">
             <div className="space-y-2" {...(fieldError('name') ? { 'data-field-error': '' } : {})}>
@@ -661,39 +684,31 @@ export function AlertRuleBuilder({
                 data-testid="alert-rule-name-input"
               />
               {fieldError('name') ? (
-                <p className="text-sm text-destructive">{fieldError('name')}</p>
+                <p className="text-xs text-status-danger">{fieldError('name')}</p>
               ) : null}
             </div>
 
             <div className="space-y-2">
               <Label>Status</Label>
-              <div className="inline-flex rounded-md border border-border/70 bg-background">
+              <div className={cn(SEGMENTED_GROUP_CLASS, 'flex')}>
                 <button
                   type="button"
-                  className={cn(
-                    'px-4 py-2 text-sm transition-colors',
-                    draft.enabled
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
+                  aria-pressed={draft.enabled}
+                  className={segmentedItemClass(draft.enabled)}
                   onClick={() => updateDraft({ enabled: true })}
                 >
                   Enabled
                 </button>
                 <button
                   type="button"
-                  className={cn(
-                    'border-l border-border/70 px-4 py-2 text-sm transition-colors',
-                    !draft.enabled
-                      ? 'bg-foreground text-background'
-                      : 'text-muted-foreground hover:text-foreground'
-                  )}
+                  aria-pressed={!draft.enabled}
+                  className={segmentedItemClass(!draft.enabled)}
                   onClick={() => updateDraft({ enabled: false })}
                 >
                   Muted
                 </button>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="max-w-[220px] text-xs leading-5 text-muted-foreground">
                 Muted rules are saved but won&apos;t emit incidents until enabled.
               </p>
             </div>
@@ -703,16 +718,16 @@ export function AlertRuleBuilder({
         <section
           id={ALERT_RULE_PANEL_IDS.advanced}
           tabIndex={-1}
-          className="rounded-lg border border-border/70 bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          className="rounded-lg border bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
             <CollapsibleTrigger
-              className="flex w-full items-center justify-between gap-3 px-6 py-4 text-left"
+              className="flex w-full items-center justify-between gap-3 rounded-lg px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               data-testid="alert-rule-advanced-trigger"
             >
-              <div>
-                <h3 className="text-base font-semibold">Advanced</h3>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <h3 className="text-sm font-semibold tracking-tight">Advanced</h3>
+                <p className="text-xs text-muted-foreground">
                   Cooldown, Linear overrides, and per-poll limits.
                 </p>
               </div>
@@ -724,7 +739,7 @@ export function AlertRuleBuilder({
               />
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <div className="space-y-6 border-t border-border/70 px-6 py-5">
+              <div className="space-y-5 border-t px-4 py-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <NumberField
                     id="alert-cooldown-minutes"
@@ -773,11 +788,14 @@ export function AlertRuleBuilder({
 
 function BuilderPanel({
   id,
+  step,
   title,
   description,
   children,
 }: {
   id: string
+  /** Position in the rule sentence: when → where → who → name. */
+  step?: number
   title: string
   description?: string
   children: React.ReactNode
@@ -786,15 +804,22 @@ function BuilderPanel({
     <section
       id={id}
       tabIndex={-1}
-      className="rounded-lg border border-border/70 bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+      className="rounded-lg border bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
     >
-      <div className="border-b border-border/70 px-6 py-4">
-        <h3 className="text-base font-semibold">{title}</h3>
-        {description ? (
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">{description}</p>
+      <div className="flex items-start gap-3 border-b px-4 py-3">
+        {step ? (
+          <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[10px] font-medium text-muted-foreground">
+            {step}
+          </span>
         ) : null}
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
+          {description ? (
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
       </div>
-      <div className="px-6 py-5">{children}</div>
+      <div className="px-4 py-4">{children}</div>
     </section>
   )
 }
@@ -819,7 +844,7 @@ function NumberField({
   onBlur?: () => void
 }) {
   return (
-    <div className="space-y-2" {...(error ? { 'data-field-error': '' } : {})}>
+    <div className="space-y-1.5" {...(error ? { 'data-field-error': '' } : {})}>
       <Label htmlFor={id}>{label}</Label>
       <div className="relative">
         <Input
@@ -843,9 +868,9 @@ function NumberField({
         ) : null}
       </div>
       {error ? (
-        <p className="text-sm text-destructive">{error}</p>
+        <p className="text-xs leading-5 text-status-danger">{error}</p>
       ) : helper ? (
-        <p className="text-sm text-muted-foreground">{helper}</p>
+        <p className="text-xs leading-5 text-muted-foreground">{helper}</p>
       ) : null}
     </div>
   )
@@ -913,11 +938,11 @@ function NotifyPanelBody({
           isLoading={destinationsLoading}
         />
         {fieldError('routes') ? (
-          <p className="text-sm text-destructive">{fieldError('routes')}</p>
+          <p className="text-sm text-status-danger">{fieldError('routes')}</p>
         ) : null}
-        <p className="text-sm text-muted-foreground">
-          Managed under Settings → Alert destinations; edits there apply to every rule that routes
-          to them.
+        <p className="text-xs leading-5 text-muted-foreground">
+          Destinations are shared across rules. Manage them under Alerts → Destinations; edits apply
+          to every rule that routes to them.
         </p>
       </div>
 
@@ -929,7 +954,7 @@ function NotifyPanelBody({
           return (
             <div
               key={route.id}
-              className="rounded-md border border-border/70 bg-muted/5 px-4 py-3"
+              className="rounded-md border bg-muted/5 px-4 py-3"
               {...(error ? { 'data-field-error': '' } : {})}
             >
               <div className="grid grid-cols-[110px_minmax(0,1fr)_auto] items-start gap-3">
@@ -963,7 +988,7 @@ function NotifyPanelBody({
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
-              {error ? <p className="mt-2 text-sm text-destructive">{error}</p> : null}
+              {error ? <p className="mt-2 text-sm text-status-danger">{error}</p> : null}
             </div>
           )
         })}
@@ -1122,7 +1147,7 @@ function NotificationRouteFields({
           Webhook
         </div>
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Badge variant="outline" className="gap-1.5 border-border/70 bg-background">
+          <Badge variant="outline" className="gap-1.5 bg-card">
             <Webhook className="h-3 w-3 text-muted-foreground" />
             {destination?.name ?? 'Saved webhook destination'}
           </Badge>
@@ -1191,7 +1216,7 @@ function NotificationRouteFields({
   return (
     <>
       <div className="inline-flex items-center gap-2 pt-2 text-sm font-medium">Linear</div>
-      <p className="pt-2 text-sm leading-6 text-muted-foreground">
+      <p className="pt-2 text-xs leading-5 text-muted-foreground">
         Creates issues through your organization&apos;s Linear integration defaults. Per-rule
         overrides live under Advanced.
       </p>
@@ -1249,7 +1274,7 @@ function LinearOverrideFields({
     <div className="space-y-4">
       <div>
         <h4 className="text-sm font-semibold">Linear overrides</h4>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
           Only for this rule — blank fields fall back to the organization integration defaults.
         </p>
       </div>
@@ -1357,7 +1382,7 @@ function LinearOverrideFields({
           {selectedLabels.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {selectedLabels.map((label) => (
-                <Badge key={label.id} variant="outline" className="gap-1 border-border/70">
+                <Badge key={label.id} variant="outline" className="gap-1">
                   {label.name}
                   <button
                     type="button"
@@ -1386,9 +1411,9 @@ function LiveTestResultPanel({ result }: { result: AlertTestResult }) {
   const metricUnavailable = result.evaluation.available === false
 
   return (
-    <section className="rounded-lg border border-border/70 bg-background px-6 py-5">
-      <h3 className="text-sm font-semibold">Latest live test</h3>
-      <div className="mt-3 space-y-3 text-sm">
+    <section className="rounded-lg border bg-card px-4 py-3.5">
+      <div className="eyebrow">Latest live test</div>
+      <div className="mt-2 space-y-2.5 text-[13px]">
         {metricUnavailable ? (
           <Badge variant="outline">Unavailable</Badge>
         ) : (
@@ -1397,7 +1422,7 @@ function LiveTestResultPanel({ result }: { result: AlertTestResult }) {
             emphasize={result.evaluation.triggered}
           />
         )}
-        <p className="leading-6 text-muted-foreground">
+        <p className="leading-5 text-muted-foreground">
           {metricUnavailable
             ? 'Redis needs another valid INFO sample before this rule can be evaluated.'
             : result.evaluation.summary || 'The live metric snapshot did not trigger this rule.'}
@@ -1407,10 +1432,7 @@ function LiveTestResultPanel({ result }: { result: AlertTestResult }) {
             <div className="font-medium text-foreground">Webhook delivery tests</div>
             <div className="space-y-2">
               {result.webhookTests.map((test) => (
-                <div
-                  key={test.url}
-                  className="rounded-md border border-border/70 bg-muted/20 px-3 py-2 text-xs"
-                >
+                <div key={test.url} className="rounded-md border bg-muted/40 px-2.5 py-2 text-xs">
                   <div className="flex items-center justify-between gap-3">
                     <span className="truncate font-mono">{test.url}</span>
                     <Badge variant={test.success ? 'success' : 'destructive'}>
@@ -1431,19 +1453,14 @@ function LiveTestResultPanel({ result }: { result: AlertTestResult }) {
   )
 }
 
-/** Loading placeholder matching the builder layout: sentence bar + panel blocks. */
+/** Loading placeholder matching the builder layout: form panels beside the summary. */
 export function AlertRuleBuilderSkeleton() {
   return (
-    <div className="min-w-0">
-      <div className="-mt-2 border-b border-border/70 py-4">
-        <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3">
-          <Skeleton className="h-7 w-full max-w-md" />
-          <Skeleton className="h-9 w-28" />
-        </div>
-      </div>
-      <div className="mx-auto mt-6 w-full max-w-3xl space-y-6 pb-16">
+    <div className="mx-auto grid w-full max-w-5xl items-start gap-5 pb-16 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <Skeleton className="h-52 rounded-lg lg:order-2" />
+      <div className="min-w-0 space-y-4 lg:order-1">
         {Array.from({ length: 4 }, (_, index) => (
-          <Skeleton key={index} className="h-44 rounded-lg" />
+          <Skeleton key={index} className="h-40 rounded-lg" />
         ))}
       </div>
     </div>

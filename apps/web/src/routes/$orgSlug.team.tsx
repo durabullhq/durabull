@@ -1,4 +1,5 @@
-import { Navigate, createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Navigate } from '@tanstack/react-router'
+
 export { TeamSettingsPage } from '@/components/settings/team-settings-page'
 
 export const Route = createFileRoute('/$orgSlug/team')({

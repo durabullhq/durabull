@@ -1,7 +1,7 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { and, closeDb, eq, getDb, member, organization, user } from '@durabull/dal'
 import { env } from '@durabull/env'
 import {
@@ -11,6 +11,7 @@ import {
   getAuthlessContext,
   isAuthlessMode,
   resetAuthlessStateForTests,
+  withVisibleActor,
 } from './authless'
 
 const mutableEnv = env as {
@@ -138,4 +139,36 @@ describe('authless context', () => {
       .limit(1)
     expect(preferredOrg).toHaveLength(0)
   }, 20_000)
+})
+
+describe('withVisibleActor', () => {
+  afterEach(() => {
+    mutableEnv.DURABULL_AUTHLESS = originalAuthlessMode
+  })
+
+  it('drops the synthetic acknowledger in installs without accounts', () => {
+    mutableEnv.DURABULL_AUTHLESS = true
+    const event: { id: string; acknowledgedByName: string | null } = {
+      id: 'e1',
+      acknowledgedByName: 'Local user',
+    }
+    expect(withVisibleActor(event)).toEqual({
+      id: 'e1',
+      acknowledgedByName: null,
+    })
+  })
+
+  it('keeps real names when accounts exist', () => {
+    mutableEnv.DURABULL_AUTHLESS = false
+    expect(withVisibleActor({ id: 'e1', acknowledgedByName: 'Sam Operator' })).toEqual({
+      id: 'e1',
+      acknowledgedByName: 'Sam Operator',
+    })
+  })
+
+  it('leaves events without an acknowledger field untouched', () => {
+    mutableEnv.DURABULL_AUTHLESS = true
+    const event = { id: 'e1' }
+    expect(withVisibleActor(event)).toBe(event)
+  })
 })

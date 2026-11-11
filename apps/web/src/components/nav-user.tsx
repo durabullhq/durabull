@@ -1,7 +1,7 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
 import { useNavigate } from '@tanstack/react-router'
-import { ChevronsUpDown, LogOut, Monitor, Moon, Settings, Sun } from 'lucide-react'
+import { Check, ChevronsUpDown, LogOut, Monitor, Moon, Settings, Sun } from 'lucide-react'
 import { useTheme } from '@/components/theme-provider'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -44,52 +44,50 @@ export function NavUser({ user, settingsPath = '/settings' }: NavUserProps) {
 
   // Generate initials from name
   const initials = user.name
-    .split(' ')
-    .map((n) => n[0])
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((n) => n[0]?.toUpperCase() ?? '')
     .join('')
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         data-testid="user-menu"
-        className="w-full rounded-lg outline-none ring-ring hover:bg-sidebar-accent focus-visible:ring-2 data-[state=open]:bg-sidebar-accent"
+        className="group flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring/40 data-[state=open]:bg-sidebar-accent"
       >
-        <div className="flex items-center gap-2 px-2 py-2 text-left text-sm transition-all">
-          <Avatar className="h-7 w-7 rounded-md border">
-            <AvatarImage src={user.avatar} alt={user.name} />
-            <AvatarFallback className="rounded-md border bg-secondary font-mono text-xs font-medium text-secondary-foreground">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="grid flex-1 leading-tight text-left">
-            <span className="truncate font-medium text-sidebar-foreground">{user.name}</span>
-            <span className="truncate text-xs text-muted-foreground">{user.email}</span>
-          </div>
-          <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
-        </div>
+        <Avatar className="h-6 w-6 rounded-md border">
+          <AvatarImage src={user.avatar} alt="" />
+          <AvatarFallback className="rounded-md bg-muted font-mono text-[10px] font-medium text-muted-foreground">
+            {initials}
+          </AvatarFallback>
+        </Avatar>
+        <span className="grid min-w-0 flex-1">
+          <span className="truncate text-[13px] font-medium leading-4 text-sidebar-accent-foreground">
+            {user.name}
+          </span>
+          {user.email ? (
+            <span className="truncate text-[11px] leading-[13px] text-muted-foreground">
+              {user.email}
+            </span>
+          ) : null}
+        </span>
+        <ChevronsUpDown
+          className="h-3.5 w-3.5 shrink-0 text-faint transition-colors group-hover:text-muted-foreground"
+          aria-hidden
+        />
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-56" align="end" side="top" sideOffset={4}>
-        <DropdownMenuLabel className="p-0 font-normal">
-          <div className="flex items-center gap-2 px-2 py-2 text-left text-sm">
-            <Avatar className="h-7 w-7 rounded-md">
-              <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback className="rounded-md border bg-secondary font-mono text-xs font-medium text-secondary-foreground">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <div className="grid flex-1 leading-tight">
-              <span className="truncate font-medium">{user.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{user.email}</span>
-            </div>
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
+      <DropdownMenuContent className="w-56" align="start" side="top" sideOffset={6}>
+        {user.email ? (
+          <>
+            <DropdownMenuLabel className="truncate font-normal" title={user.email}>
+              {user.email}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuGroup>
-          <DropdownMenuItem
-            className="cursor-pointer"
-            onClick={() => navigate({ to: settingsPath })}
-          >
-            <Settings className="mr-2 h-4 w-4 text-muted-foreground" />
+          <DropdownMenuItem onClick={() => navigate({ to: settingsPath })}>
+            <Settings className="text-muted-foreground" aria-hidden />
             Settings
           </DropdownMenuItem>
           <ThemeSubmenu theme={theme} setTheme={setTheme} />
@@ -97,16 +95,22 @@ export function NavUser({ user, settingsPath = '/settings' }: NavUserProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           data-testid="sign-out"
-          className="cursor-pointer text-destructive focus:text-destructive"
+          className="text-status-danger focus:bg-status-danger/10 focus:text-status-danger"
           onClick={handleLogout}
         >
-          <LogOut className="mr-2 h-4 w-4" />
+          <LogOut aria-hidden />
           Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
 }
+
+const THEME_OPTIONS = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+] as const
 
 /**
  * Theme selection submenu component
@@ -128,26 +132,18 @@ function ThemeSubmenu({
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger className="cursor-pointer">
-        <ThemeIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+      <DropdownMenuSubTrigger>
+        <ThemeIcon className="text-muted-foreground" aria-hidden />
         Theme
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent>
-        <DropdownMenuItem onClick={() => handleThemeChange('light')} className="cursor-pointer">
-          <Sun className="mr-2 h-4 w-4" />
-          Light
-          {theme === 'light' && <span className="ml-auto text-xs text-primary">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleThemeChange('dark')} className="cursor-pointer">
-          <Moon className="mr-2 h-4 w-4" />
-          Dark
-          {theme === 'dark' && <span className="ml-auto text-xs text-primary">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleThemeChange('system')} className="cursor-pointer">
-          <Monitor className="mr-2 h-4 w-4" />
-          System
-          {theme === 'system' && <span className="ml-auto text-xs text-primary">✓</span>}
-        </DropdownMenuItem>
+        {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+          <DropdownMenuItem key={value} onClick={() => handleThemeChange(value)}>
+            <Icon className="text-muted-foreground" aria-hidden />
+            {label}
+            {theme === value ? <Check className="ml-auto text-foreground" aria-hidden /> : null}
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   )

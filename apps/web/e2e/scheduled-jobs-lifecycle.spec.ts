@@ -32,11 +32,11 @@ test.describe('Scheduled jobs lifecycle', () => {
     await expect(page).toHaveURL(
       new RegExp(`/queues/${encodeURIComponent(queueName)}/scheduled-jobs/new$`)
     )
-    await page.getByLabel('Job Name').fill(jobName)
+    await page.getByLabel('Job name').fill(jobName)
     await page.getByLabel('Scheduler ID').fill(schedulerId)
     await page.getByRole('button', { name: /Fixed interval/i }).click()
     await page.getByLabel('Interval (ms)').fill('600000')
-    await page.getByRole('button', { name: 'Create Scheduled Job' }).click()
+    await page.getByRole('button', { name: 'Create scheduled job' }).click()
     await expect(page).toHaveURL(
       new RegExp(`/queues/${encodeURIComponent(queueName)}/scheduled-jobs/${schedulerId}$`),
       { timeout: 15000 }
@@ -53,7 +53,7 @@ test.describe('Scheduled jobs lifecycle', () => {
       const updatedName = `${jobName}-v2`
 
       await nameInput.fill(updatedName)
-      const saveButton = page.getByRole('button', { name: 'Save Changes' })
+      const saveButton = page.getByRole('button', { name: 'Save changes' })
       await expect(saveButton).toBeEnabled()
       await saveButton.click()
 
@@ -89,10 +89,11 @@ test.describe('Scheduled jobs lifecycle', () => {
     await expect(
       page.getByRole('heading', { name: 'Scheduled Jobs', exact: true, level: 1 })
     ).toBeVisible()
-    await expect(page.getByText('Scheduled Jobs by Queue')).toBeVisible()
+    await expect(page.getByRole('textbox', { name: 'Search scheduled jobs' })).toBeVisible()
 
+    // Every schedule is a table row that links to its queue.
     const first = data.scheduledJobs[0]
-    const groupTrigger = page.getByRole('button').filter({ hasText: first.queueName }).first()
-    await expect(groupTrigger).toBeVisible()
+    const queueLink = page.getByRole('link', { name: first.queueName, exact: true }).first()
+    await expect(queueLink).toBeVisible()
   })
 })

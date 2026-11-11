@@ -39,6 +39,19 @@ export function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
+/**
+ * Label for a cron schedule with no stored timezone. BullMQ then evaluates the
+ * pattern in the timezone of the process that schedules the next run — the
+ * worker host — which is usually, but not necessarily, UTC. Never display or
+ * submit a concrete timezone in its place.
+ */
+export const HOST_TIME_ZONE_LABEL = 'worker host time'
+
+/** The stored timezone, or the honest label when none is stored. */
+export function formatScheduleTimeZone(timeZone: string | null | undefined): string {
+  return timeZone?.trim() || HOST_TIME_ZONE_LABEL
+}
+
 export function getTimeZoneOptions(): string[] {
   const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const supportedValues = Intl.supportedValuesOf?.('timeZone') ?? []

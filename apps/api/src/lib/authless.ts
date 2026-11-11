@@ -1,5 +1,5 @@
-import { env } from '@durabull/env'
 import { and, eq, getDb, member, organization, user } from '@durabull/dal'
+import { env } from '@durabull/env'
 import type { Session, User } from 'better-auth/types'
 
 export const AUTHLESS_USER_ID = 'authless-user'
@@ -11,7 +11,7 @@ const AUTHLESS_EMAIL = 'admin@localhost'
 
 export const AUTHLESS_USER_TEMPLATE: User = {
   id: AUTHLESS_USER_ID,
-  name: 'Authless User',
+  name: 'Local user',
   email: AUTHLESS_EMAIL,
   emailVerified: true,
   image: null,
@@ -32,6 +32,16 @@ interface AuthlessResolvedContext {
 
 export function isAuthlessMode(): boolean {
   return env.DURABULL_AUTHLESS === true
+}
+
+/**
+ * Installs without accounts (the desktop app, single-user self-hosting) record
+ * every action against one synthetic user. Crediting that user ("acknowledged
+ * by Local user") is noise, so API responses drop the name in this mode.
+ */
+export function withVisibleActor<T extends object>(event: T): T {
+  if (!isAuthlessMode() || !('acknowledgedByName' in event)) return event
+  return { ...event, acknowledgedByName: null }
 }
 
 let authlessInitialized = false

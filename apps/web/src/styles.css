@@ -21,130 +21,175 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Design tokens — "Signal" ops-console theme                          */
+/* Design tokens — "Instrument" console theme                          */
 /*                                                                     */
-/* Graphite chrome, hairline borders, a single emerald "signal"        */
-/* accent, and a tokenized status palette shared by both modes.        */
+/* Warm-neutral ink surfaces shared with durabull.io, hairline         */
+/* borders, one ember brand accent (`signal`), and a status palette    */
+/* reserved for state. Every token has a light and dark value; build   */
+/* UI from tokens only so both modes stay equal. See                   */
+/* docs/design-system.md for usage rules.                              */
 /* ------------------------------------------------------------------ */
 
 @theme {
   --font-sans: 'Geist Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
 
-  /* Sharper, more technical radius scale */
+  /* Radius: 6px controls, 8px panels, 12px overlays */
   --radius: 0.375rem;
-  --radius-sm: 0.1875rem;
-  --radius-md: 0.3125rem;
-  --radius-lg: 0.375rem;
-  --radius-xl: 0.5rem;
-  --radius-2xl: 0.75rem;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
 
-  /* Light mode (default) — crisp paper-white console */
-  --color-background: hsl(220 20% 98.5%);
-  --color-foreground: hsl(222 32% 9%);
-  --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(222 32% 9%);
-  --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(222 32% 9%);
-  --color-primary: hsl(222 32% 11%);
-  --color-primary-foreground: hsl(210 20% 98%);
-  --color-secondary: hsl(220 16% 94.5%);
-  --color-secondary-foreground: hsl(222 32% 11%);
-  --color-muted: hsl(220 16% 95.5%);
-  --color-muted-foreground: hsl(220 10% 42%);
-  --color-accent: hsl(220 16% 93.5%);
-  --color-accent-foreground: hsl(222 32% 11%);
-  --color-destructive: hsl(0 72% 48%);
-  --color-destructive-foreground: hsl(0 0% 100%);
-  --color-border: hsl(220 14% 89%);
-  --color-input: hsl(220 14% 86%);
-  --color-ring: hsl(161 84% 30%);
+  /* Elevation: hairlines carry structure, shadows only lift overlays */
+  --shadow-xs: 0 1px 0 0 rgb(12 12 12 / 0.03);
+  --shadow-sm: 0 1px 2px 0 rgb(12 12 12 / 0.05);
+  --shadow-md: 0 4px 12px -2px rgb(12 12 12 / 0.08), 0 2px 4px -2px rgb(12 12 12 / 0.05);
+  --shadow-lg: 0 16px 40px -12px rgb(12 12 12 / 0.18), 0 4px 12px -4px rgb(12 12 12 / 0.08);
 
-  /* Brand signal accent — reserved for live/active/brand moments */
-  --color-signal: hsl(161 84% 30%);
-  --color-signal-foreground: hsl(0 0% 100%);
+  /* Light mode (default) — paper console */
+  --color-background: #fafaf9;
+  --color-foreground: #0c0c0c;
+  --color-card: #ffffff;
+  --color-card-foreground: #0c0c0c;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0c0c0c;
+  --color-primary: #0c0c0c;
+  --color-primary-foreground: #fafaf9;
+  --color-secondary: #f1f0ee;
+  --color-secondary-foreground: #1c1b1a;
+  --color-muted: #f4f3f1;
+  --color-muted-foreground: #68635d;
+  --color-faint: #8e8a85;
+  --color-accent: #efedea;
+  --color-accent-foreground: #0c0c0c;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #e7e5e4;
+  --color-border-strong: #d6d3d1;
+  --color-input: #d9d6d3;
+  --color-ring: #ea580c;
 
-  /* Status palette — single source of truth for job/queue states */
-  --color-status-success: hsl(152 65% 34%);
-  --color-status-active: hsl(217 85% 50%);
-  --color-status-warning: hsl(38 92% 42%);
-  --color-status-danger: hsl(0 72% 48%);
-  --color-status-delayed: hsl(24 90% 46%);
-  --color-status-priority: hsl(262 70% 54%);
-  --color-status-neutral: hsl(220 10% 50%);
+  /* Brand accent — ember. Reserved for brand, focus, and "you are here". */
+  --color-signal: #ea580c;
+  --color-signal-foreground: #ffffff;
 
-  /* Charts — cohesive technical palette */
-  --color-chart-1: hsl(161 84% 32%);
-  --color-chart-2: hsl(217 85% 52%);
-  --color-chart-3: hsl(38 92% 46%);
-  --color-chart-4: hsl(262 70% 56%);
-  --color-chart-5: hsl(0 72% 52%);
+  /* Status palette — single source of truth for job/queue/incident state */
+  --color-status-success: #15803d;
+  --color-status-active: #2563eb;
+  --color-status-warning: #a16207;
+  --color-status-danger: #dc2626;
+  --color-status-delayed: #a16207;
+  --color-status-priority: #7c3aed;
+  --color-status-neutral: #78716c;
+  /* Text on a solid status fill (the open-incident count). */
+  --color-status-danger-foreground: #ffffff;
 
-  --color-sidebar-background: hsl(220 18% 97%);
-  --color-sidebar-foreground: hsl(222 16% 28%);
-  --color-sidebar-primary: hsl(161 84% 30%);
-  --color-sidebar-primary-foreground: hsl(0 0% 100%);
-  --color-sidebar-accent: hsl(220 14% 92%);
-  --color-sidebar-accent-foreground: hsl(222 32% 11%);
-  --color-sidebar-border: hsl(220 14% 89%);
-  --color-sidebar-ring: hsl(161 84% 30%);
+  /* Scrim behind dialogs, sheets, and the command palette. */
+  --color-overlay: rgb(12 12 12 / 0.45);
+
+  /* Charts — categorical, colour-blind-separable, shared by both modes */
+  --color-chart-1: #16a34a;
+  --color-chart-2: #2563eb;
+  --color-chart-3: #ca8a04;
+  --color-chart-4: #7c3aed;
+  --color-chart-5: #dc2626;
+
+  --color-sidebar-background: #f5f4f2;
+  --color-sidebar-foreground: #44403c;
+  --color-sidebar-primary: #ea580c;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #e9e7e4;
+  --color-sidebar-accent-foreground: #0c0c0c;
+  --color-sidebar-border: #e7e5e4;
+  --color-sidebar-ring: #ea580c;
 }
 
-/* Dark mode — graphite control room */
+/* Dark mode — ink control room */
 .dark {
-  --color-background: hsl(220 10% 4.5%);
-  --color-foreground: hsl(220 14% 93%);
-  --color-card: hsl(220 9% 6.5%);
-  --color-card-foreground: hsl(220 14% 93%);
-  --color-popover: hsl(220 9% 7%);
-  --color-popover-foreground: hsl(220 14% 93%);
-  --color-primary: hsl(220 14% 96%);
-  --color-primary-foreground: hsl(220 10% 8%);
-  --color-secondary: hsl(220 8% 12%);
-  --color-secondary-foreground: hsl(220 14% 93%);
-  --color-muted: hsl(220 8% 11%);
-  --color-muted-foreground: hsl(220 8% 56%);
-  --color-accent: hsl(220 8% 14%);
-  --color-accent-foreground: hsl(220 14% 96%);
-  --color-destructive: hsl(0 70% 56%);
-  --color-destructive-foreground: hsl(0 0% 100%);
-  --color-border: hsl(220 8% 14.5%);
-  --color-input: hsl(220 8% 16%);
-  --color-ring: hsl(158 64% 46%);
+  --shadow-xs: 0 1px 0 0 rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 16px 40px -12px rgb(0 0 0 / 0.7), 0 4px 12px -4px rgb(0 0 0 / 0.5);
 
-  --color-signal: hsl(158 64% 48%);
-  --color-signal-foreground: hsl(220 10% 5%);
+  --color-background: #0a0a0a;
+  --color-foreground: #f5f5f4;
+  --color-card: #111110;
+  --color-card-foreground: #f5f5f4;
+  --color-popover: #161615;
+  --color-popover-foreground: #f5f5f4;
+  --color-primary: #fafaf9;
+  --color-primary-foreground: #0c0c0c;
+  --color-secondary: #1c1b1a;
+  --color-secondary-foreground: #f5f5f4;
+  --color-muted: #171716;
+  --color-muted-foreground: #a19c96;
+  --color-faint: #6f6a64;
+  --color-accent: #1e1d1c;
+  --color-accent-foreground: #fafaf9;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #232220;
+  --color-border-strong: #34322f;
+  --color-input: #2e2c29;
+  --color-ring: #f97316;
 
-  --color-status-success: hsl(152 58% 50%);
-  --color-status-active: hsl(214 90% 62%);
-  --color-status-warning: hsl(40 90% 56%);
-  --color-status-danger: hsl(0 78% 62%);
-  --color-status-delayed: hsl(26 92% 58%);
-  --color-status-priority: hsl(258 84% 70%);
-  --color-status-neutral: hsl(220 8% 58%);
+  --color-signal: #f97316;
+  --color-signal-foreground: #0c0c0c;
 
-  --color-chart-1: hsl(158 64% 48%);
-  --color-chart-2: hsl(214 90% 62%);
-  --color-chart-3: hsl(40 90% 56%);
-  --color-chart-4: hsl(258 84% 70%);
-  --color-chart-5: hsl(0 78% 62%);
+  --color-status-success: #4ade80;
+  --color-status-active: #60a5fa;
+  --color-status-warning: #facc15;
+  --color-status-danger: #f87171;
+  --color-status-delayed: #facc15;
+  --color-status-priority: #a78bfa;
+  --color-status-neutral: #a8a29e;
+  --color-status-danger-foreground: #0c0c0c;
 
-  --color-sidebar-background: hsl(220 10% 3.5%);
-  --color-sidebar-foreground: hsl(220 10% 72%);
-  --color-sidebar-primary: hsl(158 64% 48%);
-  --color-sidebar-primary-foreground: hsl(220 10% 5%);
-  --color-sidebar-accent: hsl(220 8% 10%);
-  --color-sidebar-accent-foreground: hsl(220 14% 96%);
-  --color-sidebar-border: hsl(220 8% 12%);
-  --color-sidebar-ring: hsl(158 64% 46%);
+  --color-overlay: rgb(0 0 0 / 0.6);
+
+  --color-chart-1: #4ade80;
+  --color-chart-2: #60a5fa;
+  --color-chart-3: #facc15;
+  --color-chart-4: #a78bfa;
+  --color-chart-5: #f87171;
+
+  --color-sidebar-background: #080808;
+  --color-sidebar-foreground: #b8b3ad;
+  --color-sidebar-primary: #f97316;
+  --color-sidebar-primary-foreground: #0c0c0c;
+  --color-sidebar-accent: #1a1918;
+  --color-sidebar-accent-foreground: #fafaf9;
+  --color-sidebar-border: #1f1e1c;
+  --color-sidebar-ring: #f97316;
 }
 
 /* ------------------------------------------------------------------ */
 /* Base                                                                */
 /* ------------------------------------------------------------------ */
 
-* {
-  border-color: var(--color-border);
+/*
+ * Default border colour. This must live in the base layer: an unlayered rule
+ * outranks every Tailwind utility, which silently turned `border-transparent`,
+ * `border-input`, and all `border-status-*` classes into the default hairline.
+ */
+@layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -153,6 +198,8 @@ body {
   font-family: var(--font-sans);
   font-feature-settings: 'cv01', 'cv03', 'cv04';
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Data reads like data: every mono context gets aligned figures */
@@ -165,7 +212,7 @@ samp,
 }
 
 ::selection {
-  background-color: color-mix(in srgb, var(--color-signal) 25%, transparent);
+  background-color: color-mix(in srgb, var(--color-signal) 28%, transparent);
 }
 
 /* ------------------------------------------------------------------ */
@@ -177,9 +224,22 @@ samp,
   font-family: var(--font-mono);
   font-size: 0.625rem;
   font-weight: 500;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-muted-foreground);
+}
+
+/* Blueprint grid: quiet backdrop for empty states and auth surfaces */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--color-foreground) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-foreground) 4%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Fades a backdrop (usually bg-grid) out toward its edges */
+@utility mask-radial-fade {
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 40%, black 20%, transparent 75%);
 }
 
 @layer utilities {
@@ -254,7 +314,7 @@ samp,
 }
 
 .animate-fade-in {
-  animation: fade-in 0.3s ease-out forwards;
+  animation: fade-in 0.2s ease-out forwards;
 }
 
 .animate-slide-in-right {
@@ -265,41 +325,33 @@ samp,
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
-/* Table row entrance */
-tbody tr {
-  animation: fade-in 0.15s ease-out forwards;
-}
-
 /* ------------------------------------------------------------------ */
 /* Scrollbars                                                          */
 /* ------------------------------------------------------------------ */
 
-.overflow-auto::-webkit-scrollbar,
-.overflow-y-auto::-webkit-scrollbar,
-.overflow-x-auto::-webkit-scrollbar {
-  height: 8px;
-  width: 8px;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
 }
 
-.overflow-auto::-webkit-scrollbar-track,
-.overflow-y-auto::-webkit-scrollbar-track,
-.overflow-x-auto::-webkit-scrollbar-track {
+::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.overflow-auto::-webkit-scrollbar-thumb,
-.overflow-y-auto::-webkit-scrollbar-thumb,
-.overflow-x-auto::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-  border: 2px solid transparent;
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
   background-clip: padding-box;
 }
 
-.overflow-auto::-webkit-scrollbar-thumb:hover,
-.overflow-y-auto::-webkit-scrollbar-thumb:hover,
-.overflow-x-auto::-webkit-scrollbar-thumb:hover {
-  background: var(--color-muted-foreground);
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-faint);
   background-clip: padding-box;
 }
 
@@ -311,27 +363,35 @@ tbody tr {
   font-family: inherit;
 }
 
+/* Edges are hairlines in the strong border colour; the route recolours the
+   ones carrying work with the status-active token. */
 .react-flow__edge-path {
-  stroke-width: 2;
+  stroke: var(--color-border-strong);
+  stroke-width: 1;
 }
 
 .react-flow__handle {
-  border: 2px solid;
+  width: 5px;
+  height: 5px;
+  min-width: 5px;
+  min-height: 5px;
+  border: 0;
+  background-color: var(--color-border-strong);
 }
 
-/* Animated edge gradient */
+/* Marching dashes mark edges with work in flight */
 @keyframes flow-animation {
   0% {
     stroke-dashoffset: 0;
   }
   100% {
-    stroke-dashoffset: -20;
+    stroke-dashoffset: -16;
   }
 }
 
 .react-flow__edge.animated path {
-  stroke-dasharray: 5;
-  animation: flow-animation 0.5s linear infinite;
+  stroke-dasharray: 4;
+  animation: flow-animation 0.9s linear infinite;
 }
 
 .react-flow__controls {
@@ -347,27 +407,26 @@ tbody tr {
   height: 28px !important;
   background: var(--color-card) !important;
   border-bottom: 1px solid var(--color-border) !important;
-  fill: var(--color-foreground);
+  color: var(--color-muted-foreground);
+  fill: currentColor;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: 0 !important;
 }
 
 .react-flow__controls-button:hover {
   background: var(--color-accent) !important;
+  color: var(--color-foreground);
 }
 
 .react-flow__controls-button svg {
-  max-width: 14px !important;
-  max-height: 14px !important;
-}
-
-.react-flow__minimap {
-  border-radius: var(--radius);
-  overflow: hidden;
-  border: 1px solid var(--color-border);
+  max-width: 12px !important;
+  max-height: 12px !important;
 }
 
 .react-flow__background pattern circle {
-  fill: var(--color-muted-foreground);
-  opacity: 0.1;
+  fill: var(--color-border-strong);
 }
 
 /* ------------------------------------------------------------------ */
@@ -411,4 +470,18 @@ html.electron-shell :where(pre, pre *, code) {
 html.electron-shell :where(.json-viewer, .json-viewer *) {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reduced motion                                                      */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

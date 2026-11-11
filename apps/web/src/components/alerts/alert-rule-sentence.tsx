@@ -26,11 +26,11 @@ function TokenButton({
       type="button"
       data-testid={`sentence-token-${token.key}`}
       className={cn(
-        'mx-0.5 inline-block max-w-full truncate align-baseline transition-colors',
+        'mx-0.5 inline rounded-md px-1.5 py-0.5 text-left align-baseline transition-colors [box-decoration-break:clone] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
         token.set
-          ? 'rounded-md bg-muted/60 px-1.5 py-0.5 font-medium text-foreground hover:bg-muted'
-          : 'rounded-md border border-dashed border-border px-1.5 py-0.5 italic text-muted-foreground hover:text-foreground',
-        token.invalid && 'bg-destructive/10 text-destructive hover:bg-destructive/15'
+          ? 'bg-muted font-medium text-foreground hover:bg-accent'
+          : 'border border-dashed border-border-strong italic text-muted-foreground hover:text-foreground',
+        token.invalid && 'bg-destructive/10 text-status-danger hover:bg-destructive/15'
       )}
       onClick={() => {
         onTokenClick?.(token)
@@ -56,7 +56,7 @@ export function AlertRuleSentence({ tokens, onTokenClick }: AlertRuleSentencePro
 
   return (
     <p
-      className="min-w-0 text-sm leading-7 text-muted-foreground"
+      className="min-w-0 text-[13px] leading-7 text-muted-foreground"
       data-testid="alert-rule-sentence"
     >
       When {queues ? <TokenButton token={queues} onTokenClick={onTokenClick} /> : null} records{' '}

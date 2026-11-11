@@ -1,6 +1,6 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 import { RetryJobProgress } from '@/components/retry-job-progress'
 import { RetryJobReview } from '@/components/retry-job-review'
 import {
@@ -104,31 +104,30 @@ export function RetryJobDialog({ queueName, jobId, jobName, jobData, retry }: Re
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {isReview ? (
-              <RefreshCw className="h-5 w-5 text-muted-foreground" />
-            ) : inFlight ? (
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            {isReview ? null : inFlight ? (
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             ) : jobStatus === JOB_STATUS.COMPLETED ? (
-              <CheckCircle2 className="h-5 w-5 text-status-success" />
+              <CheckCircle2 className="h-4 w-4 text-status-success" />
             ) : (
-              <AlertCircle className="h-5 w-5 text-status-danger" />
+              <AlertCircle className="h-4 w-4 text-status-danger" />
             )}
             {title}
           </DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Queue</p>
-            <p className="font-mono text-sm break-all">{queueName}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Job</p>
-            <p className="text-sm font-medium">{jobName}</p>
-            <p className="font-mono text-xs text-muted-foreground break-all mt-1">{jobId}</p>
-          </div>
-        </div>
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs leading-5">
+          <dt className="text-muted-foreground">Queue</dt>
+          <dd className="break-all font-mono">{queueName}</dd>
+          {jobName ? (
+            <>
+              <dt className="text-muted-foreground">Job</dt>
+              <dd className="break-all font-medium">{jobName}</dd>
+            </>
+          ) : null}
+          <dt className="text-muted-foreground">ID</dt>
+          <dd className="break-all font-mono">{jobId}</dd>
+        </dl>
 
         {isReview ? (
           <RetryJobReview

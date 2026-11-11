@@ -34,7 +34,7 @@ test.describe('Redis Explorer', () => {
     await expect(keyRow).toBeVisible({ timeout: 20000 })
     await keyRow.click()
 
-    const valuePanel = page.getByText('Value Details')
+    const valuePanel = page.getByRole('region', { name: 'Value details' })
     await expect(valuePanel).toBeVisible({ timeout: 15000 })
 
     // The panel shows the full key plus type/TTL badges from the API.

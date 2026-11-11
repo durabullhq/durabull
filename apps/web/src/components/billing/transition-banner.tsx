@@ -62,38 +62,38 @@ export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
       aria-label="Durabull Cloud plans"
       data-testid="transition-banner"
       className={cn(
-        'fixed bottom-4 left-4 z-40 w-[calc(100vw-2rem)] max-w-sm rounded-lg border bg-background/95 p-3 text-foreground shadow-2xl shadow-black/25 backdrop-blur supports-[backdrop-filter]:bg-background/85',
-        finalWeek ? 'border-status-warning/40' : 'border-primary/30'
+        // Sits clear of the sidebar footer on desktop so it never covers the session menu.
+        'fixed bottom-4 left-4 z-40 w-[calc(100vw-2rem)] max-w-sm rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg md:left-64',
+        finalWeek && 'border-status-warning/40'
       )}
     >
       <div className="flex items-start gap-3">
-        <div
+        <CalendarClock
           className={cn(
-            'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
-            finalWeek ? 'bg-status-warning/15 text-status-warning' : 'bg-primary/10 text-primary'
+            'mt-0.5 h-4 w-4 shrink-0',
+            finalWeek ? 'text-status-warning' : 'text-muted-foreground'
           )}
-        >
-          <CalendarClock className="h-4 w-4" aria-hidden="true" />
-        </div>
+          aria-hidden="true"
+        />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-5">
+          <p className="text-[13px] font-semibold leading-5">
             {finalWeek ? 'Beta access ends this week' : 'Durabull Cloud is moving to plans'}
           </p>
           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
             This organization keeps full access until {date}, then uses the Free plan unless{' '}
             {billing.canManageBilling ? 'you choose a plan' : 'an owner chooses a plan'}.
           </p>
-          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+          <div className="mt-2.5 flex flex-wrap items-center justify-end gap-3">
             <a
               href={CLOUD_PRICING_URL}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-primary underline"
+              className="rounded-sm text-xs font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               See pricing
             </a>
             {billing.canManageBilling ? (
-              <Button size="sm" asChild>
+              <Button size="xs" asChild>
                 <Link to="/$orgSlug/settings/billing" params={{ orgSlug }}>
                   Choose a plan
                 </Link>
@@ -108,9 +108,9 @@ export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
             type="button"
             onClick={dismiss}
             aria-label="Dismiss until the final week"
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="-mr-1 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           >
-            <X className="h-4 w-4" aria-hidden="true" />
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         )}
       </div>

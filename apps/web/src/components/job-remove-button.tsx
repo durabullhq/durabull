@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react'
+import { ChevronDown, Trash2 } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 
 type ButtonProps = ComponentProps<typeof Button>
 
@@ -38,10 +39,17 @@ export function JobRemoveButton({
   onRemoveJobAndStopScheduler,
   label = 'Remove',
   subject = 'this job',
-  variant = 'destructive',
+  variant = 'outline',
   size = 'sm',
   className,
 }: JobRemoveButtonProps) {
+  const iconClass = size === 'xs' ? 'h-3.5 w-3.5' : 'h-4 w-4'
+  // Destructive actions stay quiet (outline + danger text) until the confirm dialog.
+  const triggerClass = cn(
+    variant === 'outline' &&
+      'text-status-danger hover:border-status-danger/40 hover:bg-status-danger/10 hover:text-status-danger',
+    className
+  )
   const [confirmAction, setConfirmAction] = useState<'job' | 'scheduler' | null>(null)
 
   const confirmCopy = useMemo(() => {
@@ -88,9 +96,9 @@ export function JobRemoveButton({
           variant={variant}
           onClick={() => setConfirmAction('job')}
           disabled={isPending}
-          className={className}
+          className={triggerClass}
         >
-          <Trash2 className="mr-2 h-4 w-4" />
+          <Trash2 className={iconClass} />
           {label}
         </Button>
         <JobRemoveConfirmDialog
@@ -110,28 +118,28 @@ export function JobRemoveButton({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size={size} variant={variant} disabled={isPending} className={className}>
-            <Trash2 className="mr-2 h-4 w-4" />
+          <Button size={size} variant={variant} disabled={isPending} className={triggerClass}>
+            <Trash2 className={iconClass} />
             {label}
+            <ChevronDown className={cn(iconClass, 'opacity-70')} />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setConfirmAction('job')}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Remove Job Only
-            <span className="ml-2 text-xs text-muted-foreground">
-              (scheduler will create new jobs)
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuItem
+            onClick={() => setConfirmAction('job')}
+            className="flex-col items-start gap-0"
+          >
+            <span>Remove Job Only</span>
+            <span className="text-xs text-muted-foreground">
+              The scheduler keeps creating new jobs
             </span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setConfirmAction('scheduler')}
-            className="text-destructive focus:text-destructive"
+            className="flex-col items-start gap-0 text-status-danger focus:bg-status-danger/10 focus:text-status-danger"
           >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Remove Job & Stop Scheduler
-            <span className="ml-2 text-xs text-muted-foreground">
-              (permanently stops scheduled runs)
-            </span>
+            <span>Remove Job & Stop Scheduler</span>
+            <span className="text-xs text-muted-foreground">Permanently stops scheduled runs</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -172,7 +180,7 @@ function JobRemoveConfirmDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
-          <DialogTitle className="text-destructive">{title}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -180,7 +188,6 @@ function JobRemoveConfirmDialog({
             Cancel
           </Button>
           <Button variant="destructive" onClick={onConfirm} disabled={isPending}>
-            <Trash2 className="mr-2 h-4 w-4" />
             {confirmLabel}
           </Button>
         </DialogFooter>

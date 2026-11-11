@@ -112,7 +112,9 @@ test.describe('Queue operations', () => {
         page.getByRole('heading', { name: queueName, exact: true, level: 1 })
       ).toBeVisible()
 
-      await page.getByRole('button', { name: 'Purge / Retain' }).click()
+      // Purge / Retain lives in the queue actions overflow menu on the detail page.
+      await page.getByRole('button', { name: 'Queue actions' }).click()
+      await page.getByRole('menuitem', { name: 'Purge / Retain' }).click()
       const dialog = page.getByRole('dialog')
       await expect(dialog).toBeVisible()
       await expect(dialog.getByText('Purge Queue Jobs')).toBeVisible()
@@ -180,8 +182,8 @@ test.describe('Queue operations', () => {
       page.getByRole('heading', { name: queueName, exact: true, level: 1 })
     ).toBeVisible()
 
-    // The Retry Jobs dialog lives in the queue settings dropdown on the detail page.
-    await page.getByRole('button', { name: 'Queue settings' }).click()
+    // The Retry Jobs dialog lives in the queue actions overflow menu on the detail page.
+    await page.getByRole('button', { name: 'Queue actions' }).click()
     await page.getByRole('menuitem', { name: 'Retry Jobs' }).click()
 
     const dialog = page.getByRole('dialog')

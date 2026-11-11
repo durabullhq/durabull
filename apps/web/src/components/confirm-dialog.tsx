@@ -52,9 +52,9 @@ export function ConfirmDialog({
       <DialogContent className="max-w-sm" onClick={(event) => event.stopPropagation()}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogDescription className="text-[13px] leading-5">{description}</DialogDescription>
         </DialogHeader>
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button
             type="button"
             variant="outline"
@@ -69,7 +69,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={isConfirming}
           >
-            {isConfirming ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+            {isConfirming ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
             {confirmLabel}
           </Button>
         </DialogFooter>

@@ -64,8 +64,8 @@ export function AlertTypeBadge({
   const Icon = meta.icon
 
   return (
-    <Badge variant="outline" className="gap-1.5 border-border/70 bg-background/70">
-      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+    <Badge variant="neutral" className="gap-1">
+      <Icon className="h-3 w-3" />
       {compact ? meta.shortLabel : meta.label}
     </Badge>
   )
@@ -102,15 +102,16 @@ export function AlertStatusBadge({
   return (
     <Badge
       variant={variant}
-      className={cn(
-        'capitalize',
-        status === 'suppressed' && 'text-muted-foreground',
-        emphasize &&
-          status === 'firing' &&
-          !isAcknowledged &&
-          'shadow-[0_0_0_4px_rgba(239,68,68,0.12)]'
-      )}
+      className={cn('capitalize', status === 'suppressed' && 'text-muted-foreground')}
     >
+      {status === 'firing' && !isAcknowledged ? (
+        <span className="relative flex h-1.5 w-1.5">
+          {emphasize ? (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-status-danger opacity-70" />
+          ) : null}
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-status-danger" />
+        </span>
+      ) : null}
       {isAcknowledged ? 'Acknowledged' : status}
     </Badge>
   )
@@ -136,7 +137,7 @@ export function RuleStateBadge({
 
   if (state === 'disabled') {
     return (
-      <Badge variant="secondary" data-testid="rule-state-badge">
+      <Badge variant="neutral" data-testid="rule-state-badge">
         Muted
       </Badge>
     )

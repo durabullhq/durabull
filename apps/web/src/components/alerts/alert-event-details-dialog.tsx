@@ -1,6 +1,6 @@
 import { ArrowUpRight, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
-import { getSuppressedCount } from '@/components/alerts/alert-event-helpers'
+import { formatActorSuffix, getSuppressedCount } from '@/components/alerts/alert-event-helpers'
 import {
   AlertStatusBadge,
   AlertTypeBadge,
@@ -95,7 +95,7 @@ function AlertEventDetails({ event }: { event: AlertEventRecord }) {
             emphasize={displayStatus === 'firing'}
           />
           <AlertTypeBadge type={event.type} compact />
-          <Badge variant="outline" className="border-border/70 bg-background/70">
+          <Badge variant="outline" className="bg-card">
             {event.queueName}
           </Badge>
           {event.status === 'suppressed' && suppressedCount > 1 ? (
@@ -111,7 +111,7 @@ function AlertEventDetails({ event }: { event: AlertEventRecord }) {
         </DialogDescription>
         {event.acknowledgedAt ? (
           <DialogDescription>
-            Acknowledged by {event.acknowledgedByName ?? 'a teammate'} ·{' '}
+            Acknowledged{formatActorSuffix(event.acknowledgedByName)} ·{' '}
             {formatAlertDate(event.acknowledgedAt)}
           </DialogDescription>
         ) : null}
@@ -122,7 +122,7 @@ function AlertEventDetails({ event }: { event: AlertEventRecord }) {
           <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Event context
           </h4>
-          <dl className="grid gap-x-4 gap-y-2 rounded-lg border border-border/70 bg-muted/20 p-3 text-sm sm:grid-cols-[160px_1fr]">
+          <dl className="grid gap-x-4 gap-y-2 rounded-lg border bg-muted/40 p-3 text-sm sm:grid-cols-[160px_1fr]">
             {contextEntries.map(({ label, value }) => (
               <div key={label} className="contents">
                 <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
@@ -138,7 +138,7 @@ function AlertEventDetails({ event }: { event: AlertEventRecord }) {
           Delivery attempts
         </h4>
         {event.deliveries.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border/70 bg-muted/15 p-3 text-sm text-muted-foreground">
+          <p className="rounded-lg border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
             No notification channels were configured when this alert fired, so nothing was
             delivered.
           </p>
@@ -180,7 +180,7 @@ function DeliveryRow({
         : delivery.target
 
   return (
-    <li className="rounded-lg border border-border/70 bg-background/70 p-3">
+    <li className="rounded-lg border bg-card p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
@@ -220,7 +220,7 @@ function DeliveryRow({
           href={delivery.externalUrl}
           target="_blank"
           rel="noreferrer"
-          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline"
         >
           {delivery.externalIdentifier ?? 'Open Linear issue'}
           <ArrowUpRight className="h-3 w-3" />
@@ -232,13 +232,13 @@ function DeliveryRow({
       ) : null}
 
       {delivery.lastError ? (
-        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-status-danger/30 bg-status-danger/10 p-2 text-xs text-status-danger">
           {delivery.lastError}
         </pre>
       ) : null}
 
       {typeof responseSnippet === 'string' && responseSnippet.length > 0 ? (
-        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/70 bg-muted/20 p-2 text-xs text-muted-foreground">
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
           {responseSnippet}
         </pre>
       ) : null}

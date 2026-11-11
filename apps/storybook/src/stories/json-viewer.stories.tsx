@@ -10,3 +10,5 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 export const Default: Story = {}
+export const Titled: Story = { args: { title: 'Payload', maxInitialDepth: 3 } }
+export const Collapsed: Story = { args: { initialExpanded: false } }

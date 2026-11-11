@@ -49,6 +49,11 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
 }))
 
+// The tab row has its own queries; these tests cover the view beneath it.
+vi.mock('@/components/alerts/alerts-view-switcher', () => ({
+  AlertsHeader: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+}))
+
 vi.mock('@/components/app-top-bar', () => ({
   useAppTopBar: vi.fn(),
 }))

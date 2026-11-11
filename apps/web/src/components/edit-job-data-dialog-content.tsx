@@ -1,4 +1,4 @@
-import { Loader2, Pencil } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { JobPayloadEditor } from '@/components/job-payload-editor'
 import { Button } from '@/components/ui/button'
@@ -44,31 +44,28 @@ export function EditJobDataDialogContent({
   return (
     <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[640px]">
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <Pencil className="h-5 w-5" />
-          Edit Job Payload
-        </DialogTitle>
+        <DialogTitle>Edit Job Payload</DialogTitle>
         <DialogDescription>
           Overwrite the data payload for this job. This is a destructive change and cannot be
           undone.
         </DialogDescription>
       </DialogHeader>
 
-      <div className="space-y-6 py-4">
-        <div className="space-y-2 rounded-lg border bg-muted/50 p-3">
-          <div>
-            <p className="mb-1 text-xs text-muted-foreground">Job ID:</p>
-            <p className="select-all break-all font-mono text-sm">{jobId}</p>
-          </div>
-          <div>
-            <p className="mb-1 text-xs text-muted-foreground">Job Name:</p>
-            <p className="text-sm font-medium">{jobName}</p>
-          </div>
-        </div>
+      <div className="space-y-4">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 rounded-md border bg-muted/40 px-3 py-2 text-xs leading-5">
+          {jobName ? (
+            <>
+              <dt className="text-muted-foreground">Job</dt>
+              <dd className="break-all font-medium">{jobName}</dd>
+            </>
+          ) : null}
+          <dt className="text-muted-foreground">ID</dt>
+          <dd className="select-all break-all font-mono">{jobId}</dd>
+        </dl>
 
         {isActive ? (
-          <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
-            <p className="text-sm text-status-danger">
+          <div className="rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2">
+            <p className="text-[13px] leading-5 text-status-warning">
               This job is currently active. A worker already holds the current payload, so changing
               it now would not take effect. Wait for the attempt to finish, then edit again.
             </p>
@@ -89,10 +86,10 @@ export function EditJobDataDialogContent({
           <div className="space-y-2">
             <Label
               htmlFor="edit-job-data-confirm-input"
-              className="flex flex-wrap items-center gap-1.5 leading-normal"
+              className="flex flex-wrap items-center gap-1.5 text-[13px] leading-normal"
             >
               <span>Type</span>
-              <span className="inline-flex max-w-full select-all items-center break-all rounded bg-muted px-1.5 py-0.5 font-mono font-semibold">
+              <span className="inline-flex max-w-full select-all items-center break-all rounded-[4px] border bg-muted px-1.5 py-px font-mono text-xs font-medium">
                 {jobId}
               </span>
               <span>to confirm overwrite</span>
@@ -105,13 +102,13 @@ export function EditJobDataDialogContent({
               placeholder="Enter job ID to confirm"
               className={
                 confirmInput && !isConfirmed
-                  ? 'border-destructive focus-visible:ring-destructive'
-                  : ''
+                  ? 'border-status-danger font-mono focus-visible:ring-status-danger/40'
+                  : 'font-mono'
               }
               autoComplete="off"
             />
             {confirmInput && !isConfirmed ? (
-              <p className="text-sm text-destructive">Job ID does not match.</p>
+              <p className="text-xs text-status-danger">Job ID does not match.</p>
             ) : null}
           </div>
         ) : null}
@@ -129,14 +126,11 @@ export function EditJobDataDialogContent({
         >
           {isSubmitting ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
               Saving...
             </>
           ) : (
-            <>
-              <Pencil className="mr-2 h-4 w-4" />
-              Overwrite Payload
-            </>
+            'Overwrite Payload'
           )}
         </Button>
       </DialogFooter>

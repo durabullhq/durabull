@@ -212,7 +212,9 @@ describe('queue detail scheduled job creation', () => {
     render(<Component />)
     render(<div>{topBarState.config?.actions}</div>)
 
-    await user.click(screen.getByRole('button', { name: 'Schedule Job' }))
+    // Scheduling is a rare action, so it lives in the top bar's overflow menu.
+    await user.click(screen.getByRole('button', { name: 'Queue actions' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Schedule job' }))
 
     expect(navigateMock).toHaveBeenCalledWith({
       params: {

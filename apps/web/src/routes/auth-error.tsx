@@ -1,9 +1,8 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { AlertTriangle, ArrowRight, KeyRound, Link2, Mail } from 'lucide-react'
-import { AuthLayout } from '@/components/auth-layout'
-import { DurabullLogo, DurabullWordmark } from '@/components/durabull-logo'
+import { ShieldAlert, UserRoundCheck } from 'lucide-react'
+import { AuthLayout, authLinkClassName } from '@/components/auth-layout'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
 
 // Search params for the auth error page
 interface AuthErrorSearch {
@@ -27,154 +26,84 @@ function AuthErrorPage() {
   const providerName = provider ? capitalizeFirst(provider) : 'social'
 
   return (
-    <AuthLayout>
-      <div className="flex min-h-screen items-center justify-center p-4 pt-24">
-        <Card className="w-full max-w-lg border-border bg-card p-8">
-          {/* Logo */}
-          <div className="mb-6 flex flex-col items-center">
-            <div className="flex items-center gap-2">
-              <DurabullLogo className="h-10 w-10 text-primary" />
-              <DurabullWordmark className="h-6" />
-            </div>
-          </div>
-
-          {errorReason === 'account-exists' ? (
-            <AccountExistsError providerName={providerName} />
-          ) : (
-            <GenericError reason={errorReason} />
-          )}
-        </Card>
-      </div>
+    <AuthLayout
+      footer={
+        errorReason === 'account-exists' ? (
+          <>
+            Don't have an account?{' '}
+            <Link to="/signup" className={authLinkClassName}>
+              Sign up
+            </Link>
+          </>
+        ) : undefined
+      }
+    >
+      {errorReason === 'account-exists' ? (
+        <AccountExistsError providerName={providerName} />
+      ) : (
+        <GenericError reason={errorReason} />
+      )}
     </AuthLayout>
   )
 }
 
 function AccountExistsError({ providerName }: { providerName: string }) {
+  const steps = [
+    'Sign in with your email and password.',
+    'Open Settings → Authentication.',
+    `Next to ${providerName}, choose "Link account".`,
+  ]
+
   return (
-    <>
-      {/* Error Icon */}
-      <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-status-warning/10">
-        <AlertTriangle className="h-8 w-8 text-status-warning" />
-      </div>
-
-      {/* Error Message */}
-      <div className="mb-8 text-center">
-        <h1 className="mb-2 text-xl font-semibold">Account Already Exists</h1>
-        <p className="text-muted-foreground">
-          An account with this email address already exists. To use {providerName} sign-in, you'll
-          need to link it to your existing account.
-        </p>
-      </div>
-
-      {/* Steps */}
-      <div className="mb-8 space-y-4">
-        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-          How to link your account
-        </h2>
-
-        <div className="space-y-3">
-          <Step
-            number={1}
-            icon={KeyRound}
-            title="Sign in with your password"
-            description="Use your email and password to access your account"
-          />
-          <Step
-            number={2}
-            icon={Link2}
-            title="Go to Settings"
-            description="Navigate to Settings from the user menu"
-          />
-          <Step
-            number={3}
-            icon={Mail}
-            title="Link your account"
-            description={`Click "Link ${providerName} Account" in the Authentication section`}
-          />
-        </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="space-y-3">
-        <Button asChild className="w-full">
-          <Link to="/login">
-            <KeyRound className="mr-2 h-4 w-4" />
-            Sign in with Password
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Link>
-        </Button>
-
-        <p className="text-center text-sm text-muted-foreground">
-          Don't have an account?{' '}
-          <Link
-            to="/signup"
-            className="font-medium text-foreground hover:text-foreground/80 underline underline-offset-4"
-          >
-            Sign up
-          </Link>
-        </p>
-      </div>
-    </>
+    <EmptyState
+      size="inline"
+      tone="warning"
+      icon={UserRoundCheck}
+      title="This email already has an account"
+      description={`${providerName} sign-in isn't linked to it yet. Link it once and you can use either method.`}
+      className="px-0 py-2"
+    >
+      <ol className="mt-5 w-full divide-y rounded-lg border text-left">
+        {steps.map((step, index) => (
+          <li key={step} className="flex items-center gap-3 px-3 py-2.5 text-[13px] leading-5">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border bg-muted font-mono text-[11px] text-muted-foreground">
+              {index + 1}
+            </span>
+            {step}
+          </li>
+        ))}
+      </ol>
+      <Button asChild className="mt-5 h-9 w-full">
+        <Link to="/login">Sign in with password</Link>
+      </Button>
+    </EmptyState>
   )
 }
 
 function GenericError({ reason }: { reason: string }) {
   return (
-    <>
-      {/* Error Icon */}
-      <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
-        <AlertTriangle className="h-8 w-8 text-destructive" />
-      </div>
-
-      {/* Error Message */}
-      <div className="mb-8 text-center">
-        <h1 className="mb-2 text-xl font-semibold">Authentication Error</h1>
-        <p className="text-muted-foreground">
-          Something went wrong during authentication. Please try again.
+    <EmptyState
+      size="inline"
+      tone="danger"
+      icon={ShieldAlert}
+      title="Sign-in didn't complete"
+      description="Something went wrong while authenticating. Try again, or use a different sign-in method."
+      className="px-0 py-2"
+    >
+      {reason ? (
+        <p className="mt-3 max-w-full break-all rounded-md border bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+          {reason}
         </p>
-        {reason && <p className="mt-2 text-xs text-muted-foreground font-mono">Error: {reason}</p>}
-      </div>
-
-      {/* Action Buttons */}
-      <div className="space-y-3">
-        <Button asChild className="w-full">
-          <Link to="/login">
-            <ArrowRight className="mr-2 h-4 w-4" />
-            Back to Login
-          </Link>
-        </Button>
-      </div>
-    </>
+      ) : null}
+      <Button asChild className="mt-5 h-9 w-full">
+        <Link to="/login">Back to sign in</Link>
+      </Button>
+    </EmptyState>
   )
 }
 
-function Step({
-  number,
-  icon: Icon,
-  title,
-  description,
-}: {
-  number: number
-  icon: React.ComponentType<{ className?: string }>
-  title: string
-  description: string
-}) {
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-        {number}
-      </div>
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          <p className="font-medium text-sm">{title}</p>
-        </div>
-        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-      </div>
-    </div>
-  )
-}
+const PROVIDER_NAMES: Record<string, string> = { github: 'GitHub', google: 'Google' }
 
 function capitalizeFirst(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1)
+  return PROVIDER_NAMES[str.toLowerCase()] ?? str.charAt(0).toUpperCase() + str.slice(1)
 }

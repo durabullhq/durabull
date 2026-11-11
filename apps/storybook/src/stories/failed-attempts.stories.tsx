@@ -18,3 +18,5 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 export const Default: Story = {}
+/** A job that later succeeded: failures read as history, without the danger headline. */
+export const History: Story = { args: { status: 'completed', attemptsMade: 3, maxAttempts: 4 } }

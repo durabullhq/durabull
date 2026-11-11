@@ -46,6 +46,7 @@ import { Route as OrgSlugCConnectionIdScheduledJobsRouteImport } from './routes/
 import { Route as OrgSlugCConnectionIdWorkersRouteImport } from './routes/$orgSlug.c.$connectionId.workers'
 import { Route as OrgSlugCConnectionIdAlertsIndexRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.index'
 import { Route as OrgSlugCConnectionIdAlertsRuleIdRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.$ruleId'
+import { Route as OrgSlugCConnectionIdAlertsDestinationsRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.destinations'
 import { Route as OrgSlugCConnectionIdAlertsNewRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.new'
 import { Route as OrgSlugCConnectionIdQueuesQueueNameRouteImport } from './routes/$orgSlug.c.$connectionId.queues.$queueName'
 import { Route as OrgSlugCConnectionIdAlertsRulesIndexRouteImport } from './routes/$orgSlug.c.$connectionId.alerts.rules.index'
@@ -253,6 +254,12 @@ const OrgSlugCConnectionIdAlertsRuleIdRoute =
     path: '/$ruleId',
     getParentRoute: () => OrgSlugCConnectionIdAlertsRoute,
   } as any)
+const OrgSlugCConnectionIdAlertsDestinationsRoute =
+  OrgSlugCConnectionIdAlertsDestinationsRouteImport.update({
+    id: '/destinations',
+    path: '/destinations',
+    getParentRoute: () => OrgSlugCConnectionIdAlertsRoute,
+  } as any)
 const OrgSlugCConnectionIdAlertsNewRoute =
   OrgSlugCConnectionIdAlertsNewRouteImport.update({
     id: '/new',
@@ -335,6 +342,7 @@ export interface FileRoutesByFullPath {
   '/$orgSlug/c/$connectionId/workers': typeof OrgSlugCConnectionIdWorkersRoute
   '/$orgSlug/c/$connectionId/': typeof OrgSlugCConnectionIdIndexRoute
   '/$orgSlug/c/$connectionId/alerts/$ruleId': typeof OrgSlugCConnectionIdAlertsRuleIdRoute
+  '/$orgSlug/c/$connectionId/alerts/destinations': typeof OrgSlugCConnectionIdAlertsDestinationsRoute
   '/$orgSlug/c/$connectionId/alerts/new': typeof OrgSlugCConnectionIdAlertsNewRoute
   '/$orgSlug/c/$connectionId/queues/$queueName': typeof OrgSlugCConnectionIdQueuesQueueNameRoute
   '/$orgSlug/c/$connectionId/alerts/': typeof OrgSlugCConnectionIdAlertsIndexRoute
@@ -377,6 +385,7 @@ export interface FileRoutesByTo {
   '/$orgSlug/c/$connectionId/workers': typeof OrgSlugCConnectionIdWorkersRoute
   '/$orgSlug/c/$connectionId': typeof OrgSlugCConnectionIdIndexRoute
   '/$orgSlug/c/$connectionId/alerts/$ruleId': typeof OrgSlugCConnectionIdAlertsRuleIdRoute
+  '/$orgSlug/c/$connectionId/alerts/destinations': typeof OrgSlugCConnectionIdAlertsDestinationsRoute
   '/$orgSlug/c/$connectionId/alerts/new': typeof OrgSlugCConnectionIdAlertsNewRoute
   '/$orgSlug/c/$connectionId/queues/$queueName': typeof OrgSlugCConnectionIdQueuesQueueNameRoute
   '/$orgSlug/c/$connectionId/alerts': typeof OrgSlugCConnectionIdAlertsIndexRoute
@@ -424,6 +433,7 @@ export interface FileRoutesById {
   '/$orgSlug/c/$connectionId/workers': typeof OrgSlugCConnectionIdWorkersRoute
   '/$orgSlug/c/$connectionId/': typeof OrgSlugCConnectionIdIndexRoute
   '/$orgSlug/c/$connectionId/alerts/$ruleId': typeof OrgSlugCConnectionIdAlertsRuleIdRoute
+  '/$orgSlug/c/$connectionId/alerts/destinations': typeof OrgSlugCConnectionIdAlertsDestinationsRoute
   '/$orgSlug/c/$connectionId/alerts/new': typeof OrgSlugCConnectionIdAlertsNewRoute
   '/$orgSlug/c/$connectionId/queues/$queueName': typeof OrgSlugCConnectionIdQueuesQueueNameRoute
   '/$orgSlug/c/$connectionId/alerts/': typeof OrgSlugCConnectionIdAlertsIndexRoute
@@ -472,6 +482,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/c/$connectionId/workers'
     | '/$orgSlug/c/$connectionId/'
     | '/$orgSlug/c/$connectionId/alerts/$ruleId'
+    | '/$orgSlug/c/$connectionId/alerts/destinations'
     | '/$orgSlug/c/$connectionId/alerts/new'
     | '/$orgSlug/c/$connectionId/queues/$queueName'
     | '/$orgSlug/c/$connectionId/alerts/'
@@ -514,6 +525,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/c/$connectionId/workers'
     | '/$orgSlug/c/$connectionId'
     | '/$orgSlug/c/$connectionId/alerts/$ruleId'
+    | '/$orgSlug/c/$connectionId/alerts/destinations'
     | '/$orgSlug/c/$connectionId/alerts/new'
     | '/$orgSlug/c/$connectionId/queues/$queueName'
     | '/$orgSlug/c/$connectionId/alerts'
@@ -560,6 +572,7 @@ export interface FileRouteTypes {
     | '/$orgSlug/c/$connectionId/workers'
     | '/$orgSlug/c/$connectionId/'
     | '/$orgSlug/c/$connectionId/alerts/$ruleId'
+    | '/$orgSlug/c/$connectionId/alerts/destinations'
     | '/$orgSlug/c/$connectionId/alerts/new'
     | '/$orgSlug/c/$connectionId/queues/$queueName'
     | '/$orgSlug/c/$connectionId/alerts/'
@@ -843,6 +856,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrgSlugCConnectionIdAlertsRuleIdRouteImport
       parentRoute: typeof OrgSlugCConnectionIdAlertsRoute
     }
+    '/$orgSlug/c/$connectionId/alerts/destinations': {
+      id: '/$orgSlug/c/$connectionId/alerts/destinations'
+      path: '/destinations'
+      fullPath: '/$orgSlug/c/$connectionId/alerts/destinations'
+      preLoaderRoute: typeof OrgSlugCConnectionIdAlertsDestinationsRouteImport
+      parentRoute: typeof OrgSlugCConnectionIdAlertsRoute
+    }
     '/$orgSlug/c/$connectionId/alerts/new': {
       id: '/$orgSlug/c/$connectionId/alerts/new'
       path: '/new'
@@ -927,6 +947,7 @@ const OrgSlugSettingsRouteWithChildren = OrgSlugSettingsRoute._addFileChildren(
 
 interface OrgSlugCConnectionIdAlertsRouteChildren {
   OrgSlugCConnectionIdAlertsRuleIdRoute: typeof OrgSlugCConnectionIdAlertsRuleIdRoute
+  OrgSlugCConnectionIdAlertsDestinationsRoute: typeof OrgSlugCConnectionIdAlertsDestinationsRoute
   OrgSlugCConnectionIdAlertsNewRoute: typeof OrgSlugCConnectionIdAlertsNewRoute
   OrgSlugCConnectionIdAlertsIndexRoute: typeof OrgSlugCConnectionIdAlertsIndexRoute
   OrgSlugCConnectionIdAlertsRulesRuleIdRoute: typeof OrgSlugCConnectionIdAlertsRulesRuleIdRoute
@@ -937,6 +958,7 @@ const OrgSlugCConnectionIdAlertsRouteChildren: OrgSlugCConnectionIdAlertsRouteCh
   {
     OrgSlugCConnectionIdAlertsRuleIdRoute:
       OrgSlugCConnectionIdAlertsRuleIdRoute,
+    OrgSlugCConnectionIdAlertsDestinationsRoute: OrgSlugCConnectionIdAlertsDestinationsRoute,
     OrgSlugCConnectionIdAlertsNewRoute: OrgSlugCConnectionIdAlertsNewRoute,
     OrgSlugCConnectionIdAlertsIndexRoute: OrgSlugCConnectionIdAlertsIndexRoute,
     OrgSlugCConnectionIdAlertsRulesRuleIdRoute:

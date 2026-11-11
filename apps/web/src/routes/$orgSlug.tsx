@@ -1,8 +1,12 @@
 import { createFileRoute, Navigate, Outlet, useNavigate } from '@tanstack/react-router'
-import { ShieldX } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { Loader2, ShieldX } from 'lucide-react'
+import { useEffect, useMemo, useRef } from 'react'
+import { useAppTopBar } from '@/components/app-top-bar'
 import { TransitionBanner } from '@/components/billing/transition-banner'
 import { UpgradePromptHost } from '@/components/billing/upgrade-prompt-host'
+import { PageTitle } from '@/components/page-title'
+import { Button } from '@/components/ui/button'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
 import { useOrganizations, useSetActiveOrganization } from '@/hooks/use-organization'
@@ -60,8 +64,12 @@ function OrgSlugLayout() {
   // Show loading while checking auth or fetching organizations
   if (authLoading || orgsLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      <div
+        className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
+        aria-live="polite"
+      >
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
       </div>
     )
   }
@@ -74,25 +82,11 @@ function OrgSlugLayout() {
   // Organization not found or user doesn't have access - show 403
   if (!org) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
-        <div className="text-center max-w-md">
-          <div className="mx-auto w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-6">
-            <ShieldX className="h-8 w-8 text-destructive" />
-          </div>
-          <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-          <p className="text-muted-foreground mb-6">
-            You don't have access to the organization "{orgSlug}". This could mean the organization
-            doesn't exist or you haven't been invited.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate({ to: '/' })}
-            className="inline-flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Go to Home
-          </button>
-        </div>
-      </div>
+      <OrganizationUnavailable
+        orgSlug={orgSlug}
+        isAuthless={isAuthless}
+        onGoHome={() => navigate({ to: '/' })}
+      />
     )
   }
 
@@ -103,5 +97,41 @@ function OrgSlugLayout() {
       <UpgradePromptHost orgSlug={orgSlug} />
       <TransitionBanner orgSlug={orgSlug} />
     </>
+  )
+}
+
+/** The slug in the URL matches no organization this user can open. */
+function OrganizationUnavailable({
+  orgSlug,
+  isAuthless,
+  onGoHome,
+}: {
+  orgSlug: string
+  isAuthless: boolean
+  onGoHome: () => void
+}) {
+  const topBarConfig = useMemo(
+    () => ({ left: <PageTitle title={`/${orgSlug}`} mono /> }),
+    [orgSlug]
+  )
+
+  useAppTopBar(topBarConfig)
+
+  return (
+    <EmptyState
+      tone="danger"
+      icon={ShieldX}
+      title={isAuthless ? 'Workspace not found' : "You don't have access to this organization"}
+      description={
+        <>
+          <span className="font-mono text-foreground">/{orgSlug}</span>{' '}
+          {isAuthless
+            ? "doesn't exist on this install."
+            : "doesn't exist, or you haven't been invited to it. Ask an owner for an invitation, or switch organization."}
+        </>
+      }
+      className="min-h-[min(420px,60vh)]"
+      actions={<Button onClick={onGoHome}>Go to home</Button>}
+    />
   )
 }

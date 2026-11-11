@@ -109,9 +109,11 @@ const TONES: Record<string, Tone> = {
   sent: 'success',
   confirmed: 'success',
   high: 'success',
-  waiting: 'info',
-  'waiting-children': 'info',
-  prioritized: 'info',
+  // Shared status vocabulary with the web app (docs/design-system.md): idle work is
+  // neutral, so colour is left for states that need a reader's attention.
+  waiting: 'secondary',
+  'waiting-children': 'secondary',
+  prioritized: 'discovery',
   delayed: 'warning',
   paused: 'warning',
   snoozed: 'warning',
@@ -150,7 +152,7 @@ export function Stats({ items }: { items: Stat[] }) {
           <div key={label} className="bg-surface-secondary rounded-xl px-3 py-2.5">
             <dt className="text-secondary truncate text-xs">{label}</dt>
             <dd
-              className={`mt-0.5 text-lg font-semibold tabular-nums ${tone ? TONE_TEXT[tone] : ''}`}
+              className={`mt-0.5 font-mono text-lg font-medium tracking-tight tabular-nums ${tone ? TONE_TEXT[tone] : ''}`}
             >
               {display !== undefined || exact === shown ? (
                 shown

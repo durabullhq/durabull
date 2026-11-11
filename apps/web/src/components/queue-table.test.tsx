@@ -172,9 +172,13 @@ describe('QueueTable filtering', () => {
     const onStatusFilterChange = vi.fn()
     render(<QueueTable queues={[makeQueue()]} onStatusFilterChange={onStatusFilterChange} />)
 
-    fireEvent.change(screen.getByRole('combobox', { name: /filter queues by status/i }), {
-      target: { value: 'paused' },
-    })
+    // The status filter is a one-click segmented control, not a dropdown.
+    const statusFilter = screen.getByRole('group', { name: /filter queues by status/i })
+    expect(within(statusFilter).getByRole('button', { name: 'All' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    fireEvent.click(within(statusFilter).getByRole('button', { name: 'Paused' }))
     expect(onStatusFilterChange).toHaveBeenCalledWith('paused')
   })
 

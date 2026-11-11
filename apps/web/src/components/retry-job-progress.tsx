@@ -54,7 +54,7 @@ function LogStream({ entries, inFlight }: { entries: RetryJobLogEntry[]; inFligh
     <div
       ref={containerRef}
       data-testid="retry-log-stream"
-      className="max-h-48 overflow-y-auto rounded-lg border bg-muted/30 p-3 font-mono text-xs"
+      className="max-h-48 overflow-y-auto rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs"
     >
       {entries.length === 0 && inFlight ? (
         <p className="text-muted-foreground">Waiting for logs...</p>
@@ -81,7 +81,7 @@ export function RetryJobProgress({ retry, onClose }: RetryJobProgressProps) {
 
   return (
     <>
-      <div className="space-y-4">
+      <div className="space-y-3">
         {jobStatus === JOB_STATUS.DELAYED && job ? (
           <RetryCountdown
             processedOn={job.processedOn ?? undefined}
@@ -98,9 +98,9 @@ export function RetryJobProgress({ retry, onClose }: RetryJobProgressProps) {
         {showLogs ? <LogStream entries={logEntries} inFlight={inFlight} /> : null}
 
         {inFlight && stillRunning && jobStatus !== JOB_STATUS.DELAYED ? (
-          <div className="flex items-start gap-3 rounded-lg border border-status-delayed/30 bg-status-delayed/10 px-4 py-3">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-status-delayed" />
-            <p className="text-sm text-status-delayed">
+          <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <p className="text-[13px] leading-5 text-muted-foreground">
               This job is still running. It's safe to close this dialog — the job will keep running
               in the background.
             </p>
@@ -108,24 +108,28 @@ export function RetryJobProgress({ retry, onClose }: RetryJobProgressProps) {
         ) : null}
 
         {watchError ? (
-          <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
-            <p className="text-sm text-status-danger">
+          <div className="rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2">
+            <p className="text-[13px] leading-5 text-status-warning">
               Could not refresh this job yet. Retrying automatically...
             </p>
           </div>
         ) : null}
 
         {jobStatus === JOB_STATUS.COMPLETED ? (
-          <div className="rounded-lg border border-status-success/30 bg-status-success/10 px-4 py-3">
-            <p className="text-sm text-status-success">The job completed successfully.</p>
+          <div className="rounded-md border border-status-success/30 bg-status-success/10 px-3 py-2">
+            <p className="text-[13px] leading-5 text-status-success">
+              The job completed successfully.
+            </p>
           </div>
         ) : null}
 
         {jobStatus === JOB_STATUS.FAILED ? (
-          <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
-            <p className="mb-1 text-sm font-medium text-status-danger">The job failed again.</p>
+          <div className="rounded-md border border-status-danger/30 bg-status-danger/10 px-3 py-2">
+            <p className="text-[13px] font-medium leading-5 text-status-danger">
+              The job failed again.
+            </p>
             {failedReason ? (
-              <p className="whitespace-pre-wrap break-all font-mono text-xs text-status-danger">
+              <p className="mt-1 select-text whitespace-pre-wrap font-mono text-xs leading-5 text-foreground [overflow-wrap:anywhere]">
                 {failedReason}
               </p>
             ) : null}
@@ -133,8 +137,10 @@ export function RetryJobProgress({ retry, onClose }: RetryJobProgressProps) {
         ) : null}
 
         {requestState === RetryJobRequestState.ERROR && retry.errorMessage ? (
-          <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
-            <p className="text-sm text-status-danger">{retry.errorMessage}</p>
+          <div className="rounded-md border border-status-danger/30 bg-status-danger/10 px-3 py-2">
+            <p className="text-[13px] leading-5 text-status-danger [overflow-wrap:anywhere]">
+              {retry.errorMessage}
+            </p>
           </div>
         ) : null}
       </div>
@@ -149,7 +155,7 @@ export function RetryJobProgress({ retry, onClose }: RetryJobProgressProps) {
             </Button>
             {jobStatus === JOB_STATUS.FAILED || requestState === RetryJobRequestState.ERROR ? (
               <Button onClick={retry.backToReview}>
-                <RefreshCw className="mr-2 h-4 w-4" />
+                <RefreshCw className="h-4 w-4" />
                 {jobStatus === JOB_STATUS.FAILED ? 'Retry Again' : 'Try Again'}
               </Button>
             ) : null}

@@ -5,26 +5,22 @@ import { zodValidator } from '@tanstack/zod-adapter'
 import {
   AlertCircle,
   ArrowLeft,
-  BarChart3,
+  CalendarClock,
   Check,
-  ChevronRight,
-  Clock,
   Copy,
-  Database,
+  Eraser,
   Gauge,
   Layers,
-  LineChart,
+  Loader2,
+  MoreHorizontal,
   Pause,
   Play,
   Plus,
   RefreshCw,
   Repeat,
-  Rocket,
-  Server,
-  Settings,
-  SquarePlay,
-  TerminalSquare,
+  SearchX,
   Trash2,
+  X,
   Zap,
 } from 'lucide-react'
 import {
@@ -39,15 +35,16 @@ import {
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { z } from 'zod'
 import { AddJobDialog } from '@/components/add-job-dialog'
+import { SERIES_COLOR } from '@/components/analytics/chart-panel'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { DeleteQueueDialog } from '@/components/delete-queue-dialog'
 import { JobRemoveButton } from '@/components/job-remove-button'
+import { PageTitle } from '@/components/page-title'
 import { PurgeQueueDialog } from '@/components/purge-queue-dialog'
 import { RetryQueueDialog } from '@/components/retry-queue-dialog'
 import { StatusIndicator } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   type ChartConfig,
   ChartContainer,
@@ -64,18 +61,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Metric, MetricStrip } from '@/components/ui/metric'
+import { Panel, PanelHeader } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   type ListScheduledJobsResponse,
@@ -90,7 +81,7 @@ import {
   useRetryJobs,
 } from '@/hooks/use-queues'
 import { getScheduleExpression, getScheduleSummary } from '@/lib/scheduled-jobs'
-import { formatDate, formatNumber, getTimezoneAbbreviation } from '@/lib/utils'
+import { cn, formatDate, formatNumber, getTimezoneAbbreviation } from '@/lib/utils'
 
 const queueSearchSchema = z.object({
   section: z.enum(['jobs', 'observability']).catch('jobs'),
@@ -119,28 +110,22 @@ const METRICS_WINDOWS = [
 const PRIORITY_BUCKETS = [1, 2, 5, 10, 20, 50]
 
 const chartConfig = {
-  completed: {
-    label: 'Completed/min',
-    theme: {
-      light: 'hsl(146 55% 41%)',
-      dark: 'hsl(146 62% 52%)',
-    },
-  },
-  failed: {
-    label: 'Failed/min',
-    theme: {
-      light: 'hsl(2 78% 52%)',
-      dark: 'hsl(2 86% 65%)',
-    },
-  },
-  total: {
-    label: 'Finished/min',
-    theme: {
-      light: 'hsl(210 76% 42%)',
-      dark: 'hsl(210 90% 64%)',
-    },
-  },
+  completed: { label: 'Completed/min', color: SERIES_COLOR.completed },
+  failed: { label: 'Failed/min', color: SERIES_COLOR.failed },
+  // Total is not a job state, so it takes a categorical colour.
+  total: { label: 'Finished/min', color: 'var(--color-chart-2)' },
 } satisfies ChartConfig
+
+type JobStatusFilter = z.infer<typeof queueSearchSchema>['status']
+
+/** Sticky header cells need an opaque fill that still reads as the standard muted table header. */
+const STICKY_HEAD_CLASS =
+  'sticky top-0 z-10 [background:color-mix(in_srgb,var(--color-muted)_40%,var(--color-card))] shadow-[inset_0_-1px_0_0_var(--color-border)]'
+
+const CHECKBOX_CLASS = 'h-3.5 w-3.5 shrink-0 cursor-pointer accent-foreground'
+
+/** Seven cells leave a hole in the 2- and 3-column strip layouts; the last cell fills its row. */
+const STRIP_LAST_OF_SEVEN_CLASS = 'col-span-2 sm:col-span-3 lg:col-span-1'
 
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/queues/$queueName')({
   validateSearch: zodValidator(queueSearchSchema),
@@ -200,6 +185,7 @@ function QueueDetailPage() {
   const {
     data: jobsData,
     isLoading: jobsLoading,
+    error: jobsError,
     isFetchingNextPage: jobsFetchingNextPage,
     hasNextPage: hasMoreJobs,
     fetchNextPage: fetchNextJobsPage,
@@ -409,6 +395,29 @@ function QueueDetailPage() {
     return () => clearTimeout(timer)
   }, [dataInput, dataSearch, section, tab, status, jobId, name, hideScheduled, navigate])
 
+  const loadMoreJobs = useCallback(() => {
+    if (hasClientSideJobFilter) {
+      if (visibleJobs.length >= filteredVisibleJobs.length) {
+        return
+      }
+      setVisibleJobCount((current) => Math.min(current + 20, filteredVisibleJobs.length))
+      return
+    }
+
+    if (!hasMoreJobs || jobsFetchingNextPage) {
+      return
+    }
+
+    void fetchNextJobsPage()
+  }, [
+    fetchNextJobsPage,
+    hasMoreJobs,
+    jobsFetchingNextPage,
+    hasClientSideJobFilter,
+    filteredVisibleJobs.length,
+    visibleJobs.length,
+  ])
+
   useEffect(() => {
     const container = jobsScrollRef.current
     if (!container || section !== 'jobs' || tab !== 'jobs') {
@@ -418,37 +427,64 @@ function QueueDetailPage() {
     const onScroll = () => {
       const nearBottom =
         container.scrollTop + container.clientHeight >= container.scrollHeight - 240
-      if (!nearBottom) {
-        return
+      if (nearBottom) {
+        loadMoreJobs()
       }
-
-      if (hasClientSideJobFilter) {
-        if (visibleJobs.length >= filteredVisibleJobs.length) {
-          return
-        }
-        setVisibleJobCount((current) => Math.min(current + 20, filteredVisibleJobs.length))
-        return
-      }
-
-      if (!hasMoreJobs || jobsFetchingNextPage) {
-        return
-      }
-
-      void fetchNextJobsPage()
     }
 
     container.addEventListener('scroll', onScroll)
     return () => container.removeEventListener('scroll', onScroll)
-  }, [
-    fetchNextJobsPage,
-    hasMoreJobs,
-    jobsFetchingNextPage,
-    section,
-    tab,
-    hasClientSideJobFilter,
-    filteredVisibleJobs.length,
-    visibleJobs.length,
-  ])
+  }, [loadMoreJobs, section, tab])
+
+  const updateSearch = useCallback(
+    (patch: Partial<z.infer<typeof queueSearchSchema>>) =>
+      navigate({
+        to: '.',
+        search: {
+          section,
+          tab,
+          status,
+          jobId,
+          name,
+          data: dataSearch,
+          hideScheduled,
+          page,
+          ...patch,
+        },
+        replace: true,
+      }),
+    [navigate, section, tab, status, jobId, name, dataSearch, hideScheduled, page]
+  )
+
+  // Metric cells are the status filter: one click to filter, the same click again to clear.
+  const handleStatusFilter = useCallback(
+    (nextStatus: JobStatusFilter) => {
+      trackEvent(AnalyticsEvents.JOB_STATUS_FILTERED, {
+        queue_name: queueName,
+        filter_status: nextStatus || 'all',
+      })
+      updateSearch({ section: 'jobs', tab: 'jobs', status: nextStatus, page: 1 })
+    },
+    [queueName, updateSearch]
+  )
+
+  const hasActiveFilters = Boolean(status || jobId || name || dataSearch)
+  const clearFilters = useCallback(
+    (options?: { includeHideScheduled?: boolean }) => {
+      setJobIdInput('')
+      setNameInput('')
+      setDataInput('')
+      updateSearch({
+        status: '',
+        jobId: '',
+        name: '',
+        data: '',
+        page: 1,
+        ...(options?.includeHideScheduled ? { hideScheduled: 0 as const } : {}),
+      })
+    },
+    [updateSearch]
+  )
 
   const handleTogglePause = useCallback(() => {
     if (queue?.isPaused) {
@@ -474,86 +510,98 @@ function QueueDetailPage() {
     })
   }, [connectionId, navigate, orgSlug, queueName])
 
+  const workerCount = queue?.workers.length ?? 0
+  const backlogCount =
+    (queue?.jobCounts.waiting ?? 0) +
+    (queue?.jobCounts.prioritized ?? 0) +
+    (queue?.jobCounts.active ?? 0)
+  // A backlog with nobody to work it is the one worker fact worth colouring.
+  const isUnattended = !queueLoading && workerCount === 0 && backlogCount > 0
+  const isPaused = queue?.isPaused ?? false
+  const isTogglingPause = pauseMutation.isPending || resumeMutation.isPending
+
   const topBarConfig = useMemo(
     () => ({
       left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <Layers className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 flex items-center gap-1.5">
-            <Link
-              to="/$orgSlug/c/$connectionId"
-              params={{ orgSlug, connectionId }}
-              className="shrink-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Queues
-            </Link>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <h1 className="truncate text-base font-semibold md:text-lg">{queueName}</h1>
-            {queueLoading ? (
-              <Skeleton className="h-5 w-14" />
+        <PageTitle
+          crumbs={[{ label: 'Queues', to: `/${orgSlug}/c/${connectionId}` }]}
+          title={queueName}
+          mono
+          meta={
+            queueLoading ? (
+              <Skeleton className="h-4 w-24" />
             ) : (
-              <StatusIndicator status={queue?.isPaused ? 'paused' : 'active'} />
-            )}
-          </div>
-        </div>
+              <>
+                <StatusIndicator status={isPaused ? 'paused' : 'active'} />
+                <span
+                  className={cn(
+                    'hidden whitespace-nowrap text-xs sm:inline',
+                    isUnattended ? 'text-status-warning' : 'text-muted-foreground'
+                  )}
+                  title={
+                    isUnattended
+                      ? 'Jobs are queued but no workers are connected to process them'
+                      : `${workerCount} worker${workerCount === 1 ? '' : 's'} connected`
+                  }
+                >
+                  <span className="font-mono tabular-nums">{formatNumber(workerCount)}</span>{' '}
+                  {workerCount === 1 ? 'worker' : 'workers'}
+                </span>
+              </>
+            )
+          }
+        />
       ),
       actions: (
         <>
-          <Button variant="outline" size="xs" onClick={() => setAddJobDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Job
-          </Button>
-          <Button variant="outline" size="xs" onClick={handleOpenScheduledJobCreate}>
-            <Repeat className="mr-2 h-4 w-4" />
-            Schedule Job
-          </Button>
           <Button
             variant="outline"
             size="xs"
             onClick={handleTogglePause}
-            disabled={pauseMutation.isPending || resumeMutation.isPending}
+            disabled={isTogglingPause}
           >
-            {queue?.isPaused ? (
+            {isPaused ? (
               <>
-                <Play className="mr-2 h-4 w-4" />
+                <Play className="h-3.5 w-3.5" aria-hidden="true" />
                 Resume
               </>
             ) : (
               <>
-                <Pause className="mr-2 h-4 w-4" />
+                <Pause className="h-3.5 w-3.5" aria-hidden="true" />
                 Pause
               </>
             )}
           </Button>
-          <Button variant="outline" size="xs" onClick={() => setPurgeDialogOpen(true)}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Purge / Retain
+          <Button size="xs" onClick={() => setAddJobDialogOpen(true)}>
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            Add job
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="xs" className="px-2.5">
-                <Settings className="h-4 w-4" />
-                <span className="sr-only">Queue settings</span>
+              <Button variant="outline" size="xs" className="w-7 px-0" aria-label="Queue actions">
+                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onClick={handleOpenScheduledJobCreate}>
+                <Repeat />
+                Schedule job
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setRetryDialogOpen(true)}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Retry Jobs
+                <RefreshCw />
+                Retry jobs
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPurgeDialogOpen(true)}>
-                <Trash2 className="mr-2 h-4 w-4" />
-                Purge / Retain Jobs
+                <Eraser />
+                Purge / Retain jobs
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setDeleteDialogOpen(true)}
-                className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
               >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete Queue
+                <Trash2 />
+                Delete queue
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -562,45 +610,42 @@ function QueueDetailPage() {
       mobileActions: (
         <>
           <DropdownMenuItem onClick={() => setAddJobDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Job
+            <Plus />
+            Add job
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleOpenScheduledJobCreate}>
-            <Repeat className="mr-2 h-4 w-4" />
-            Schedule Job
+            <Repeat />
+            Schedule job
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={handleTogglePause}
-            disabled={pauseMutation.isPending || resumeMutation.isPending}
-          >
-            {queue?.isPaused ? (
+          <DropdownMenuItem onClick={handleTogglePause} disabled={isTogglingPause}>
+            {isPaused ? (
               <>
-                <Play className="mr-2 h-4 w-4" />
-                Resume Queue
+                <Play />
+                Resume queue
               </>
             ) : (
               <>
-                <Pause className="mr-2 h-4 w-4" />
-                Pause Queue
+                <Pause />
+                Pause queue
               </>
             )}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setRetryDialogOpen(true)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Retry Jobs
+            <RefreshCw />
+            Retry jobs
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setPurgeDialogOpen(true)}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Purge / Retain Jobs
+            <Eraser />
+            Purge / Retain jobs
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setDeleteDialogOpen(true)}
-            className="text-destructive focus:text-destructive focus:bg-destructive/10"
+            className="text-destructive focus:bg-destructive/10 focus:text-destructive"
           >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete Queue
+            <Trash2 />
+            Delete queue
           </DropdownMenuItem>
         </>
       ),
@@ -608,11 +653,12 @@ function QueueDetailPage() {
     [
       connectionId,
       orgSlug,
-      pauseMutation.isPending,
-      queue?.isPaused,
+      isPaused,
+      isTogglingPause,
+      isUnattended,
       queueLoading,
       queueName,
-      resumeMutation.isPending,
+      workerCount,
       handleOpenScheduledJobCreate,
       handleTogglePause,
     ]
@@ -622,20 +668,24 @@ function QueueDetailPage() {
 
   if (queueError) {
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Queue not found</h2>
-        <p className="text-muted-foreground mb-4">{queueError.message}</p>
-        <Button
-          variant="outline"
-          onClick={() =>
-            navigate({ to: '/$orgSlug/c/$connectionId', params: { orgSlug, connectionId } })
-          }
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Queues
-        </Button>
-      </div>
+      <EmptyState
+        icon={AlertCircle}
+        tone="danger"
+        title="Queue not found"
+        description={queueError.message}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              navigate({ to: '/$orgSlug/c/$connectionId', params: { orgSlug, connectionId } })
+            }
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to queues
+          </Button>
+        }
+      />
     )
   }
 
@@ -681,1144 +731,958 @@ function QueueDetailPage() {
     return <Outlet />
   }
 
+  const isJobsList = section === 'jobs' && tab === 'jobs'
+  const scheduledTotal = scheduledJobs?.total ?? 0
+  const jobsTotal = jobsData?.pages[0]?.total ?? 0
+  const hasSelection = selectedJobs.size > 0
+  const selectionHasScheduledJobs = Array.from(selectedJobs).some((id) => id.startsWith('repeat:'))
+  const timezone = getTimezoneAbbreviation()
+  const warnings = metrics?.warnings ?? []
+
+  const statusMetric = (filterStatus: Exclude<JobStatusFilter, ''>) => {
+    const isActive = isJobsList && status === filterStatus
+    return {
+      onClick: () => handleStatusFilter(isActive ? '' : filterStatus),
+      active: isActive,
+      title: isActive ? 'Clear the status filter' : `Show only ${filterStatus} jobs`,
+      'data-testid': `job-status-filter-${filterStatus}`,
+    }
+  }
+
   return (
+    // Jobs on md+: the page fills the viewport and the table scrolls inside its panel.
+    // Below md the page scrolls as a whole (the footer's "Load more" pages the list).
     <div
       className={
-        section === 'jobs' ? 'flex h-full min-h-0 flex-col gap-6 overflow-hidden' : 'space-y-6'
+        section === 'jobs'
+          ? 'flex flex-col gap-4 max-md:pb-4 md:h-full md:min-h-0'
+          : 'space-y-4 max-md:pb-4'
       }
     >
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span>{queue?.workers.length ?? 0} workers connected</span>
-      </div>
-
+      {/* Level 1: which view of the queue. Page-level, so it reads as text tabs on a hairline. */}
       <Tabs
+        className="shrink-0"
         value={section}
-        onValueChange={(newSection) =>
-          navigate({
-            to: '.',
-            search: {
-              section: newSection as typeof section,
-              tab,
-              status,
-              jobId,
-              name,
-              data: dataSearch,
-              hideScheduled,
-              page,
-            },
-            replace: true,
-          })
-        }
+        onValueChange={(newSection) => updateSearch({ section: newSection as typeof section })}
       >
-        <TabsList>
-          <TabsTrigger value="jobs" aria-label="Queue section Jobs">
-            Jobs
-          </TabsTrigger>
-          <TabsTrigger value="observability" aria-label="Queue section Observability">
-            Observability
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b">
+          <TabsList className="h-9 gap-5 rounded-none border-0 bg-transparent p-0">
+            <TabsTrigger
+              value="jobs"
+              aria-label="Queue section Jobs"
+              className={sectionTabClass(section === 'jobs')}
+            >
+              Jobs
+            </TabsTrigger>
+            <TabsTrigger
+              value="observability"
+              aria-label="Queue section Observability"
+              className={sectionTabClass(section === 'observability')}
+            >
+              Observability
+            </TabsTrigger>
+          </TabsList>
+
+          {section === 'observability' ? (
+            <div className="flex flex-wrap items-center gap-2 pb-1.5">
+              <span className="hidden text-xs text-muted-foreground lg:inline">
+                {metricsFetching ? 'Refreshing…' : 'Auto-refresh 15s'}
+              </span>
+              <Tabs
+                value={metricsWindowValue}
+                onValueChange={(value) =>
+                  setMetricsWindowValue(value as (typeof METRICS_WINDOWS)[number]['value'])
+                }
+              >
+                <TabsList role="group" aria-label="Metrics window" className="h-7">
+                  {METRICS_WINDOWS.map((window) => (
+                    <TabsTrigger
+                      key={window.value}
+                      value={window.value}
+                      aria-pressed={metricsWindowValue === window.value}
+                      className="px-2 font-mono text-[11px]"
+                    >
+                      {window.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+              <Button
+                size="xs"
+                variant="outline"
+                className="w-7 px-0"
+                onClick={() => void refetchMetrics()}
+                disabled={metricsFetching}
+                aria-label="Refresh metrics"
+                title="Refresh metrics"
+              >
+                <RefreshCw
+                  className={cn('h-3.5 w-3.5', metricsFetching && 'animate-spin')}
+                  aria-hidden="true"
+                />
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </Tabs>
 
-      {/* Stats cards */}
       {section === 'jobs' && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-          <Card className="relative overflow-hidden">
-            <span
-              className="absolute inset-x-0 top-0 h-0.5 bg-status-neutral/40"
-              aria-hidden="true"
-            />
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-              <CardTitle className="eyebrow">Waiting</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              {queueLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-                  {formatNumber(queue?.jobCounts.waiting ?? 0)}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card className="relative overflow-hidden">
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-active" aria-hidden="true" />
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-              <CardTitle className="eyebrow">Active</CardTitle>
-              <Zap className="h-4 w-4 text-status-active" />
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              {queueLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-                  {formatNumber(queue?.jobCounts.active ?? 0)}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card className="relative overflow-hidden">
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-warning" aria-hidden="true" />
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-              <CardTitle className="eyebrow">Delayed</CardTitle>
-              <Clock className="h-4 w-4 text-status-warning" />
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              {queueLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-                  {formatNumber(queue?.jobCounts.delayed ?? 0)}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card className="relative overflow-hidden">
-            <span
-              className="absolute inset-x-0 top-0 h-0.5 bg-status-priority"
-              aria-hidden="true"
-            />
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-              <CardTitle className="eyebrow">Prioritized</CardTitle>
-              <Rocket className="h-4 w-4 text-status-priority" />
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              {queueLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-                  {formatNumber(queue?.jobCounts.prioritized ?? 0)}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card className="relative overflow-hidden">
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-danger" aria-hidden="true" />
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-              <CardTitle className="eyebrow">Failed</CardTitle>
-              <AlertCircle className="h-4 w-4 text-status-danger" />
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              {queueLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-                  {formatNumber(queue?.jobCounts.failed ?? 0)}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card className="relative overflow-hidden">
-            <span className="absolute inset-x-0 top-0 h-0.5 bg-status-success" aria-hidden="true" />
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-              <CardTitle className="eyebrow">Waiting Children</CardTitle>
-              <BarChart3 className="h-4 w-4 text-status-success" />
-            </CardHeader>
-            <CardContent className="p-4 pt-0">
-              {metricsLoading ? (
-                <Skeleton className="h-8 w-20" />
-              ) : (
-                <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-                  {formatNumber(metrics?.counts.waitingChildren ?? 0)}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        <MetricStrip className="shrink-0">
+          <Metric
+            label="Waiting"
+            value={formatNumber(queue?.jobCounts.waiting ?? 0)}
+            loading={queueLoading}
+            {...statusMetric('waiting')}
+          />
+          <Metric
+            label="Active"
+            value={formatNumber(queue?.jobCounts.active ?? 0)}
+            tone="active"
+            pulse={(queue?.jobCounts.active ?? 0) > 0}
+            loading={queueLoading}
+            {...statusMetric('active')}
+          />
+          <Metric
+            label="Delayed"
+            value={formatNumber(queue?.jobCounts.delayed ?? 0)}
+            tone="delayed"
+            loading={queueLoading}
+            {...statusMetric('delayed')}
+          />
+          <Metric
+            label="Completed"
+            value={formatNumber(queue?.jobCounts.completed ?? 0)}
+            tone="success"
+            loading={queueLoading}
+            {...statusMetric('completed')}
+          />
+          <Metric
+            label="Failed"
+            value={formatNumber(queue?.jobCounts.failed ?? 0)}
+            tone="danger"
+            emphasis={(queue?.jobCounts.failed ?? 0) > 0}
+            loading={queueLoading}
+            {...statusMetric('failed')}
+          />
+          <Metric
+            label="Prioritized"
+            value={formatNumber(queue?.jobCounts.prioritized ?? 0)}
+            tone="priority"
+            loading={queueLoading}
+            title="Prioritized jobs waiting ahead of the standard queue"
+          />
+          <Metric
+            label="Waiting children"
+            value={formatNumber(metrics?.counts.waitingChildren ?? 0)}
+            loading={metricsLoading}
+            title="Parent jobs waiting for their child jobs to finish"
+            className={STRIP_LAST_OF_SEVEN_CLASS}
+          />
+        </MetricStrip>
       )}
 
       {section === 'observability' && (
-        <Card className="overflow-hidden border-border/70 bg-gradient-to-br from-background via-background to-muted/35">
-          <CardHeader className="border-b bg-muted/20 py-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-1">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <LineChart className="h-4 w-4 text-muted-foreground" />
-                  BullMQ Native Telemetry
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  1-minute buckets from BullMQ `getMetrics` plus queue-native state, limits, and
-                  scheduler/worker telemetry.
-                </p>
-              </div>
+        <div className="space-y-4">
+          {warnings.length ? (
+            <div className="rounded-lg border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
+              Some metrics were unavailable in this Redis environment: {warnings.join('; ')}
+            </div>
+          ) : null}
 
-              <div className="flex flex-wrap items-center gap-2">
-                {METRICS_WINDOWS.map((window) => (
-                  <Button
-                    key={window.value}
-                    size="sm"
-                    variant={metricsWindowValue === window.value ? 'default' : 'outline'}
-                    className="h-8 px-2.5 text-xs"
-                    onClick={() => setMetricsWindowValue(window.value)}
-                  >
-                    {window.label}
-                  </Button>
-                ))}
-                <Button
-                  size="sm"
-                  variant={includePrometheusMetrics ? 'default' : 'outline'}
-                  className="h-8 px-2.5 text-xs"
-                  onClick={() => setIncludePrometheusMetrics((current) => !current)}
-                >
-                  Prometheus
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 px-2.5 text-xs"
-                  onClick={() => void refetchMetrics()}
-                  disabled={metricsFetching}
-                >
-                  <RefreshCw
-                    className={`mr-1.5 h-3.5 w-3.5 ${metricsFetching ? 'animate-spin' : ''}`}
-                  />
-                  Refresh
-                </Button>
-                <span className="inline-block w-28 text-right text-xs text-muted-foreground">
-                  {metricsFetching ? 'Refreshing...' : 'Auto refresh 15s'}
+          <MetricStrip>
+            <Metric
+              label={`Finished · ${selectedWindowLabel}`}
+              value={formatNumber(metricsTotals?.finishedInWindow ?? 0)}
+              loading={metricsLoading}
+              title="Completed + failed in the selected window"
+            />
+            <Metric
+              label="Completed"
+              value={formatNumber(metricsTotals?.completedInWindow ?? 0)}
+              tone="success"
+              loading={metricsLoading}
+              title="BullMQ completed/min buckets in the selected window"
+            />
+            <Metric
+              label="Failed"
+              value={formatNumber(metricsTotals?.failedInWindow ?? 0)}
+              tone="danger"
+              emphasis={(metricsTotals?.failedInWindow ?? 0) > 0}
+              loading={metricsLoading}
+              title="BullMQ failed/min buckets in the selected window"
+            />
+            <Metric
+              label="Success rate"
+              value={formatPercentage(metricsTotals?.successRateInWindow)}
+              loading={metricsLoading}
+              title="From completed/failed buckets in the selected window"
+            />
+            <Metric
+              label="Avg / min"
+              value={formatRatePerMinute(metricsTotals?.avgFinishedPerMinuteInWindow)}
+              loading={metricsLoading}
+              title="Average finished jobs per minute"
+            />
+            <Metric
+              label="Peak / min"
+              value={formatNumber(metricsTotals?.peakFinishedPerMinuteInWindow ?? 0)}
+              loading={metricsLoading}
+              title="Highest finished count in one minute"
+            />
+            <Metric
+              label="Drain ETA"
+              value={formatMinutesDuration(metricsTotals?.estimatedDrainMinutes)}
+              loading={metricsLoading}
+              title="Waiting to process ÷ average throughput"
+              className={STRIP_LAST_OF_SEVEN_CLASS}
+            />
+          </MetricStrip>
+
+          <Panel>
+            <PanelHeader>
+              <div className="flex min-w-0 items-baseline gap-2">
+                <h2 className="text-[13px] font-semibold tracking-tight">Throughput</h2>
+                <span className="truncate text-xs text-muted-foreground">
+                  1-minute buckets from BullMQ <code className="font-mono">getMetrics</code>
                 </span>
               </div>
-            </div>
-          </CardHeader>
-
-          <CardContent className="space-y-6 pt-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={metricsStale ? 'warning' : 'success'}>
-                Latest sample age: {formatAgeFromMs(latestPointAgeMs)}
-              </Badge>
-              <Badge variant="outline">Window: {selectedWindowLabel}</Badge>
-              <Badge variant="outline">
-                Coverage: {formatPercentage(requestedWindowCoverage ?? undefined)}
-              </Badge>
-              <Badge variant={includePrometheusMetrics ? 'secondary' : 'outline'}>
-                Prometheus: {includePrometheusMetrics ? 'Included' : 'Off'}
-              </Badge>
-              <Badge variant={metrics?.warnings.length ? 'warning' : 'success'}>
-                Warnings: {formatNumber(metrics?.warnings.length ?? 0)}
-              </Badge>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <MetricTile
-                title="Finished (window)"
-                value={formatNumber(metricsTotals?.finishedInWindow ?? 0)}
-                subtitle="Completed + failed in selected range"
-              />
-              <MetricTile
-                title="Completed (window)"
-                value={formatNumber(metricsTotals?.completedInWindow ?? 0)}
-                subtitle="BullMQ completed/min buckets in range"
-              />
-              <MetricTile
-                title="Failed (window)"
-                value={formatNumber(metricsTotals?.failedInWindow ?? 0)}
-                subtitle="BullMQ failed/min buckets in range"
-              />
-              <MetricTile
-                title="Success Rate (window)"
-                value={formatPercentage(metricsTotals?.successRateInWindow)}
-                subtitle="From completed/failed buckets"
-              />
-              <MetricTile
-                title="Failure Rate (window)"
-                value={formatPercentage(metricsTotals?.failureRateInWindow)}
-                subtitle="Failed / finished in selected range"
-              />
-              <MetricTile
-                title="Avg Throughput (/min)"
-                value={formatRatePerMinute(metricsTotals?.avgFinishedPerMinuteInWindow)}
-                subtitle="Average finished jobs per minute"
-              />
-              <MetricTile
-                title="Peak Throughput (/min)"
-                value={formatNumber(metricsTotals?.peakFinishedPerMinuteInWindow ?? 0)}
-                subtitle="Highest finished count in one minute"
-              />
-              <MetricTile
-                title="Peak Failures (/min)"
-                value={formatNumber(metricsTotals?.peakFailedPerMinuteInWindow ?? 0)}
-                subtitle="Highest failed count in one minute"
-              />
-              <MetricTile
-                title="Failure Minutes"
-                value={formatNumber(metricsTotals?.minutesWithFailuresInWindow ?? 0)}
-                subtitle="Minutes with failed > 0"
-              />
-              <MetricTile
-                title="Longest Failure Streak"
-                value={formatMinutesDuration(metricsTotals?.longestFailureStreakMinutesInWindow)}
-                subtitle="Consecutive failed minutes in range"
-              />
-              <MetricTile
-                title="Failed (outside window)"
-                value={formatNumber(failedOutsideWindow)}
-                subtitle="Lifetime failed minus selected range"
-              />
-              <MetricTile
-                title="Finished (lifetime)"
-                value={formatNumber(metricsTotals?.finishedLifetime ?? 0)}
-                subtitle="BullMQ cumulative counters since metrics started"
-              />
-              <MetricTile
-                title="Failed (lifetime)"
-                value={formatNumber(metricsTotals?.failedLifetime ?? 0)}
-                subtitle="BullMQ cumulative failed counter"
-              />
-              <MetricTile
-                title="Waiting To Process"
-                value={formatNumber(metrics?.queue.waitingToProcess ?? 0)}
-                subtitle="BullMQ queue.count()"
-              />
-              <MetricTile
-                title="Retained Buckets"
-                value={formatNumber(retainedMetricBuckets)}
-                subtitle="1-minute points retained by worker metrics"
-              />
-              <MetricTile
-                title="Drain ETA"
-                value={formatMinutesDuration(metricsTotals?.estimatedDrainMinutes)}
-                subtitle="waitingToProcess / avg throughput"
-              />
-              <MetricTile
-                title="Backlog / Worker"
-                value={formatDecimal(backlogPerWorker)}
-                subtitle="waitingToProcess divided by workers"
-              />
-            </div>
-            {windowStartTimestamp !== null && windowEndTimestamp !== null ? (
-              <p className="text-xs text-muted-foreground">
-                {selectedWindowLabel} view covers {formatMetricTooltipLabel(windowStartTimestamp)}{' '}
-                to {formatMetricTooltipLabel(windowEndTimestamp)}. Jobs list is not time-filtered,
-                so it can include older failures outside this chart range.
-              </p>
-            ) : null}
-
-            {metricsLoading ? (
-              <div className="h-[320px] w-full">
-                <Skeleton className="h-full w-full" />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant={metricsStale ? 'warning' : 'success'}>
+                  Sample {formatAgeFromMs(latestPointAgeMs).toLowerCase()}
+                </Badge>
+                <Badge variant="outline">
+                  Coverage {formatPercentage(requestedWindowCoverage ?? undefined)}
+                </Badge>
               </div>
-            ) : !metricsPoints.length ? (
-              <div className="flex h-[320px] w-full flex-col items-center justify-center gap-2 rounded-lg border border-border/60 bg-muted/10 px-6 text-center">
-                <Gauge className="h-8 w-8 text-muted-foreground" />
-                <p className="text-sm font-medium">No native metrics yet</p>
-                <p className="max-w-md text-xs text-muted-foreground">
-                  Enable BullMQ worker metrics to populate this chart over time.
-                </p>
-                <a
-                  href="https://docs.bullmq.io/guide/metrics"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
-                >
-                  View BullMQ metrics setup documentation
-                </a>
-              </div>
-            ) : (
-              <ChartContainer config={chartConfig} className="h-[320px] w-full">
-                <AreaChart
-                  data={metricsPoints}
-                  margin={{ left: 8, right: 12, top: 10, bottom: 10 }}
-                >
-                  <defs>
-                    <linearGradient id="fill-total" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-total)" stopOpacity={0.45} />
-                      <stop offset="95%" stopColor="var(--color-total)" stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="fill-completed" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-completed)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--color-completed)" stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="fill-failed" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-failed)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--color-failed)" stopOpacity={0.03} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="timestamp"
-                    tickLine={false}
-                    axisLine={false}
-                    minTickGap={28}
-                    tickFormatter={(value) =>
-                      formatMetricAxisTime(Number(value), chartWindowMinutes)
-                    }
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    width={42}
-                    tickFormatter={(value) => formatCompactCount(Number(value))}
-                  />
-                  <ChartTooltip
-                    content={
-                      <ChartTooltipContent
-                        labelFormatter={(value) => formatMetricTooltipLabel(Number(value))}
-                      />
-                    }
-                  />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Area
-                    dataKey="total"
-                    type="monotone"
-                    fill="url(#fill-total)"
-                    fillOpacity={1}
-                    stroke="var(--color-total)"
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                  <Area
-                    dataKey="completed"
-                    type="monotone"
-                    fill="url(#fill-completed)"
-                    fillOpacity={1}
-                    stroke="var(--color-completed)"
-                    strokeWidth={1.8}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                  <Area
-                    dataKey="failed"
-                    type="monotone"
-                    fill="url(#fill-failed)"
-                    fillOpacity={1}
-                    stroke="var(--color-failed)"
-                    strokeWidth={1.8}
-                    dot={false}
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ChartContainer>
-            )}
-
-            <div className="grid gap-4 lg:grid-cols-3">
-              <Card className="border-border/60">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Queue Controls</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <MetricRow
-                    label="Workers"
-                    value={formatNumber(metrics?.queue.workersCount ?? queue?.workers.length ?? 0)}
-                  />
-                  <MetricRow
-                    label="Schedulers"
-                    value={formatNumber(
-                      metrics?.queue.schedulersCount ?? queue?.scheduledJobsCount ?? 0
-                    )}
-                  />
-                  <MetricRow
-                    label="Waiting (set)"
-                    value={formatNumber(metrics?.counts.waiting ?? 0)}
-                  />
-                  <MetricRow
-                    label="Active (set)"
-                    value={formatNumber(metrics?.counts.active ?? 0)}
-                  />
-                  <MetricRow
-                    label="Delayed (set)"
-                    value={formatNumber(metrics?.counts.delayed ?? 0)}
-                  />
-                  <MetricRow
-                    label="Completed (set)"
-                    value={formatNumber(metrics?.counts.completed ?? 0)}
-                  />
-                  <MetricRow
-                    label="Failed (set)"
-                    value={formatNumber(metrics?.counts.failed ?? 0)}
-                  />
-                  <MetricRow
-                    label="Prioritized (set)"
-                    value={formatNumber(metrics?.counts.prioritized ?? 0)}
-                  />
-                  <MetricRow
-                    label="Paused (set)"
-                    value={formatNumber(metrics?.counts.paused ?? 0)}
-                  />
-                  <MetricRow
-                    label="Waiting Children (set)"
-                    value={formatNumber(metrics?.counts.waitingChildren ?? 0)}
-                  />
-                  <MetricRow
-                    label="Queue Event Clients"
-                    value={formatNumber(metrics?.queue.queueEventsCount ?? 0)}
-                  />
-                  <MetricRow
-                    label="Rate Limited"
-                    value={metrics?.controls.rateLimited ? 'Yes' : 'No'}
-                  />
-                  <MetricRow
-                    label="Rate Limit TTL"
-                    value={formatDurationFromMs(metrics?.controls.rateLimitTtlMs)}
-                  />
-                  <MetricRow
-                    label="Global Concurrency"
-                    value={metrics?.controls.globalConcurrency ?? 'Not set'}
-                  />
-                  <MetricRow
-                    label="Global Rate Limit"
-                    value={formatGlobalRateLimit(metrics?.controls.globalRateLimit)}
-                  />
-                  <MetricRow label="Queue Maxed" value={metrics?.queue.isMaxed ? 'Yes' : 'No'} />
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/60">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Native Queue Meta</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  <MetricRow label="Requested Window" value={selectedWindowLabel} />
-                  <MetricRow
-                    label="All Retained Mode"
-                    value={usingAllRetainedWindow ? 'Yes' : 'No'}
-                  />
-                  <MetricRow
-                    label="Returned Buckets"
-                    value={formatNumber(metrics?.range.returnedPoints ?? 0)}
-                  />
-                  <MetricRow label="Retained Buckets" value={formatNumber(retainedMetricBuckets)} />
-                  <MetricRow
-                    label="Window Coverage"
-                    value={formatPercentage(requestedWindowCoverage ?? undefined)}
-                  />
-                  <MetricRow label="Latest Sample Age" value={formatAgeFromMs(latestPointAgeMs)} />
-                  <MetricRow
-                    label="Completed prevTS"
-                    value={formatMetricSourceTimestamp(metrics?.series.completed.meta.prevTS)}
-                  />
-                  <MetricRow
-                    label="Failed prevTS"
-                    value={formatMetricSourceTimestamp(metrics?.series.failed.meta.prevTS)}
-                  />
-                  <MetricRow
-                    label="Completed prevCount"
-                    value={formatNumber(metrics?.series.completed.meta.prevCount ?? 0)}
-                  />
-                  <MetricRow
-                    label="Failed prevCount"
-                    value={formatNumber(metrics?.series.failed.meta.prevCount ?? 0)}
-                  />
-                  <MetricRow
-                    label="Paused (meta)"
-                    value={formatNullableBoolean(metrics?.meta.paused)}
-                  />
-                  <MetricRow label="Version" value={metrics?.meta.version ?? 'Unknown'} />
-                  <MetricRow
-                    label="Concurrency (meta)"
-                    value={metrics?.meta.concurrency ?? 'Not set'}
-                  />
-                  <MetricRow label="max (meta)" value={metrics?.meta.max ?? 'Not set'} />
-                  <MetricRow
-                    label="duration (meta)"
-                    value={formatDurationFromMs(metrics?.meta.duration)}
-                  />
-                  <MetricRow
-                    label="maxLenEvents (meta)"
-                    value={metrics?.meta.maxLenEvents ?? 'Not set'}
-                  />
-                  <MetricRow
-                    label="Warnings"
-                    value={metrics?.warnings.length ? String(metrics.warnings.length) : '0'}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/60">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Priority Mix</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {!priorityRows.length ? (
-                    <p className="text-xs text-muted-foreground">
-                      No jobs were found in the sampled priority buckets.
-                    </p>
-                  ) : (
-                    priorityRows.map((entry) => {
-                      const width =
-                        highestPriorityBucket > 0 ? (entry.count / highestPriorityBucket) * 100 : 0
-
-                      return (
-                        <div key={entry.priority} className="space-y-1.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-mono text-muted-foreground">
-                              P{entry.priority}
-                            </span>
-                            <span className="font-mono tabular-nums">
-                              {formatNumber(entry.count)}
-                            </span>
-                          </div>
-                          <div className="h-2 w-full rounded-full bg-muted">
-                            <div
-                              className="h-2 rounded-full bg-[var(--color-sidebar-primary)] transition-[width] duration-300"
-                              style={{ width: `${width}%` }}
-                            />
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Card className="border-border/60">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Server className="h-4 w-4 text-muted-foreground" />
-                    Worker Clients
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-xs">
-                  {!metrics?.queue.workers.length ? (
-                    <p className="text-muted-foreground">
-                      No worker clients reported via Redis CLIENT LIST metadata.
-                    </p>
-                  ) : (
-                    <>
-                      {metrics.queue.workers.slice(0, 8).map((worker) => (
-                        <div
-                          key={`${worker.id}:${worker.address}`}
-                          className="rounded-md border border-border/60 bg-muted/20 px-2.5 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="truncate font-mono">
-                              {worker.name || worker.id || 'worker'}
-                            </span>
-                            <span className="font-mono text-muted-foreground">
-                              idle {formatDurationFromMs(worker.idleMs)}
-                            </span>
-                          </div>
-                          <p className="mt-1 truncate text-muted-foreground">
-                            {worker.address || 'unknown address'}
-                          </p>
-                          <p className="mt-1 text-muted-foreground">
-                            age {formatDurationFromMs(worker.ageMs)}
-                          </p>
-                        </div>
-                      ))}
-                      {metrics.queue.workers.length > 8 ? (
-                        <p className="text-muted-foreground">
-                          +{formatNumber(metrics.queue.workers.length - 8)} additional workers
-                        </p>
-                      ) : null}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/60">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm">
-                    <Database className="h-4 w-4 text-muted-foreground" />
-                    Queue Event Clients
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-xs">
-                  {!metrics?.queue.queueEvents.length ? (
-                    <p className="text-muted-foreground">
-                      No queue event clients detected for this queue.
-                    </p>
-                  ) : (
-                    <>
-                      {metrics.queue.queueEvents.slice(0, 8).map((eventClient) => (
-                        <div
-                          key={`${eventClient.id}:${eventClient.address}`}
-                          className="rounded-md border border-border/60 bg-muted/20 px-2.5 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="truncate font-mono">
-                              {eventClient.name || eventClient.id || 'queue-event-client'}
-                            </span>
-                            <span className="font-mono text-muted-foreground">
-                              idle {formatDurationFromMs(eventClient.idleMs)}
-                            </span>
-                          </div>
-                          <p className="mt-1 truncate text-muted-foreground">
-                            {eventClient.address || 'unknown address'}
-                          </p>
-                          <p className="mt-1 text-muted-foreground">
-                            age {formatDurationFromMs(eventClient.ageMs)}
-                          </p>
-                        </div>
-                      ))}
-                      {metrics.queue.queueEvents.length > 8 ? (
-                        <p className="text-muted-foreground">
-                          +{formatNumber(metrics.queue.queueEvents.length - 8)} additional clients
-                        </p>
-                      ) : null}
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <Card className="border-border/60">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <span className="flex items-center gap-2">
-                    <TerminalSquare className="h-4 w-4 text-muted-foreground" />
-                    Prometheus Export
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={includePrometheusMetrics ? 'secondary' : 'outline'}>
-                      {includePrometheusMetrics ? 'Included' : 'Not included'}
-                    </Badge>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={() => void handleCopyPrometheus()}
-                      disabled={!prometheusText}
-                    >
-                      {prometheusCopied ? (
-                        <>
-                          <Check className="mr-1.5 h-3.5 w-3.5" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="mr-1.5 h-3.5 w-3.5" />
-                          Copy
-                        </>
-                      )}
+            </PanelHeader>
+            <div className="p-4">
+              {metricsLoading ? (
+                <Skeleton className="h-[280px] w-full" />
+              ) : !metricsPoints.length ? (
+                <EmptyState
+                  size="inline"
+                  icon={Gauge}
+                  title="No native metrics yet"
+                  description="Enable BullMQ worker metrics to populate this chart over time."
+                  className="h-[280px]"
+                  actions={
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href="https://docs.bullmq.io/guide/metrics"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        BullMQ metrics setup
+                      </a>
                     </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {!includePrometheusMetrics ? (
+                  }
+                />
+              ) : (
+                <ChartContainer config={chartConfig} className="h-[280px] w-full">
+                  <AreaChart
+                    data={metricsPoints}
+                    margin={{ left: 8, right: 12, top: 10, bottom: 10 }}
+                  >
+                    <defs>
+                      <linearGradient id="fill-total" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-total)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="var(--color-total)" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="fill-completed" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-completed)" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="var(--color-completed)" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="fill-failed" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-failed)" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="var(--color-failed)" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="timestamp"
+                      tickLine={false}
+                      axisLine={false}
+                      minTickGap={28}
+                      tickFormatter={(value) =>
+                        formatMetricAxisTime(Number(value), chartWindowMinutes)
+                      }
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={42}
+                      tickFormatter={(value) => formatCompactCount(Number(value))}
+                    />
+                    <ChartTooltip
+                      content={
+                        <ChartTooltipContent
+                          labelFormatter={(value) => formatMetricTooltipLabel(Number(value))}
+                        />
+                      }
+                    />
+                    <ChartLegend content={<ChartLegendContent />} />
+                    <Area
+                      dataKey="total"
+                      type="monotone"
+                      fill="url(#fill-total)"
+                      fillOpacity={1}
+                      stroke="var(--color-total)"
+                      strokeWidth={1.5}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      dataKey="completed"
+                      type="monotone"
+                      fill="url(#fill-completed)"
+                      fillOpacity={1}
+                      stroke="var(--color-completed)"
+                      strokeWidth={1.5}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                    <Area
+                      dataKey="failed"
+                      type="monotone"
+                      fill="url(#fill-failed)"
+                      fillOpacity={1}
+                      stroke="var(--color-failed)"
+                      strokeWidth={1.5}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  </AreaChart>
+                </ChartContainer>
+              )}
+              {windowStartTimestamp !== null && windowEndTimestamp !== null ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {selectedWindowLabel} window covers{' '}
+                  <span className="font-mono">
+                    {formatMetricTooltipLabel(windowStartTimestamp)}
+                  </span>{' '}
+                  to{' '}
+                  <span className="font-mono">{formatMetricTooltipLabel(windowEndTimestamp)}</span>.
+                  The jobs list is not time-filtered, so it can include failures older than this
+                  range.
+                </p>
+              ) : null}
+            </div>
+          </Panel>
+
+          <div className="grid items-start gap-4 lg:grid-cols-3">
+            <div className="space-y-4">
+              <FactPanel title={`Window detail · ${selectedWindowLabel}`}>
+                <FactRow
+                  label="Failure rate"
+                  value={formatPercentage(metricsTotals?.failureRateInWindow)}
+                />
+                <FactRow
+                  label="Peak failures / min"
+                  value={formatNumber(metricsTotals?.peakFailedPerMinuteInWindow ?? 0)}
+                />
+                <FactRow
+                  label="Minutes with failures"
+                  value={formatNumber(metricsTotals?.minutesWithFailuresInWindow ?? 0)}
+                />
+                <FactRow
+                  label="Longest failure streak"
+                  value={formatMinutesDuration(metricsTotals?.longestFailureStreakMinutesInWindow)}
+                />
+                <FactRow label="Failed outside window" value={formatNumber(failedOutsideWindow)} />
+                <FactRow
+                  label="Finished (lifetime)"
+                  value={formatNumber(metricsTotals?.finishedLifetime ?? 0)}
+                />
+                <FactRow
+                  label="Failed (lifetime)"
+                  value={formatNumber(metricsTotals?.failedLifetime ?? 0)}
+                />
+                <FactRow
+                  label="Waiting to process"
+                  value={formatNumber(metrics?.queue.waitingToProcess ?? 0)}
+                />
+                <FactRow label="Backlog / worker" value={formatDecimal(backlogPerWorker)} />
+                <FactRow label="Retained buckets" value={formatNumber(retainedMetricBuckets)} />
+              </FactPanel>
+
+              <FactPanel title="Priority mix">
+                {!priorityRows.length ? (
                   <p className="text-xs text-muted-foreground">
-                    Enable the Prometheus toggle to include `queue.exportPrometheusMetrics()` in
-                    this payload.
-                  </p>
-                ) : !prometheusText ? (
-                  <p className="text-xs text-muted-foreground">
-                    Prometheus export is enabled, but no payload was returned for this queue.
+                    No jobs were found in the sampled priority buckets.
                   </p>
                 ) : (
-                  <>
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                      <span>{formatNumber(prometheusLineCount)} lines</span>
-                      <span>{formatBytes(prometheusByteSize)}</span>
-                    </div>
-                    <Collapsible
-                      open={prometheusExpanded}
-                      onOpenChange={setPrometheusExpanded}
-                      className="rounded-md border border-border/60"
-                    >
-                      <CollapsibleTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          className="h-8 w-full justify-start rounded-none text-xs"
-                        >
-                          {prometheusExpanded ? 'Hide raw payload' : 'Show raw payload'}
-                        </Button>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <pre className="max-h-[320px] overflow-auto border-t border-border/60 bg-muted/20 px-3 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                          {prometheusText}
-                        </pre>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                  priorityRows.map((entry) => {
+                    const width =
+                      highestPriorityBucket > 0 ? (entry.count / highestPriorityBucket) * 100 : 0
 
-            {metrics?.warnings.length ? (
-              <div className="rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-status-warning">
-                Some metrics were unavailable in this Redis environment:{' '}
-                {metrics.warnings.join('; ')}
+                    return (
+                      <div key={entry.priority} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-mono text-muted-foreground">P{entry.priority}</span>
+                          <span className="font-mono tabular-nums">
+                            {formatNumber(entry.count)}
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-muted">
+                          <div
+                            className="h-1.5 rounded-full bg-status-priority transition-[width] duration-300"
+                            style={{ width: `${width}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </FactPanel>
+            </div>
+
+            <FactPanel title="Queue state">
+              <FactRow
+                label="Workers"
+                value={formatNumber(metrics?.queue.workersCount ?? queue?.workers.length ?? 0)}
+              />
+              <FactRow
+                label="Schedulers"
+                value={formatNumber(
+                  metrics?.queue.schedulersCount ?? queue?.scheduledJobsCount ?? 0
+                )}
+              />
+              <FactRow label="Waiting (set)" value={formatNumber(metrics?.counts.waiting ?? 0)} />
+              <FactRow label="Active (set)" value={formatNumber(metrics?.counts.active ?? 0)} />
+              <FactRow label="Delayed (set)" value={formatNumber(metrics?.counts.delayed ?? 0)} />
+              <FactRow
+                label="Completed (set)"
+                value={formatNumber(metrics?.counts.completed ?? 0)}
+              />
+              <FactRow label="Failed (set)" value={formatNumber(metrics?.counts.failed ?? 0)} />
+              <FactRow
+                label="Prioritized (set)"
+                value={formatNumber(metrics?.counts.prioritized ?? 0)}
+              />
+              <FactRow label="Paused (set)" value={formatNumber(metrics?.counts.paused ?? 0)} />
+              <FactRow
+                label="Waiting children (set)"
+                value={formatNumber(metrics?.counts.waitingChildren ?? 0)}
+              />
+              <FactRow
+                label="Queue event clients"
+                value={formatNumber(metrics?.queue.queueEventsCount ?? 0)}
+              />
+              <FactRow label="Rate limited" value={metrics?.controls.rateLimited ? 'Yes' : 'No'} />
+              <FactRow
+                label="Rate limit TTL"
+                value={formatDurationFromMs(metrics?.controls.rateLimitTtlMs)}
+              />
+              <FactRow
+                label="Global concurrency"
+                value={metrics?.controls.globalConcurrency ?? 'Not set'}
+              />
+              <FactRow
+                label="Global rate limit"
+                value={formatGlobalRateLimit(metrics?.controls.globalRateLimit)}
+              />
+              <FactRow label="Queue maxed" value={metrics?.queue.isMaxed ? 'Yes' : 'No'} />
+            </FactPanel>
+
+            <FactPanel title="Native queue meta">
+              <FactRow label="Requested window" value={selectedWindowLabel} />
+              <FactRow label="All retained mode" value={usingAllRetainedWindow ? 'Yes' : 'No'} />
+              <FactRow
+                label="Returned buckets"
+                value={formatNumber(metrics?.range.returnedPoints ?? 0)}
+              />
+              <FactRow label="Retained buckets" value={formatNumber(retainedMetricBuckets)} />
+              <FactRow
+                label="Window coverage"
+                value={formatPercentage(requestedWindowCoverage ?? undefined)}
+              />
+              <FactRow label="Latest sample age" value={formatAgeFromMs(latestPointAgeMs)} />
+              <FactRow
+                label="Completed prevTS"
+                value={formatMetricSourceTimestamp(metrics?.series.completed.meta.prevTS)}
+              />
+              <FactRow
+                label="Failed prevTS"
+                value={formatMetricSourceTimestamp(metrics?.series.failed.meta.prevTS)}
+              />
+              <FactRow
+                label="Completed prevCount"
+                value={formatNumber(metrics?.series.completed.meta.prevCount ?? 0)}
+              />
+              <FactRow
+                label="Failed prevCount"
+                value={formatNumber(metrics?.series.failed.meta.prevCount ?? 0)}
+              />
+              <FactRow label="Paused (meta)" value={formatNullableBoolean(metrics?.meta.paused)} />
+              <FactRow label="Version" value={metrics?.meta.version ?? 'Unknown'} />
+              <FactRow label="Concurrency (meta)" value={metrics?.meta.concurrency ?? 'Not set'} />
+              <FactRow label="max (meta)" value={metrics?.meta.max ?? 'Not set'} />
+              <FactRow
+                label="duration (meta)"
+                value={formatDurationFromMs(metrics?.meta.duration)}
+              />
+              <FactRow
+                label="maxLenEvents (meta)"
+                value={metrics?.meta.maxLenEvents ?? 'Not set'}
+              />
+              <FactRow label="Warnings" value={String(warnings.length)} />
+            </FactPanel>
+          </div>
+
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            <ClientListPanel
+              title="Worker clients"
+              clients={metrics?.queue.workers ?? []}
+              fallbackName="worker"
+              emptyText="No worker clients reported via Redis CLIENT LIST metadata."
+              overflowLabel="additional workers"
+            />
+            <ClientListPanel
+              title="Queue event clients"
+              clients={metrics?.queue.queueEvents ?? []}
+              fallbackName="queue-event-client"
+              emptyText="No queue event clients detected for this queue."
+              overflowLabel="additional clients"
+            />
+          </div>
+
+          <Panel>
+            <PanelHeader>
+              <div className="flex min-w-0 items-baseline gap-2">
+                <h2 className="text-[13px] font-semibold tracking-tight">Prometheus export</h2>
+                {prometheusText ? (
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {formatNumber(prometheusLineCount)} lines · {formatBytes(prometheusByteSize)}
+                  </span>
+                ) : null}
               </div>
-            ) : null}
-          </CardContent>
-        </Card>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  aria-pressed={includePrometheusMetrics}
+                  onClick={() => setIncludePrometheusMetrics((current) => !current)}
+                  className={cn(includePrometheusMetrics && 'bg-accent text-accent-foreground')}
+                >
+                  {includePrometheusMetrics ? (
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  ) : null}
+                  {includePrometheusMetrics ? 'Included' : 'Include'}
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => void handleCopyPrometheus()}
+                  disabled={!prometheusText}
+                >
+                  {prometheusCopied ? (
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {prometheusCopied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+            </PanelHeader>
+            {!includePrometheusMetrics ? (
+              <p className="px-4 py-3 text-xs text-muted-foreground">
+                Include <code className="font-mono">queue.exportPrometheusMetrics()</code> in this
+                payload to inspect or copy the raw exposition text.
+              </p>
+            ) : !prometheusText ? (
+              <p className="px-4 py-3 text-xs text-muted-foreground">
+                Prometheus export is enabled, but no payload was returned for this queue.
+              </p>
+            ) : (
+              <Collapsible open={prometheusExpanded} onOpenChange={setPrometheusExpanded}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="h-9 w-full justify-start rounded-none border-0 px-4 text-xs"
+                  >
+                    {prometheusExpanded ? 'Hide raw payload' : 'Show raw payload'}
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <pre className="max-h-[320px] overflow-auto border-t bg-muted/40 px-4 py-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                    {prometheusText}
+                  </pre>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+          </Panel>
+        </div>
       )}
 
-      {/* Tabs */}
+      {/* Level 2: what the panel lists. Panel-level, so it is a segmented control in the toolbar. */}
       {section === 'jobs' && (
         <Tabs
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          className="flex min-h-0 flex-col"
           value={tab}
-          onValueChange={(newTab) =>
-            navigate({
-              to: '.',
-              search: {
-                section,
-                tab: newTab as typeof tab,
-                status,
-                jobId,
-                name,
-                data: dataSearch,
-                hideScheduled,
-                page,
-              },
-              replace: true,
-            })
-          }
+          onValueChange={(newTab) => updateSearch({ tab: newTab as typeof tab })}
         >
-          {/* Toolbar: filters on left, tab toggle on right */}
-          {/* pt-1.5 keeps focus rings from being clipped by the Tabs' overflow-hidden */}
-          <div className="flex items-center justify-between gap-3 pt-1.5">
-            <div className="flex items-center gap-2">
-              {tab === 'jobs' && (
-                <>
-                  <Select
-                    value={status}
-                    onChange={(e) => {
-                      const newStatus = e.target.value as typeof status
-                      trackEvent(AnalyticsEvents.JOB_STATUS_FILTERED, {
-                        queue_name: queueName,
-                        filter_status: newStatus || 'all',
-                      })
-                      navigate({
-                        to: '.',
-                        search: {
-                          section,
-                          tab,
-                          status: newStatus,
-                          jobId,
-                          name,
-                          data: dataSearch,
-                          hideScheduled,
-                          page: 1,
-                        },
-                        replace: true,
-                      })
-                    }}
-                    className="w-40"
+          <Panel className="flex min-h-0 flex-col">
+            <PanelHeader className="shrink-0 items-start justify-start gap-x-3 px-3">
+              <TabsList className="shrink-0">
+                <TabsTrigger value="jobs">Jobs</TabsTrigger>
+                <TabsTrigger value="scheduled">
+                  Scheduled
+                  <span className="font-mono text-[11px] font-normal tabular-nums text-muted-foreground">
+                    {formatNumber(scheduledTotal)}
+                  </span>
+                </TabsTrigger>
+              </TabsList>
+
+              {tab === 'scheduled' ? (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="ml-auto self-center"
+                  onClick={handleOpenScheduledJobCreate}
+                >
+                  <Repeat className="h-3.5 w-3.5" aria-hidden="true" />
+                  Schedule job
+                </Button>
+              ) : hasSelection ? (
+                <div className="flex min-h-8 min-w-0 flex-1 flex-wrap items-center gap-2">
+                  <span className="mr-1 text-[13px] font-medium tabular-nums">
+                    {selectedJobs.size} selected
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={handleRetrySelected}
+                    disabled={retryMutation.isPending}
                   >
-                    <option value="">All statuses</option>
-                    <option value="waiting">Waiting</option>
-                    <option value="active">Active</option>
-                    <option value="delayed">Delayed</option>
-                    <option value="completed">Completed</option>
-                    <option value="failed">Failed</option>
-                  </Select>
-                  <Input
-                    value={jobIdInput}
-                    onChange={(e) => setJobIdInput(e.target.value)}
-                    placeholder="Search by job ID"
-                    className="w-48 max-w-full"
-                    aria-label="Search jobs by ID"
+                    <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                    Retry
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={handleInvokeSelected}
+                    disabled={invokeMutation.isPending}
+                  >
+                    <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+                    Invoke
+                  </Button>
+                  <JobRemoveButton
+                    variant="outline"
+                    size="xs"
+                    className="text-status-danger hover:text-status-danger [&_svg]:mr-0 [&_svg]:h-3.5 [&_svg]:w-3.5"
+                    isScheduledJob={selectionHasScheduledJobs}
+                    isPending={removeMutation.isPending}
+                    onRemoveJobOnly={() => handleRemoveSelected(false)}
+                    onRemoveJobAndStopScheduler={() => handleRemoveSelected(true)}
+                    subject={`${selectedJobs.size} selected job${selectedJobs.size === 1 ? '' : 's'}`}
                   />
-                  <Input
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    placeholder="Search by job name"
-                    className="w-48 max-w-full"
-                    aria-label="Search jobs by name"
-                  />
-                  <Input
-                    value={dataInput}
-                    onChange={(e) => setDataInput(e.target.value)}
-                    placeholder="Search in job data"
-                    className="w-48 max-w-full"
-                    aria-label="Search jobs by data payload"
-                  />
-                  <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="ml-auto"
+                    onClick={() => setSelectedJobs(new Set())}
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    Clear selection
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex min-w-0 flex-1 basis-full flex-wrap items-center gap-x-3 gap-y-2 sm:basis-0">
+                  {/* One control, three fields: the filters combine (AND) and each maps to its own URL param. */}
+                  <search
+                    aria-label="Search jobs"
+                    className="flex h-8 w-full min-w-0 items-stretch divide-x overflow-hidden rounded-md border border-input bg-card shadow-xs transition-shadow focus-within:ring-2 focus-within:ring-ring/25 sm:w-auto"
+                  >
+                    <JobSearchField
+                      label="ID"
+                      ariaLabel="Search jobs by ID"
+                      placeholder="job id"
+                      value={jobIdInput}
+                      onChange={setJobIdInput}
+                      className="sm:w-36 xl:w-40"
+                    />
+                    <JobSearchField
+                      label="Name"
+                      ariaLabel="Search jobs by name"
+                      placeholder="job name"
+                      value={nameInput}
+                      onChange={setNameInput}
+                      className="sm:w-40 xl:w-44"
+                    />
+                    <JobSearchField
+                      label="Data"
+                      ariaLabel="Search jobs by data payload"
+                      placeholder="text in payload"
+                      value={dataInput}
+                      onChange={setDataInput}
+                      className="sm:w-44 xl:w-52"
+                    />
+                  </search>
+                  <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap text-[13px] text-muted-foreground transition-colors hover:text-foreground">
                     <input
                       type="checkbox"
                       checked={hideScheduledJobs}
                       onChange={(e) =>
-                        navigate({
-                          to: '.',
-                          search: {
-                            section,
-                            tab,
-                            status,
-                            jobId,
-                            name,
-                            data: dataSearch,
-                            hideScheduled: e.target.checked ? 1 : 0,
-                            page: 1,
-                          },
-                          replace: true,
-                        })
+                        updateSearch({ hideScheduled: e.target.checked ? 1 : 0, page: 1 })
                       }
-                      className="rounded border-gray-300"
+                      className={CHECKBOX_CLASS}
                     />
                     Hide scheduled jobs
                   </label>
-                </>
+                  {hasActiveFilters && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="ml-auto"
+                      onClick={() => clearFilters()}
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                      Clear filters
+                    </Button>
+                  )}
+                </div>
               )}
-            </div>
-            <TabsList className="shrink-0">
-              <TabsTrigger value="jobs">Jobs</TabsTrigger>
-              <TabsTrigger value="scheduled">
-                Scheduled Jobs ({scheduledJobs?.total ?? 0})
-              </TabsTrigger>
-            </TabsList>
-          </div>
+            </PanelHeader>
 
-          <TabsContent
-            value="jobs"
-            className="flex min-h-0 flex-1 flex-col space-y-4 overflow-hidden"
-          >
-            {/* Selected job actions */}
-            {selectedJobs.size > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{selectedJobs.size} selected</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleRetrySelected}
-                  disabled={retryMutation.isPending}
+            {tab === 'jobs' ? (
+              <>
+                <div
+                  ref={jobsScrollRef}
+                  className="overflow-x-auto md:min-h-0 md:flex-1 md:overflow-auto"
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Retry
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleInvokeSelected}
-                  disabled={invokeMutation.isPending}
-                >
-                  <Zap className="mr-2 h-4 w-4" />
-                  Invoke
-                </Button>
-                {(() => {
-                  const hasScheduledJobs = Array.from(selectedJobs).some((id) =>
-                    id.startsWith('repeat:')
-                  )
-                  return (
-                    <JobRemoveButton
-                      isScheduledJob={hasScheduledJobs}
-                      isPending={removeMutation.isPending}
-                      onRemoveJobOnly={() => handleRemoveSelected(false)}
-                      onRemoveJobAndStopScheduler={() => handleRemoveSelected(true)}
-                      subject={`${selectedJobs.size} selected job${selectedJobs.size === 1 ? '' : 's'}`}
-                    />
-                  )
-                })()}
-              </div>
-            )}
-
-            {/* Jobs table */}
-            <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <CardHeader className="border-b bg-muted/30 py-3">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  <Layers className="h-4 w-4 text-muted-foreground" />
-                  Jobs
-                </CardTitle>
-              </CardHeader>
-              <div ref={jobsScrollRef} className="min-h-0 flex-1 overflow-auto">
-                <table className="w-full caption-bottom border-separate border-spacing-0 text-sm">
-                  <TableHeader className="bg-card [&_th]:border-b [&_th]:border-border/70">
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="sticky top-0 z-20 w-12 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        <input
-                          type="checkbox"
-                          checked={
-                            visibleJobs.length > 0 && selectedJobs.size === visibleJobs.length
-                          }
-                          onChange={toggleAllJobs}
-                          disabled={visibleJobs.length === 0}
-                          className="rounded border-gray-300"
-                        />
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        ID
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Name
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Status
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Attempts
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Created ({getTimezoneAbbreviation()})
-                      </TableHead>
-                      <TableHead className="sticky top-0 z-20 bg-card shadow-[inset_0_-1px_0_0_hsl(var(--border)),0_8px_12px_-10px_rgba(0,0,0,0.75)]">
-                        Finished ({getTimezoneAbbreviation()})
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {jobsLoading ? (
-                      Array.from({ length: 8 }).map((_, i) => (
-                        <TableRow key={i}>
-                          <TableCell colSpan={7}>
-                            <Skeleton className="h-8" />
+                  <table className="w-full caption-bottom border-separate border-spacing-0 text-[13px]">
+                    <TableHeader className="border-b-0 bg-transparent">
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className={cn(STICKY_HEAD_CLASS, 'w-9 pl-3 pr-0')}>
+                          <input
+                            type="checkbox"
+                            aria-label="Select all loaded jobs"
+                            checked={
+                              visibleJobs.length > 0 && selectedJobs.size === visibleJobs.length
+                            }
+                            onChange={toggleAllJobs}
+                            disabled={visibleJobs.length === 0}
+                            className={cn(CHECKBOX_CLASS, 'block')}
+                          />
+                        </TableHead>
+                        <TableHead className={cn(STICKY_HEAD_CLASS, 'w-full min-w-48')}>
+                          Name
+                        </TableHead>
+                        <TableHead className={cn(STICKY_HEAD_CLASS, 'hidden sm:table-cell')}>
+                          ID
+                        </TableHead>
+                        <TableHead className={STICKY_HEAD_CLASS}>Status</TableHead>
+                        <TableHead
+                          className={cn(STICKY_HEAD_CLASS, 'hidden text-right sm:table-cell')}
+                        >
+                          Attempts
+                        </TableHead>
+                        <TableHead className={cn(STICKY_HEAD_CLASS, 'hidden xl:table-cell')}>
+                          Created ({timezone})
+                        </TableHead>
+                        <TableHead className={STICKY_HEAD_CLASS}>Finished ({timezone})</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody className="divide-y-0 [&>tr:not(:last-child)>td]:border-b">
+                      {jobsLoading ? (
+                        Array.from({ length: 8 }).map((_, i) => (
+                          <TableRow key={i} className="hover:bg-transparent">
+                            <TableCell colSpan={7} className="h-9 py-0">
+                              <Skeleton className="h-3.5 w-full" />
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : visibleJobs.length === 0 ? (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={7} className="p-0">
+                            {jobsError ? (
+                              <EmptyState
+                                size="inline"
+                                icon={AlertCircle}
+                                tone="danger"
+                                title="Couldn't load jobs"
+                                description={jobsError.message}
+                                actions={
+                                  hasActiveFilters ? (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => clearFilters()}
+                                    >
+                                      Clear filters
+                                    </Button>
+                                  ) : undefined
+                                }
+                              />
+                            ) : hasActiveFilters || hideScheduledJobs ? (
+                              <EmptyState
+                                size="inline"
+                                icon={SearchX}
+                                title={
+                                  status && !hasClientSideJobFilter
+                                    ? `No ${status} jobs`
+                                    : 'No jobs match these filters'
+                                }
+                                description={
+                                  status && !hasClientSideJobFilter
+                                    ? `Nothing in this queue is ${status} right now.`
+                                    : 'Try a different status or a broader search.'
+                                }
+                                actions={
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => clearFilters({ includeHideScheduled: true })}
+                                  >
+                                    Show all jobs
+                                  </Button>
+                                }
+                              />
+                            ) : (
+                              <EmptyState
+                                size="inline"
+                                icon={Layers}
+                                title="No jobs yet"
+                                description="Jobs appear here as soon as they are enqueued."
+                                actions={
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setAddJobDialogOpen(true)}
+                                  >
+                                    <Plus className="h-4 w-4" aria-hidden="true" />
+                                    Add a job
+                                  </Button>
+                                }
+                              />
+                            )}
                           </TableCell>
                         </TableRow>
-                      ))
-                    ) : visibleJobs.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center py-12">
-                          <Layers className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                          <p className="font-medium">No jobs yet</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            Jobs will appear here after they are enqueued.
-                          </p>
+                      ) : (
+                        visibleJobs.map((job) => (
+                          <JobRow
+                            key={job.id}
+                            job={job}
+                            orgSlug={orgSlug}
+                            connectionId={connectionId}
+                            queueName={queueName}
+                            selected={selectedJobs.has(job.id)}
+                            onToggleSelect={() => toggleJobSelection(job.id)}
+                          />
+                        ))
+                      )}
+                      {jobsFetchingNextPage && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={7} className="h-9 py-0">
+                            <Skeleton className="h-3.5 w-full" />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </table>
+                </div>
+                <div className="flex h-9 shrink-0 items-center justify-between gap-3 border-t px-3 text-xs text-muted-foreground">
+                  {jobsLoading ? (
+                    <span>Loading jobs…</span>
+                  ) : jobsError && visibleJobs.length === 0 ? (
+                    <span>Jobs unavailable</span>
+                  ) : (
+                    <>
+                      <span>
+                        <span className="font-mono tabular-nums text-foreground">
+                          {formatNumber(jobsTotal)}
+                        </span>{' '}
+                        total
+                        {visibleJobs.length > 0 && visibleJobs.length < jobsTotal ? (
+                          <>
+                            {' · '}
+                            <span className="font-mono tabular-nums">
+                              {formatNumber(visibleJobs.length)}
+                            </span>{' '}
+                            loaded
+                          </>
+                        ) : null}
+                      </span>
+                      {hasMoreVisibleJobs ? (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="-mr-1.5 h-6 border-0"
+                          onClick={loadMoreJobs}
+                          disabled={jobsFetchingNextPage}
+                        >
+                          {jobsFetchingNextPage ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                          ) : null}
+                          {jobsFetchingNextPage ? 'Loading…' : 'Load more'}
+                        </Button>
+                      ) : jobsError ? null : (
+                        <span>All jobs loaded</span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="overflow-x-auto md:min-h-0 md:flex-1 md:overflow-auto">
+                <table className="w-full min-w-[44rem] caption-bottom border-separate border-spacing-0 text-[13px]">
+                  <TableHeader className="border-b-0 bg-transparent">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className={STICKY_HEAD_CLASS}>Job</TableHead>
+                      <TableHead className={STICKY_HEAD_CLASS}>Schedule</TableHead>
+                      <TableHead className={STICKY_HEAD_CLASS}>Next run ({timezone})</TableHead>
+                      <TableHead className={STICKY_HEAD_CLASS}>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y-0 [&>tr:not(:last-child)>td]:border-b">
+                    {!scheduledJobs?.scheduledJobs.length ? (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={4} className="p-0">
+                          <EmptyState
+                            size="inline"
+                            icon={CalendarClock}
+                            title="No scheduled jobs"
+                            description="Schedulers enqueue a job on a cron pattern or a fixed interval."
+                            actions={
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleOpenScheduledJobCreate}
+                              >
+                                <Repeat className="h-4 w-4" aria-hidden="true" />
+                                Create the first scheduler
+                              </Button>
+                            }
+                          />
                         </TableCell>
                       </TableRow>
                     ) : (
-                      visibleJobs.map((job) => (
-                        <JobRow
-                          key={job.id}
-                          job={job}
-                          orgSlug={orgSlug}
-                          connectionId={connectionId}
-                          queueName={queueName}
-                          selected={selectedJobs.has(job.id)}
-                          onToggleSelect={() => toggleJobSelection(job.id)}
-                        />
-                      ))
-                    )}
-                    {jobsFetchingNextPage && (
-                      <TableRow>
-                        <TableCell colSpan={7}>
-                          <Skeleton className="h-8" />
-                        </TableCell>
-                      </TableRow>
+                      scheduledJobs.scheduledJobs.map(
+                        (job: ListScheduledJobsResponse['scheduledJobs'][number]) => (
+                          <ScheduledJobRow
+                            key={job.schedulerId}
+                            job={job}
+                            orgSlug={orgSlug}
+                            connectionId={connectionId}
+                            queueName={queueName}
+                          />
+                        )
+                      )
                     )}
                   </TableBody>
                 </table>
               </div>
-            </Card>
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>{jobsData?.pages[0]?.total ?? 0} total</span>
-              <span>{hasMoreVisibleJobs ? 'Scroll to load more' : 'All jobs loaded'}</span>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="scheduled">
-            <Card>
-              <CardHeader className="border-b bg-muted/30 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle className="text-base font-medium flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    Scheduled Jobs
-                  </CardTitle>
-                  <Button variant="outline" size="xs" onClick={handleOpenScheduledJobCreate}>
-                    <Repeat className="mr-2 h-4 w-4" />
-                    Schedule Job
-                  </Button>
-                </div>
-              </CardHeader>
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead>Job</TableHead>
-                    <TableHead>Schedule</TableHead>
-                    <TableHead>Next Run ({getTimezoneAbbreviation()})</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {!scheduledJobs?.scheduledJobs.length ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center py-12">
-                        <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                        <p className="text-muted-foreground">No scheduled jobs</p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-4"
-                          onClick={handleOpenScheduledJobCreate}
-                        >
-                          <Repeat className="mr-2 h-4 w-4" />
-                          Create the first scheduler
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    scheduledJobs.scheduledJobs.map(
-                      (job: ListScheduledJobsResponse['scheduledJobs'][number]) => (
-                        <TableRow key={job.schedulerId}>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <Link
-                                to="/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId"
-                                params={{
-                                  orgSlug,
-                                  connectionId,
-                                  queueName,
-                                  schedulerId: job.schedulerId,
-                                }}
-                                className="text-sm font-medium text-foreground transition-colors hover:text-primary hover:underline underline-offset-2"
-                              >
-                                {job.jobName}
-                              </Link>
-                              <div className="text-xs text-muted-foreground">
-                                <Link
-                                  to="/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId"
-                                  params={{
-                                    orgSlug,
-                                    connectionId,
-                                    queueName,
-                                    schedulerId: job.schedulerId,
-                                  }}
-                                  className="font-mono transition-colors hover:text-foreground"
-                                >
-                                  {job.schedulerId}
-                                </Link>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="text-sm">{getScheduleSummary(job)}</div>
-                              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                                <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
-                                  {getScheduleExpression(job)}
-                                </code>
-                                {job.timezone ? <span>{job.timezone}</span> : null}
-                                {typeof job.limit === 'number' ? (
-                                  <span>limit {job.limit}</span>
-                                ) : null}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            <div className="space-y-1">
-                              <div>{job.nextRun ? formatDate(job.nextRun) : '—'}</div>
-                              {job.startDate ? (
-                                <div className="text-xs">Starts {formatDate(job.startDate)}</div>
-                              ) : null}
-                              {job.endDate ? (
-                                <div className="text-xs">Ends {formatDate(job.endDate)}</div>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <StatusIndicator
-                                status={job.enabled ? 'enabled' : 'disabled'}
-                                showPulse={false}
-                              />
-                              {(job.recentFailedCount ?? 0) > 0 ? (
-                                <Badge variant="warning">
-                                  {formatNumber(job.recentFailedCount ?? 0)} failed recently
-                                </Badge>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    )
-                  )}
-                </TableBody>
-              </Table>
-            </Card>
-          </TabsContent>
+            )}
+          </Panel>
         </Tabs>
       )}
 
-      {/* Add Job Dialog */}
       <AddJobDialog
         queueName={queueName}
         open={addJobDialogOpen}
         onOpenChange={setAddJobDialogOpen}
       />
 
-      {/* Retry Queue Dialog */}
       <RetryQueueDialog
         queueName={queueName}
         queueJobCounts={queue?.jobCounts}
@@ -1826,7 +1690,6 @@ function QueueDetailPage() {
         onOpenChange={setRetryDialogOpen}
       />
 
-      {/* Purge Queue Dialog */}
       <PurgeQueueDialog
         queueName={queueName}
         queueJobCounts={queue?.jobCounts}
@@ -1834,7 +1697,6 @@ function QueueDetailPage() {
         onOpenChange={setPurgeDialogOpen}
       />
 
-      {/* Delete Queue Dialog */}
       <DeleteQueueDialog
         queueName={queueName}
         open={deleteDialogOpen}
@@ -1997,30 +1859,141 @@ function formatNullableBoolean(value: boolean | null | undefined) {
   return value ? 'Yes' : 'No'
 }
 
-function MetricTile({
-  title,
+/** Page-level tab: text on the section hairline, marked by an underline instead of a pill. */
+function sectionTabClass(selected: boolean) {
+  return cn(
+    '-mb-px h-9 rounded-none bg-transparent px-0 shadow-none ring-0',
+    selected && 'shadow-[inset_0_-2px_0_0_var(--color-foreground)]'
+  )
+}
+
+/** One field of the joined job search control. */
+function JobSearchField({
+  label,
+  ariaLabel,
+  placeholder,
   value,
-  subtitle,
+  onChange,
+  className,
 }: {
-  title: string
+  label: string
+  ariaLabel: string
+  placeholder: string
   value: string
-  subtitle: string
+  onChange: (value: string) => void
+  className?: string
 }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-card/70 px-3 py-2.5">
-      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{title}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">{subtitle}</p>
+    <label
+      className={cn(
+        'flex min-w-0 flex-1 cursor-text items-center gap-2 px-2.5 transition-colors focus-within:bg-muted/60',
+        className
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'shrink-0 font-mono text-[10px] font-medium uppercase tracking-[0.12em]',
+          value ? 'text-foreground' : 'text-faint'
+        )}
+      >
+        {label}
+      </span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        autoComplete="off"
+        spellCheck={false}
+        className="h-full w-full min-w-0 bg-transparent font-mono text-[13px] outline-none placeholder:font-sans placeholder:text-faint"
+      />
+    </label>
+  )
+}
+
+function FactPanel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Panel>
+      <PanelHeader>
+        <h2 className="text-[13px] font-semibold tracking-tight">{title}</h2>
+      </PanelHeader>
+      <div className="space-y-2 px-4 py-3 text-[13px]">{children}</div>
+    </Panel>
+  )
+}
+
+function FactRow({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-mono text-xs tabular-nums">{value}</span>
     </div>
   )
 }
 
-function MetricRow({ label, value }: { label: string; value: string | number }) {
+interface QueueClient {
+  id: string
+  name: string
+  address: string
+  idleMs: number | null
+  ageMs: number | null
+}
+
+function ClientListPanel({
+  title,
+  clients,
+  fallbackName,
+  emptyText,
+  overflowLabel,
+}: {
+  title: string
+  clients: QueueClient[]
+  fallbackName: string
+  emptyText: string
+  overflowLabel: string
+}) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-mono text-xs tabular-nums">{value}</span>
-    </div>
+    <Panel>
+      <PanelHeader>
+        <h2 className="flex items-center gap-2 text-[13px] font-semibold tracking-tight">
+          {title}
+          <span className="font-mono text-xs font-normal tabular-nums text-muted-foreground">
+            {formatNumber(clients.length)}
+          </span>
+        </h2>
+      </PanelHeader>
+      {!clients.length ? (
+        <p className="px-4 py-3 text-xs text-muted-foreground">{emptyText}</p>
+      ) : (
+        <ul className="divide-y text-xs">
+          {clients.slice(0, 8).map((client) => (
+            <li
+              key={`${client.id}:${client.address}`}
+              className="flex items-center justify-between gap-3 px-4 py-2"
+            >
+              <div className="min-w-0">
+                <p className="truncate font-mono text-foreground">
+                  {client.name || client.id || fallbackName}
+                </p>
+                <p className="truncate font-mono text-muted-foreground">
+                  {client.address || 'unknown address'}
+                </p>
+              </div>
+              <div className="shrink-0 text-right font-mono tabular-nums text-muted-foreground">
+                <p>idle {formatDurationFromMs(client.idleMs)}</p>
+                <p>age {formatDurationFromMs(client.ageMs)}</p>
+              </div>
+            </li>
+          ))}
+          {clients.length > 8 ? (
+            <li className="px-4 py-2 text-muted-foreground">
+              +{formatNumber(clients.length - 8)} {overflowLabel}
+            </li>
+          ) : null}
+        </ul>
+      )}
+    </Panel>
   )
 }
 
@@ -2083,7 +2056,11 @@ function JobRow({
   // Detect if this is a scheduled/repeat job based on ID prefix
   const isScheduledJob = job.id.startsWith('repeat:')
   const status = statusMap[job.status] || 'waiting'
-  const isTruncated = job.id.length > 16
+  // Long ids keep both ends: the prefix names the producer, the suffix is what differs.
+  const isTruncated = job.id.length > 32
+  const displayId = isTruncated ? `${job.id.slice(0, 14)}…${job.id.slice(-12)}` : job.id
+  // Below xl the column is narrower, so the id keeps less of its prefix.
+  const shortId = job.id.length > 18 ? `${job.id.slice(0, 6)}…${job.id.slice(-9)}` : job.id
 
   const handleCopy = async (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault()
@@ -2130,86 +2107,211 @@ function JobRow({
 
   return (
     <TableRow
-      className="group cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none"
+      className="group cursor-pointer focus-visible:bg-muted/60 focus-visible:outline-none"
       aria-label={`Open job ${job.id}`}
       data-testid={`job-row-${job.id}`}
+      data-state={selected ? 'selected' : undefined}
       onClick={handleRowClick}
       onKeyDown={handleRowKeyDown}
       role="link"
       tabIndex={0}
     >
-      <TableCell>
+      <TableCell className="h-9 w-9 py-0 pl-3 pr-0">
         <input
           type="checkbox"
+          aria-label={`Select job ${job.id}`}
           checked={selected}
           onChange={onToggleSelect}
-          className="rounded border-gray-300"
+          className={cn(CHECKBOX_CLASS, 'block')}
         />
       </TableCell>
-      <TableCell>
-        <Link
-          to="/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId"
-          params={{ orgSlug, connectionId, queueName, jobId: job.id }}
-          search={{}}
-          className="flex items-center gap-2 group"
-        >
-          {isScheduledJob ? (
-            <>
-              <Repeat className="h-4 w-4 text-status-priority shrink-0" />
-              <span className="text-sm text-foreground group-hover:text-primary transition-colors">
-                Scheduled Job
-              </span>
-            </>
-          ) : (
-            <>
-              <SquarePlay className="h-4 w-4 text-status-success shrink-0" />
-              {isTruncated ? (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono group-hover:text-primary transition-colors cursor-pointer">
-                        {job.id.slice(0, 16)}...
-                      </code>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="top"
-                      className="flex items-center gap-2 max-w-md"
-                      onClick={(e) => e.preventDefault()}
-                    >
-                      <code className="text-xs font-mono break-all">{job.id}</code>
-                      <button
-                        type="button"
-                        onClick={handleCopy}
-                        className="shrink-0 p-1 rounded hover:bg-white/20 transition-colors"
-                        aria-label="Copy job ID"
-                      >
-                        {copied ? (
-                          <Check className="h-3.5 w-3.5 text-status-success" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono group-hover:text-primary transition-colors">
-                  {job.id}
+      {/* Name takes the slack and truncates; a failed job shows why without opening it. */}
+      <TableCell className="h-9 w-full max-w-0 py-0">
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <Link
+            to="/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId"
+            params={{ orgSlug, connectionId, queueName, jobId: job.id }}
+            search={{}}
+            tabIndex={-1}
+            title={job.name}
+            className={cn(
+              'shrink-0 truncate font-mono font-medium underline-offset-4 group-hover:underline',
+              status === 'failed' && job.failedReason ? 'max-w-[60%]' : 'max-w-full',
+              job.name ? 'text-foreground' : 'text-faint'
+            )}
+          >
+            {job.name || 'unnamed'}
+          </Link>
+          {status === 'failed' && job.failedReason ? (
+            <span className="min-w-0 truncate text-xs text-status-danger" title={job.failedReason}>
+              {job.failedReason}
+            </span>
+          ) : null}
+        </div>
+      </TableCell>
+      <TableCell className="hidden h-9 whitespace-nowrap py-0 sm:table-cell">
+        {isScheduledJob ? (
+          <span
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            title={job.id}
+          >
+            <Repeat className="h-3.5 w-3.5 shrink-0 text-status-priority" aria-hidden="true" />
+            Scheduled
+          </span>
+        ) : isTruncated ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <code className="font-mono text-xs text-muted-foreground">
+                  <span className="xl:hidden">{shortId}</span>
+                  <span className="hidden xl:inline">{displayId}</span>
                 </code>
-              )}
-            </>
-          )}
-        </Link>
+              </TooltipTrigger>
+              <TooltipContent
+                side="top"
+                className="flex max-w-md items-center gap-2"
+                data-row-nav-ignore="true"
+              >
+                <code className="break-all font-mono text-xs">{job.id}</code>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="shrink-0 rounded-sm p-1 transition-colors hover:bg-primary-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  aria-label="Copy job ID"
+                >
+                  {copied ? (
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                </button>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : (
+          <code className="font-mono text-xs text-muted-foreground" title={job.id}>
+            <span className="xl:hidden">{shortId}</span>
+            <span className="hidden xl:inline">{job.id}</span>
+          </code>
+        )}
       </TableCell>
-      <TableCell className="text-sm">{job.name}</TableCell>
-      <TableCell>
-        <StatusIndicator status={status} />
+      <TableCell className="h-9 whitespace-nowrap py-0">
+        <StatusIndicator status={status} showPulse={status === 'active'} />
       </TableCell>
-      <TableCell className="text-sm tabular-nums text-muted-foreground">
+      <TableCell className="hidden h-9 whitespace-nowrap py-0 text-right font-mono text-xs tabular-nums text-muted-foreground sm:table-cell">
         {job.attemptsMade}/{job.maxAttempts}
       </TableCell>
-      <TableCell className="text-sm text-muted-foreground">{formatDate(job.timestamp)}</TableCell>
-      <TableCell className="text-sm text-muted-foreground">{formatDate(job.finishedOn)}</TableCell>
+      <TimestampCell timestamp={job.timestamp} className="hidden xl:table-cell" />
+      <TimestampCell timestamp={job.finishedOn} />
+    </TableRow>
+  )
+}
+
+/** Job timestamps drop the year while it is the current one; the full value stays in the title. */
+function formatJobTimestamp(timestamp: number) {
+  const date = new Date(timestamp)
+  return date.toLocaleString('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    ...(date.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' as const }),
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  })
+}
+
+function TimestampCell({
+  timestamp,
+  className,
+}: {
+  timestamp: number | undefined
+  className?: string
+}) {
+  return (
+    <TableCell
+      className={cn(
+        'h-9 whitespace-nowrap py-0 font-mono text-xs tabular-nums text-muted-foreground',
+        className
+      )}
+      title={timestamp ? formatDate(timestamp) : undefined}
+    >
+      {timestamp ? formatJobTimestamp(timestamp) : <span className="text-faint">—</span>}
+    </TableCell>
+  )
+}
+
+function ScheduledJobRow({
+  job,
+  orgSlug,
+  connectionId,
+  queueName,
+}: {
+  job: ListScheduledJobsResponse['scheduledJobs'][number]
+  orgSlug: string
+  connectionId: string
+  queueName: string
+}) {
+  const navigate = useNavigate()
+
+  const navigateToScheduler = useCallback(() => {
+    void navigate({
+      to: '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId',
+      params: { orgSlug, connectionId, queueName, schedulerId: job.schedulerId },
+    })
+  }, [connectionId, job.schedulerId, navigate, orgSlug, queueName])
+
+  return (
+    <TableRow
+      className="group cursor-pointer focus-visible:bg-muted/60 focus-visible:outline-none"
+      aria-label={`Open scheduled job ${job.schedulerId}`}
+      onClick={(event) => {
+        if (!shouldSkipRowNavigation(event.target)) navigateToScheduler()
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' || shouldSkipRowNavigation(event.target)) return
+        event.preventDefault()
+        navigateToScheduler()
+      }}
+      role="link"
+      tabIndex={0}
+    >
+      <TableCell className="py-2">
+        <Link
+          to="/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId"
+          params={{ orgSlug, connectionId, queueName, schedulerId: job.schedulerId }}
+          tabIndex={-1}
+          className="font-mono font-medium text-foreground underline-offset-4 group-hover:underline"
+        >
+          {job.jobName}
+        </Link>
+        <div className="font-mono text-xs text-muted-foreground">{job.schedulerId}</div>
+      </TableCell>
+      <TableCell className="py-2">
+        <div>{getScheduleSummary(job)}</div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <code className="rounded-[4px] bg-muted px-1 py-px font-mono">
+            {getScheduleExpression(job)}
+          </code>
+          {job.timezone ? <span>{job.timezone}</span> : null}
+          {typeof job.limit === 'number' ? <span>limit {job.limit}</span> : null}
+        </div>
+      </TableCell>
+      <TableCell className="whitespace-nowrap py-2 font-mono text-xs tabular-nums text-muted-foreground">
+        <div>{job.nextRun ? formatDate(job.nextRun) : <span className="text-faint">—</span>}</div>
+        {job.startDate ? <div className="font-sans">Starts {formatDate(job.startDate)}</div> : null}
+        {job.endDate ? <div className="font-sans">Ends {formatDate(job.endDate)}</div> : null}
+      </TableCell>
+      <TableCell className="py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusIndicator status={job.enabled ? 'enabled' : 'disabled'} showPulse={false} />
+          {(job.recentFailedCount ?? 0) > 0 ? (
+            <Badge variant="warning">
+              {formatNumber(job.recentFailedCount ?? 0)} failed recently
+            </Badge>
+          ) : null}
+        </div>
+      </TableCell>
     </TableRow>
   )
 }

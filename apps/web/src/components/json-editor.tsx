@@ -1,9 +1,18 @@
-import { AlertCircle, CheckCircle2, WandSparkles } from 'lucide-react'
 import { json } from '@codemirror/lang-json'
-import { EditorView, keymap } from '@codemirror/view'
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  keymap,
+  MatchDecorator,
+  ViewPlugin,
+  type ViewUpdate,
+} from '@codemirror/view'
 import CodeMirror from '@uiw/react-codemirror'
+import { AlertCircle, WandSparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Kbd } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
 
 interface JsonEditorProps {
@@ -13,44 +22,112 @@ interface JsonEditorProps {
   minHeight?: string
 }
 
-const payloadEditorTheme = EditorView.theme(
-  {
-    '&': {
-      backgroundColor: '#0b1220',
-      fontSize: '14px',
-    },
-    '&.cm-focused': {
-      outline: 'none',
-    },
-    '.cm-scroller': {
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      lineHeight: '1.5rem',
-    },
-    '.cm-content': {
-      caretColor: '#e2e8f0',
-      padding: '12px 0',
-    },
-    '.cm-gutters': {
-      backgroundColor: '#050b16',
-      color: '#64748b',
-      borderRight: '1px solid rgba(255, 255, 255, 0.1)',
-      paddingRight: '8px',
-    },
-    '.cm-activeLineGutter': {
-      backgroundColor: 'rgba(56, 189, 248, 0.08)',
-      color: '#94a3b8',
-    },
-    '.cm-activeLine': {
-      backgroundColor: 'rgba(56, 189, 248, 0.06)',
-    },
-    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-      backgroundColor: 'rgba(56, 189, 248, 0.22) !important',
-    },
-    '.cm-cursor': {
-      borderLeftColor: '#e2e8f0',
-    },
+/**
+ * Editor chrome built from theme tokens (CSS variables), so the same theme
+ * serves light and dark without a second palette.
+ */
+const editorTheme = EditorView.theme({
+  '&': {
+    backgroundColor: 'var(--color-card)',
+    color: 'var(--color-foreground)',
+    fontSize: '12px',
   },
-  { dark: true }
+  '&.cm-focused': {
+    outline: 'none',
+  },
+  '.cm-scroller': {
+    fontFamily: 'var(--font-mono)',
+    lineHeight: '1.25rem',
+  },
+  '.cm-content': {
+    caretColor: 'var(--color-foreground)',
+    padding: '10px 0',
+  },
+  '.cm-line': {
+    padding: '0 12px',
+  },
+  '.cm-gutters': {
+    backgroundColor: 'var(--color-card)',
+    color: 'var(--color-faint)',
+    border: 'none',
+    borderRight: '1px solid var(--color-border)',
+  },
+  '.cm-lineNumbers .cm-gutterElement': {
+    padding: '0 10px 0 12px',
+    minWidth: '2.25rem',
+  },
+  '.cm-activeLineGutter': {
+    backgroundColor: 'var(--color-muted)',
+    color: 'var(--color-muted-foreground)',
+  },
+  '.cm-activeLine': {
+    backgroundColor: 'color-mix(in srgb, var(--color-muted) 70%, transparent)',
+  },
+  '.cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground':
+    {
+      backgroundColor: 'color-mix(in srgb, var(--color-signal) 24%, transparent) !important',
+    },
+  '.cm-cursor, .cm-dropCursor': {
+    borderLeftColor: 'var(--color-foreground)',
+  },
+  '&.cm-focused .cm-matchingBracket': {
+    backgroundColor: 'var(--color-accent)',
+    outline: '1px solid var(--color-border-strong)',
+  },
+  '&.cm-focused .cm-nonmatchingBracket': {
+    backgroundColor: 'color-mix(in srgb, var(--color-status-danger) 18%, transparent)',
+  },
+  // Syntax: keys stay ink, values carry colour (same palette as JsonViewer).
+  '.cm-json-key': { color: 'var(--color-foreground)' },
+  '.cm-json-string': { color: 'var(--color-status-success)' },
+  '.cm-json-number': { color: 'var(--color-status-active)' },
+  '.cm-json-keyword': { color: 'var(--color-status-priority)' },
+  '.cm-json-punctuation': { color: 'var(--color-faint)' },
+})
+
+const JSON_TOKEN =
+  /("(?:[^"\\]|\\.)*")(\s*:)?|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\b(?:true|false|null)\b|[{}[\],:]/g
+
+const tokenMarks = {
+  key: Decoration.mark({ class: 'cm-json-key' }),
+  string: Decoration.mark({ class: 'cm-json-string' }),
+  number: Decoration.mark({ class: 'cm-json-number' }),
+  keyword: Decoration.mark({ class: 'cm-json-keyword' }),
+  punctuation: Decoration.mark({ class: 'cm-json-punctuation' }),
+}
+
+const jsonTokenDecorator = new MatchDecorator({
+  regexp: JSON_TOKEN,
+  decorate: (add, from, to, match) => {
+    const text = match[0]
+    if (match[1]) {
+      const stringEnd = from + match[1].length
+      add(from, stringEnd, match[2] ? tokenMarks.key : tokenMarks.string)
+      if (match[2]) add(to - 1, to, tokenMarks.punctuation)
+      return
+    }
+    if (text === 'true' || text === 'false' || text === 'null') {
+      add(from, to, tokenMarks.keyword)
+      return
+    }
+    add(from, to, /^[{}[\],:]$/.test(text) ? tokenMarks.punctuation : tokenMarks.number)
+  },
+})
+
+/** Token colouring without a highlight-style dependency: classes map to theme tokens above. */
+const jsonTokenHighlighter = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet
+
+    constructor(view: EditorView) {
+      this.decorations = jsonTokenDecorator.createDeco(view)
+    }
+
+    update(update: ViewUpdate) {
+      this.decorations = jsonTokenDecorator.updateDeco(update, this.decorations)
+    }
+  },
+  { decorations: (plugin) => plugin.decorations }
 )
 
 export function JsonEditor({ value, onChange, className, minHeight = '200px' }: JsonEditorProps) {
@@ -111,7 +188,8 @@ export function JsonEditor({ value, onChange, className, minHeight = '200px' }: 
   const extensions = useMemo(
     () => [
       json(),
-      payloadEditorTheme,
+      editorTheme,
+      jsonTokenHighlighter,
       EditorView.lineWrapping,
       keymap.of([
         {
@@ -135,42 +213,46 @@ export function JsonEditor({ value, onChange, className, minHeight = '200px' }: 
   )
 
   return (
-    <div className={cn('space-y-2', className)}>
-      <div className="overflow-hidden rounded-lg border border-border/70 bg-[hsl(220_10%_6%)] shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.03] px-3 py-2.5">
-          <div className="space-y-0.5">
-            <div className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-white/50">
-              Payload Editor
-            </div>
-            <div className="text-xs text-white/40">
-              Tab to indent, Shift+Tab to outdent, Cmd/Ctrl+Shift+F to format.
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
+    <div className={cn('space-y-1.5', className)}>
+      <div
+        className={cn(
+          'overflow-hidden rounded-lg border bg-card transition-colors focus-within:border-border-strong',
+          error && 'border-status-danger/50 focus-within:border-status-danger/60'
+        )}
+      >
+        <div className="flex min-h-9 items-center gap-2 border-b bg-muted/50 py-1 pl-3 pr-1.5">
+          <span className="eyebrow">JSON</span>
+          <span
+            className={cn(
+              'inline-flex items-center gap-1.5 text-[11px] font-medium',
+              error ? 'text-status-danger' : 'text-muted-foreground'
+            )}
+          >
             <span
               className={cn(
-                'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium',
-                error
-                  ? 'bg-status-danger/15 text-status-danger'
-                  : 'bg-status-success/15 text-status-success'
+                'h-1.5 w-1.5 rounded-full',
+                error ? 'bg-status-danger' : 'bg-status-success'
               )}
-            >
-              {error ? (
-                <AlertCircle className="h-3.5 w-3.5" />
-              ) : (
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              )}
-              {error ? 'Invalid JSON' : 'Valid JSON'}
+              aria-hidden
+            />
+            {error ? 'Invalid JSON' : 'Valid JSON'}
+          </span>
+
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="hidden items-center gap-0.5 sm:flex" aria-hidden>
+              <Kbd>⌘</Kbd>
+              <Kbd>⇧</Kbd>
+              <Kbd>F</Kbd>
             </span>
             <Button
               type="button"
               size="xs"
-              variant="secondary"
+              variant="ghost"
               onClick={formatText}
-              className="border border-white/10 bg-white/10 text-white/80 hover:bg-white/15 hover:text-white"
+              title="Format JSON (Cmd/Ctrl+Shift+F)"
+              className="h-7 px-2 text-foreground"
             >
-              <WandSparkles className="mr-1.5 h-3.5 w-3.5" />
+              <WandSparkles className="h-3.5 w-3.5" />
               Format
             </Button>
           </div>
@@ -180,27 +262,30 @@ export function JsonEditor({ value, onChange, className, minHeight = '200px' }: 
           value={text}
           height="auto"
           minHeight={minHeight}
-          theme="dark"
+          // Long payloads scroll inside the editor so a dialog's footer stays in reach.
+          maxHeight="min(52vh, 440px)"
+          theme="none"
           basicSetup={{
             lineNumbers: true,
             foldGutter: false,
             highlightActiveLine: true,
             highlightActiveLineGutter: true,
+            syntaxHighlighting: false,
             tabSize: 2,
           }}
           indentWithTab
           extensions={extensions}
           onChange={applyText}
-          className="[&_.cm-editor]:rounded-none [&_.cm-editor]:bg-transparent"
+          className="[&_.cm-editor]:rounded-none"
           aria-label="Payload"
         />
       </div>
 
       {error ? (
-        <div className="flex items-center gap-2 text-sm text-destructive">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
+        <p className="flex items-start gap-1.5 text-xs text-status-danger">
+          <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 break-words font-mono">{error}</span>
+        </p>
       ) : null}
     </div>
   )

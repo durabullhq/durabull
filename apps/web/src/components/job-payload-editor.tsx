@@ -19,17 +19,15 @@ export function JobPayloadEditor({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg border border-status-danger/30 bg-status-danger/10 px-4 py-3">
-        <div className="flex gap-2">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-danger" />
-          <div className="space-y-1.5 text-sm text-status-danger">
-            <p className="font-medium">This overwrites the job payload stored in Redis.</p>
-            <p>
-              The change cannot be undone. There is no history or backup of the previous payload. A
-              malformed payload can make the job fail permanently or crash the worker that processes
-              it.
-            </p>
-          </div>
+      <div className="flex gap-2.5 rounded-md border border-status-danger/30 bg-status-danger/10 px-3 py-2.5 text-[13px] leading-5 text-status-danger">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+        <div className="space-y-1">
+          <p className="font-medium">This overwrites the job payload stored in Redis.</p>
+          <p>
+            The change cannot be undone. There is no history or backup of the previous payload. A
+            malformed payload can make the job fail permanently or crash the worker that processes
+            it.
+          </p>
         </div>
       </div>
 

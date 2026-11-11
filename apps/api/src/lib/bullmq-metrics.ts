@@ -1,4 +1,5 @@
 import type { Metrics, Queue, QueueMeta } from 'bullmq'
+import { toRedisClientSummary } from './redis-client-time'
 
 export const DEFAULT_METRICS_WINDOW_MINUTES = 360
 export const MAX_METRICS_WINDOW_MINUTES = 80640
@@ -45,14 +46,7 @@ interface SeriesPoint {
 }
 
 function normalizeClientSnapshot(client: Record<string, string>) {
-  return {
-    id: client.id ?? '',
-    name: client.name ?? '',
-    address: client.addr ?? '',
-    ageMs: Number(client.age ?? 0) || 0,
-    idleMs: Number(client.idle ?? 0) || 0,
-    raw: client,
-  }
+  return { ...toRedisClientSummary(client), raw: client }
 }
 
 function normalizeBullTimestamp(value: number): number | null {

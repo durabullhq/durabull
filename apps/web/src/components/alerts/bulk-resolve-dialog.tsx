@@ -22,10 +22,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  type AlertEventRecord,
   useBulkResolveAlertEvents,
   useConnectionAlertEvents,
   useConnectionAlertRules,
-  type AlertEventRecord,
 } from '@/hooks/use-alerts'
 
 const PAGE_LIMIT = 100
@@ -154,7 +154,7 @@ export function BulkResolveDialog({
           </span>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70">
+        <div className="min-h-0 flex-1 overflow-auto rounded-xl border">
           {eventsQuery.isLoading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 6 }, (_, index) => (

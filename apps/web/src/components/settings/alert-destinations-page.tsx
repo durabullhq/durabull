@@ -5,7 +5,6 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SecretInput } from '@/components/secret-input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -14,8 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Panel, SectionHeader } from '@/components/ui/section'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -131,61 +132,63 @@ export function AlertDestinationsPage() {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <Card>
-        <CardHeader className="border-b bg-muted/30">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Send className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <CardTitle className="text-base">Alert destinations</CardTitle>
-                <CardDescription>
-                  Reusable notification targets for alert rules — edit once, every rule that routes
-                  to it follows.
-                </CardDescription>
-              </div>
-            </div>
-            <Button type="button" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add destination
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 p-4">
-          {destinationsQuery.isError ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
-              <p className="text-sm text-muted-foreground">Failed to load alert destinations.</p>
+    <div className="max-w-4xl space-y-3">
+      <SectionHeader
+        title="Alert destinations"
+        count={destinations.length > 0 ? destinations.length : undefined}
+        description="Where incidents are sent. Shared by every connection in this organization — edit once and every rule that routes to it follows."
+        actions={
+          <Button type="button" size="xs" onClick={() => setCreateOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            Add destination
+          </Button>
+        }
+      />
+      <Panel>
+        {destinationsQuery.isError ? (
+          <EmptyState
+            size="inline"
+            tone="danger"
+            icon={Send}
+            title="Failed to load alert destinations."
+            actions={
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="mt-3"
                 onClick={() => void destinationsQuery.refetch()}
               >
                 Retry
               </Button>
-            </div>
-          ) : destinationsQuery.isLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 3 }, (_, index) => (
-                <Skeleton key={index} className="h-20 rounded-lg" />
-              ))}
-            </div>
-          ) : destinations.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border/70 bg-muted/10 p-8 text-center">
-              <Send className="mx-auto h-8 w-8 text-muted-foreground" />
-              <h3 className="mt-3 text-sm font-semibold">No destinations yet</h3>
-              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                Create your first destination to route alert incidents to webhooks, email, or Linear
-                from any rule.
-              </p>
-              <Button type="button" size="sm" className="mt-4" onClick={() => setCreateOpen(true)}>
-                <Plus className="mr-1.5 h-4 w-4" />
+            }
+          />
+        ) : destinationsQuery.isLoading ? (
+          <div className="divide-y">
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={index} className="flex items-center gap-4 px-4 py-3">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-7 w-28" />
+              </div>
+            ))}
+          </div>
+        ) : destinations.length === 0 ? (
+          <EmptyState
+            size="inline"
+            className="py-14"
+            icon={Send}
+            title="No destinations yet"
+            description="A destination is a webhook, an email address, or Linear. Create one, then pick it on any alert rule."
+            actions={
+              <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4" />
                 Add destination
               </Button>
-            </div>
-          ) : (
-            destinations.map((destination) => (
+            }
+          />
+        ) : (
+          <div className="divide-y">
+            {destinations.map((destination) => (
               <DestinationRow
                 key={destination.id}
                 destination={destination}
@@ -194,10 +197,10 @@ export function AlertDestinationsPage() {
                 onEdit={() => setEditTarget(destination)}
                 onDelete={() => setDeleteTarget(destination)}
               />
-            ))
-          )}
-        </CardContent>
-      </Card>
+            ))}
+          </div>
+        )}
+      </Panel>
 
       <CreateDestinationDialog
         open={createOpen}
@@ -274,35 +277,28 @@ function DestinationRow({
   const inUse = destination.inUseByRuleCount > 0
 
   return (
-    <div
-      className="rounded-lg border border-border/70 bg-background/70 p-4"
-      data-testid="alert-destination-row"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="px-4 py-3" data-testid="alert-destination-row">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold">{destination.name}</span>
-            <Badge variant="outline" className="gap-1 border-border/70 bg-background">
-              <Icon className="h-3 w-3 text-muted-foreground" />
-              {meta.label}
-            </Badge>
-            <Badge variant={destination.enabled ? 'success' : 'secondary'}>
-              {destination.enabled ? 'Enabled' : 'Disabled'}
-            </Badge>
-            <Badge variant="secondary">
+            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-label={meta.label} />
+            <span className="text-[13px] font-semibold">{destination.name}</span>
+            <Badge variant="neutral">{meta.label}</Badge>
+            {destination.enabled ? null : <Badge variant="neutral">Disabled</Badge>}
+            <span className="text-xs text-muted-foreground">
               {inUse
                 ? `In use by ${destination.inUseByRuleCount} rule${destination.inUseByRuleCount === 1 ? '' : 's'}`
                 : 'Not in use'}
-            </Badge>
+            </span>
           </div>
-          <div className="mt-1.5 truncate text-sm text-muted-foreground">
+          <div className="mt-1 truncate pl-6 font-mono text-xs text-muted-foreground">
             {destinationTargetSummary(destination)}
             {destination.type === 'webhook' && destination.secretConfigured
               ? ` · secret …${destination.secretLast4 ?? ''}`
               : ''}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           <Button
             type="button"
             variant="outline"
@@ -417,7 +413,7 @@ function CreateDestinationDialog({
                 <button
                   key={candidate}
                   type="button"
-                  className="flex items-start gap-3 rounded-md border border-border/70 bg-background px-4 py-3 text-left transition-colors hover:border-foreground/40 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-start gap-3 rounded-md border bg-background px-4 py-3 text-left transition-colors hover:border-foreground/40 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => setType(candidate)}
                   disabled={disabled}
                   data-testid={`destination-type-${candidate}`}
@@ -625,7 +621,7 @@ function EditDestinationDialog({
 
           <div className="space-y-2">
             <Label>Status</Label>
-            <div className="inline-flex rounded-md border border-border/70 bg-background">
+            <div className="inline-flex rounded-md border bg-background">
               <button
                 type="button"
                 className={
@@ -641,8 +637,8 @@ function EditDestinationDialog({
                 type="button"
                 className={
                   !enabled
-                    ? 'border-l border-border/70 bg-foreground px-4 py-2 text-sm text-background'
-                    : 'border-l border-border/70 px-4 py-2 text-sm text-muted-foreground hover:text-foreground'
+                    ? 'border-l bg-foreground px-4 py-2 text-sm text-background'
+                    : 'border-l px-4 py-2 text-sm text-muted-foreground hover:text-foreground'
                 }
                 onClick={() => setEnabled(false)}
               >
@@ -691,7 +687,7 @@ function LinearConfigFields({
 
   if (!enabled) {
     return (
-      <p className="rounded-md border border-border/70 bg-muted/10 px-3 py-3 text-sm text-muted-foreground">
+      <p className="rounded-md border bg-muted/40 px-3 py-3 text-sm text-muted-foreground">
         Connect the Linear integration to configure per-destination overrides.
       </p>
     )
@@ -851,7 +847,7 @@ function LinearConfigFields({
               {metadata.labels
                 .filter((label) => (config.labelIds ?? []).includes(label.id))
                 .map((label) => (
-                  <Badge key={label.id} variant="outline" className="gap-1 border-border/70">
+                  <Badge key={label.id} variant="outline" className="gap-1">
                     {label.name}
                     <button
                       type="button"

@@ -91,7 +91,8 @@ export function Schedule({ data }: { data: Data }) {
       <Facts
         items={[
           ['Cadence', cadence(schedule)],
-          ['Timezone', str(schedule.timezone) || 'Unspecified'],
+          // Same wording as the web app: with no stored timezone BullMQ uses the worker host's.
+          ['Timezone', str(schedule.timezone) || 'Worker host time'],
           ['Runs so far', fmt(schedule.iterationCount)],
           ['Run limit', schedule.limit == null ? 'None' : fmt(schedule.limit)],
           ['Starts', schedule.startDate ? when(schedule.startDate) : undefined],

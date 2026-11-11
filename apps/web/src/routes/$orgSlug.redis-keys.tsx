@@ -12,9 +12,9 @@ function RedisKeysFallbackRoute() {
   return (
     <NoConnectionConfigured
       orgSlug={orgSlug}
-      area="Redis Explorer"
+      area="KV Explorer"
       icon={Database}
-      description="Redis Explorer cannot enumerate keys until a connection is configured for this organization."
+      description="KV Explorer cannot enumerate keys until a connection is configured for this organization."
     />
   )
 }

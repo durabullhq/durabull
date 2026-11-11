@@ -1,33 +1,65 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import {
   AlertCircle,
-  AlertTriangle,
-  Calendar,
-  ChevronDown,
-  ChevronRight,
-  ChevronsUpDown,
-  Clock,
-  ExternalLink,
-  Globe,
-  Layers,
-  MapPin,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpRight,
+  CalendarClock,
+  Plus,
+  Search,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppTopBar } from '@/components/app-top-bar'
-import { QueueNameTag } from '@/components/queue-name-tag'
-import { StatusIndicator } from '@/components/status-badge'
+import { PageTitle } from '@/components/page-title'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Input } from '@/components/ui/input'
+import { Metric, MetricStrip } from '@/components/ui/metric'
+import { Panel, PanelHeader } from '@/components/ui/section'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { type ListScheduledJobsResponse, useScheduledJobs } from '@/hooks/use-queues'
-import { getCronDescription, getScheduleExpression, getScheduleSummary } from '@/lib/scheduled-jobs'
-import { cn, formatDate, getTimezoneAbbreviation } from '@/lib/utils'
+import {
+  type ListScheduledJobsResponse,
+  type UseQueuesOptions,
+  useQueues,
+  useScheduledJobs,
+} from '@/hooks/use-queues'
+import {
+  formatScheduleTimeZone,
+  getScheduleExpression,
+  getScheduleSummary,
+} from '@/lib/scheduled-jobs'
+import { cn, formatDateWithTimezone, getTimezoneAbbreviation } from '@/lib/utils'
 
 type ScheduledJob = ListScheduledJobsResponse['scheduledJobs'][number]
+type SortKey = 'queue' | 'job' | 'nextRun'
+type SortDirection = 'asc' | 'desc'
+type StateFilter = 'all' | 'overdue' | 'failing'
+
+const QUEUE_PICKER_OPTIONS: UseQueuesOptions = { pageSize: 100 }
+
+/** Button cells centre their content; pin it to the top so values align with plain cells. */
+const METRIC_BUTTON = 'flex flex-col justify-start'
 
 function getLocalTimeFromUTC(pattern: string): string {
   try {
@@ -83,47 +115,63 @@ function getLocalTimeFromUTC(pattern: string): string {
   }
 }
 
-function CronPatternTooltip({ pattern, timezone }: { pattern: string; timezone?: string }) {
-  const description = getCronDescription(pattern)
-  const localTime = !timezone || timezone === 'UTC' ? getLocalTimeFromUTC(pattern) : null
-  const hasLocalPreview = localTime !== null && !localTime.startsWith('UTC')
-
-  return (
-    <div className="space-y-3 py-1">
-      <div className="flex items-start gap-2">
-        <Globe className="h-4 w-4 text-status-active mt-0.5 shrink-0" />
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-status-active font-medium">
-            Configured Schedule
-          </div>
-          <div className="text-sm font-medium text-primary-foreground">{description}</div>
-          <div className="text-xs text-primary-foreground/70 mt-1">{timezone ?? 'UTC'}</div>
-        </div>
-      </div>
-
-      {hasLocalPreview && (
-        <>
-          <div className="border-t border-primary-foreground/20" />
-          <div className="flex items-start gap-2">
-            <MapPin className="h-4 w-4 text-status-success mt-0.5 shrink-0" />
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-status-success font-medium">
-                Your Local Time
-              </div>
-              <div className="text-sm font-medium text-primary-foreground">{localTime}</div>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
+/**
+ * Local-time equivalent of a UTC cron with a fixed hour, or null when there is none to show.
+ * Only for schedules explicitly stored as UTC: one with no stored timezone runs on the
+ * worker host's time, which this page cannot know, so converting it would be a guess.
+ */
+function getLocalTimeHint(job: ScheduledJob): string | null {
+  if (!job.pattern || job.timezone !== 'UTC') return null
+  const localTime = getLocalTimeFromUTC(job.pattern)
+  return localTime.startsWith('UTC') ? null : localTime
 }
 
-interface QueueGroup {
-  queueName: string
-  jobs: ScheduledJob[]
-  hasFailures: boolean
-  totalFailures: number
+/** Re-renders on an interval so relative times stay honest without refetching. */
+function useNow(intervalMs = 30_000) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(timer)
+  }, [intervalMs])
+  return now
+}
+
+function formatSpan(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return minutes % 60 ? `${hours}h ${minutes % 60}m` : `${hours}h`
+  const days = Math.floor(hours / 24)
+  return hours % 24 ? `${days}d ${hours % 24}h` : `${days}d`
+}
+
+/** A next run this far in the past was missed, not merely about to fire. */
+const OVERDUE_AFTER_MS = 5 * 60_000
+
+function isOverdue(timestamp: number | undefined, now: number): boolean {
+  return typeof timestamp === 'number' && timestamp > 0 && now - timestamp > OVERDUE_AFTER_MS
+}
+
+function formatUntil(timestamp: number, now: number): string {
+  if (timestamp > now) return `in ${formatSpan(timestamp - now)}`
+  if (!isOverdue(timestamp, now)) return 'due now'
+  // Coarse on purpose: "131d overdue" reads better than a full breakdown.
+  return `${formatSpan(now - timestamp).split(' ')[0]} overdue`
+}
+
+function formatAgo(timestamp: number, now: number): string {
+  return `${formatSpan(Math.max(0, now - timestamp))} ago`
+}
+
+function formatShortDateTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 export const Route = createFileRoute('/$orgSlug/c/$connectionId/scheduled-jobs')({
@@ -132,21 +180,32 @@ export const Route = createFileRoute('/$orgSlug/c/$connectionId/scheduled-jobs')
 
 function ScheduledJobsPage() {
   const { orgSlug, connectionId } = Route.useParams()
-  const { data, isLoading, error } = useScheduledJobs()
-  const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set())
-  const hasInitializedExpansion = useRef(false)
+  const navigate = useNavigate()
+  const { data, isLoading, error, refetch } = useScheduledJobs()
+  const now = useNow()
+  const [search, setSearch] = useState('')
+  const [queueFilter, setQueueFilter] = useState('')
+  const [stateFilter, setStateFilter] = useState<StateFilter>('all')
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
+    key: 'queue',
+    direction: 'asc',
+  })
+  const [pickerOpen, setPickerOpen] = useState(false)
+
   const topBarConfig = useMemo(
     () => ({
-      left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <Calendar className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Scheduled Jobs</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            View and manage scheduled cron jobs across queues
-          </span>
-        </div>
+      left: <PageTitle title="Scheduled Jobs" />,
+      actions: (
+        <Button size="xs" onClick={() => setPickerOpen(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          New schedule
+        </Button>
+      ),
+      mobileActions: (
+        <DropdownMenuItem onSelect={() => setPickerOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          New schedule
+        </DropdownMenuItem>
       ),
     }),
     []
@@ -158,465 +217,531 @@ function ScheduledJobsPage() {
     trackEvent(AnalyticsEvents.SCHEDULED_JOBS_VIEWED)
   }, [])
 
-  // Group jobs by queue
-  const groupedQueues = useMemo<QueueGroup[]>(() => {
-    if (!data?.scheduledJobs) return []
+  const jobs = useMemo(() => data?.scheduledJobs ?? [], [data?.scheduledJobs])
 
-    const groups = new Map<string, ScheduledJob[]>()
-
-    for (const job of data.scheduledJobs) {
-      const existing = groups.get(job.queueName) ?? []
-      existing.push(job)
-      groups.set(job.queueName, existing)
+  const queueCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const job of jobs) {
+      counts.set(job.queueName, (counts.get(job.queueName) ?? 0) + 1)
     }
+    return Array.from(counts.entries()).sort(([a], [b]) => a.localeCompare(b))
+  }, [jobs])
 
-    return Array.from(groups.entries())
-      .map(([queueName, jobs]) => ({
-        queueName,
-        jobs: jobs.sort((a, b) => a.jobName.localeCompare(b.jobName)),
-        hasFailures: jobs.some((j) => (j.recentFailedCount ?? 0) > 0),
-        totalFailures: jobs.reduce((sum, j) => sum + (j.recentFailedCount ?? 0), 0),
-      }))
-      .sort((a, b) => a.queueName.localeCompare(b.queueName))
-  }, [data?.scheduledJobs])
+  const failingCount = useMemo(
+    () => jobs.filter((job) => (job.recentFailedCount ?? 0) > 0).length,
+    [jobs]
+  )
 
-  // Initialize all queues as expanded on first load only.
-  useEffect(() => {
-    if (hasInitializedExpansion.current) return
-    if (groupedQueues.length === 0) return
-    setExpandedQueues(new Set(groupedQueues.map((g) => g.queueName)))
-    hasInitializedExpansion.current = true
-  }, [groupedQueues])
+  const overdueCount = useMemo(
+    () => jobs.filter((job) => isOverdue(job.nextRun, now)).length,
+    [jobs, now]
+  )
 
-  const toggleQueue = (queueName: string) => {
-    setExpandedQueues((prev) => {
-      const next = new Set(prev)
-      if (next.has(queueName)) {
-        next.delete(queueName)
-        trackEvent(AnalyticsEvents.SCHEDULED_JOBS_COLLAPSED, { queue_name: queueName })
-      } else {
-        next.add(queueName)
-        trackEvent(AnalyticsEvents.SCHEDULED_JOBS_EXPANDED, { queue_name: queueName })
+  // The soonest run that is still ahead of us; missed runs are counted as overdue instead.
+  const nextUp = useMemo(() => {
+    let soonest: ScheduledJob | null = null
+    for (const job of jobs) {
+      if (!job.nextRun || isOverdue(job.nextRun, now)) continue
+      if (!soonest?.nextRun || job.nextRun < soonest.nextRun) soonest = job
+    }
+    return soonest
+  }, [jobs, now])
+
+  const visibleJobs = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    const filtered = jobs.filter((job) => {
+      if (queueFilter && job.queueName !== queueFilter) return false
+      if (stateFilter === 'failing' && (job.recentFailedCount ?? 0) === 0) return false
+      if (stateFilter === 'overdue' && !isOverdue(job.nextRun, now)) return false
+      if (!term) return true
+      return [job.jobName, job.schedulerId, job.queueName, getScheduleExpression(job)].some(
+        (value) => value.toLowerCase().includes(term)
+      )
+    })
+
+    const direction = sort.direction === 'asc' ? 1 : -1
+    return filtered.sort((a, b) => {
+      const byQueue = a.queueName.localeCompare(b.queueName)
+      const byJob = a.jobName.localeCompare(b.jobName) || a.schedulerId.localeCompare(b.schedulerId)
+      if (sort.key === 'nextRun') {
+        // Schedules with no upcoming run always sink to the bottom.
+        if (!a.nextRun || !b.nextRun) return a.nextRun ? -1 : b.nextRun ? 1 : byQueue || byJob
+        return (a.nextRun - b.nextRun) * direction || byQueue || byJob
       }
-      return next
+      if (sort.key === 'job') return byJob * direction || byQueue
+      return byQueue * direction || byJob
+    })
+  }, [jobs, now, queueFilter, search, sort, stateFilter])
+
+  const filtersActive = search.trim().length > 0 || queueFilter !== '' || stateFilter !== 'all'
+
+  const clearFilters = () => {
+    setSearch('')
+    setQueueFilter('')
+    setStateFilter('all')
+  }
+
+  const toggleStateFilter = (next: StateFilter) => {
+    setStateFilter((current) => (current === next ? 'all' : next))
+  }
+
+  const toggleSort = (key: SortKey) => {
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key, direction: 'asc' }
+    )
+  }
+
+  const openScheduler = (job: ScheduledJob) => {
+    navigate({
+      to: '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId',
+      params: {
+        orgSlug,
+        connectionId,
+        queueName: job.queueName,
+        schedulerId: job.schedulerId,
+      },
     })
   }
 
-  const expandAll = () => {
-    trackEvent(AnalyticsEvents.SCHEDULED_JOBS_EXPANDED, { action: 'expand_all' })
-    setExpandedQueues(new Set(groupedQueues.map((g) => g.queueName)))
-  }
-
-  const collapseAll = () => {
-    trackEvent(AnalyticsEvents.SCHEDULED_JOBS_COLLAPSED, { action: 'collapse_all' })
-    setExpandedQueues(new Set())
-  }
-
-  const allExpanded = expandedQueues.size === groupedQueues.length
-  const allCollapsed = expandedQueues.size === 0
-
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Failed to load scheduled jobs</h2>
-        <p className="text-muted-foreground">{error.message}</p>
-      </div>
+      <EmptyState
+        icon={AlertCircle}
+        tone="danger"
+        title="Failed to load scheduled jobs"
+        description={error.message}
+        actions={
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            Retry
+          </Button>
+        }
+      />
+    )
+  }
+
+  const sortHeader = (key: SortKey, label: string, className?: string) => {
+    const isSorted = sort.key === key
+    const Icon = isSorted && sort.direction === 'desc' ? ArrowDown : ArrowUp
+    return (
+      <TableHead
+        className={className}
+        aria-sort={isSorted ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(key)}
+          className={cn(
+            'group inline-flex items-center gap-1 rounded-sm uppercase tracking-[0.12em] transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
+            isSorted && 'text-foreground'
+          )}
+        >
+          {label}
+          <Icon
+            className={cn('h-3 w-3', isSorted ? 'opacity-100' : 'opacity-0 group-hover:opacity-50')}
+            aria-hidden
+          />
+        </button>
+      </TableHead>
     )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Summary cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <StatCard
-          title="Total Scheduled Jobs"
+    <div className="space-y-4">
+      <MetricStrip>
+        <Metric
+          label="Schedules"
           value={data?.total ?? 0}
-          icon={Clock}
           loading={isLoading}
-          variant="default"
+          className="col-span-2 sm:col-span-1"
         />
-        <StatCard
-          title="Queues with Schedules"
-          value={groupedQueues.length}
-          icon={Layers}
-          loading={isLoading}
-          variant="green"
-        />
-        <StatCard
-          title="Jobs with Recent Failures"
-          value={
-            data?.scheduledJobs.filter(
-              (j: ListScheduledJobsResponse['scheduledJobs'][number]) =>
-                (j.recentFailedCount ?? 0) > 0
-            ).length ?? 0
+        <Metric label="Queues covered" value={queueCounts.length} loading={isLoading} />
+        <Metric
+          label="Next run"
+          value={nextUp?.nextRun ? formatUntil(nextUp.nextRun, now) : '—'}
+          hint={
+            nextUp ? (
+              <span className="font-mono">
+                {nextUp.jobName} · {nextUp.queueName}
+              </span>
+            ) : undefined
           }
-          icon={AlertTriangle}
           loading={isLoading}
-          variant="red"
+          title={nextUp?.nextRun ? formatDateWithTimezone(nextUp.nextRun) : undefined}
         />
-      </div>
+        <Metric
+          label="Overdue"
+          value={overdueCount}
+          tone={overdueCount > 0 ? 'warning' : 'neutral'}
+          emphasis={overdueCount > 0}
+          hint="next run was missed"
+          loading={isLoading}
+          onClick={() => toggleStateFilter('overdue')}
+          active={stateFilter === 'overdue'}
+          title="Show only schedules whose next run is in the past"
+          className={METRIC_BUTTON}
+        />
+        <Metric
+          label="Failing"
+          value={failingCount}
+          tone={failingCount > 0 ? 'danger' : 'neutral'}
+          emphasis={failingCount > 0}
+          hint="recent failed runs"
+          loading={isLoading}
+          onClick={() => toggleStateFilter('failing')}
+          active={stateFilter === 'failing'}
+          title="Show only schedules with recent failed runs"
+          className={cn(METRIC_BUTTON, 'sm:max-lg:col-span-2')}
+        />
+      </MetricStrip>
 
-      {/* Scheduled jobs tree view */}
-      <Card>
-        <CardHeader className="border-b bg-muted/30 py-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base font-medium flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              Scheduled Jobs by Queue
-            </CardTitle>
-            {groupedQueues.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={allExpanded ? collapseAll : expandAll}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                <ChevronsUpDown className="h-3.5 w-3.5 mr-1.5" />
-                {allExpanded ? 'Collapse All' : allCollapsed ? 'Expand All' : 'Toggle All'}
-              </Button>
-            )}
+      {isLoading ? (
+        <Panel>
+          <PanelHeader>
+            <Skeleton className="h-8 w-64" />
+          </PanelHeader>
+          <div className="divide-y">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="flex items-center gap-6 px-4 py-3">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-56" />
+                <Skeleton className="ml-auto h-4 w-20" />
+              </div>
+            ))}
           </div>
-        </CardHeader>
+        </Panel>
+      ) : jobs.length === 0 ? (
+        <EmptyState
+          icon={CalendarClock}
+          title="No scheduled jobs"
+          description={
+            <>
+              A schedule adds a job to a queue on a cron pattern or a fixed interval. Create one
+              here, or define it in code with{' '}
+              <code className="font-mono">queue.upsertJobScheduler()</code> and it shows up
+              automatically.
+            </>
+          }
+          actions={
+            <Button size="sm" onClick={() => setPickerOpen(true)}>
+              <Plus className="h-4 w-4" />
+              New schedule
+            </Button>
+          }
+        />
+      ) : (
+        <Panel>
+          <PanelHeader>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <div className="relative w-full sm:w-64">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search job, scheduler ID, or cron"
+                  aria-label="Search scheduled jobs"
+                  className="pl-8"
+                />
+              </div>
+              <div className="w-full sm:w-56">
+                <Select
+                  value={queueFilter}
+                  onChange={(event) => setQueueFilter(event.target.value)}
+                  aria-label="Filter by queue"
+                  className={cn('font-mono text-xs', !queueFilter && 'text-muted-foreground')}
+                >
+                  <option value="">All queues</option>
+                  {queueCounts.map(([queueName, count]) => (
+                    <option key={queueName} value={queueName}>
+                      {queueName} ({count})
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              {filtersActive ? (
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  Clear
+                </Button>
+              ) : null}
+            </div>
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              {filtersActive
+                ? `${visibleJobs.length} of ${jobs.length}`
+                : `${jobs.length} ${jobs.length === 1 ? 'schedule' : 'schedules'}`}
+            </span>
+          </PanelHeader>
 
-        <div className="divide-y divide-border">
-          {isLoading ? (
-            <div className="p-4 space-y-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="space-y-2">
-                  <Skeleton className="h-10 w-full" />
-                  <div className="pl-8 space-y-2">
-                    <Skeleton className="h-8 w-full" />
-                    <Skeleton className="h-8 w-full" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : !groupedQueues.length ? (
-            <div className="text-center py-12">
-              <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No scheduled jobs found</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Open any queue to create one from the web UI, or keep discovering schedulers your
-                workers already define.
-              </p>
-            </div>
+          {visibleJobs.length === 0 ? (
+            <EmptyState
+              size="inline"
+              icon={Search}
+              title="No schedules match"
+              description="Nothing matches the current search and filters."
+              actions={
+                <Button variant="outline" size="sm" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              }
+            />
           ) : (
-            groupedQueues.map((group, groupIndex) => (
-              <QueueJobGroup
-                key={group.queueName}
-                group={group}
-                isExpanded={expandedQueues.has(group.queueName)}
-                onToggle={() => toggleQueue(group.queueName)}
-                isLast={groupIndex === groupedQueues.length - 1}
-                orgSlug={orgSlug}
-                connectionId={connectionId}
-              />
-            ))
-          )}
-        </div>
-      </Card>
+            <TooltipProvider delayDuration={200}>
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    {sortHeader('job', 'Job')}
+                    {sortHeader('queue', 'Queue')}
+                    <TableHead>Schedule</TableHead>
+                    {sortHeader('nextRun', 'Next run')}
+                    <TableHead className="text-right">Runs</TableHead>
+                    <TableHead className="text-right">Failed</TableHead>
+                    <TableHead className="w-0">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleJobs.map((job) => {
+                    const failed = job.recentFailedCount ?? 0
+                    const localTime = getLocalTimeHint(job)
+                    const nextRunJobId = job.nextRun
+                      ? `repeat:${job.schedulerId}:${job.nextRun}`
+                      : null
 
-      {/* Pattern reference */}
-      <Card className="p-6">
-        <h3 className="font-semibold mb-4">Schedule Reference</h3>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 text-sm">
-          <div>
-            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">* * * * *</code>
-            <p className="text-muted-foreground mt-1">Every minute</p>
-          </div>
-          <div>
-            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">*/5 * * * *</code>
-            <p className="text-muted-foreground mt-1">Every 5 minutes</p>
-          </div>
-          <div>
-            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">0 * * * *</code>
-            <p className="text-muted-foreground mt-1">Every hour</p>
-          </div>
-          <div>
-            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">0 0 * * *</code>
-            <p className="text-muted-foreground mt-1">Every day at midnight</p>
-          </div>
-          <div>
-            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">0 9 * * 1-5</code>
-            <p className="text-muted-foreground mt-1">Weekdays at 9 AM</p>
-          </div>
-          <div>
-            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">0 0 1 * *</code>
-            <p className="text-muted-foreground mt-1">First of each month</p>
-          </div>
-          <div>
-            <code className="bg-muted px-2 py-1 rounded text-xs font-mono">every 5 minutes</code>
-            <p className="text-muted-foreground mt-1">Fixed interval scheduler</p>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground mt-4">
-          Cron format: minute hour day-of-month month day-of-week (5-field) or second minute hour
-          day-of-month month day-of-week (6-field). Interval schedules are shown as “every X”.
-        </p>
-      </Card>
+                    return (
+                      <TableRow
+                        key={`${job.queueName}-${job.schedulerId}`}
+                        className="cursor-pointer"
+                        onClick={() => openScheduler(job)}
+                      >
+                        <TableCell className="max-w-[280px]">
+                          <div className="flex items-center gap-2">
+                            <Link
+                              to="/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId"
+                              params={{
+                                orgSlug,
+                                connectionId,
+                                queueName: job.queueName,
+                                schedulerId: job.schedulerId,
+                              }}
+                              onClick={(event) => event.stopPropagation()}
+                              className="truncate rounded-sm font-mono font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                            >
+                              {job.jobName}
+                            </Link>
+                            {job.enabled ? null : <Badge variant="neutral">Disabled</Badge>}
+                          </div>
+                          <div
+                            className="truncate font-mono text-xs text-faint"
+                            title={`Scheduler ID: ${job.schedulerId}`}
+                          >
+                            {job.schedulerId}
+                          </div>
+                        </TableCell>
+
+                        <TableCell>
+                          <Link
+                            to="/$orgSlug/c/$connectionId/queues/$queueName"
+                            params={{ orgSlug, connectionId, queueName: job.queueName }}
+                            search={{}}
+                            onClick={(event) => event.stopPropagation()}
+                            className="whitespace-nowrap rounded-sm font-mono text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                          >
+                            {job.queueName}
+                          </Link>
+                        </TableCell>
+
+                        <TableCell className="whitespace-nowrap">
+                          <div>{getScheduleSummary(job)}</div>
+                          <div className="font-mono text-xs text-muted-foreground">
+                            {getScheduleExpression(job)}
+                            {job.pattern ? (
+                              <span className="text-faint">
+                                {' · '}
+                                {formatScheduleTimeZone(job.timezone)}
+                                {localTime ? ` · ${localTime} local` : ''}
+                              </span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="whitespace-nowrap">
+                          {job.nextRun ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="w-fit">
+                                  <div
+                                    className={cn(
+                                      'font-mono tabular-nums',
+                                      isOverdue(job.nextRun, now) && 'text-status-warning'
+                                    )}
+                                  >
+                                    {formatUntil(job.nextRun, now)}
+                                  </div>
+                                  <div className="font-mono text-xs tabular-nums text-muted-foreground">
+                                    {formatShortDateTime(job.nextRun)}
+                                  </div>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="font-mono">
+                                {formatDateWithTimezone(job.nextRun)}
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <span className="text-faint">—</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                          {typeof job.iterationCount === 'number' ? (
+                            job.iterationCount.toLocaleString()
+                          ) : (
+                            <span className="text-faint">—</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="text-right font-mono tabular-nums">
+                          {failed > 0 ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="text-status-danger">{failed}</span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {failed} recent failed {failed === 1 ? 'run' : 'runs'}
+                                {job.lastFailedAt
+                                  ? ` · last ${formatAgo(job.lastFailedAt, now)}`
+                                  : ''}
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <span className="text-faint">—</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="py-0 pl-0">
+                          <div className="flex items-center justify-end">
+                            {nextRunJobId ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                                    <Link
+                                      to="/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId"
+                                      params={{
+                                        orgSlug,
+                                        connectionId,
+                                        queueName: job.queueName,
+                                        jobId: nextRunJobId,
+                                      }}
+                                      search={{ tab: 'data' }}
+                                      onClick={(event) => event.stopPropagation()}
+                                      aria-label={`Inspect next queued run of ${job.jobName}`}
+                                    >
+                                      <ArrowUpRight className="h-4 w-4" />
+                                    </Link>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="left">Inspect next queued run</TooltipContent>
+                              </Tooltip>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </TooltipProvider>
+          )}
+        </Panel>
+      )}
+
+      {pickerOpen ? (
+        <NewScheduleDialog
+          orgSlug={orgSlug}
+          connectionId={connectionId}
+          scheduleCounts={queueCounts}
+          onClose={() => setPickerOpen(false)}
+        />
+      ) : null}
     </div>
   )
 }
 
-interface QueueJobGroupProps {
-  group: QueueGroup
-  isExpanded: boolean
-  onToggle: () => void
-  isLast: boolean
-  orgSlug: string
-  connectionId: string
-}
-
-function QueueJobGroup({
-  group,
-  isExpanded,
-  onToggle,
-  isLast,
+/**
+ * A schedule belongs to a queue, so creating one from the connection-wide list
+ * starts by choosing the queue; the form itself lives on the queue's route.
+ */
+function NewScheduleDialog({
   orgSlug,
   connectionId,
-}: QueueJobGroupProps) {
-  return (
-    <Collapsible open={isExpanded} onOpenChange={onToggle}>
-      {/* Queue header */}
-      <CollapsibleTrigger className="w-full">
-        <div
-          className={cn(
-            'flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer group',
-            isExpanded && 'bg-muted/30'
-          )}
-        >
-          {/* Expand/collapse indicator */}
-          <div className="text-muted-foreground group-hover:text-foreground transition-colors">
-            {isExpanded ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
-            )}
-          </div>
-
-          {/* Queue name */}
-          <div className="flex-1 flex items-center gap-3">
-            <QueueNameTag name={group.queueName} asLink size="sm" />
-            <span className="text-xs text-muted-foreground">
-              {group.jobs.length} job{group.jobs.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-
-          {/* Failure indicator */}
-          {group.hasFailures && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-status-danger">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    {group.totalFailures} failure{group.totalFailures !== 1 ? 's' : ''}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="left">
-                  <p>Recent failed jobs in this queue</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-        </div>
-      </CollapsibleTrigger>
-
-      {/* Jobs list with tree connectors */}
-      <CollapsibleContent>
-        <div className={cn('bg-muted/20', !isLast && 'border-b border-border')}>
-          {group.jobs.map((job, index) => (
-            <JobRow
-              key={`${job.queueName}-${job.schedulerId}`}
-              job={job}
-              isLast={index === group.jobs.length - 1}
-              orgSlug={orgSlug}
-              connectionId={connectionId}
-            />
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-interface JobRowProps {
-  job: ScheduledJob
-  isLast: boolean
+  scheduleCounts,
+  onClose,
+}: {
   orgSlug: string
   connectionId: string
-}
+  scheduleCounts: Array<[string, number]>
+  onClose: () => void
+}) {
+  const { data, isLoading } = useQueues(QUEUE_PICKER_OPTIONS)
+  const [term, setTerm] = useState('')
 
-function JobRow({ job, isLast, orgSlug, connectionId }: JobRowProps) {
-  const nextRunJobId = job.nextRun ? `repeat:${job.schedulerId}:${job.nextRun}` : null
+  const counts = useMemo(() => new Map(scheduleCounts), [scheduleCounts])
+  const queueNames = useMemo(() => {
+    const names = new Set<string>(scheduleCounts.map(([queueName]) => queueName))
+    for (const queue of data?.queues ?? []) names.add(queue.name)
+    const needle = term.trim().toLowerCase()
+    return Array.from(names)
+      .filter((queueName) => !needle || queueName.toLowerCase().includes(needle))
+      .sort((a, b) => a.localeCompare(b))
+  }, [data?.queues, scheduleCounts, term])
 
   return (
-    <div className="flex items-center gap-4 pl-6 pr-4 py-2.5 hover:bg-muted/40 transition-colors group">
-      {/* Tree branch connector */}
-      <div className="relative flex items-center justify-center w-8 h-full">
-        {/* Vertical line running through */}
-        <div
-          className={cn(
-            'absolute left-3 w-[2px] bg-status-success/30',
-            isLast ? '-top-2.5 h-[calc(50%+0.625rem)]' : '-top-2.5 -bottom-2.5'
-          )}
-        />
-        {/* Horizontal branch line */}
-        <div className="absolute left-3 w-4 h-[2px] bg-status-success/30" />
-        {/* Branch node dot */}
-        <div className="absolute left-[calc(0.75rem+1rem-0.25rem)] w-2 h-2 rounded-full bg-status-success ring-2 ring-background shadow-sm shadow-emerald-500/50" />
-      </div>
-
-      {/* Job name - clickable link to scheduler editor */}
-      <div className="min-w-[200px] shrink-0">
-        <Link
-          to="/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/$schedulerId"
-          params={{
-            orgSlug,
-            connectionId,
-            queueName: job.queueName,
-            schedulerId: job.schedulerId,
-          }}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground/90 hover:text-primary hover:underline underline-offset-2 transition-colors"
-        >
-          {job.jobName}
-          <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-60 transition-opacity" />
-        </Link>
-        {nextRunJobId ? (
-          <Link
-            to="/$orgSlug/c/$connectionId/queues/$queueName/jobs/$jobId"
-            params={{
-              orgSlug,
-              connectionId,
-              queueName: job.queueName,
-              jobId: nextRunJobId,
-            }}
-            search={{ tab: 'data' }}
-            className="mt-1 inline-flex text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Inspect next queued run
-          </Link>
-        ) : null}
-      </div>
-
-      {/* Schedule */}
-      <div className="min-w-[140px]">
-        <div className="space-y-1">
-          {job.pattern ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <code className="text-xs bg-muted/80 px-2 py-1 rounded font-mono cursor-help text-muted-foreground hover:text-foreground transition-colors">
-                    {job.pattern}
-                  </code>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-xs">
-                  <CronPatternTooltip pattern={job.pattern} timezone={job.timezone} />
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          ) : (
-            <code className="text-xs bg-muted/80 px-2 py-1 rounded font-mono text-muted-foreground">
-              {getScheduleExpression(job)}
-            </code>
-          )}
-          <div className="text-xs text-muted-foreground">{getScheduleSummary(job)}</div>
-          {job.timezone ? (
-            <div className="text-xs text-muted-foreground">{job.timezone}</div>
-          ) : null}
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+      <DialogContent className="max-w-md gap-3">
+        <DialogHeader>
+          <DialogTitle>New schedule</DialogTitle>
+          <DialogDescription>Choose the queue this schedule adds jobs to.</DialogDescription>
+        </DialogHeader>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" />
+          <Input
+            autoFocus
+            value={term}
+            onChange={(event) => setTerm(event.target.value)}
+            placeholder="Find a queue"
+            aria-label="Find a queue"
+            className="pl-8"
+          />
         </div>
-      </div>
-
-      {/* Next run */}
-      <div className="flex-1 text-sm text-muted-foreground">
-        {job.nextRun ? formatDate(job.nextRun) : '—'}
-      </div>
-
-      {/* Status */}
-      <div className="flex items-center gap-3 min-w-[120px] justify-end">
-        <StatusIndicator status={job.enabled ? 'enabled' : 'disabled'} showPulse={false} />
-        {(job.recentFailedCount ?? 0) > 0 && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-status-danger">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  {job.recentFailedCount}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <div className="space-y-1">
-                  <p className="font-medium">Recent Failures</p>
-                  <p className="text-sm">{job.recentFailedCount} failed job(s) in queue</p>
-                  {job.lastFailedAt && (
-                    <p className="text-xs text-muted-foreground">
-                      Last failure: {formatDate(job.lastFailedAt)}
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Click the queue name to investigate
-                  </p>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// Stats Card Component
-type StatVariant = 'default' | 'green' | 'red'
-
-interface StatCardProps {
-  title: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  loading?: boolean
-  variant?: StatVariant
-}
-
-const variantStyles: Record<
-  StatVariant,
-  {
-    icon: string
-    accent: string
-  }
-> = {
-  default: {
-    icon: 'text-primary',
-    accent: 'bg-status-neutral/40',
-  },
-  green: {
-    icon: 'text-status-success',
-    accent: 'bg-status-success',
-  },
-  red: {
-    icon: 'text-destructive',
-    accent: 'bg-status-neutral/40',
-  },
-}
-
-function StatCard({ title, value, icon: Icon, loading, variant = 'default' }: StatCardProps) {
-  const styles = variantStyles[variant]
-
-  return (
-    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
-      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-        <CardTitle className="eyebrow">{title}</CardTitle>
-        <Icon className={cn('h-4 w-4', styles.icon)} />
-      </CardHeader>
-      <CardContent>
-        {loading ? (
-          <Skeleton className="h-8 w-12" />
-        ) : (
-          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-            {value}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        <div className="-mx-1 max-h-72 overflow-y-auto">
+          {queueNames.length === 0 ? (
+            <p className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+              {isLoading ? 'Loading queues…' : 'No queue matches.'}
+            </p>
+          ) : (
+            <ul>
+              {queueNames.map((queueName) => {
+                const count = counts.get(queueName) ?? 0
+                return (
+                  <li key={queueName}>
+                    <Link
+                      to="/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/new"
+                      params={{ orgSlug, connectionId, queueName }}
+                      className="flex h-8 items-center justify-between gap-3 rounded-md px-3 text-[13px] transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+                    >
+                      <span className="truncate font-mono">{queueName}</span>
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-faint">
+                        {count > 0 ? `${count} ${count === 1 ? 'schedule' : 'schedules'}` : ''}
+                      </span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

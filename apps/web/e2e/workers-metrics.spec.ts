@@ -17,12 +17,15 @@ test.describe('Workers and observability', () => {
       page.getByRole('heading', { name: 'Workers', exact: true, level: 1 })
     ).toBeVisible()
 
-    // Stat cards render once loading completes.
-    await expect(page.getByText('Worker Topology')).toBeVisible({ timeout: 15000 })
+    // The topology panel offers a graph and a list of the same workers.
+    await expect(page.getByRole('button', { name: 'Graph', exact: true })).toBeVisible({
+      timeout: 15000,
+    })
+    await expect(page.getByRole('button', { name: 'List', exact: true })).toBeVisible()
 
     // Either the empty state (no live workers) or the topology canvas renders.
     const emptyState = page.getByText('No Workers Connected')
-    const topology = page.getByText('Loading worker topology...')
+    const topology = page.getByText('Loading worker topology…')
     await expect(emptyState.or(topology).or(page.locator('.react-flow').first())).toBeVisible({
       timeout: 15000,
     })

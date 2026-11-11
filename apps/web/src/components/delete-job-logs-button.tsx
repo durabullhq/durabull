@@ -1,6 +1,6 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
-import { AlertTriangle, ChevronDown, Loader2, Trash2 } from 'lucide-react'
+import { ChevronDown, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
@@ -80,21 +81,19 @@ export function DeleteJobLogsButton({ queueName, jobId, logCount }: DeleteJobLog
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            size="sm"
-            className="h-8"
+            size="xs"
             disabled={logCount <= 0 || clearLogsMutation.isPending}
             data-testid="delete-job-logs-button"
           >
             {clearLogsMutation.isPending ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Clearing...
               </>
             ) : (
               <>
-                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                 Clear Logs
-                <ChevronDown className="ml-1.5 h-3.5 w-3.5" />
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
               </>
             )}
           </Button>
@@ -109,6 +108,20 @@ export function DeleteJobLogsButton({ queueName, jobId, logCount }: DeleteJobLog
               {keep === 0 ? 'Delete all logs' : `Keep latest ${keep.toLocaleString()} logs`}
             </DropdownMenuItem>
           ))}
+          <DropdownMenuSeparator />
+          <div className="px-2 pb-1 pt-1">
+            <Label htmlFor="custom-log-keep" className="text-xs text-muted-foreground">
+              Keep most recent X logs
+            </Label>
+            <Input
+              id="custom-log-keep"
+              value={customKeepInput}
+              onChange={(event) => setCustomKeepInput(event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+              inputMode="numeric"
+              className="mt-1 h-7 font-mono text-xs"
+            />
+          </div>
           <DropdownMenuItem
             onClick={() => {
               const parsed = Number.parseInt(customKeepInput, 10)
@@ -118,18 +131,6 @@ export function DeleteJobLogsButton({ queueName, jobId, logCount }: DeleteJobLog
           >
             Apply custom keep value
           </DropdownMenuItem>
-          <div className="px-2 pb-1.5 pt-1">
-            <Label htmlFor="custom-log-keep" className="text-xs text-muted-foreground">
-              Keep most recent X logs
-            </Label>
-            <Input
-              id="custom-log-keep"
-              value={customKeepInput}
-              onChange={(event) => setCustomKeepInput(event.target.value)}
-              inputMode="numeric"
-              className="mt-1 h-8 text-xs"
-            />
-          </div>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -144,10 +145,7 @@ export function DeleteJobLogsButton({ queueName, jobId, logCount }: DeleteJobLog
       >
         <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <AlertTriangle className="h-5 w-5" />
-              Clear Job Logs?
-            </DialogTitle>
+            <DialogTitle>Clear Job Logs?</DialogTitle>
             <DialogDescription>
               {keepMostRecent > 0
                 ? `This will delete older logs and keep the most recent ${formatLogCount(keepMostRecent)} for this job.`
@@ -168,16 +166,13 @@ export function DeleteJobLogsButton({ queueName, jobId, logCount }: DeleteJobLog
             >
               {clearLogsMutation.isPending ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Clearing...
                 </>
+              ) : keepMostRecent > 0 ? (
+                `Keep ${formatLogCount(keepMostRecent)}`
               ) : (
-                <>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  {keepMostRecent > 0
-                    ? `Keep ${formatLogCount(keepMostRecent)}`
-                    : `Delete ${formatLogCount(logCount)}`}
-                </>
+                `Delete ${formatLogCount(logCount)}`
               )}
             </Button>
           </DialogFooter>

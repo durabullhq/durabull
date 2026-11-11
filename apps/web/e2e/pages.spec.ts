@@ -116,7 +116,7 @@ test.describe('Pages', () => {
     await page.getByRole('link', { name: 'KV Explorer' }).click()
     await page.waitForURL(new RegExp(`/${TEST_ORG_SLUG}/c/${connectionId}/redis-keys`))
     await expect(
-      page.getByRole('heading', { name: 'Redis Explorer', exact: true, level: 1 })
+      page.getByRole('heading', { name: 'KV Explorer', exact: true, level: 1 })
     ).toBeVisible()
   })
 
@@ -144,7 +144,7 @@ test.describe('Pages', () => {
       await expect(pauseButton).toBeVisible()
     }
 
-    await page.getByRole('button', { name: 'Queue settings' }).click()
+    await page.getByRole('button', { name: 'Queue actions' }).click()
     await page.getByRole('menuitem', { name: 'Delete Queue' }).click()
 
     const dialog = page.getByRole('dialog')
@@ -181,19 +181,19 @@ test.describe('Pages', () => {
     await expect(hideScheduledJobs).toBeVisible()
     await expect(hideScheduledJobs).not.toBeChecked()
 
-    await page.selectOption('select', 'failed')
+    // The metric cells are the status filter: one click filters the table.
+    await page.getByTestId('job-status-filter-failed').click()
     await expect(page).toHaveURL(/status=failed/)
 
     await hideScheduledJobs.check()
     await expect(page).toHaveURL(/hideScheduled=1/)
 
-    await page.getByRole('button', { name: /Scheduled Jobs/ }).click()
-    await expect(
-      page.getByRole('heading', { name: 'Scheduled Jobs', exact: true, level: 3 })
-    ).toBeVisible()
+    await page.getByRole('button', { name: /^Scheduled/ }).click()
+    await expect(page).toHaveURL(/tab=scheduled/)
+    await expect(page.getByRole('columnheader', { name: 'Schedule', exact: true })).toBeVisible()
   })
 
-  test('scheduled jobs page toggle all', async ({ page }) => {
+  test('scheduled jobs page search and clear filters', async ({ page }) => {
     const { connectionId } = await getConnectionAndQueue(page)
     const scheduledJobs = await getScheduledJobs(page, connectionId)
     if (scheduledJobs.total === 0) {
@@ -205,14 +205,18 @@ test.describe('Pages', () => {
       page.getByRole('heading', { name: 'Scheduled Jobs', exact: true, level: 1 })
     ).toBeVisible()
 
-    const toggleButton = page.getByRole('button', {
-      name: /Expand All|Collapse All|Toggle All/,
-    })
-    await expect(toggleButton).toBeVisible()
-    const initialLabel = (await toggleButton.textContent())?.trim() ?? ''
-    await toggleButton.click()
-    const expectedLabel = initialLabel.includes('Collapse All') ? 'Expand All' : 'Collapse All'
-    await expect(toggleButton).toHaveText(new RegExp(expectedLabel))
+    // The table owns its toolbar: searching narrows rows, clearing restores them.
+    const first = scheduledJobs.scheduledJobs[0]
+    const searchInput = page.getByRole('textbox', { name: 'Search scheduled jobs' })
+    await expect(searchInput).toBeVisible()
+    await searchInput.fill(first.schedulerId)
+    await expect(page.getByText(first.schedulerId, { exact: true }).first()).toBeVisible()
+
+    await searchInput.fill('e2e-no-such-schedule')
+    await expect(page.getByText('No schedules match')).toBeVisible()
+    await page.getByRole('button', { name: 'Clear filters' }).click()
+    await expect(searchInput).toHaveValue('')
+    await expect(page.getByText(first.schedulerId, { exact: true }).first()).toBeVisible()
   })
 
   test('redis explorer page controls', async ({ page }) => {
@@ -220,7 +224,7 @@ test.describe('Pages', () => {
 
     await page.goto(`/${TEST_ORG_SLUG}/c/${connectionId}/redis-keys`)
     await expect(
-      page.getByRole('heading', { name: 'Redis Explorer', exact: true, level: 1 })
+      page.getByRole('heading', { name: 'KV Explorer', exact: true, level: 1 })
     ).toBeVisible()
 
     const searchInput = page.getByPlaceholder('Search pattern (e.g., user:*, *session*)')
@@ -271,7 +275,7 @@ test.describe('Pages', () => {
   test('invite page shows not found for invalid id', async ({ page }) => {
     await page.goto('/invite/invalid-invitation-id')
     await expect(
-      page.getByRole('heading', { name: 'Invitation Not Found', exact: true, level: 1 })
+      page.getByRole('heading', { name: 'Invitation not found', exact: true })
     ).toBeVisible()
   })
 

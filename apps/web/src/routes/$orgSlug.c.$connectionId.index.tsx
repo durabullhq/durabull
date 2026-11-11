@@ -2,27 +2,19 @@ import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
-import {
-  Activity,
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Layers,
-  Loader2,
-  Rocket,
-  Search,
-  Timer,
-  Zap,
-} from 'lucide-react'
+import { AlertCircle, Layers, Loader2, Radar } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PageTitle } from '@/components/page-title'
 import { QueueTable } from '@/components/queue-table'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Metric, MetricStrip } from '@/components/ui/metric'
+import { Panel } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   QUEUE_SORT_FIELDS,
   type QueueSortField,
@@ -43,6 +35,18 @@ import { cn, formatNumber } from '@/lib/utils'
 
 const AUTO_DISCOVERY_MIN_INTERVAL_MS = 5 * 60 * 1000
 const QUEUE_DISCOVERY_TOAST_ID = 'queue-discovery'
+const RELATIVE_TIME_TICK_MS = 30 * 1000
+
+/** "just now", "2m ago", "3h ago", "5d ago" — the full timestamp lives in the title. */
+function formatRelativeTime(timestamp: number, now: number): string {
+  const seconds = Math.max(0, Math.round((now - timestamp) / 1000))
+  if (seconds < 45) return 'just now'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}
 
 function isRedisConnectionFailure(message: string): boolean {
   const normalized = message.toLowerCase()
@@ -159,10 +163,18 @@ function Dashboard() {
     null
   const hasRecentDiscovery =
     lastDiscoveryAt !== null && Date.now() - lastDiscoveryAt < AUTO_DISCOVERY_MIN_INTERVAL_MS
-  const lastDiscoveryLabel = useMemo(() => {
-    if (!lastDiscoveryAt) return 'Discovery not run yet'
-    return `Last discovery: ${new Date(lastDiscoveryAt).toLocaleString()}`
-  }, [lastDiscoveryAt])
+  // Re-render on a slow tick so the relative discovery time stays honest between polls.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), RELATIVE_TIME_TICK_MS)
+    return () => clearInterval(interval)
+  }, [])
+  const lastDiscoveryLabel = lastDiscoveryAt
+    ? `Discovered ${formatRelativeTime(lastDiscoveryAt, now)}`
+    : 'Not discovered yet'
+  const lastDiscoveryTitle = lastDiscoveryAt
+    ? `Last discovery: ${new Date(lastDiscoveryAt).toLocaleString()}`
+    : 'Discovery has not run for this connection yet'
 
   useEffect(() => {
     if (!connectionId) return
@@ -215,43 +227,84 @@ function Dashboard() {
     }
   }, [connectionId])
 
+  const queueTotal = data?.total
+  const queueTotalUnfiltered = data?.totalUnfiltered ?? data?.total
+  const handleDiscover = useCallback(() => discoverMutation.mutate(), [discoverMutation])
+
   const topBarConfig = useMemo(
     () => ({
       left: (
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
-            <Layers className="h-4 w-4" />
-          </span>
-          <h1 className="truncate text-base font-semibold md:text-lg">Queues</h1>
-          <span className="hidden text-sm text-muted-foreground xl:inline">
-            Monitor and manage your job queues
-          </span>
-        </div>
+        <PageTitle
+          title="Queues"
+          meta={
+            queueTotalUnfiltered !== undefined ? (
+              <span
+                className="font-mono text-xs tabular-nums text-muted-foreground"
+                title={
+                  queueTotal !== queueTotalUnfiltered
+                    ? `${queueTotal} of ${queueTotalUnfiltered} queues match the current filters`
+                    : `${queueTotalUnfiltered} queues`
+                }
+              >
+                {queueTotal !== undefined && queueTotal !== queueTotalUnfiltered
+                  ? `${formatNumber(queueTotal)} of ${formatNumber(queueTotalUnfiltered)}`
+                  : formatNumber(queueTotalUnfiltered)}
+              </span>
+            ) : null
+          }
+        />
       ),
       actions: (
-        <div className="flex items-center gap-3">
-          <span className="hidden text-xs text-muted-foreground xl:inline">
-            {lastDiscoveryLabel}
+        <>
+          <span
+            className={cn(
+              'hidden whitespace-nowrap text-xs lg:inline',
+              discoveryErrorMessage && !discoveryRunning
+                ? 'text-status-danger'
+                : 'text-muted-foreground'
+            )}
+            title={
+              discoveryErrorMessage && !discoveryRunning
+                ? `Discovery failed: ${discoveryErrorMessage}`
+                : lastDiscoveryTitle
+            }
+          >
+            {discoveryErrorMessage && !discoveryRunning ? 'Discovery failed' : lastDiscoveryLabel}
           </span>
           <Button
             type="button"
+            variant="outline"
             size="xs"
-            onClick={() => discoverMutation.mutate()}
+            onClick={handleDiscover}
             disabled={discoveryRunning}
             aria-busy={discoveryRunning}
-            className="gap-2"
+            title="Scan Redis for BullMQ queues"
           >
             {discoveryRunning ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
             ) : (
-              <Search className="h-4 w-4" aria-hidden="true" />
+              <Radar className="h-3.5 w-3.5" aria-hidden="true" />
             )}
-            {discoveryRunning ? 'Discovering…' : 'Discover Queues'}
+            {discoveryRunning ? 'Discovering…' : 'Discover'}
           </Button>
-        </div>
+        </>
+      ),
+      mobileActions: (
+        <DropdownMenuItem onClick={handleDiscover} disabled={discoveryRunning}>
+          <Radar />
+          {discoveryRunning ? 'Discovering…' : 'Discover queues'}
+        </DropdownMenuItem>
       ),
     }),
-    [discoverMutation, discoveryRunning, lastDiscoveryLabel]
+    [
+      discoveryErrorMessage,
+      discoveryRunning,
+      handleDiscover,
+      lastDiscoveryLabel,
+      lastDiscoveryTitle,
+      queueTotal,
+      queueTotalUnfiltered,
+    ]
   )
 
   useAppTopBar(topBarConfig)
@@ -267,13 +320,25 @@ function Dashboard() {
   if (error || shouldShowConnectionFailure) {
     const message = error?.message ?? REDIS_CONNECTION_ERROR_MESSAGE
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <div className="rounded-full bg-status-danger/10 p-4 mb-4">
-          <AlertCircle className="h-8 w-8 text-status-danger" />
-        </div>
-        <h2 className="text-xl font-semibold mb-2">Failed to load queues</h2>
-        <p className="text-muted-foreground text-center max-w-md">{message}</p>
-      </div>
+      <EmptyState
+        icon={AlertCircle}
+        tone="danger"
+        title="Failed to load queues"
+        description={message}
+        actions={
+          error ? undefined : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDiscover}
+              disabled={discoveryRunning}
+            >
+              <Radar className="h-4 w-4" aria-hidden="true" />
+              Retry discovery
+            </Button>
+          )
+        }
+      />
     )
   }
 
@@ -286,237 +351,118 @@ function Dashboard() {
     completed: 0,
     prioritized: 0,
   }
+  const hasNoQueues = !isLoading && (data?.totalUnfiltered ?? data?.total ?? 0) === 0
 
   return (
-    <TooltipProvider>
-      <div className="space-y-8">
-        {/* Summary stats */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <StatCard
-            title="Waiting"
-            value={totals.waiting}
-            icon={Clock}
-            loading={isLoading}
-            tooltip="Jobs waiting to be processed"
-          />
-          <StatCard
-            title="Prioritized"
-            value={totals.prioritized}
-            icon={Rocket}
-            loading={isLoading}
-            variant="violet"
-            tooltip="Prioritized jobs waiting ahead of the standard queue"
-          />
-          <StatCard
-            title="Active"
-            value={totals.active}
-            icon={Activity}
-            loading={isLoading}
-            variant="blue"
-            showPulse={totals.active > 0}
-            tooltip="Jobs currently being processed"
-          />
-          <StatCard
-            title="Delayed"
-            value={totals.delayed}
-            icon={Timer}
-            loading={isLoading}
-            variant="orange"
-            tooltip="Jobs scheduled for later"
-          />
-          <StatCard
-            title="Completed"
-            value={totals.completed}
-            icon={CheckCircle2}
-            loading={isLoading}
-            variant="green"
-            tooltip="Successfully completed jobs"
-          />
-          <StatCard
-            title="Failed"
-            value={totals.failed}
-            icon={AlertCircle}
-            loading={isLoading}
-            variant="red"
-            tooltip="Jobs that failed to process"
-          />
-        </div>
+    // md+: the page fills the viewport and the table scrolls inside its panel.
+    // Below md the page scrolls as a whole so the table is not squeezed under the metrics.
+    <div className="flex flex-col gap-4 max-md:pb-4 md:h-full md:min-h-0">
+      {/* Fleet totals across every queue on this connection, not just the current page */}
+      <MetricStrip className="shrink-0">
+        <Metric
+          label="Waiting"
+          value={formatNumber(totals.waiting)}
+          loading={isLoading}
+          title="Jobs waiting to be processed"
+        />
+        <Metric
+          label="Prioritized"
+          value={formatNumber(totals.prioritized)}
+          tone="priority"
+          loading={isLoading}
+          title="Prioritized jobs waiting ahead of the standard queue"
+        />
+        <Metric
+          label="Active"
+          value={formatNumber(totals.active)}
+          tone="active"
+          pulse={totals.active > 0}
+          loading={isLoading}
+          title="Jobs currently being processed"
+        />
+        <Metric
+          label="Delayed"
+          value={formatNumber(totals.delayed)}
+          tone="delayed"
+          loading={isLoading}
+          title="Jobs scheduled for later"
+        />
+        <Metric
+          label="Completed"
+          value={formatNumber(totals.completed)}
+          tone="success"
+          loading={isLoading}
+          title="Successfully completed jobs"
+        />
+        <Metric
+          label="Failed"
+          value={formatNumber(totals.failed)}
+          tone="danger"
+          emphasis={totals.failed > 0}
+          loading={isLoading}
+          title="Jobs that failed to process"
+        />
+      </MetricStrip>
 
-        {/* Queues Table */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold">Queues</h2>
-              {data && (
-                <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
-                  {data.total} total
-                </span>
+      {isLoading ? (
+        <Panel aria-busy="true">
+          <div className="flex h-11 items-center gap-2 border-b px-3">
+            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-8 w-40" />
+          </div>
+          <div className="divide-y">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+              <div key={i} className="flex h-10 items-center gap-6 px-4">
+                <Skeleton className="h-3.5 w-48" />
+                <Skeleton className="h-3.5 w-14" />
+                <div className="ml-auto flex items-center gap-10">
+                  {[1, 2, 3, 4, 5, 6].map((j) => (
+                    <Skeleton key={j} className="hidden h-3.5 w-10 sm:block" />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      ) : hasNoQueues ? (
+        <EmptyState
+          icon={Layers}
+          title="No queues found"
+          description="No BullMQ queues were detected on this connection. Queues appear here once your application creates them — check that the Redis connection and key prefix match your workers, then run discovery again."
+          actions={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDiscover}
+              disabled={discoveryRunning}
+            >
+              {discoveryRunning ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Radar className="h-4 w-4" aria-hidden="true" />
               )}
-            </div>
-            {totals.active > 0 && (
-              <div className="flex items-center gap-2 text-sm text-status-active">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-active opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-status-active" />
-                </span>
-                {formatNumber(totals.active)} jobs processing
-              </div>
-            )}
-          </div>
-
-          {isLoading ? (
-            <div className="rounded-lg border bg-card">
-              <div className="p-4 space-y-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="flex items-center gap-4">
-                    <Skeleton className="h-9 w-9 rounded-lg" />
-                    <div className="space-y-2 flex-1">
-                      <Skeleton className="h-4 w-48" />
-                      <Skeleton className="h-3 w-24" />
-                    </div>
-                    <Skeleton className="h-6 w-16 rounded-full" />
-                    <Skeleton className="h-4 w-12" />
-                    <Skeleton className="h-4 w-12" />
-                    <Skeleton className="h-4 w-12" />
-                    <Skeleton className="h-4 w-12" />
-                    <Skeleton className="h-4 w-12" />
-                    <Skeleton className="h-4 w-12" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (data?.totalUnfiltered ?? data?.total ?? 0) === 0 ? (
-            <EmptyState />
-          ) : (
-            <QueueTable
-              queues={queues}
-              page={data?.page ?? 1}
-              totalPages={data?.totalPages ?? 1}
-              total={data?.total ?? 0}
-              isPlaceholderData={isPlaceholderData}
-              onPageChange={setPage}
-              sortBy={sortBy}
-              sortOrder={sortOrder}
-              onSortChange={handleSortChange}
-              search={q}
-              onSearchChange={handleSearchChange}
-              statusFilter={status}
-              onStatusFilterChange={handleStatusFilterChange}
-              onSaveDefaultView={isCurrentViewSaved ? undefined : handleSaveDefaultView}
-            />
-          )}
-        </div>
-      </div>
-    </TooltipProvider>
-  )
-}
-
-type StatVariant = 'default' | 'blue' | 'green' | 'orange' | 'red' | 'violet'
-
-interface StatCardProps {
-  title: string
-  value: number
-  icon: React.ComponentType<{ className?: string }>
-  loading?: boolean
-  variant?: StatVariant
-  showPulse?: boolean
-  tooltip?: string
-}
-
-const variantStyles: Record<
-  StatVariant,
-  {
-    icon: string
-    accent: string
-  }
-> = {
-  default: {
-    icon: 'text-muted-foreground',
-    accent: 'bg-status-neutral/40',
-  },
-  blue: {
-    icon: 'text-status-active',
-    accent: 'bg-status-active',
-  },
-  green: {
-    icon: 'text-status-success',
-    accent: 'bg-status-success',
-  },
-  orange: {
-    icon: 'text-status-delayed',
-    accent: 'bg-status-delayed',
-  },
-  red: {
-    icon: 'text-status-danger',
-    accent: 'bg-status-danger',
-  },
-  violet: {
-    icon: 'text-status-priority',
-    accent: 'bg-status-priority',
-  },
-}
-
-function StatCard({
-  title,
-  value,
-  icon: Icon,
-  loading,
-  variant = 'default',
-  showPulse,
-  tooltip,
-}: StatCardProps) {
-  const styles = variantStyles[variant]
-
-  const cardContent = (
-    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
-      <span className={cn('absolute inset-x-0 top-0 h-0.5', styles.accent)} aria-hidden="true" />
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 p-4 pb-2">
-        <CardTitle className="eyebrow">{title}</CardTitle>
-        <div className="relative">
-          <Icon className={cn('h-4 w-4', styles.icon)} />
-          {showPulse && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-active opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-status-active" />
-            </span>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="p-4 pt-0">
-        {loading ? (
-          <Skeleton className="h-8 w-20" />
-        ) : (
-          <div className="font-mono text-2xl font-semibold tracking-tight tabular-nums">
-            {formatNumber(value)}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-
-  if (tooltip) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>{cardContent}</TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-    )
-  }
-
-  return cardContent
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-muted/20 py-16">
-      <div className="rounded-full bg-muted p-4 mb-4">
-        <Zap className="h-8 w-8 text-muted-foreground" />
-      </div>
-      <h3 className="text-lg font-semibold mb-1">No queues found</h3>
-      <p className="text-sm text-muted-foreground text-center max-w-md">
-        No BullMQ queues were detected. Make sure your Redis connection is configured correctly and
-        that you have created some queues.
-      </p>
+              {discoveryRunning ? 'Discovering…' : 'Discover queues'}
+            </Button>
+          }
+        />
+      ) : (
+        <QueueTable
+          queues={queues}
+          page={data?.page ?? 1}
+          totalPages={data?.totalPages ?? 1}
+          total={data?.total ?? 0}
+          isPlaceholderData={isPlaceholderData}
+          onPageChange={setPage}
+          sortBy={sortBy}
+          sortOrder={sortOrder}
+          onSortChange={handleSortChange}
+          search={q}
+          onSearchChange={handleSearchChange}
+          statusFilter={status}
+          onStatusFilterChange={handleStatusFilterChange}
+          onSaveDefaultView={isCurrentViewSaved ? undefined : handleSaveDefaultView}
+        />
+      )}
     </div>
   )
 }

@@ -24,6 +24,13 @@ interface RetryCountdownProps {
   className?: string
   /** Compact display mode */
   compact?: boolean
+  /**
+   * `value` renders only the remaining time ("4m 12s") for use inside a metric cell,
+   * falling back to `fallback` when no countdown applies.
+   */
+  variant?: 'banner' | 'value'
+  /** Shown by the `value` variant when there is nothing to count down to. */
+  fallback?: React.ReactNode
   /** Job creation timestamp (ms) - used for delayed job countdown */
   timestamp?: number
   /** Job delay in milliseconds - used for delayed job countdown */
@@ -83,6 +90,8 @@ export function RetryCountdown({
   status,
   className,
   compact = false,
+  variant = 'banner',
+  fallback = null,
   timestamp,
   delay,
 }: RetryCountdownProps) {
@@ -150,7 +159,18 @@ export function RetryCountdown({
   ])
 
   if (!shouldShowCountdown || timeRemaining === null) {
-    return null
+    return variant === 'value' ? fallback : null
+  }
+
+  if (variant === 'value') {
+    return (
+      <span
+        className={className}
+        title={isRetryMode ? 'Until the next retry' : 'Until this job runs'}
+      >
+        {formatTimeRemaining(timeRemaining)}
+      </span>
+    )
   }
 
   // Determine display text based on mode
@@ -176,12 +196,12 @@ export function RetryCountdown({
     return (
       <div
         className={cn(
-          'inline-flex items-center gap-1.5 text-xs font-medium',
+          'inline-flex items-center gap-1.5 font-mono text-xs font-medium tabular-nums',
           timeRemaining === 0 ? 'text-status-success' : 'text-status-delayed',
           className
         )}
       >
-        <Timer className="h-3 w-3" />
+        <Timer className="h-3 w-3" aria-hidden />
         <span>{getCompactText()}</span>
       </div>
     )
@@ -190,23 +210,23 @@ export function RetryCountdown({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-md px-3 py-2',
+        'flex items-center gap-2 rounded-md border px-3 py-2',
         timeRemaining === 0
-          ? 'bg-status-success/10 text-status-success border border-status-success/20'
-          : 'bg-status-delayed/10 text-status-delayed border border-status-delayed/20',
+          ? 'border-status-success/30 bg-status-success/10 text-status-success'
+          : 'border-status-delayed/30 bg-status-delayed/10 text-status-delayed',
         className
       )}
     >
-      <Timer className="h-4 w-4 shrink-0" />
-      <div className="text-sm">
+      <Timer className="h-4 w-4 shrink-0" aria-hidden />
+      <div className="text-[13px] tabular-nums">
         {timeRemaining === 0 ? (
           <span className="font-medium">{isRetryMode ? 'Retrying now...' : 'Running now...'}</span>
         ) : (
           <>
             <span className="font-medium">{getDisplayText()}</span>
             {isRetryMode && (
-              <span className="text-muted-foreground ml-2">
-                (attempt {attemptsMade + 1} of {maxAttempts})
+              <span className="ml-2 text-muted-foreground">
+                attempt {attemptsMade + 1} of {maxAttempts}
               </span>
             )}
           </>

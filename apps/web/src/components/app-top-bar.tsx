@@ -1,16 +1,17 @@
 import { Menu, MoreHorizontal } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from 'react'
+import { FullscreenToggle } from '@/components/fullscreen-toggle'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { FullscreenToggle } from '@/components/fullscreen-toggle'
 import { useIsElectronShell } from '@/hooks/use-electron-shell'
 import { cn } from '@/lib/utils'
 
-export const APP_TOP_BAR_HEIGHT_CLASS = 'h-14'
+/** Shared by the top bar and the sidebar's first row so their bottom edges align. */
+export const APP_TOP_BAR_HEIGHT_CLASS = 'h-12'
 
 export interface AppTopBarConfig {
   left?: React.ReactNode
@@ -100,14 +101,14 @@ export function AppTopBar({
   return (
     <header
       className={cn(
-        `${APP_TOP_BAR_HEIGHT_CLASS} shrink-0 border-b border-border/80 bg-background/90 backdrop-blur supports-backdrop-filter:bg-background/75`,
+        `${APP_TOP_BAR_HEIGHT_CLASS} shrink-0 border-b bg-background`,
         isElectronShell && 'app-region-drag',
         className
       )}
     >
       <div
         className={cn(
-          'flex h-full items-center justify-between gap-2 px-4 md:px-6',
+          'flex h-full items-center justify-between gap-3 px-4 md:px-5',
           isElectronShell && 'pointer-events-none'
         )}
       >
@@ -122,19 +123,29 @@ export function AppTopBar({
             variant="ghost"
             size="icon"
             onClick={onOpenMobileNav}
-            className={cn('md:hidden', isElectronShell && 'pointer-events-auto app-region-no-drag')}
+            className={cn(
+              '-ml-1.5 md:hidden',
+              isElectronShell && 'pointer-events-auto app-region-no-drag'
+            )}
             aria-label="Open navigation menu"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-4 w-4" />
           </Button>
-          <div className={cn('min-w-0', isElectronShell && 'pointer-events-none')}>
+          <div
+            className={cn(
+              'min-w-0',
+              // Links and controls in the title stay clickable inside the drag region.
+              isElectronShell &&
+                '[&_a]:pointer-events-auto [&_a]:[-webkit-app-region:no-drag] [&_button]:pointer-events-auto [&_button]:[-webkit-app-region:no-drag]'
+            )}
+          >
             {left ?? <div className="h-6" />}
           </div>
         </div>
 
         <div
           className={cn(
-            'ml-auto hidden items-center gap-1.5 md:flex',
+            'ml-auto hidden items-center gap-2 md:flex',
             isElectronShell && 'pointer-events-auto app-region-no-drag'
           )}
         >
@@ -153,7 +164,7 @@ export function AppTopBar({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Open page actions">
-                  <MoreHorizontal className="h-5 w-5" />
+                  <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">

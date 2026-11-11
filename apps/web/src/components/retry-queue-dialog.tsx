@@ -10,13 +10,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
 import {
   RETRY_QUEUE_STATUSES,
   type RetryQueueStatus,
   type RetryQueueStatusOption,
   useRetryJobs,
 } from '@/hooks/use-queues'
+import { cn } from '@/lib/utils'
+
+const CHECKBOX_CLASS =
+  'h-3.5 w-3.5 shrink-0 cursor-pointer accent-foreground disabled:cursor-not-allowed'
 
 interface QueueJobCounts {
   failed: number
@@ -108,116 +111,96 @@ export function RetryQueueDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px]">
+      <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <RefreshCw className="h-5 w-5" />
-            Retry Queue Jobs
-          </DialogTitle>
-          <DialogDescription>
-            Retry all jobs for the selected statuses. This is useful for quickly requeuing large
-            batches.
+          <DialogTitle>Retry queue jobs</DialogTitle>
+          <DialogDescription className="text-[13px] leading-5">
+            Re-enqueue every job in the selected statuses on{' '}
+            <code className="break-all rounded-[4px] bg-muted px-1 py-px font-mono text-xs text-foreground">
+              {queueName}
+            </code>
+            .
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          <div className="rounded-lg border bg-muted/20 p-4">
-            <p className="text-sm text-muted-foreground mb-2">Queue:</p>
-            <p className="font-mono font-semibold break-all">{queueName}</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Retryable jobs detected:{' '}
-              <span className="font-semibold">{totalRetryableJobs.toLocaleString()}</span>
-            </p>
-          </div>
+        <fieldset className="space-y-1.5">
+          <legend className="mb-1.5 text-[13px] font-medium leading-none">Statuses to retry</legend>
 
-          <div className="space-y-3">
-            <Label className="text-sm font-medium">Select statuses to retry</Label>
-
+          <div className="grid gap-px overflow-hidden rounded-md border bg-border sm:grid-cols-2">
             <label
               htmlFor="retry-all-jobs"
-              className="flex items-center justify-between rounded-md border px-3 py-2 cursor-pointer"
+              className="flex h-9 cursor-pointer items-center gap-2.5 bg-card px-3 text-[13px] transition-colors hover:bg-muted/60 sm:col-span-2"
             >
-              <span className="text-sm font-medium">All retryable jobs</span>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground">
-                  {totalRetryableJobs.toLocaleString()}
-                </span>
-                <input
-                  id="retry-all-jobs"
-                  type="checkbox"
-                  checked={retryAll}
-                  onChange={(e) => {
-                    setRetryAll(e.target.checked)
-                    if (e.target.checked) {
-                      setSelectedStatuses(new Set())
-                    }
-                  }}
-                  className="rounded border-gray-300"
-                />
-              </div>
+              <input
+                id="retry-all-jobs"
+                type="checkbox"
+                checked={retryAll}
+                onChange={(e) => {
+                  setRetryAll(e.target.checked)
+                  if (e.target.checked) {
+                    setSelectedStatuses(new Set())
+                  }
+                }}
+                className={CHECKBOX_CLASS}
+              />
+              <span className="font-medium">All retryable jobs</span>
+              <span className="ml-auto font-mono text-xs tabular-nums text-muted-foreground">
+                {totalRetryableJobs.toLocaleString()}
+              </span>
             </label>
 
-            <div className="grid gap-2 sm:grid-cols-2">
-              {RETRY_QUEUE_STATUSES.map((status) => (
-                <label
-                  key={status}
-                  htmlFor={`retry-status-${status}`}
-                  className={`flex items-center justify-between rounded-md border px-3 py-2 ${
-                    retryAll ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'
-                  }`}
+            {RETRY_QUEUE_STATUSES.map((status) => (
+              <label
+                key={status}
+                htmlFor={`retry-status-${status}`}
+                className={cn(
+                  'flex h-9 items-center gap-2.5 bg-card px-3 text-[13px] transition-colors',
+                  retryAll
+                    ? 'cursor-not-allowed text-muted-foreground'
+                    : 'cursor-pointer hover:bg-muted/60'
+                )}
+              >
+                <input
+                  id={`retry-status-${status}`}
+                  type="checkbox"
+                  checked={retryAll || selectedStatuses.has(status)}
+                  onChange={() => toggleStatus(status)}
+                  disabled={retryAll}
+                  className={CHECKBOX_CLASS}
+                />
+                <span>{STATUS_LABELS[status]}</span>
+                <span
+                  className={cn(
+                    'ml-auto font-mono text-xs tabular-nums',
+                    jobCounts[status] === 0 ? 'text-faint' : 'text-muted-foreground'
+                  )}
                 >
-                  <span className="text-sm">{STATUS_LABELS[status]}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">
-                      {jobCounts[status].toLocaleString()}
-                    </span>
-                    <input
-                      id={`retry-status-${status}`}
-                      type="checkbox"
-                      checked={selectedStatuses.has(status)}
-                      onChange={() => toggleStatus(status)}
-                      disabled={retryAll}
-                      className="rounded border-gray-300"
-                    />
-                  </div>
-                </label>
-              ))}
-            </div>
-
-            {!hasStatusSelection && (
-              <p className="text-xs text-muted-foreground">
-                Select one or more statuses (or All retryable jobs) to continue.
-              </p>
-            )}
-            {hasStatusSelection && selectedJobsEstimate > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Estimated jobs to retry: {selectedJobsEstimate.toLocaleString()}
-              </p>
-            )}
-            {hasStatusSelection && selectedJobsEstimate === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No jobs currently match the selected statuses.
-              </p>
-            )}
+                  {jobCounts[status].toLocaleString()}
+                </span>
+              </label>
+            ))}
           </div>
-        </div>
 
-        <DialogFooter>
+          <p className="pt-0.5 text-xs text-muted-foreground">
+            {!hasStatusSelection
+              ? 'Select one or more statuses (or All retryable jobs) to continue.'
+              : selectedJobsEstimate > 0
+                ? `Estimated jobs to retry: ${selectedJobsEstimate.toLocaleString()}`
+                : 'No jobs currently match the selected statuses.'}
+          </p>
+        </fieldset>
+
+        <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isRetrying}>
             Cancel
           </Button>
           <Button onClick={handleRetry} disabled={!canRetry || isRetrying}>
             {isRetrying ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Retrying...
-              </>
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Retry Jobs
-              </>
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
             )}
+            {isRetrying ? 'Retrying…' : 'Retry jobs'}
           </Button>
         </DialogFooter>
       </DialogContent>

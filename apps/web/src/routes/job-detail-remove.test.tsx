@@ -62,7 +62,8 @@ vi.mock('@/components/invoke-job-dialog', () => ({
 }))
 
 vi.mock('@/components/json-viewer', () => ({
-  JsonViewer: () => <div>json</div>,
+  // The payload viewer hosts the Edit Payload control in its header.
+  JsonViewer: ({ actions }: { actions?: React.ReactNode }) => <div>json{actions}</div>,
 }))
 
 vi.mock('@/components/queue-name-tag', () => ({

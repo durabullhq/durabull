@@ -106,19 +106,17 @@ describe('RedisHealthObservability', () => {
   it('shows current resource health, gaps, staleness, and alert thresholds', async () => {
     render(<RedisHealthObservability data={createResponse()} />)
 
-    expect(screen.getByRole('heading', { name: 'Redis Resource Health' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Redis resource health' })).toBeInTheDocument()
     expect(screen.getByText('80.0%')).toBeInTheDocument()
     expect(screen.getByText('42.5%')).toBeInTheDocument()
     expect(screen.getByText('Data stale')).toBeInTheDocument()
     expect(screen.getByText('66.7% coverage · 1 gap')).toBeInTheDocument()
     expect(screen.getByText('Redis memory pressure ≥ 75%')).toBeInTheDocument()
-    // Charts are code-split behind React.lazy, so they arrive after the summary cards.
-    expect(
-      await screen.findByRole('heading', { name: 'Utilization Over Time' })
-    ).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Memory Footprint' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Client Pressure' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Memory Pressure Signals' })).toBeInTheDocument()
+    // Charts are code-split behind React.lazy, so they arrive after the metric strip.
+    expect(await screen.findByRole('heading', { name: 'Utilization' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Memory footprint' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Client pressure' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Memory pressure' })).toBeInTheDocument()
   })
 
   it('keeps a Redis telemetry failure local to the observability panel', () => {
