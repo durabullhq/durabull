@@ -7,7 +7,8 @@ test('marketing links to the nested catalog and fixtures only control /ui/', asy
   await page.goto('/ui/?path=/story/web-screens-connection-queue-detail--default')
   const preview = page.frameLocator('#storybook-preview-iframe')
   await expect(preview.locator('body')).toHaveClass(/sb-show-main/)
-  await expect(preview.getByRole('link', { name: 'job-1042', exact: true })).toBeVisible()
+  // Each job row is the link to its job.
+  await expect(preview.getByRole('link', { name: 'Open job job-1042', exact: true })).toBeVisible()
   const frame = page.frames().find((entry) => entry.url().includes('/ui/iframe.html'))!
   const scope = await frame.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready
