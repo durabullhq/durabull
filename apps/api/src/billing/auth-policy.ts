@@ -1,9 +1,9 @@
 import type { OrganizationPolicyHooks } from '@durabull/auth'
 import { LIVE_SUBSCRIPTION_STATUSES, type SubscriptionStatus } from '@durabull/billing'
-import { and, billingRepository, eq, getDb, member, sql } from '@durabull/dal'
+import { billingRepository, eq, getDb, isOwnerRole, member } from '@durabull/dal'
 import { APIError } from 'better-auth/api'
 import { getBillingConfig, isBillingEnabled, isEnforcedFor } from './config'
-import { assertCapacity } from './entitlements'
+import { assertCapacity, rebalanceCapacity } from './entitlements'
 import { BillingStateUnverifiedError, PlanLimitReachedError } from './errors'
 
 /** Abuse control: a person can own at most this many organizations on Cloud. */
@@ -54,6 +54,15 @@ export function createBillingOrganizationPolicy(): OrganizationPolicyHooks | und
         // needs no additional capacity, only that the reservation still fits.
         await assertCapacity(organizationId, 'members.reserved', 0)
       } catch (error) {
+        // The person accepting is not a member yet and cannot change the plan,
+        // so they get who to ask rather than an upgrade prompt.
+        if (error instanceof PlanLimitReachedError) {
+          throw new APIError('CONFLICT', {
+            message:
+              'This organization has more people than its plan includes, so the invitation cannot be accepted yet. It stays valid: ask the organization owner to free a seat or upgrade, then try again.',
+            code: 'invitation_seat_unavailable',
+          })
+        }
         toApiError(error)
       }
     },
@@ -93,15 +102,20 @@ export function createBillingOrganizationPolicy(): OrganizationPolicyHooks | und
       }
     },
 
+    async afterSeatFreed({ organizationId }) {
+      // The seat is already free; a paused member or invitation takes it.
+      await rebalanceCapacity(organizationId)
+    },
+
     async hasReachedOrganizationLimit(user) {
       // An abuse control, so it observes the same rollout as plan limits.
       if (getBillingConfig().enforcement !== 'on') return false
       const db = await getDb()
-      const [row] = await db
-        .select({ count: sql<number>`count(*)::int` })
+      const rows = await db
+        .select({ role: member.role })
         .from(member)
-        .where(and(eq(member.userId, user.id), eq(member.role, 'owner')))
-      return Number(row?.count ?? 0) >= MAX_OWNED_ORGANIZATIONS_PER_USER
+        .where(eq(member.userId, user.id))
+      return rows.filter((row) => isOwnerRole(row.role)).length >= MAX_OWNED_ORGANIZATIONS_PER_USER
     },
   }
 }

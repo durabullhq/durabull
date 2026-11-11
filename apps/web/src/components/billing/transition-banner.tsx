@@ -7,9 +7,21 @@ import { Link } from '@tanstack/react-router'
 import { CalendarClock, X } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { useBilling } from '@/hooks/use-billing'
+import { useEntitlement } from '@/hooks/use-entitlement'
 import { useActiveOrganization } from '@/hooks/use-organization'
 import { cn } from '@/lib/utils'
+
+/**
+ * Bottom-left, but beside the desktop sidebar rather than on top of it: the
+ * user menu lives in the sidebar's bottom corner and must stay reachable,
+ * above all while a banner cannot be dismissed.
+ */
+export const PLAN_BANNER_POSITION =
+  'fixed bottom-4 left-4 z-40 w-[calc(100vw-2rem)] max-w-sm md:left-64'
+
+/** The floating card both plan banners use. */
+export const PLAN_BANNER_SURFACE =
+  'rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg'
 
 function dismissalKey(orgSlug: string, deadline: string): string {
   return `durabull:transition-banner-dismissed:${orgSlug}:${deadline}`
@@ -30,16 +42,15 @@ function readDismissed(key: string): boolean {
  * other members are told to ask an owner. Dismissible until the final week.
  */
 export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
-  const { data: billing } = useBilling()
+  const { plan: billing } = useEntitlement()
   const { data: activeOrganization } = useActiveOrganization()
   // Scoped to the organization and deadline it was dismissed for.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null)
 
   // Billing follows the active organization, which switches after navigation;
   // until it matches this route the data may belong to the previous one.
-  const transition =
-    billing?.enabled && activeOrganization?.slug === orgSlug ? billing.transition : null
-  if (!billing?.enabled || !transition) return null
+  const transition = billing && activeOrganization?.slug === orgSlug ? billing.transition : null
+  if (!billing || !transition) return null
   const deadline = new Date(transition.deadline)
   const remainingMs = deadline.getTime() - Date.now()
   if (remainingMs <= 0) return null
@@ -63,7 +74,8 @@ export function TransitionBanner({ orgSlug }: { orgSlug: string }) {
       data-testid="transition-banner"
       className={cn(
         // Sits clear of the sidebar footer on desktop so it never covers the session menu.
-        'fixed bottom-4 left-4 z-40 w-[calc(100vw-2rem)] max-w-sm rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg md:left-64',
+        PLAN_BANNER_POSITION,
+        PLAN_BANNER_SURFACE,
         finalWeek && 'border-status-warning/40'
       )}
     >

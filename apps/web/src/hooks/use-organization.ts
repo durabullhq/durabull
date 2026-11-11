@@ -4,10 +4,12 @@ import {
   trackOrganizationCreated,
 } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
+import { isBillingErrorBody } from '@durabull/api-client/billing'
 import { organization } from '@durabull/auth/client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { api, handleRes, type InferResponseType } from '@/lib/api'
+import { ApiError, announceBillingDenial, api, handleRes, type InferResponseType } from '@/lib/api'
+import { PLAN_USAGE_META } from '@/lib/plan-usage'
 import { useAppMode } from './use-app-mode'
 import { useAuth } from './use-auth'
 
@@ -35,6 +37,26 @@ function handleAuthError(error: BetterAuthError | undefined, fallback: string): 
   }
 
   return error.message || fallback
+}
+
+/**
+ * The error to throw for a failed Better Auth organization call. Invitations
+ * go through the auth plugin rather than our API client, so a plan denial
+ * (the seat limit) is announced here: the global upgrade prompt explains it
+ * the same way as for every other limit, and the thrown ApiError lets the
+ * form skip its own copy of the message.
+ */
+function toAuthError(error: BetterAuthError | undefined, fallback: string): Error {
+  const message = handleAuthError(error, fallback)
+  if (isBillingErrorBody(error)) {
+    announceBillingDenial(error)
+    return new ApiError(
+      message,
+      error && 'status' in error ? Number(error.status) || 409 : 409,
+      error
+    )
+  }
+  return new Error(message)
 }
 
 /**
@@ -369,13 +391,14 @@ export function useAcceptInvitation() {
   const { isAuthless } = useAppMode()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (invitationId: string) => {
       if (isAuthless) {
         throw new Error('Invitations are disabled in authless mode.')
       }
       const result = await organization.acceptInvitation({ invitationId })
       if (result.error) {
-        throw new Error(handleAuthError(result.error, 'Failed to accept invitation'))
+        throw toAuthError(result.error, 'Failed to accept invitation')
       }
       return { ...result.data, invitationId }
     },
@@ -407,6 +430,7 @@ export function useRejectInvitation() {
   const { isAuthless } = useAppMode()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (invitationId: string) => {
       if (isAuthless) {
         throw new Error('Invitations are disabled in authless mode.')
@@ -461,13 +485,14 @@ export function useInviteMember() {
   const { isAuthless } = useAppMode()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (data: { email: string; role: MemberRole; organizationId: string }) => {
       if (isAuthless) {
         throw new Error('Team management is disabled in authless mode.')
       }
       const result = await organization.inviteMember(data)
       if (result.error) {
-        throw new Error(handleAuthError(result.error, 'Failed to invite member'))
+        throw toAuthError(result.error, 'Failed to invite member')
       }
       return { ...result.data, ...data }
     },
@@ -560,6 +585,7 @@ export function useRemoveMember() {
   const { isAuthless } = useAppMode()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (data: { memberIdOrEmail: string; organizationId?: string }) => {
       if (isAuthless) {
         throw new Error('Team management is disabled in authless mode.')
@@ -597,6 +623,7 @@ export function useCancelInvitation() {
   const { isAuthless } = useAppMode()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (invitationId: string) => {
       if (isAuthless) {
         throw new Error('Invitations are disabled in authless mode.')
@@ -640,7 +667,7 @@ export function useResendInvitation() {
         resend: true,
       })
       if (result.error) {
-        throw new Error(handleAuthError(result.error, 'Failed to resend invitation'))
+        throw toAuthError(result.error, 'Failed to resend invitation')
       }
       return { ...result.data, ...data }
     },

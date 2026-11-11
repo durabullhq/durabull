@@ -1,64 +1,49 @@
 import {
-  type BillingInterval,
   CAPACITY_LIMIT_KEYS,
-  type CapacityLimitKey,
   CLOUD_PRICING_URL,
-  effectiveMonthlyUsd,
-  FEATURE_LABELS,
-  type FeatureKey,
+  isPlanCode,
   LIMIT_LABELS,
-  type LimitKey,
-  PLAN_CODES,
   PLANS,
-  type PlanCode,
 } from '@durabull/api-client/billing'
+import { useParams } from '@tanstack/react-router'
 import {
   AlertTriangle,
   CalendarClock,
-  Check,
+  CheckCircle2,
   CreditCard,
+  Info,
   Loader2,
-  Minus,
   RefreshCw,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SettingsPage } from '@/components/settings/settings-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Panel, PanelHeader, SectionHeader } from '@/components/ui/section'
-import { segmentedItemClass } from '@/components/ui/segmented'
+import { Panel, PanelHeader } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   type EnabledBillingOverview,
+  type PortalRequest,
   useBilling,
   useCancelCheckout,
   useConfirmCheckout,
   useOpenBillingPortal,
   useRefreshBilling,
-  useSaveCapacityAllocation,
-  useStartCheckout,
 } from '@/hooks/use-billing'
+import { useActiveOrganization } from '@/hooks/use-organization'
 import { cn } from '@/lib/utils'
-
-const SALES_EMAIL = 'hello@durabull.io'
+import { AllocationCard } from './billing/allocation-card'
+import {
+  type BillingState,
+  describeBilling,
+  formatBillingDate,
+  paymentFixRequest,
+} from './billing/billing-state'
+import { InvoicesCard } from './billing/invoices-card'
+import { Notice } from './billing/notice'
+import { PlansCard } from './billing/plans-card'
 
 const SOURCE_LABELS: Record<
   string,
@@ -68,22 +53,10 @@ const SOURCE_LABELS: Record<
   trial: { label: 'Trial', variant: 'info' },
   payment_grace: { label: 'Payment issue', variant: 'warning' },
   pending_upgrade: { label: 'Upgrade pending payment', variant: 'warning' },
-  migration_grant: { label: 'Beta transition', variant: 'neutral' },
+  migration_grant: { label: 'Beta access', variant: 'neutral' },
   override: { label: 'Arranged by Durabull', variant: 'neutral' },
   degraded: { label: 'Unverified', variant: 'warning' },
   free: { label: 'Free', variant: 'neutral' },
-}
-
-const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
-
-function formatDate(value: string | null | undefined): string | null {
-  if (!value) return null
-  return DATE_FORMAT.format(new Date(value))
-}
-
-function formatLimit(value: number | null, unit: string): string {
-  if (value === null) return 'Unlimited'
-  return unit ? `${value} ${unit}` : String(value)
 }
 
 function formatHistoryDays(days: number | null): string {
@@ -95,9 +68,13 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-type CheckoutReturnState = 'confirming' | 'canceled' | null
+/**
+ * What the return from hosted Checkout means for the person looking at the
+ * page. Access only ever changes from reconciled Stripe state; this is the
+ * explanation of where that stands.
+ */
+type CheckoutReturnState = 'confirming' | 'confirmed' | 'unconfirmed' | 'canceled' | null
 
-/** What the hosted Checkout redirect says about the purchase, read once on mount. */
 function readCheckoutReturn(): CheckoutReturnState {
   if (typeof window === 'undefined') return null
   const params = new URLSearchParams(window.location.search)
@@ -108,9 +85,15 @@ function readCheckoutReturn(): CheckoutReturnState {
 }
 
 export function BillingSettingsPage() {
-  const { data, isLoading, error } = useBilling()
+  const { data, isLoading, error, refetch, isFetching } = useBilling()
+  const { data: activeOrganization } = useActiveOrganization()
+  const { orgSlug } = useParams({ strict: false }) as { orgSlug?: string }
+  // Billing follows the active organization, which switches just after
+  // navigation. Until it matches this route the data may be another
+  // organization's, and a Stripe return must not act on it.
+  const settled = !orgSlug || !activeOrganization || activeOrganization.slug === orgSlug
 
-  if (isLoading) {
+  if (isLoading || !settled) {
     return (
       <div className="max-w-4xl space-y-4" data-testid="billing-loading">
         <Skeleton className="h-10 w-64" />
@@ -128,6 +111,17 @@ export function BillingSettingsPage() {
         title="Billing is unavailable"
         description={errorMessage(error, 'Billing information is unavailable right now.')}
         className="max-w-4xl"
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            Try again
+          </Button>
+        }
       />
     )
   }
@@ -176,8 +170,22 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
   const confirmCheckout = useConfirmCheckout()
   const cancelCheckout = useCancelCheckout()
   const refreshBilling = useRefreshBilling()
+  const openPortal = useOpenBillingPortal()
   const [returnState, setReturnState] = useState<CheckoutReturnState>(readCheckoutReturn)
   const handledReturn = useRef(false)
+  // Kept after the URL is cleaned up, so "Check again" can retry the same session.
+  const checkoutSession = useRef<string | null>(null)
+  const state = describeBilling(overview)
+
+  // Asks the server to confirm the session with Stripe and says what it means.
+  const confirmReturn = useCallback(
+    async (sessionId: string): Promise<CheckoutReturnState> => {
+      const result = await confirmCheckout.mutateAsync(sessionId).catch(() => null)
+      if (result?.status === 'complete') return 'confirmed'
+      return result?.status === 'expired' ? 'canceled' : 'unconfirmed'
+    },
+    [confirmCheckout]
+  )
 
   // The return from hosted Checkout only starts a server-side confirmation;
   // access changes once Stripe state is reconciled.
@@ -187,18 +195,23 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
     const params = new URLSearchParams(window.location.search)
     const checkout = params.get('checkout')
     const sessionId = params.get('session_id')
-    // Leaving Checkout without paying closes the attempt on the server.
-    if (checkout === 'canceled' && overview.canManageBilling) {
-      void cancelCheckout.mutateAsync().catch(() => {})
+    if (checkout === 'success' && sessionId) checkoutSession.current = sessionId
+    // What the return turned out to mean, once the server has checked with
+    // Stripe. mutateAsync settles independently of the observer, so a
+    // StrictMode remount cannot leave the page stuck in the confirming state.
+    const settleReturn = async (): Promise<CheckoutReturnState | undefined> => {
+      // Leaving Checkout without paying closes the attempt on the server. If
+      // the payment went through after all, say so rather than "canceled".
+      if (checkout === 'canceled' && overview.canManageBilling) {
+        const result = await cancelCheckout.mutateAsync().catch(() => null)
+        return result?.status === 'complete' ? 'confirmed' : undefined
+      }
+      if (checkout === 'success' && sessionId) return confirmReturn(sessionId)
+      return undefined
     }
-    if (checkout === 'success' && sessionId) {
-      // mutateAsync settles independently of the observer, so a StrictMode
-      // remount cannot leave the page stuck in the confirming state.
-      void confirmCheckout
-        .mutateAsync(sessionId)
-        .catch(() => {})
-        .finally(() => setReturnState(null))
-    }
+    void settleReturn().then((next) => {
+      if (next) setReturnState(next)
+    })
     // Plan changes made in the hosted Portal are reconciled on return, so
     // the page does not depend on webhook delivery timing.
     if (params.get('portal') && overview.canManageBilling) {
@@ -207,18 +220,79 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
     if (checkout || params.get('portal')) {
       window.history.replaceState(null, '', window.location.pathname)
     }
-  }, [confirmCheckout, cancelCheckout, refreshBilling, overview.canManageBilling])
+  }, [confirmReturn, cancelCheckout, refreshBilling, overview.canManageBilling])
 
-  // Only the person returning from Checkout waits for confirmation; the server
-  // confirms that session with Stripe directly.
-  const confirming = returnState === 'confirming'
+  const handlePortal = (request: PortalRequest = { intent: 'manage' }) =>
+    openPortal.mutate(request, {
+      onError: (error) =>
+        toast.error('Could not open billing', { description: errorMessage(error, '') }),
+    })
+  const handleRefresh = () =>
+    refreshBilling.mutate(undefined, {
+      onSuccess: () => toast.success('Billing status is up to date'),
+      onError: (error) =>
+        toast.error('Could not refresh billing', { description: errorMessage(error, '') }),
+    })
+  // Retry the same checkout session, so the notice changes once Stripe confirms.
+  const handleCheckAgain = () => {
+    const sessionId = checkoutSession.current
+    if (!sessionId) {
+      handleRefresh()
+      return
+    }
+    void confirmReturn(sessionId).then(setReturnState)
+  }
+  const portalBusy = openPortal.isPending
+  const showInvoices = overview.canManageBilling && overview.hasBillingAccount
 
   return (
-    <PlanSummary overview={overview}>
-      {confirming ? (
+    <PlanSummary
+      overview={overview}
+      state={state}
+      portalBusy={portalBusy}
+      onPortal={handlePortal}
+      onRefresh={handleRefresh}
+      refreshing={refreshBilling.isPending}
+    >
+      {returnState === 'confirming' ? (
         <Notice tone="info" icon={Loader2} spin title="Confirming your purchase">
           We are waiting for Stripe to confirm payment. Your plan updates here automatically; you
           can leave this page.
+        </Notice>
+      ) : null}
+      {returnState === 'confirmed' ? (
+        <Notice
+          tone="success"
+          icon={CheckCircle2}
+          title="Purchase complete"
+          testId="checkout-confirmed"
+        >
+          Thank you. Your {overview.planName} plan is active
+          {showInvoices ? ', and your receipt is listed under Invoices below.' : '.'}
+        </Notice>
+      ) : null}
+      {returnState === 'unconfirmed' ? (
+        <Notice
+          tone="warning"
+          icon={AlertTriangle}
+          title="We could not confirm the purchase yet"
+          testId="checkout-unconfirmed"
+          action={
+            overview.canManageBilling ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={refreshBilling.isPending || confirmCheckout.isPending}
+                onClick={handleCheckAgain}
+              >
+                Check again
+              </Button>
+            ) : null
+          }
+        >
+          If you completed payment, your plan appears here within a minute. You will not be charged
+          twice: starting again reuses the same checkout.
         </Notice>
       ) : null}
       {returnState === 'canceled' ? (
@@ -226,133 +300,271 @@ function CloudBilling({ overview }: { overview: EnabledBillingOverview }) {
           Nothing was charged and your plan is unchanged.
         </Notice>
       ) : null}
-      <BillingNotices overview={overview} />
+      <BillingNotices
+        overview={overview}
+        state={state}
+        portalBusy={portalBusy}
+        onPortal={handlePortal}
+        onRefresh={handleRefresh}
+        refreshing={refreshBilling.isPending}
+      />
       <UsagePanel overview={overview} />
-      {overview.allocation ? <AllocationPanel overview={overview} /> : null}
-      <PlansSection overview={overview} />
+      {overview.allocation ? <AllocationCard overview={overview} /> : null}
+      <PlansCard
+        overview={overview}
+        state={state}
+        portalBusy={portalBusy}
+        onPortal={handlePortal}
+      />
+      {showInvoices ? <InvoicesCard onOpenPortal={() => handlePortal()} /> : null}
     </PlanSummary>
   )
 }
 
-function Notice({
-  tone,
-  icon: Icon,
-  title,
-  children,
-  spin,
-}: {
-  tone: 'info' | 'warning' | 'neutral'
-  icon: React.ComponentType<{ className?: string }>
-  title: string
-  children: React.ReactNode
-  spin?: boolean
-}) {
-  return (
-    <div
-      aria-live="polite"
-      className={cn(
-        'flex gap-3 rounded-lg border px-4 py-3 text-[13px]',
-        tone === 'warning' && 'border-status-warning/30 bg-status-warning/10',
-        tone === 'info' && 'border-status-active/30 bg-status-active/10',
-        tone === 'neutral' && 'bg-muted/40'
-      )}
-    >
-      <Icon
-        className={cn(
-          'mt-0.5 h-4 w-4 shrink-0',
-          tone === 'warning' && 'text-status-warning',
-          tone === 'info' && 'text-status-active',
-          tone === 'neutral' && 'text-muted-foreground',
-          spin && 'animate-spin'
-        )}
-      />
-      <div className="space-y-0.5">
-        <div className="font-medium">{title}</div>
-        <div className="leading-5 text-muted-foreground">{children}</div>
-      </div>
-    </div>
-  )
+interface ActionProps {
+  overview: EnabledBillingOverview
+  state: BillingState
+  portalBusy: boolean
+  onPortal: (request?: PortalRequest) => void
+  onRefresh: () => void
+  refreshing: boolean
 }
 
-function BillingNotices({ overview }: { overview: EnabledBillingOverview }) {
+function BillingNotices({
+  overview,
+  state,
+  portalBusy,
+  onPortal,
+  onRefresh,
+  refreshing,
+}: ActionProps) {
   const notices: React.ReactNode[] = []
-  const grace = formatDate(overview.graceExpiresAt)
-  if (overview.notices.includes('payment_failed')) {
+  const owner = overview.canManageBilling
+  const canOpenPortal = owner && overview.hasBillingAccount
+  const grace = formatBillingDate(overview.graceExpiresAt)
+  const subscribedName = state.subscribedPlan ? PLANS[state.subscribedPlan].name : 'paid'
+  const portalButton = (label: string, request: PortalRequest, primary = true) =>
+    canOpenPortal ? (
+      <Button
+        type="button"
+        size="sm"
+        variant={primary ? 'default' : 'outline'}
+        disabled={portalBusy}
+        onClick={() => onPortal(request)}
+      >
+        {label}
+      </Button>
+    ) : null
+
+  if (state.standing === 'overdue_grace') {
+    notices.push(
+      <Notice
+        key="payment"
+        tone="warning"
+        icon={AlertTriangle}
+        title="Payment failed"
+        testId="notice-payment-failed"
+        action={portalButton('Update payment method', paymentFixRequest(state))}
+      >
+        {grace
+          ? `Your ${overview.planName} access continues until ${grace}. `
+          : `Your ${overview.planName} access continues for now. `}
+        {owner
+          ? 'Update your payment method to keep it; Stripe retries the charge automatically.'
+          : 'Ask your organization owner to update the payment method.'}
+      </Notice>
+    )
+  } else if (state.standing === 'overdue_lapsed') {
+    notices.push(
+      <Notice
+        key="payment"
+        tone="warning"
+        icon={AlertTriangle}
+        title="Payment failed"
+        testId="notice-payment-failed"
+        action={portalButton('Fix payment', paymentFixRequest(state))}
+      >
+        Your {subscribedName} subscription has an unpaid invoice, so the organization is on Free
+        until it is paid. Nothing was deleted.{' '}
+        {owner
+          ? 'Pay the invoice or update your payment method to restore paid features.'
+          : 'Ask your organization owner to update the payment method.'}
+      </Notice>
+    )
+  } else if (overview.notices.includes('payment_failed')) {
     notices.push(
       <Notice key="payment" tone="warning" icon={AlertTriangle} title="Payment failed">
-        {grace
-          ? `Your ${overview.planName} access continues until ${grace}. ${
-              overview.canManageBilling
-                ? 'Update your payment method in Manage billing to keep it.'
-                : 'Ask your organization owner to update the payment method.'
-            }`
-          : overview.canManageBilling
-            ? 'Update your payment method in Manage billing to restore paid features.'
-            : 'Ask your organization owner to update the payment method to restore paid features.'}
+        {owner
+          ? 'Update your payment method in Manage billing to restore paid features.'
+          : 'Ask your organization owner to update the payment method to restore paid features.'}
       </Notice>
     )
   }
-  if (overview.notices.includes('payment_pending')) {
+  if (state.standing === 'incomplete') {
     notices.push(
-      <Notice key="pending" tone="warning" icon={AlertTriangle} title="Payment pending">
-        The latest plan change has not been paid yet. Your previous plan stays active until payment
-        is confirmed.
+      <Notice
+        key="incomplete"
+        tone="warning"
+        icon={AlertTriangle}
+        title="First payment not completed"
+        action={portalButton('Complete payment', paymentFixRequest(state))}
+      >
+        The {subscribedName} subscription starts once its first payment goes through. If it is not
+        completed within a day it expires, nothing is charged and you can start again.
+      </Notice>
+    )
+  } else if (overview.notices.includes('payment_pending')) {
+    notices.push(
+      overview.source === 'trial' ? (
+        <Notice key="pending" tone="info" icon={Info} title="Collecting your first payment">
+          Your trial has ended and Stripe is collecting the first payment. Your plan stays active in
+          the meantime.
+        </Notice>
+      ) : (
+        <Notice key="pending" tone="warning" icon={AlertTriangle} title="Payment pending">
+          The latest plan change has not been paid yet. Your previous plan stays active until
+          payment is confirmed.
+        </Notice>
+      )
+    )
+  }
+  if (state.standing === 'paused') {
+    notices.push(
+      <Notice
+        key="paused"
+        tone="warning"
+        icon={AlertTriangle}
+        title="Subscription paused"
+        action={portalButton('Manage billing', { intent: 'manage' })}
+      >
+        The {subscribedName} subscription is paused, so the organization is on Free until it
+        resumes.
       </Notice>
     )
   }
-  if (overview.notices.includes('trial_ending') && overview.subscription?.trialEnd) {
+  if (overview.notices.includes('trial_ending') && state.subscription?.trialEnd) {
     notices.push(
-      <Notice key="trial" tone="info" icon={CalendarClock} title="Your trial is ending">
-        The Business trial ends on {formatDate(overview.subscription.trialEnd)}. Add a payment
-        method in Manage billing to continue; otherwise the organization returns to Free.
+      <Notice
+        key="trial"
+        tone="info"
+        icon={CalendarClock}
+        title="Your trial is ending"
+        action={portalButton('Add payment method', { intent: 'payment_method' })}
+      >
+        The {subscribedName} trial ends on {formatBillingDate(state.subscription.trialEnd)}. With a
+        payment method on file it continues as a paid plan; otherwise the organization returns to
+        Free and nothing is charged.
       </Notice>
     )
   }
-  if (overview.notices.includes('cancellation_scheduled') && overview.subscription) {
+  if (overview.notices.includes('cancellation_scheduled') && state.subscription) {
     notices.push(
-      <Notice key="cancel" tone="neutral" icon={CreditCard} title="Cancellation scheduled">
+      <Notice
+        key="cancel"
+        tone="neutral"
+        icon={CreditCard}
+        title="Cancellation scheduled"
+        action={portalButton('Keep my plan', { intent: 'manage' }, false)}
+      >
         {overview.planName} stays active until{' '}
-        {formatDate(overview.subscription.cancelAt ?? overview.subscription.currentPeriodEnd)}, then
-        the organization moves to Free. Your Redis data and queues are never changed.
+        {formatBillingDate(state.subscription.cancelAt ?? state.subscription.currentPeriodEnd)},
+        then the organization moves to Free. Your Redis data and queues are never changed.
+        {owner ? ' Changed your mind? You can keep the plan until then.' : ''}
+      </Notice>
+    )
+  }
+  if (overview.notices.includes('payment_collection_paused')) {
+    notices.push(
+      <Notice key="collection" tone="neutral" icon={Info} title="Payment collection is paused">
+        Durabull has paused charges for this subscription. Your plan stays active.
+      </Notice>
+    )
+  }
+  if (overview.notices.includes('unknown_price')) {
+    notices.push(
+      <Notice key="price" tone="warning" icon={AlertTriangle} title="We are checking your plan">
+        Your subscription uses a price we could not match to a plan. Our team has been alerted and
+        will correct it; contact support if paid features are missing.
       </Notice>
     )
   }
   if (overview.degraded) {
     notices.push(
-      <Notice key="degraded" tone="warning" icon={AlertTriangle} title="Billing status unverified">
+      <Notice
+        key="degraded"
+        tone="warning"
+        icon={AlertTriangle}
+        title="Billing status unverified"
+        action={
+          owner ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={refreshing}
+              onClick={onRefresh}
+            >
+              Check again
+            </Button>
+          ) : null
+        }
+      >
         We could not confirm this subscription recently. Existing access continues while we recover;
-        plan changes may be delayed.
+        adding resources is paused until it is confirmed.
       </Notice>
     )
   }
   if (overview.migrationGrantExpiresAt) {
+    const until = formatBillingDate(overview.migrationGrantExpiresAt)
     const exceeded = overview.freePlanExceeded
+    const chosen = state.standing === 'active' || state.standing === 'trialing'
+    const proposed = isPlanCode(overview.proposedPlanCode) ? overview.proposedPlanCode : 'free'
     notices.push(
-      <Notice
-        key="grant"
-        tone="info"
-        icon={CalendarClock}
-        title="Durabull Cloud plans are starting"
-      >
-        Your current usage stays available until {formatDate(overview.migrationGrantExpiresAt)}.
-        Based on today’s usage we suggest the {PLANS[overview.proposedPlanCode as PlanCode].name}{' '}
-        plan.
-        {exceeded.length > 0
-          ? ` On Free, this organization would be above: ${exceeded
-              .map(
-                (e) => `${LIMIT_LABELS[e.limit].name.toLowerCase()} (${e.usage} of ${e.allowed})`
-              )
-              .join(', ')}.`
-          : ' Your usage fits the Free plan.'}
+      chosen ? (
+        <Notice
+          key="grant"
+          tone="info"
+          icon={CalendarClock}
+          title="You are set for the move to plans"
+        >
+          Everything you use today stays available until {until}. From then on your {subscribedName}{' '}
+          plan’s limits apply.
+        </Notice>
+      ) : (
+        <Notice
+          key="grant"
+          tone="info"
+          icon={CalendarClock}
+          title="Durabull Cloud plans are starting"
+        >
+          Your current usage stays available until {until}. Based on today’s usage we suggest the{' '}
+          {PLANS[proposed].name} plan.
+          {exceeded.length > 0
+            ? ` On Free, this organization would be above: ${exceeded
+                .map(
+                  (e) => `${LIMIT_LABELS[e.limit].name.toLowerCase()} (${e.usage} of ${e.allowed})`
+                )
+                .join(', ')}.`
+            : ' Your usage fits the Free plan.'}
+        </Notice>
+      )
+    )
+  }
+  if (!overview.enforced && overview.overLimit.length > 0 && !overview.migrationGrantExpiresAt) {
+    notices.push(
+      <Notice key="observed" tone="neutral" icon={Info} title="Plan limits are not applied yet">
+        Usage above a plan’s limits is shown for reference. Nothing is paused or blocked for this
+        organization at the moment.
       </Notice>
     )
   }
   if (overview.capacityAdjustmentExpiresAt) {
     notices.push(
       <Notice key="window" tone="warning" icon={AlertTriangle} title="Above your plan’s limits">
-        Existing resources stay enabled until {formatDate(overview.capacityAdjustmentExpiresAt)}.
-        Choose what stays enabled below, or upgrade. After that date the newest extra resources are
-        paused (never deleted).
+        Existing resources stay enabled until{' '}
+        {formatBillingDate(overview.capacityAdjustmentExpiresAt)}.
+        {owner ? ' Choose what stays enabled below, or upgrade.' : ''} After that date the newest
+        extra resources are paused (never deleted).
       </Notice>
     )
   }
@@ -360,8 +572,8 @@ function BillingNotices({ overview }: { overview: EnabledBillingOverview }) {
     notices.push(
       <Notice key="suspended" tone="warning" icon={AlertTriangle} title="Some resources are paused">
         {overview.suspended.length} resource{overview.suspended.length === 1 ? ' is' : 's are'}{' '}
-        paused by your plan’s limits. Nothing was deleted; upgrade or change your selection to
-        restore them.
+        paused by your plan’s limits. Nothing was deleted; they come back when you upgrade, free up
+        room, or change the selection below.
       </Notice>
     )
   }
@@ -369,26 +581,50 @@ function BillingNotices({ overview }: { overview: EnabledBillingOverview }) {
   return <div className="space-y-3">{notices}</div>
 }
 
-/** Page heading: which plan, its state, when it renews, and the billing actions. */
+function planSummary(overview: EnabledBillingOverview, state: BillingState): string {
+  const subscription = state.subscription
+  const billing = state.interval === 'year' ? 'Annual billing' : 'Monthly billing'
+  const subscribedName = state.subscribedPlan ? PLANS[state.subscribedPlan].name : 'Paid'
+  const periodEnd = formatBillingDate(subscription?.cancelAt ?? subscription?.currentPeriodEnd)
+  switch (state.standing) {
+    case 'trialing':
+      return `Free trial · ends ${formatBillingDate(subscription?.trialEnd) ?? 'soon'}. Add a payment method to continue after the trial.`
+    case 'active':
+      return periodEnd ? `${billing} · renews ${periodEnd}` : billing
+    case 'ending':
+      return periodEnd ? `${billing} · ends ${periodEnd}` : `${billing} · ending`
+    case 'overdue_grace':
+      return `${billing} · payment overdue`
+    case 'overdue_lapsed':
+      return `${subscribedName} subscription on hold · payment overdue`
+    case 'incomplete':
+      return `${subscribedName} subscription · first payment not completed`
+    case 'paused':
+      return `${subscribedName} subscription · paused`
+    case 'none': {
+      const grantEnd = formatBillingDate(overview.migrationGrantExpiresAt)
+      if (grantEnd)
+        return `Full beta access until ${grantEnd}. Choose a plan below to keep what you use.`
+      return 'Billed per organization. Your workers keep running on your infrastructure.'
+    }
+  }
+}
+
+/** Page heading: the plan, its state, when it renews, and the owner's billing actions. */
 function PlanSummary({
   overview,
+  state,
+  portalBusy,
+  onPortal,
+  onRefresh,
+  refreshing,
   children,
-}: {
-  overview: EnabledBillingOverview
-  children: React.ReactNode
-}) {
-  const openPortal = useOpenBillingPortal()
-  const refresh = useRefreshBilling()
-  const source = SOURCE_LABELS[overview.source] ?? SOURCE_LABELS.free
-  // Ended subscriptions stay in history but no longer renew.
-  const subscription =
-    overview.subscription &&
-    !['canceled', 'incomplete_expired'].includes(overview.subscription.status)
-      ? overview.subscription
-      : null
-  const renews = formatDate(subscription?.cancelAt ?? subscription?.currentPeriodEnd)
-  const trialEnds = subscription?.status === 'trialing' ? formatDate(subscription.trialEnd) : null
-  const ending = Boolean(subscription?.cancelAtPeriodEnd || subscription?.cancelAt)
+}: ActionProps & { children: React.ReactNode }) {
+  const overdue = state.standing === 'overdue_lapsed' || state.standing === 'overdue_grace'
+  const source = overdue
+    ? { label: 'Payment overdue', variant: 'warning' as const }
+    : (SOURCE_LABELS[overview.source] ?? SOURCE_LABELS.free)
+  const canOpenPortal = overview.canManageBilling && overview.hasBillingAccount
 
   return (
     <SettingsPage
@@ -396,49 +632,43 @@ function PlanSummary({
       title={`${overview.planName} plan`}
       count={
         // "Free plan · Free" says the same thing twice.
-        overview.source === 'free' ? undefined : (
+        overview.source === 'free' && !overdue ? undefined : (
           <Badge variant={source.variant} className="font-sans">
             {source.label}
           </Badge>
         )
       }
-      description={
-        trialEnds
-          ? `Free trial · ends ${trialEnds}. Add a payment method in Manage billing to continue after the trial.`
-          : subscription && renews
-            ? `${subscription.interval === 'year' ? 'Annual' : 'Monthly'} billing · ${
-                ending ? 'ends' : 'renews'
-              } ${renews}`
-            : 'Billed per organization. Your workers keep running on your infrastructure.'
-      }
+      description={planSummary(overview, state)}
       actions={
-        overview.canManageBilling && overview.hasBillingAccount ? (
+        canOpenPortal ? (
           <>
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="h-7 w-7"
-              disabled={refresh.isPending}
-              onClick={() => refresh.mutate()}
+              disabled={refreshing}
+              onClick={onRefresh}
               aria-label="Refresh billing status"
               title="Refresh billing status"
             >
-              <RefreshCw className={cn('h-3.5 w-3.5', refresh.isPending && 'animate-spin')} />
+              <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              disabled={portalBusy}
+              onClick={() => onPortal({ intent: 'payment_method' })}
+            >
+              Payment method
             </Button>
             <Button
               type="button"
               variant="outline"
               size="xs"
-              disabled={openPortal.isPending}
-              onClick={() =>
-                openPortal.mutate(undefined, {
-                  onError: (error) =>
-                    toast.error('Could not open billing', {
-                      description: errorMessage(error, ''),
-                    }),
-                })
-              }
+              disabled={portalBusy}
+              onClick={() => onPortal({ intent: 'manage' })}
             >
               <CreditCard className="h-3.5 w-3.5" aria-hidden />
               Manage billing
@@ -516,406 +746,5 @@ function UsagePanel({ overview }: { overview: EnabledBillingOverview }) {
         No per-job or per-retry fees. All discovered queues on enabled connections are included.
       </p>
     </Panel>
-  )
-}
-
-function PlansSection({ overview }: { overview: EnabledBillingOverview }) {
-  const [interval, setInterval] = useState<BillingInterval>(
-    overview.subscription?.interval === 'year' ? 'year' : 'month'
-  )
-  const startCheckout = useStartCheckout()
-  const openPortal = useOpenBillingPortal()
-  const hasLiveSubscription =
-    overview.subscription !== null &&
-    !['canceled', 'incomplete_expired'].includes(overview.subscription.status)
-  const currentPlan = overview.planCode
-  const busy = startCheckout.isPending || openPortal.isPending
-  const features = Object.keys(FEATURE_LABELS) as FeatureKey[]
-
-  const handleChoose = (plan: 'team' | 'business', trial = false) => {
-    if (hasLiveSubscription) {
-      // Existing subscribers change plans in the hosted portal so proration
-      // is disclosed by Stripe; a second subscription is never created.
-      openPortal.mutate(undefined, {
-        onError: (error) =>
-          toast.error('Could not open billing', { description: errorMessage(error, '') }),
-      })
-      return
-    }
-    startCheckout.mutate(
-      { plan, interval, trial },
-      {
-        onError: (error) =>
-          toast.error('Could not start checkout', { description: errorMessage(error, '') }),
-      }
-    )
-  }
-
-  const columnClass = (code: PlanCode) => cn(currentPlan === code && 'bg-muted/50')
-  const canBuy = (code: PlanCode) =>
-    overview.canManageBilling &&
-    overview.purchasesEnabled &&
-    (code === 'team' || code === 'business') &&
-    currentPlan !== code
-  const offersTrial = canBuy('business') && overview.trialEligible
-
-  return (
-    <>
-      <SectionHeader
-        title="Plans"
-        description="Prices in USD per organization, before applicable taxes."
-        className="pt-2"
-        actions={
-          <fieldset className="m-0 inline-flex h-8 min-w-0 items-center gap-0.5 rounded-md border bg-muted p-0.5">
-            <legend className="sr-only">Billing interval</legend>
-            {(['month', 'year'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={interval === value}
-                onClick={() => setInterval(value)}
-                className={segmentedItemClass(interval === value, 'px-2.5')}
-              >
-                {value === 'month' ? 'Monthly' : 'Annual (2 months free)'}
-              </button>
-            ))}
-          </fieldset>
-        }
-      />
-      <Panel>
-        <Table className="min-w-[720px] table-fixed">
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[26%]">
-                <span className="sr-only">Compare</span>
-              </TableHead>
-              {PLAN_CODES.map((code) => (
-                <TableHead
-                  key={code}
-                  className={cn('h-auto py-2.5 align-top', columnClass(code))}
-                  data-testid={`plan-${code}`}
-                >
-                  <span className="flex items-center gap-2 font-sans text-[13px] font-semibold normal-case tracking-normal text-foreground">
-                    {PLANS[code].name}
-                    {currentPlan === code ? <Badge variant="success">Current</Badge> : null}
-                  </span>
-                  <span className="mt-1 block font-sans normal-case tracking-normal">
-                    <PlanPrice code={code} interval={interval} />
-                  </span>
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {HIGHLIGHT_LIMITS.map((key) => (
-              <TableRow key={key} className="hover:bg-transparent">
-                <TableCell className="text-muted-foreground">{LIMIT_LABELS[key].name}</TableCell>
-                {PLAN_CODES.map((code) => (
-                  <TableCell key={code} className={cn('font-mono tabular-nums', columnClass(code))}>
-                    {key === 'history.redis_health_days'
-                      ? formatHistoryDays(PLANS[code].limits[key])
-                      : code === 'enterprise'
-                        ? `From ${PLANS[code].limits[key]}`
-                        : formatLimit(PLANS[code].limits[key], '')}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-            {features.map((feature) => (
-              <TableRow key={feature} className="hover:bg-transparent">
-                <TableCell className="text-muted-foreground">
-                  {FEATURE_LABELS[feature].name}
-                </TableCell>
-                {PLAN_CODES.map((code) => {
-                  const included = PLANS[code].features.includes(feature)
-                  return (
-                    <TableCell key={code} className={columnClass(code)}>
-                      {included ? (
-                        <Check className="h-4 w-4 text-foreground" aria-hidden />
-                      ) : (
-                        <Minus className="h-4 w-4 text-faint" aria-hidden />
-                      )}
-                      <span className="sr-only">{included ? 'Included' : 'Not included'}</span>
-                    </TableCell>
-                  )
-                })}
-              </TableRow>
-            ))}
-            <TableRow className="hover:bg-transparent">
-              <TableCell className="align-top text-muted-foreground">Support</TableCell>
-              {PLAN_CODES.map((code) => (
-                <TableCell key={code} className={cn('align-top text-xs', columnClass(code))}>
-                  {PLANS[code].support}
-                </TableCell>
-              ))}
-            </TableRow>
-            <TableRow className="hover:bg-transparent">
-              <TableCell />
-              {PLAN_CODES.map((code) => (
-                <TableCell key={code} className={cn('py-3 align-top', columnClass(code))}>
-                  <div className="flex flex-col items-start gap-1.5">
-                    {code === 'enterprise' ? (
-                      <Button asChild variant="outline" size="xs">
-                        <a href={`mailto:${SALES_EMAIL}?subject=Durabull%20Enterprise`}>
-                          Contact sales
-                        </a>
-                      </Button>
-                    ) : canBuy(code) ? (
-                      <>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant={code === 'business' ? 'outline' : 'default'}
-                          disabled={busy}
-                          onClick={() => handleChoose(code as 'team' | 'business')}
-                        >
-                          {overview.planCode === 'free'
-                            ? `Upgrade to ${PLANS[code].name}`
-                            : `Switch to ${PLANS[code].name}`}
-                        </Button>
-                        {code === 'business' && overview.trialEligible ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="xs"
-                            disabled={busy}
-                            onClick={() => handleChoose('business', true)}
-                          >
-                            Start {overview.trialDays}-day free trial
-                          </Button>
-                        ) : null}
-                      </>
-                    ) : currentPlan === code ? (
-                      <span className="text-xs text-muted-foreground">Your plan</span>
-                    ) : null}
-                  </div>
-                </TableCell>
-              ))}
-            </TableRow>
-          </TableBody>
-        </Table>
-        <div className="space-y-1 border-t bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
-          {overview.canManageBilling ? (
-            <p>
-              Invoices, receipts, payment methods, tax IDs and cancellation are managed securely on
-              Stripe.
-            </p>
-          ) : (
-            <>
-              <p>Only the organization owner can change the plan.</p>
-              <p>Ask your organization owner to upgrade.</p>
-            </>
-          )}
-          {offersTrial ? (
-            <p>
-              The trial needs no card. Without a payment method the organization returns to Free
-              when the trial ends; nothing is charged.
-            </p>
-          ) : null}
-        </div>
-      </Panel>
-    </>
-  )
-}
-
-function PlanPrice({ code, interval }: { code: PlanCode; interval: BillingInterval }) {
-  const plan = PLANS[code]
-  const priceClass = 'font-mono text-sm font-medium tabular-nums text-foreground'
-  const unitClass = 'font-sans text-xs font-normal text-muted-foreground'
-  if (plan.monthlyPriceUsd === null || plan.annualPriceUsd === null) {
-    return <div className={priceClass}>Custom</div>
-  }
-  if (plan.monthlyPriceUsd === 0) {
-    return <div className={priceClass}>$0</div>
-  }
-  if (interval === 'year') {
-    return (
-      <div>
-        <div className={priceClass}>
-          ${effectiveMonthlyUsd(plan.annualPriceUsd).toFixed(2)}
-          <span className={unitClass}>/month</span>
-        </div>
-        <div className="text-xs font-normal text-muted-foreground">
-          Billed ${plan.annualPriceUsd} annually
-        </div>
-      </div>
-    )
-  }
-  return (
-    <div className={priceClass}>
-      ${plan.monthlyPriceUsd}
-      <span className={unitClass}>/month</span>
-    </div>
-  )
-}
-
-const HIGHLIGHT_LIMITS: LimitKey[] = [
-  'connections.enabled',
-  'members.reserved',
-  'alerts.enabled',
-  'service_accounts.enabled',
-  'history.redis_health_days',
-]
-
-const ALLOCATION_KIND_LABELS: Record<string, string> = {
-  connection: 'Connection',
-  member: 'Member',
-  invitation: 'Invitation',
-  alert_rule: 'Alert rule',
-  alert_destination: 'Destination',
-  service_account: 'Service account',
-}
-
-function AllocationPanel({ overview }: { overview: EnabledBillingOverview }) {
-  const [editing, setEditing] = useState<CapacityLimitKey | null>(null)
-  const allocation = overview.allocation
-  if (!allocation) return null
-  const keys = CAPACITY_LIMIT_KEYS.filter((key) => {
-    const options = allocation[key]
-    const limit = overview.limits[key]
-    return options.some((o) => o.suspended) || (limit !== null && options.length > limit)
-  })
-  if (keys.length === 0) return null
-
-  return (
-    <Panel>
-      <PanelHeader className="flex-col items-start gap-0.5 py-2.5">
-        <h3 className="text-[13px] font-semibold">Choose what stays enabled</h3>
-        <p className="text-xs text-muted-foreground">
-          Paused resources keep their configuration and can be restored at any time. Pausing never
-          changes your Redis data or queues.
-        </p>
-      </PanelHeader>
-      <div className="divide-y">
-        {keys.map((key) => {
-          const options = allocation[key]
-          const paused = options.filter((o) => o.suspended).length
-          return (
-            <div
-              key={key}
-              className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2 text-[13px]"
-            >
-              <span className="min-w-0 flex-1 basis-full truncate sm:basis-0">
-                {LIMIT_LABELS[key].name}
-              </span>
-              <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                {options.length - paused} enabled of {overview.limits[key] ?? '∞'} allowed
-                {paused > 0 ? ` · ${paused} paused` : ''}
-              </span>
-              {overview.canManageBilling ? (
-                <Button type="button" variant="outline" size="xs" onClick={() => setEditing(key)}>
-                  Choose
-                </Button>
-              ) : null}
-            </div>
-          )
-        })}
-      </div>
-      {editing ? (
-        <AllocationDialog
-          limitKey={editing}
-          options={allocation[editing]}
-          limit={overview.limits[editing]}
-          onClose={() => setEditing(null)}
-        />
-      ) : null}
-    </Panel>
-  )
-}
-
-function AllocationDialog({
-  limitKey,
-  options,
-  limit,
-  onClose,
-}: {
-  limitKey: CapacityLimitKey
-  options: EnabledBillingOverview['allocation'] extends infer A
-    ? A extends Record<CapacityLimitKey, infer O>
-      ? O
-      : never
-    : never
-  limit: number | null
-  onClose: () => void
-}) {
-  const save = useSaveCapacityAllocation()
-  const [selected, setSelected] = useState<Set<string>>(() => {
-    const kept = new Set<string>()
-    for (const o of options) if (!o.suspended || o.pinned) kept.add(o.id)
-    return kept
-  })
-  const pinnedCount = useMemo(() => options.filter((o) => o.pinned).length, [options])
-  const max = limit === null ? options.length : Math.max(limit, pinnedCount)
-  const tooMany = selected.size > max
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{LIMIT_LABELS[limitKey].name}</DialogTitle>
-          <DialogDescription>
-            Select up to {max} to keep enabled. The rest are paused until you upgrade or change this
-            selection.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="max-h-80 divide-y overflow-auto rounded-md border">
-          {options.map((option) => (
-            <label
-              key={option.id}
-              className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-[13px] hover:bg-muted/60"
-            >
-              <input
-                type="checkbox"
-                className="h-3.5 w-3.5 shrink-0 accent-foreground"
-                checked={selected.has(option.id)}
-                disabled={option.pinned}
-                onChange={(event) => {
-                  setSelected((current) => {
-                    const next = new Set(current)
-                    if (event.target.checked) next.add(option.id)
-                    else next.delete(option.id)
-                    return next
-                  })
-                }}
-              />
-              <span className="min-w-0 flex-1 truncate">{option.name}</span>
-              <Badge variant="outline">{ALLOCATION_KIND_LABELS[option.kind] ?? option.kind}</Badge>
-              {option.pinned ? <Badge variant="neutral">Owner</Badge> : null}
-            </label>
-          ))}
-        </div>
-        <DialogFooter>
-          {tooMany ? (
-            <span className="mr-auto self-center text-xs text-status-warning">
-              {selected.size} selected; your plan allows {max}.
-            </span>
-          ) : null}
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            disabled={tooMany || save.isPending}
-            onClick={() =>
-              save.mutate(
-                { [limitKey]: [...selected] },
-                {
-                  onSuccess: () => {
-                    toast.success('Selection saved')
-                    onClose()
-                  },
-                  onError: (error) =>
-                    toast.error('Could not save selection', {
-                      description: errorMessage(error, ''),
-                    }),
-                }
-              )
-            }
-          >
-            Save selection
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }

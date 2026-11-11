@@ -37,6 +37,7 @@ import { z } from 'zod'
 import { AddJobDialog } from '@/components/add-job-dialog'
 import { SERIES_COLOR } from '@/components/analytics/chart-series'
 import { useAppTopBar } from '@/components/app-top-bar'
+import { PlanBadge } from '@/components/billing/plan-access'
 import { DeleteQueueDialog } from '@/components/delete-queue-dialog'
 import { JobRemoveButton } from '@/components/job-remove-button'
 import { PageTitle } from '@/components/page-title'
@@ -68,6 +69,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useEntitlement } from '@/hooks/use-entitlement'
 import {
   type ListScheduledJobsResponse,
   useInvokeJobs,
@@ -80,6 +82,7 @@ import {
   useResumeQueue,
   useRetryJobs,
 } from '@/hooks/use-queues'
+import { requestUpgrade } from '@/lib/billing'
 import { getScheduleExpression, getScheduleSummary } from '@/lib/scheduled-jobs'
 import { cn, formatDate, formatNumber, getTimezoneAbbreviation } from '@/lib/utils'
 
@@ -499,7 +502,16 @@ function QueueDetailPage() {
     }
   }, [pauseMutation, queue?.isPaused, queueName, resumeMutation])
 
+  // Retrying or invoking several jobs at once is the paid bulk recovery
+  // feature; one job at a time is always available.
+  const bulkPlan = useEntitlement().feature('jobs.bulk_recovery').requiredPlan
+  const bulkLocked = bulkPlan !== null && selectedJobs.size > 1
+
   const handleRetrySelected = () => {
+    if (bulkLocked) {
+      requestUpgrade('jobs.bulk_recovery')
+      return
+    }
     if (selectedJobs.size > 0) {
       retryMutation.mutate(
         { queueName, jobIds: Array.from(selectedJobs) },
@@ -704,6 +716,10 @@ function QueueDetailPage() {
   }
 
   const handleInvokeSelected = () => {
+    if (bulkLocked) {
+      requestUpgrade('jobs.bulk_recovery')
+      return
+    }
     if (selectedJobs.size > 0) {
       invokeMutation.mutate(
         { queueName, jobIds: Array.from(selectedJobs) },
@@ -1361,6 +1377,7 @@ function QueueDetailPage() {
                   >
                     <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
                     Retry
+                    {bulkLocked && bulkPlan ? <PlanBadge plan={bulkPlan} /> : null}
                   </Button>
                   <Button
                     size="xs"
@@ -1370,6 +1387,7 @@ function QueueDetailPage() {
                   >
                     <Zap className="h-3.5 w-3.5" aria-hidden="true" />
                     Invoke
+                    {bulkLocked && bulkPlan ? <PlanBadge plan={bulkPlan} /> : null}
                   </Button>
                   <JobRemoveButton
                     variant="outline"

@@ -139,6 +139,11 @@ export interface OrganizationPolicyHooks {
     userId: string
   }) => Promise<void>
   beforeDeleteOrganization?: (input: { organizationId: string; userId: string }) => Promise<void>
+  /**
+   * A member was removed or a pending invitation was cancelled or rejected, so
+   * a seat reservation was released. Must not throw: the change already happened.
+   */
+  afterSeatFreed?: (input: { organizationId: string }) => Promise<void>
   /** Return true when the user may not create another organization (abuse control). */
   hasReachedOrganizationLimit?: (user: { id: string }) => Promise<boolean>
 }
@@ -289,6 +294,15 @@ export async function createAuth(options?: CreateAuthOptions) {
               organizationId: organization.id,
               userId: user.id,
             })
+          },
+          afterRemoveMember: async ({ organization }) => {
+            await options?.organizationPolicy?.afterSeatFreed?.({ organizationId: organization.id })
+          },
+          afterCancelInvitation: async ({ organization }) => {
+            await options?.organizationPolicy?.afterSeatFreed?.({ organizationId: organization.id })
+          },
+          afterRejectInvitation: async ({ organization }) => {
+            await options?.organizationPolicy?.afterSeatFreed?.({ organizationId: organization.id })
           },
         },
       }),

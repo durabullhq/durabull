@@ -71,6 +71,35 @@ export interface WebhookEventSnapshot {
   organizationId: string | null
 }
 
+/** One finalized invoice as shown to the organization owner. Amounts are in minor units. */
+export interface InvoiceSummary {
+  id: string
+  number: string | null
+  status: 'open' | 'paid' | 'uncollectible' | 'void'
+  total: number
+  amountDue: number
+  currency: string
+  created: Date
+  /** Stripe-hosted page to view, pay or download the invoice. */
+  hostedInvoiceUrl: string | null
+  invoicePdf: string | null
+}
+
+/**
+ * Where a Customer Portal session opens. Without a flow the customer lands on
+ * the portal home and has to find the right section themselves.
+ */
+export type PortalFlow =
+  | { type: 'payment_method_update' }
+  | { type: 'subscription_cancel'; subscriptionId: string }
+  | { type: 'subscription_update'; subscriptionId: string }
+  | {
+      type: 'subscription_update_confirm'
+      subscriptionId: string
+      itemId: string
+      priceId: string
+    }
+
 export interface CreateCheckoutInput {
   customerId: string
   priceId: string
@@ -93,8 +122,14 @@ export interface BillingGateway {
   createCheckoutSession(input: CreateCheckoutInput): Promise<CheckoutSessionSnapshot>
   retrieveCheckoutSession(id: string): Promise<CheckoutSessionSnapshot | null>
   expireCheckoutSession(id: string): Promise<void>
-  createPortalSession(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>
+  createPortalSession(input: {
+    customerId: string
+    returnUrl: string
+    flow?: PortalFlow | null
+  }): Promise<{ url: string }>
   listCustomerSubscriptions(customerId: string): Promise<SubscriptionSnapshot[]>
+  /** Finalized invoices for a customer, newest first. Drafts are never returned. */
+  listInvoices(customerId: string, limit: number): Promise<InvoiceSummary[]>
   constructWebhookEvent(rawBody: string, signature: string): Promise<WebhookEventSnapshot>
 }
 
@@ -126,6 +161,56 @@ function normalizeInvoice(value: unknown): InvoiceSnapshot | null {
     amountDue: invoice.amount_due ?? 0,
     billingReason: invoice.billing_reason ?? null,
     periodEnd: toDate(invoice.period_end),
+  }
+}
+
+const INVOICE_STATUSES: ReadonlySet<string> = new Set(['open', 'paid', 'uncollectible', 'void'])
+
+export function normalizeInvoiceSummary(invoice: Stripe.Invoice): InvoiceSummary | null {
+  if (!invoice.id || !invoice.status || !INVOICE_STATUSES.has(invoice.status)) return null
+  return {
+    id: invoice.id,
+    number: invoice.number ?? null,
+    status: invoice.status as InvoiceSummary['status'],
+    total: invoice.total ?? 0,
+    amountDue: invoice.amount_remaining ?? invoice.amount_due ?? 0,
+    currency: invoice.currency ?? 'usd',
+    created: toDate(invoice.created) ?? new Date(0),
+    hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+    invoicePdf: invoice.invoice_pdf ?? null,
+  }
+}
+
+function portalFlowData(
+  flow: PortalFlow,
+  returnUrl: string
+): Stripe.BillingPortal.SessionCreateParams.FlowData {
+  // Finishing the flow returns straight to the app, which reconciles on return.
+  const after_completion = { type: 'redirect' as const, redirect: { return_url: returnUrl } }
+  switch (flow.type) {
+    case 'payment_method_update':
+      return { type: 'payment_method_update', after_completion }
+    case 'subscription_cancel':
+      return {
+        type: 'subscription_cancel',
+        subscription_cancel: { subscription: flow.subscriptionId },
+        after_completion,
+      }
+    case 'subscription_update':
+      return {
+        type: 'subscription_update',
+        subscription_update: { subscription: flow.subscriptionId },
+        after_completion,
+      }
+    case 'subscription_update_confirm':
+      return {
+        type: 'subscription_update_confirm',
+        subscription_update_confirm: {
+          subscription: flow.subscriptionId,
+          items: [{ id: flow.itemId, price: flow.priceId, quantity: 1 }],
+        },
+        after_completion,
+      }
   }
 }
 
@@ -280,13 +365,54 @@ export class StripeBillingGateway implements BillingGateway {
     }
   }
 
-  async createPortalSession(input: { customerId: string; returnUrl: string }) {
-    const session = await this.stripe.billingPortal.sessions.create({
+  async createPortalSession(input: {
+    customerId: string
+    returnUrl: string
+    flow?: PortalFlow | null
+  }) {
+    const base = {
       customer: input.customerId,
       return_url: input.returnUrl,
       ...(this.portalConfigurationId ? { configuration: this.portalConfigurationId } : {}),
-    })
+    }
+    if (input.flow) {
+      try {
+        const session = await this.stripe.billingPortal.sessions.create({
+          ...base,
+          flow_data: portalFlowData(input.flow, input.returnUrl),
+        })
+        return { url: session.url }
+      } catch (error) {
+        // Stripe refuses a deep link the subscription cannot take (for example
+        // a plan change with no payment method on file). The portal home still
+        // works, so the customer is never left without a way in.
+        if ((error as { statusCode?: number }).statusCode !== 400) throw error
+        console.warn(
+          `[billing] Portal flow ${input.flow.type} was refused; opening the portal home instead: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+      }
+    }
+    const session = await this.stripe.billingPortal.sessions.create(base)
     return { url: session.url }
+  }
+
+  async listInvoices(customerId: string, limit: number) {
+    const wanted = Math.max(1, Math.min(100, limit))
+    const invoices: InvoiceSummary[] = []
+    // Stripe lists drafts too (the upcoming renewal, for instance), newest
+    // first. Page until enough finalized invoices are found or the history
+    // ends; auto-pagination fetches the next page only when it is needed.
+    for await (const invoice of this.stripe.invoices.list({
+      customer: customerId,
+      limit: Math.min(100, wanted * 2),
+    })) {
+      const summary = normalizeInvoiceSummary(invoice)
+      if (summary) invoices.push(summary)
+      if (invoices.length >= wanted) break
+    }
+    return invoices
   }
 
   async listCustomerSubscriptions(customerId: string) {

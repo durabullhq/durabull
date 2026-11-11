@@ -54,6 +54,12 @@ sandbox.
    downgrades are immediate with credit.
 4. Configure Smart Retries and dunning emails. Set the terminal state after retries to **cancel**
    the subscription; Durabull's own grace is seven days from the first observed failure.
+   Durabull sends no email of its own for failed payments, trials about to end, renewals or
+   receipts: in the app these appear as a banner and on Settings → Billing, which only reaches
+   owners who sign in. In the Stripe Dashboard turn on the customer emails for failed payments,
+   expiring cards, trial-ending reminders and upcoming renewals (Billing settings →
+   Subscriptions and emails) and for successful payments (Customer emails), so an owner who is
+   not in the app still hears about them.
 5. Configure Stripe Tax only for registered jurisdictions; Checkout collects billing address and tax
    IDs.
 6. Trials: `trial_period_days` with `missing_payment_method=cancel` is verified on the sandbox
@@ -187,7 +193,39 @@ cycles; none after grace). Then the owner's selection or the deterministic polic
 oldest kept) suspends the rest. Suspension never deletes records or touches customer Redis data.
 History visibility shortens immediately; stored samples are kept 7 days before pruning.
 
+## What customers see
+
+- `GET /api/billing/entitlement` is the small plan lookup every signed-in page uses: features,
+  limits, usage, paused resources, subscription status and whether the caller can manage billing.
+  The web app reads it through `useEntitlement()` to gate controls before a request is made; the
+  server routes and database triggers remain the boundary. `GET /api/billing` is the full overview
+  for Settings → Billing only.
+- A banner in the app shows the most urgent plan state: a failed payment or lapsed plan and a
+  trial about to end (owners only), paused resources and an open adjustment window (everyone).
+  The beta transition banner shows when none of those apply.
+- `GET /api/billing/invoices` (owners) lists the twelve most recent Stripe invoices with hosted
+  and PDF links; Settings → Billing shows them without leaving the app. A Stripe failure returns
+  502 `invoices_unavailable` and the page points to Manage billing instead.
+- `POST /api/billing/portal` takes an optional `intent` (`payment_method`, `cancel`,
+  `change_plan` with a target `plan`/`interval`) and opens the Portal on that step. When the
+  subscription cannot take that flow (already ending, invoiced, or Stripe rejects it) the plain
+  Portal opens instead, so the buttons never dead-end.
+- Paused resources come back without anyone choosing them as soon as room exists: after an
+  upgrade, and after an owner or admin deletes or disables another resource, removes a member, or
+  cancels an invitation (`rebalanceCapacity`). The hourly sweep repeats this for seats freed by a
+  member leaving or an invitation expiring, and removes pause records for resources that no
+  longer exist or no longer count.
+- Alert rules on a paused or disabled connection are paused with it and do not use the plan's
+  rule allowance. They can still be listed and deleted, because a connection can only be deleted
+  once its rules are.
+- A member whose seat is paused sees a page that says so and who to ask; an invitee who cannot
+  be seated gets `invitation_suspended` or `invitation_seat_unavailable` with the same guidance.
+
 ## Known limitations
+
+- Two invitations created at the same moment for the last free seat: the database trigger rejects
+  the second inside Better Auth, which reports it as a generic failure rather than the plan-limit
+  response. Retrying shows the normal limit message.
 
 - Entitlement snapshots are cached per replica for up to 15 seconds; another replica can serve the
   previous plan for that long after a change.

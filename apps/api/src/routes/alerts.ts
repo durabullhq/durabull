@@ -1,3 +1,4 @@
+import { featureForDeliveryType, PLANS, requiredPlanForFeature } from '@durabull/billing'
 import {
   alertCheckCursorRepository,
   alertDeliveryRepository,
@@ -15,7 +16,14 @@ import {
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { assertCapacity, isResourceSuspended, requireFeature } from '../billing/entitlements'
+import {
+  assertCapacity,
+  hasFeature,
+  isResourceSuspended,
+  rebalanceCapacity,
+  requireDeliveryFeature,
+  suspendedResourceIds,
+} from '../billing/entitlements'
 import {
   type AlertEvaluation,
   type CursorState,
@@ -155,10 +163,13 @@ function computeRuleState(rule: AlertRuleRow): 'active' | 'snoozed' | 'disabled'
   return 'active'
 }
 
-function serializeAlertRule(rule: AlertRuleRow) {
+function serializeAlertRule(rule: AlertRuleRow, suspended = false) {
   return {
     ...rule,
     state: computeRuleState(rule),
+    // Paused by the plan's rule or connection limit: it does not evaluate
+    // until the owner restores it or upgrades.
+    suspended,
     notificationChannels: sanitizeNotificationChannels(
       Array.isArray(rule.notificationChannels) ? rule.notificationChannels : []
     ),
@@ -178,7 +189,11 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
-    const rules = await alertRuleRepository.findByConnection(connectionId, organizationId)
+    const [rules, suspendedRules, suspendedDestinations] = await Promise.all([
+      alertRuleRepository.findByConnection(connectionId, organizationId),
+      suspendedResourceIds(organizationId, 'alert_rule'),
+      suspendedResourceIds(organizationId, 'alert_destination'),
+    ])
 
     // Sidecar with the referenced destinations so the UI can render names
     // without another round-trip or mutating the channel payloads.
@@ -197,12 +212,13 @@ const app = new Hono()
     )
 
     return c.json({
-      rules: rules.map(serializeAlertRule),
+      rules: rules.map((rule) => serializeAlertRule(rule, suspendedRules.has(rule.id))),
       destinations: destinations.map((destination) => ({
         id: destination.id,
         name: destination.name,
         type: destination.type,
         enabled: destination.enabled,
+        suspended: suspendedDestinations.has(destination.id),
       })),
     })
   })
@@ -317,8 +333,15 @@ const app = new Hono()
     if (!rule) {
       return c.json({ error: 'Rule not found' }, 404)
     }
+    // Disabling a rule frees allowance for one the plan had paused.
+    if (existingRule.enabled && body.enabled === false) await rebalanceCapacity(organizationId)
 
-    return c.json({ rule: serializeAlertRule(rule) })
+    return c.json({
+      rule: serializeAlertRule(
+        rule,
+        await isResourceSuspended(organizationId, 'alert_rule', rule.id)
+      ),
+    })
   })
   .delete('/rules/:ruleId', async (c) => {
     const { ruleId } = c.req.param()
@@ -344,6 +367,7 @@ const app = new Hono()
       return c.json({ error: 'Rule changed concurrently. Reload and retry.' }, 409)
     }
     if (!disabledRule) return c.json({ error: 'Rule not found' }, 404)
+    await rebalanceCapacity(organizationId)
     // The rule disappears from user-facing queries immediately, but remains
     // as a tombstone until bounded background outbox batches have synchronized
     // external incidents. This preserves cascade-linked delivery metadata.
@@ -516,17 +540,30 @@ const app = new Hono()
           notificationChannels,
           organizationId
         )
+        // Sending a test is a webhook delivery like any other. Without the
+        // feature each channel reports why, and the evaluation above is
+        // still returned.
+        const webhookFeature = featureForDeliveryType('webhook')
+        const webhooksIncluded =
+          webhookChannels.length === 0 ||
+          !webhookFeature ||
+          (await hasFeature(organizationId, webhookFeature))
         const organizationSlug = await getOrganizationSlug(organizationId)
+        const notSent = (url: string, error: string) => ({
+          url,
+          success: false,
+          httpStatus: null,
+          durationMs: 0,
+          error,
+        })
         webhookTests = await Promise.all(
           webhookChannels.map(async (channel) => {
-            if ('error' in channel) {
-              return {
-                url: channel.url,
-                success: false,
-                httpStatus: null,
-                durationMs: 0,
-                error: channel.error,
-              }
+            if ('error' in channel) return notSent(channel.url, channel.error)
+            if (!webhooksIncluded) {
+              return notSent(
+                channel.url,
+                `Webhook alerts are part of the ${PLANS[requiredPlanForFeature(webhookFeature ?? 'alerts.webhook')].name} plan, so no test was sent.`
+              )
             }
 
             const result = await sendRateLimitedTestWebhook({
@@ -563,7 +600,7 @@ const app = new Hono()
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
-    await requireFeature(organizationId, 'alerts.webhook')
+    await requireDeliveryFeature(organizationId, 'webhook')
 
     let ruleName = 'Webhook test'
     let ruleType = 'job_failed'
@@ -836,11 +873,8 @@ async function validateNotificationChannels(
   )
   // Premium delivery channels need the plan's capability. Denials propagate
   // as the standard feature_not_entitled response.
-  if (channels.some((channel) => channel.type === 'webhook')) {
-    await requireFeature(organizationId, 'alerts.webhook')
-  }
-  if (channels.some((channel) => channel.type === 'linear')) {
-    await requireFeature(organizationId, 'alerts.linear')
+  for (const type of new Set(channels.map((channel) => channel.type))) {
+    await requireDeliveryFeature(organizationId, type)
   }
   const inlineWebhookTargets = new Set<string>()
   for (const channel of inlineWebhookChannels) {
@@ -884,8 +918,7 @@ async function validateNotificationChannels(
     if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
       return `Destination "${destination.name}" is paused because it is above your plan's destination limit.`
     }
-    if (destination.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
-    if (destination.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
+    await requireDeliveryFeature(organizationId, destination.type)
     if (destination.type === 'webhook' && destination.encryptedSigningSecret) {
       try {
         decryptSecret(destination.encryptedSigningSecret)
@@ -978,6 +1011,13 @@ async function resolveWebhookTestChannels(
       results.push({
         url: destinationUrl,
         error: `Webhook destination "${destination.name}" is disabled.`,
+      })
+      continue
+    }
+    if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
+      results.push({
+        url: destinationUrl,
+        error: `Webhook destination "${destination.name}" is paused by your plan’s destination limit.`,
       })
       continue
     }

@@ -2,7 +2,7 @@ import { billingRepository } from '@durabull/dal'
 import { isEmailConfigured } from '@durabull/email'
 import { expireStaleCheckoutAttempts } from './checkout'
 import { isBillingEnabled } from './config'
-import { materializeEntitlement } from './entitlements'
+import { materializeEntitlement, rebalanceCapacity } from './entitlements'
 import { reconcileAllOrganizations } from './reconcile'
 import { sendDueReminders } from './transition'
 import { processWebhookInbox } from './webhooks'
@@ -59,6 +59,15 @@ export async function runEntitlementSweep(now = new Date()): Promise<void> {
     await materializeEntitlement(organization.id, { reason: 'backfill', now })
     backfilled += 1
     if (backfilled >= 200) break
+  }
+
+  // Backstop for capacity freed without an API call of ours (a member leaving,
+  // an invitation expiring): drop pauses on resources that no longer count,
+  // then restore paused resources where a limit has room. Organizations that
+  // remain over their limits cost nothing here.
+  await billingRepository.pruneStaleSuspensions()
+  for (const organizationId of await billingRepository.listOrganizationsWithRestorableSuspensions()) {
+    await rebalanceCapacity(organizationId)
   }
 
   await expireStaleCheckoutAttempts(now)

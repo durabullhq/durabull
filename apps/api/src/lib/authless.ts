@@ -1,4 +1,4 @@
-import { and, eq, getDb, member, organization, user } from '@durabull/dal'
+import { and, eq, getDb, isOwnerRole, member, organization, user } from '@durabull/dal'
 import { env } from '@durabull/env'
 import type { Session, User } from 'better-auth/types'
 
@@ -174,7 +174,7 @@ async function ensureOwnerMembership(
     .limit(1)
 
   if (existingMembership[0]) {
-    if (existingMembership[0].role !== 'owner') {
+    if (!isOwnerRole(existingMembership[0].role)) {
       await db
         .update(member)
         .set({ role: 'owner', updatedAt: new Date() })
@@ -205,7 +205,7 @@ async function ensureOwnerMembership(
     throw new Error('Failed to initialize authless owner membership.')
   }
 
-  if (createdMembership[0].role !== 'owner') {
+  if (!isOwnerRole(createdMembership[0].role)) {
     await db
       .update(member)
       .set({ role: 'owner', updatedAt: new Date() })

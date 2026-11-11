@@ -8,7 +8,7 @@ import {
 import { billingRepository } from '@durabull/dal'
 import { recordBillingEvent } from './analytics'
 import { getBillingConfig, TRIAL_PERIOD_DAYS } from './config'
-import { getBillingGateway } from './gateway'
+import { getBillingGateway, type PortalFlow } from './gateway'
 import { reconcileOrganization } from './reconcile'
 
 const CHECKOUT_TTL_MS = 30 * 60 * 1000
@@ -22,6 +22,7 @@ export type CheckoutRefusal =
   | 'trials_unavailable'
   | 'trial_not_eligible'
   | 'email_unverified'
+  | 'no_billing_account'
 
 export class CheckoutRefusedError extends Error {
   constructor(
@@ -267,22 +268,89 @@ export async function cancelCheckoutAttempt(
   return { status: result }
 }
 
-/** Short-lived hosted Customer Portal session for this organization. */
+/** What the owner wants to do in the Customer Portal; decides where the session opens. */
+export type PortalIntent =
+  | { intent: 'manage' }
+  | { intent: 'payment_method' }
+  | { intent: 'cancel' }
+  | { intent: 'change_plan'; plan?: PurchasablePlanCode; interval?: BillingInterval }
+
+/** Statuses the Customer Portal can change or cancel. */
+const PORTAL_EDITABLE_STATUSES: ReadonlySet<string> = new Set(['active', 'trialing', 'past_due'])
+
+async function resolvePortalFlow(
+  organizationId: string,
+  request: PortalIntent
+): Promise<PortalFlow | null> {
+  if (request.intent === 'manage') return null
+  if (request.intent === 'payment_method') return { type: 'payment_method_update' }
+
+  const subscription = await billingRepository.findCurrentSubscription(organizationId)
+  if (
+    !subscription ||
+    !PORTAL_EDITABLE_STATUSES.has(subscription.status) ||
+    // Invoiced contracts are changed with their agreement, not self-serve.
+    subscription.collectionMethod === 'send_invoice'
+  ) {
+    return null
+  }
+  const subscriptionId = subscription.stripeSubscriptionId
+
+  if (request.intent === 'cancel') {
+    const alreadyEnding = subscription.cancelAtPeriodEnd || subscription.cancelAt !== null
+    return alreadyEnding ? null : { type: 'subscription_cancel', subscriptionId }
+  }
+
+  const priceId =
+    request.plan && request.interval
+      ? getBillingConfig().purchasePrices[request.plan]?.[request.interval]
+      : undefined
+  if (priceId && priceId !== subscription.stripePriceId && subscription.stripeSubscriptionItemId) {
+    // Straight to Stripe's confirmation of this exact change, with proration shown.
+    return {
+      type: 'subscription_update_confirm',
+      subscriptionId,
+      itemId: subscription.stripeSubscriptionItemId,
+      priceId,
+    }
+  }
+  return { type: 'subscription_update', subscriptionId }
+}
+
+/**
+ * Short-lived hosted Customer Portal session for this organization, opened on
+ * the screen that matches what the owner asked for where Stripe supports it.
+ */
 export async function createPortalSession(
   organizationId: string,
-  organizationSlug: string
+  organizationSlug: string,
+  request: PortalIntent = { intent: 'manage' }
 ): Promise<{ url: string }> {
   const account = await billingRepository.findAccount(organizationId)
   if (!account) {
     throw new CheckoutRefusedError(
-      'price_unavailable',
+      'no_billing_account',
       'This organization has no billing account yet.'
     )
   }
   return getBillingGateway().createPortalSession({
     customerId: account.stripeCustomerId,
     returnUrl: billingPageUrl(organizationSlug, 'portal=returned'),
+    flow: await resolvePortalFlow(organizationId, request),
   })
+}
+
+/** Most recent invoices shown on the billing page. */
+export const INVOICE_LIST_LIMIT = 12
+
+/**
+ * The organization's recent invoices, read from Stripe when the owner opens
+ * the billing page. Hosted invoice links expire, so they are never stored.
+ */
+export async function listInvoices(organizationId: string) {
+  const account = await billingRepository.findAccount(organizationId)
+  if (!account) return []
+  return getBillingGateway().listInvoices(account.stripeCustomerId, INVOICE_LIST_LIMIT)
 }
 
 /** Expire abandoned attempts so a new purchase can start. */

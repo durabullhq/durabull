@@ -1,3 +1,4 @@
+import { featureForDeliveryType } from '@durabull/billing'
 import {
   type AlertDelivery,
   type AlertDestination,
@@ -55,8 +56,8 @@ async function assertDeliveryEntitled(
   organizationId: string,
   channel: 'email' | 'webhook' | 'linear'
 ): Promise<void> {
-  if (channel === 'email') return
-  const feature = channel === 'webhook' ? 'alerts.webhook' : 'alerts.linear'
+  const feature = featureForDeliveryType(channel)
+  if (!feature) return
   if (!(await hasFeature(organizationId, feature))) {
     throw new NonRetryableDeliveryError(
       `${channel === 'webhook' ? 'Webhook' : 'Linear'} alert delivery is not included in this organization’s current plan.`
@@ -658,6 +659,18 @@ async function sendWebhookAlert(
       throw new WebhookDeliveryError(metadata.deliveryError, { retryable: true })
     }
     throw new NonRetryableDeliveryError(metadata.deliveryError)
+  }
+  // A saved destination referenced by a webhook channel is paused with the
+  // plan like any other destination.
+  const savedDestinationId =
+    metadata && typeof metadata.destinationId === 'string' ? metadata.destinationId : null
+  if (
+    savedDestinationId &&
+    (await isResourceSuspended(event.organizationId, 'alert_destination', savedDestinationId))
+  ) {
+    throw new NonRetryableDeliveryError(
+      "This webhook destination is paused because it is above the plan's destination limit."
+    )
   }
   const channel = parseWebhookChannel(metadata)
   const secret = await resolveWebhookSigningSecret(event, channel.url, metadata)

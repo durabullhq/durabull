@@ -1,7 +1,14 @@
-import { Link } from '@tanstack/react-router'
-import { Bot, Check, Copy, KeyRound, Lock, MoreHorizontal, Plus } from 'lucide-react'
+import { isOwnerOrAdminRole } from '@durabull/utils/roles'
+import { Bot, Check, Copy, KeyRound, MoreHorizontal, Plus } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import {
+  CapacityCount,
+  FeaturePlanBadge,
+  FeatureUpgradeNote,
+  LimitReachedNote,
+  PausedBadge,
+} from '@/components/billing/plan-access'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SettingsPage } from '@/components/settings/settings-layout'
 import { Badge } from '@/components/ui/badge'
@@ -36,8 +43,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useAuth } from '@/hooks/use-auth'
-import { useBilling } from '@/hooks/use-billing'
-import { useActiveOrganization, useOrganizationMembers } from '@/hooks/use-organization'
+import { useEntitlement } from '@/hooks/use-entitlement'
+import { useOrganizationMembers } from '@/hooks/use-organization'
 import {
   type ServiceAccount,
   type ServiceAccountExpiry,
@@ -47,6 +54,8 @@ import {
   useServiceAccounts,
   useSetServiceAccountDisabled,
 } from '@/hooks/use-service-accounts'
+import { isPlanDenial } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 const SCOPE_LABELS: Record<string, { label: string; write: boolean }> = {
   'mcp:discover': { label: 'Discover connections and queues', write: false },
@@ -87,17 +96,13 @@ export function ServiceAccountsPage() {
   const { user } = useAuth()
   const { data: members } = useOrganizationMembers()
   const role = members?.find((m) => m.userId === user?.id)?.role
-  const canManage = role === 'owner' || role === 'admin'
+  const canManage = isOwnerOrAdminRole(role)
   const { data, isLoading } = useServiceAccounts()
-  const { data: billing } = useBilling()
-  const { data: activeOrganization } = useActiveOrganization()
+  const entitlement = useEntitlement()
   // The plan check runs on every MCP call; show it here so an account is
   // never listed as usable while the plan blocks it.
-  const planLocked = Boolean(
-    billing?.enabled &&
-      billing.enforced &&
-      !billing.features.includes('automation.service_accounts')
-  )
+  const planLocked = !entitlement.can('automation.service_accounts')
+  const atLimit = entitlement.capacity('service_accounts.enabled').atLimit
   const [creating, setCreating] = useState(false)
   const [revealedToken, setRevealedToken] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ServiceAccount | null>(null)
@@ -109,10 +114,13 @@ export function ServiceAccountsPage() {
   const accounts = data?.serviceAccounts ?? []
   const canCreate = canManage && !planLocked
   const createButton = canCreate ? (
-    <Button type="button" size="xs" onClick={() => setCreating(true)}>
-      <Plus className="h-3.5 w-3.5" aria-hidden />
-      New service account
-    </Button>
+    <div className="flex items-center gap-3">
+      <CapacityCount limit="service_accounts.enabled" />
+      <Button type="button" size="xs" disabled={atLimit} onClick={() => setCreating(true)}>
+        <Plus className="h-3.5 w-3.5" aria-hidden />
+        New service account
+      </Button>
+    </div>
   ) : null
 
   return (
@@ -125,28 +133,17 @@ export function ServiceAccountsPage() {
       data-testid="service-accounts"
     >
       {planLocked ? (
-        <div
-          className="flex gap-3 rounded-lg border border-status-warning/30 bg-status-warning/10 px-4 py-3 text-[13px]"
-          data-testid="service-accounts-plan-locked"
-        >
-          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-status-warning" aria-hidden="true" />
-          <div className="space-y-0.5">
-            <div className="font-medium">Service accounts need the Team plan</div>
-            <p className="text-muted-foreground">
+        <div data-testid="service-accounts-plan-locked" className="space-y-1.5">
+          <FeatureUpgradeNote feature="automation.service_accounts" />
+          {accounts.length > 0 ? (
+            <p className="px-1 text-xs text-muted-foreground">
               Existing accounts are kept, but their MCP calls are refused until the organization
-              upgrades.{' '}
-              {activeOrganization?.slug ? (
-                <Link
-                  to="/$orgSlug/settings/billing"
-                  params={{ orgSlug: activeOrganization.slug }}
-                  className="font-medium text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
-                >
-                  See plans
-                </Link>
-              ) : null}
+              upgrades.
             </p>
-          </div>
+          ) : null}
         </div>
+      ) : canManage ? (
+        <LimitReachedNote limit="service_accounts.enabled" />
       ) : null}
 
       {isLoading ? (
@@ -189,7 +186,7 @@ export function ServiceAccountsPage() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap pb-1 pt-2.5">
                       {account.suspended ? (
-                        <Badge variant="warning">Paused by plan limit</Badge>
+                        <PausedBadge />
                       ) : planLocked && !account.disabled ? (
                         <Badge variant="warning">Locked by plan</Badge>
                       ) : (
@@ -238,10 +235,13 @@ export function ServiceAccountsPage() {
                                   setDisabled.mutate(
                                     { id: account.id, disabled: !account.disabled },
                                     {
-                                      onError: (error) =>
+                                      onError: (error) => {
+                                        // The upgrade prompt already explains a plan denial.
+                                        if (isPlanDenial(error)) return
                                         toast.error('Could not update service account', {
                                           description: errorMessage(error, ''),
-                                        }),
+                                        })
+                                      },
                                     }
                                   )
                                 }
@@ -329,10 +329,12 @@ export function ServiceAccountsPage() {
                 setRotateTarget(null)
                 setRevealedToken(token)
               },
-              onError: (error) =>
+              onError: (error) => {
+                if (isPlanDenial(error)) return
                 toast.error('Could not rotate token', {
                   description: errorMessage(error, ''),
-                }),
+                })
+              },
             }
           )
         }
@@ -367,17 +369,26 @@ function ScopeCheckbox({
   scope,
   checked,
   onChange,
+  disabled = false,
 }: {
   scope: string
   checked: boolean
   onChange: (checked: boolean) => void
+  /** The plan does not include this scope. */
+  disabled?: boolean
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[13px] hover:bg-muted/60">
+    <label
+      className={cn(
+        'flex items-center gap-2.5 px-3 py-1.5 text-[13px]',
+        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-muted/60'
+      )}
+    >
       <input
         type="checkbox"
         className="h-3.5 w-3.5 shrink-0 accent-foreground"
         checked={checked}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
       />
       <span className="min-w-0 flex-1">{SCOPE_LABELS[scope]?.label ?? scope}</span>
@@ -402,6 +413,7 @@ function CreateServiceAccountDialog({
   const selectable = availableScopes.filter((scope) => scope !== 'mcp:discover')
   const readScopes = selectable.filter((scope) => !SCOPE_LABELS[scope]?.write)
   const writeScopes = selectable.filter((scope) => SCOPE_LABELS[scope]?.write)
+  const canWrite = useEntitlement().can('mcp.write')
   const toggleScope = (scope: string, checked: boolean) =>
     setScopes((current) => {
       const next = new Set(current)
@@ -484,20 +496,23 @@ function CreateServiceAccountDialog({
                     <span className="normal-case tracking-normal text-status-warning">
                       changes jobs, queues and alerts
                     </span>
+                    <FeaturePlanBadge feature="mcp.write" className="normal-case tracking-normal" />
                   </div>
                   {writeScopes.map((scope) => (
                     <ScopeCheckbox
                       key={scope}
                       scope={scope}
                       checked={scopes.has(scope)}
+                      disabled={!canWrite}
                       onChange={(checked) => toggleScope(scope, checked)}
                     />
                   ))}
                 </div>
               ) : null}
             </div>
+            <FeatureUpgradeNote feature="mcp.write" className="mt-2" />
           </fieldset>
-          {create.error ? (
+          {create.error && !isPlanDenial(create.error) ? (
             <p className="text-[13px] text-status-danger">
               {errorMessage(create.error, 'Could not create the service account.')}
             </p>

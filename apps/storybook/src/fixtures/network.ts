@@ -1,7 +1,7 @@
 import { delay, HttpResponse, http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import { metrics, redisHealth } from './analytics'
-import { billingOverview, serviceAccounts } from './billing'
+import { billingInvoices, billingOverview, freeLimits, serviceAccounts } from './billing'
 import {
   connections,
   counts,
@@ -32,8 +32,85 @@ let billingTransition: BillingTransitionFixture = 'off'
 export function setBillingTransition(value: BillingTransitionFixture) {
   billingTransition = value
 }
+/**
+ * Plan states for billing UI previews: paused resources on Free, a failed
+ * renewal still in its grace period, and Free with its limits reached.
+ */
+export type BillingScenarioFixture = 'team' | 'paused' | 'payment-failed' | 'free-at-limit'
+let billingScenario: BillingScenarioFixture = 'team'
+export function setBillingScenario(value: BillingScenarioFixture) {
+  billingScenario = value
+}
+function inDays(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString()
+}
+function scenarioOverview() {
+  const free = {
+    ...billingOverview,
+    planCode: 'free',
+    planName: 'Free',
+    subscribedPlanCode: null,
+    source: 'free',
+    features: [],
+    limits: freeLimits,
+    subscription: null,
+    hasBillingAccount: false,
+  }
+  switch (billingScenario) {
+    case 'paused':
+      return {
+        ...free,
+        usage: { ...billingOverview.usage, 'connections.enabled': 1 },
+        overLimit: [],
+        suspended: [{ kind: 'connection', id: 'demo-staging', since: '2026-11-01T00:00:00Z' }],
+        allocation: {
+          'connections.enabled': [
+            {
+              id: 'demo-redis',
+              kind: 'connection',
+              name: 'Production',
+              suspended: false,
+              pinned: false,
+            },
+            {
+              id: 'demo-staging',
+              kind: 'connection',
+              name: 'Staging',
+              suspended: true,
+              pinned: false,
+            },
+          ],
+          'members.reserved': [],
+          'alerts.enabled': [],
+          'alerts.destinations': [],
+          'service_accounts.enabled': [],
+        },
+      }
+    case 'payment-failed':
+      return {
+        ...billingOverview,
+        source: 'payment_grace',
+        notices: ['payment_failed'],
+        graceExpiresAt: inDays(5),
+        subscription: { ...billingOverview.subscription, status: 'past_due', interval: 'month' },
+      }
+    case 'free-at-limit':
+      return {
+        ...free,
+        usage: {
+          'connections.enabled': 1,
+          'members.reserved': 1,
+          'alerts.enabled': 3,
+          'alerts.destinations': 1,
+          'service_accounts.enabled': 0,
+        },
+      }
+    default:
+      return billingOverview
+  }
+}
 function billingFixture() {
-  if (billingTransition === 'off') return billingOverview
+  if (billingTransition === 'off') return scenarioOverview()
   const days = billingTransition === 'final-week' ? 3 : 26
   const deadline = new Date(Date.now() + days * 86_400_000).toISOString()
   return {
@@ -101,10 +178,21 @@ function readFixture(path: string, url: URL): unknown {
       session: { activeOrganizationId: 'demo-org' },
     }
   if (path === '/connections')
-    return { connections: state === 'empty-connections' ? [] : connections }
+    return {
+      connections:
+        state === 'empty-connections'
+          ? []
+          : connections.map((connection) => ({
+              ...connection,
+              enabled: true,
+              suspended: billingScenario === 'paused' && connection.id === 'demo-staging',
+            })),
+    }
   if (path.startsWith('/connections/')) return { connection: connections[0], ...connections[0] }
   if (path === '/team/members') return { members: list(members) }
-  if (path === '/billing') return billingFixture()
+  // The entitlement lookup is a subset of the overview, so one fixture serves both.
+  if (path === '/billing' || path === '/billing/entitlement') return billingFixture()
+  if (path === '/billing/invoices') return state === 'empty' ? { invoices: [] } : billingInvoices
   if (path === '/service-accounts')
     return state === 'empty' ? { ...serviceAccounts, serviceAccounts: [] } : serviceAccounts
   if (path.startsWith('/invitations/'))

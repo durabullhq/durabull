@@ -1,3 +1,4 @@
+import { isOwnerRole } from '@durabull/utils/roles'
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import { getDatabaseMode, getDb, getPgLockPool } from '../db/client'
 import { alertDestination } from '../db/schemas/alert-destination/schema'
@@ -424,7 +425,12 @@ export const billingRepository = {
           lte(organizationEntitlement.reevaluateAt, now),
           lte(organizationEntitlement.graceExpiresAt, now),
           lte(organizationEntitlement.capacityAdjustmentExpiresAt, now),
-          lte(organizationEntitlement.migrationGrantExpiresAt, now),
+          // A grant that already ended stays stored; it is due only while
+          // the snapshot still draws access from it.
+          and(
+            eq(organizationEntitlement.source, 'migration_grant'),
+            lte(organizationEntitlement.migrationGrantExpiresAt, now)
+          ),
           lte(organizationEntitlement.historyRetentionFloorExpiresAt, now)
         )
       )
@@ -473,17 +479,132 @@ export const billingRepository = {
     organizationId: string
   ): Promise<Array<{ userId: string; email: string; name: string; createdAt: Date }>> {
     const db = await getDb()
-    return db
+    const rows = await db
       .select({
         userId: member.userId,
         email: user.email,
         name: user.name,
         createdAt: member.createdAt,
+        role: member.role,
       })
       .from(member)
       .innerJoin(user, eq(member.userId, user.id))
-      .where(and(eq(member.organizationId, organizationId), eq(member.role, 'owner')))
+      .where(eq(member.organizationId, organizationId))
       .orderBy(asc(member.createdAt), asc(member.id))
+    return rows.filter((row) => isOwnerRole(row.role)).map(({ role: _role, ...owner }) => owner)
+  },
+
+  /**
+   * Remove pauses on resources that no longer count against a limit: deleted,
+   * disabled, or an invitation that was accepted, revoked or has expired.
+   * Mirrors durabull_capacity_usage, which decides what counts.
+   *
+   * Each organization is pruned under the capacity lock the triggers take,
+   * and the check runs on a snapshot taken after the lock is held. A resource
+   * re-enabled concurrently is therefore either seen as live (and its pause
+   * kept for the allocator to restore with a capacity check) or re-enabled
+   * after the pause is gone (and checked by its trigger), never both.
+   */
+  async pruneStaleSuspensions(organizationId?: string): Promise<number> {
+    const db = await getDb()
+    const s = billingResourceSuspension
+    const organizationIds = organizationId
+      ? [organizationId]
+      : (await db.selectDistinct({ organizationId: s.organizationId }).from(s)).map(
+          (row) => row.organizationId
+        )
+    let removed = 0
+    for (const id of organizationIds) {
+      removed += await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`durabull_capacity:${id}`}, 0))`
+        )
+        const rows = await tx
+          .delete(s)
+          .where(
+            and(
+              eq(s.organizationId, id),
+              sql`(
+                (${s.resourceKind} = 'connection' AND NOT EXISTS (
+                  SELECT 1 FROM redis_connection c
+                   WHERE c.id::text = ${s.resourceId} AND c.organization_id = ${s.organizationId}
+                     AND c.enabled))
+                OR (${s.resourceKind} = 'member' AND NOT EXISTS (
+                  SELECT 1 FROM member m
+                   WHERE m.id = ${s.resourceId} AND m.organization_id = ${s.organizationId}))
+                OR (${s.resourceKind} = 'invitation' AND NOT EXISTS (
+                  SELECT 1 FROM invitation i
+                   WHERE i.id = ${s.resourceId} AND i.organization_id = ${s.organizationId}
+                     AND i.status = 'pending' AND i.expires_at > now()))
+                OR (${s.resourceKind} = 'alert_rule' AND NOT EXISTS (
+                  SELECT 1 FROM alert_rule r
+                   WHERE r.id::text = ${s.resourceId} AND r.organization_id = ${s.organizationId}
+                     AND r.enabled AND r.deletion_requested_at IS NULL))
+                OR (${s.resourceKind} = 'alert_destination' AND NOT EXISTS (
+                  SELECT 1 FROM alert_destination d
+                   WHERE d.id::text = ${s.resourceId} AND d.organization_id = ${s.organizationId}))
+                OR (${s.resourceKind} = 'service_account' AND NOT EXISTS (
+                  SELECT 1 FROM mcp_service_account a
+                   WHERE a.id::text = ${s.resourceId} AND a.organization_id = ${s.organizationId}
+                     AND NOT a.disabled))
+              )`
+            )
+          )
+          .returning({ id: s.id })
+        return rows.length
+      })
+    }
+    return removed
+  },
+
+  /**
+   * Enforced organizations with a paused resource whose limit now has room,
+   * so restoring could bring something back. Uses the same plan-limit and
+   * usage functions as the capacity triggers. Organizations that stay over
+   * their limits are left out, so the sweep does no work for them.
+   */
+  async listOrganizationsWithRestorableSuspensions(): Promise<string[]> {
+    const db = await getDb()
+    const s = billingResourceSuspension
+    const limitKey = sql`CASE ${s.resourceKind}
+      WHEN 'connection' THEN 'connections.enabled'
+      WHEN 'member' THEN 'members.reserved'
+      WHEN 'invitation' THEN 'members.reserved'
+      WHEN 'alert_rule' THEN 'alerts.enabled'
+      WHEN 'alert_destination' THEN 'alerts.destinations'
+      WHEN 'service_account' THEN 'service_accounts.enabled'
+    END`
+    const rows = await db
+      .selectDistinct({ organizationId: s.organizationId })
+      .from(s)
+      .innerJoin(
+        organizationEntitlement,
+        eq(organizationEntitlement.organizationId, s.organizationId)
+      )
+      .where(
+        and(
+          eq(organizationEntitlement.enforced, true),
+          sql`(
+            durabull_plan_limit(${s.organizationId}, ${limitKey}) IS NULL
+            OR durabull_capacity_usage(${s.organizationId}, ${limitKey})
+               < durabull_plan_limit(${s.organizationId}, ${limitKey})
+          )`,
+          // A rule paused with its connection only returns with the
+          // connection, which this query finds through the connection's own
+          // pause; spare rule capacity alone cannot bring it back.
+          sql`NOT (
+            ${s.resourceKind} = 'alert_rule' AND EXISTS (
+              SELECT 1
+                FROM alert_rule r
+                JOIN billing_resource_suspension cs
+                  ON cs.resource_kind = 'connection'
+                 AND cs.resource_id = r.connection_id::text
+               WHERE r.id::text = ${s.resourceId}
+            )
+          )`
+        )
+      )
+    return rows.map((row) => row.organizationId)
   },
 
   /** Organizations whose access currently comes from an unexpired beta transition grant. */
@@ -981,6 +1102,74 @@ export const billingRepository = {
       removed += rows.length
     }
     return removed
+  },
+
+  /**
+   * Lift pauses one at a time, each only while its limit still has room.
+   * Runs under the per-organization capacity lock the capacity triggers take,
+   * so a create cannot claim a freed slot between the check and the restore,
+   * and two resources can never be restored into one slot. `allowed` is the
+   * limit being applied (it may not be stored yet during materialization);
+   * null means the plan does not cap the resource. Returns what was restored.
+   */
+  async restoreWithinLimits(
+    organizationId: string,
+    items: Array<{
+      kind: BillingResourceKind
+      resourceId: string
+      limit: string
+      allowed: number | null
+    }>
+  ): Promise<Array<{ kind: BillingResourceKind; resourceId: string }>> {
+    if (items.length === 0) return []
+    const db = await getDb()
+    return db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`durabull_capacity:${organizationId}`}, 0))`
+      )
+      const restored: Array<{ kind: BillingResourceKind; resourceId: string }> = []
+      for (const item of items) {
+        if (item.kind === 'alert_rule') {
+          // A rule only runs with its connection. Items arrive connections
+          // first, so a connection this call could not restore keeps its
+          // rules paused too.
+          const blocked = await tx.execute(
+            sql`SELECT EXISTS (
+              SELECT 1
+                FROM alert_rule r
+                JOIN billing_resource_suspension cs
+                  ON cs.resource_kind = 'connection'
+                 AND cs.resource_id = r.connection_id::text
+               WHERE r.id::text = ${item.resourceId}
+            ) AS blocked`
+          )
+          const blockedRows =
+            (blocked as unknown as { rows?: Array<{ blocked?: unknown }> }).rows ?? []
+          if (blockedRows[0]?.blocked === true) continue
+        }
+        if (item.allowed !== null) {
+          const result = await tx.execute(
+            sql`SELECT durabull_capacity_usage(${organizationId}, ${item.limit}) AS used`
+          )
+          // node-postgres and PGlite both return { rows }.
+          const rows = (result as unknown as { rows?: Array<{ used?: unknown }> }).rows ?? []
+          const used = Number(rows[0]?.used ?? 0)
+          if (used >= item.allowed) continue
+        }
+        const deleted = await tx
+          .delete(billingResourceSuspension)
+          .where(
+            and(
+              eq(billingResourceSuspension.organizationId, organizationId),
+              eq(billingResourceSuspension.resourceKind, item.kind),
+              eq(billingResourceSuspension.resourceId, item.resourceId)
+            )
+          )
+          .returning({ id: billingResourceSuspension.id })
+        if (deleted.length > 0) restored.push({ kind: item.kind, resourceId: item.resourceId })
+      }
+      return restored
+    })
   },
 
   // ---------------------------------------------------------------------------

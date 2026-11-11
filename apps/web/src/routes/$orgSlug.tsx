@@ -2,13 +2,15 @@ import { createFileRoute, Navigate, Outlet, useNavigate } from '@tanstack/react-
 import { Loader2, ShieldX, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useAppTopBar } from '@/components/app-top-bar'
-import { TransitionBanner } from '@/components/billing/transition-banner'
+import { PlanStatusBanner } from '@/components/billing/plan-status-banner'
+import { SeatPaused } from '@/components/billing/seat-paused'
 import { UpgradePromptHost } from '@/components/billing/upgrade-prompt-host'
 import { PageTitle } from '@/components/page-title'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
+import { useEntitlement } from '@/hooks/use-entitlement'
 import {
   useActiveOrganization,
   useOrganizations,
@@ -37,6 +39,7 @@ function OrgSlugLayout() {
   const { data: organizations, isLoading: orgsLoading } = useOrganizations()
   const { data: activeOrganization } = useActiveOrganization()
   const setActiveOrg = useSetActiveOrganization()
+  const { seatPaused } = useEntitlement()
 
   // Find the organization by slug
   const org = organizations?.find((o) => o.slug === orgSlug)
@@ -122,12 +125,24 @@ function OrgSlugLayout() {
     return <OrgLoading label={`Switching to ${org.name}…`} />
   }
 
+  // The member's own seat is paused by the plan: every request for this
+  // organization is refused, so explain that instead of rendering pages that
+  // can only fail. The check applies once this organization is the active one.
+  if (seatPaused && activeOrgId === org.id) {
+    return (
+      <SeatPaused
+        organizationName={org.name}
+        otherOrganizations={(organizations ?? []).filter((other) => other.id !== org.id)}
+      />
+    )
+  }
+
   // Valid organization - render children
   return (
     <>
       <Outlet />
       <UpgradePromptHost orgSlug={orgSlug} />
-      <TransitionBanner orgSlug={orgSlug} />
+      <PlanStatusBanner orgSlug={orgSlug} />
     </>
   )
 }
