@@ -33,7 +33,7 @@ interface SettingsNavGroup {
  */
 export function SettingsLayout({ orgSlug, children }: SettingsLayoutProps) {
   const { isAuthless, billingEnabled } = useAppMode()
-  const location = useLocation()
+  const { pathname } = useLocation()
   const groupId = useId()
   const navRef = useRef<HTMLElement>(null)
 
@@ -44,7 +44,7 @@ export function SettingsLayout({ orgSlug, children }: SettingsLayoutProps) {
     const current = nav?.querySelector<HTMLElement>('[aria-current="page"]')
     if (!nav || !current) return
     nav.scrollLeft = current.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2
-  }, [location.pathname])
+  }, [pathname])
   const basePath = `/${orgSlug}/settings`
 
   // A local install has no accounts, so everything about people and sign-in is left out.
@@ -105,8 +105,7 @@ export function SettingsLayout({ orgSlug, children }: SettingsLayoutProps) {
                   {group.label}
                 </span>
                 {items.map((item) => {
-                  const isActive =
-                    location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+                  const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`)
 
                   return (
                     <Link

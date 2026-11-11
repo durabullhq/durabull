@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Panel, PanelHeader, SectionHeader } from '@/components/ui/section'
+import { segmentedItemClass } from '@/components/ui/segmented'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -45,7 +46,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { segmentedItemClass } from '@/components/ui/tabs'
 import {
   type EnabledBillingOverview,
   useBilling,

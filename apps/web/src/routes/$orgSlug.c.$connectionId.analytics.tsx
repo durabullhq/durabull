@@ -20,12 +20,8 @@ import {
   type AnalyticsWindowValue,
   METRICS_WINDOWS,
 } from '@/components/analytics/analytics-window-options'
-import {
-  CHART_HEIGHT_CLASS,
-  ChartEmptyState,
-  ChartPanel,
-  SERIES_COLOR,
-} from '@/components/analytics/chart-panel'
+import { ChartEmptyState, ChartPanel } from '@/components/analytics/chart-panel'
+import { CHART_HEIGHT_CLASS, SERIES_COLOR } from '@/components/analytics/chart-series'
 import { RedisHealthObservability } from '@/components/analytics/redis-health-observability'
 import type { RedisHealthHistoryResponse } from '@/components/analytics/redis-health-types'
 import { useAppTopBar } from '@/components/app-top-bar'

@@ -13,6 +13,11 @@ import { toast } from 'sonner'
 import { AlertEventsTable } from '@/components/alerts/alert-events-table'
 import { AlertsHeader } from '@/components/alerts/alerts-view-switcher'
 import { BulkResolveDialog } from '@/components/alerts/bulk-resolve-dialog'
+import {
+  eventFiltersForStatus,
+  type IncidentStatusFilter,
+  STATUS_FILTER_OPTIONS,
+} from '@/components/alerts/incident-status-filter'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { PageTitle } from '@/components/page-title'
 import { Badge } from '@/components/ui/badge'
@@ -21,7 +26,6 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Panel, PanelHeader } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  type AlertEventFilterOptions,
   useAcknowledgeAlertEvent,
   useAlertSummary,
   useConnectionAlertEvents,
@@ -29,46 +33,6 @@ import {
   useResolveAlertEvent,
 } from '@/hooks/use-alerts'
 import { cn, formatNumber } from '@/lib/utils'
-
-export type IncidentStatusFilter =
-  | 'open'
-  | 'firing'
-  | 'acknowledged'
-  | 'resolved'
-  | 'suppressed'
-  | 'all'
-
-export const STATUS_FILTER_OPTIONS: Array<{
-  value: IncidentStatusFilter
-  label: string
-  /** Compact label for the one-click filter row. */
-  shortLabel: string
-}> = [
-  { value: 'open', label: 'Open', shortLabel: 'Open' },
-  { value: 'firing', label: 'Firing (unacknowledged)', shortLabel: 'Unacknowledged' },
-  { value: 'acknowledged', label: 'Acknowledged', shortLabel: 'Acknowledged' },
-  { value: 'resolved', label: 'Resolved', shortLabel: 'Resolved' },
-  { value: 'suppressed', label: 'Suppressed', shortLabel: 'Suppressed' },
-  { value: 'all', label: 'All statuses', shortLabel: 'All' },
-]
-
-/** Map the UI status filter to alert event query filters. "Open" means firing incl. acknowledged. */
-export function eventFiltersForStatus(status: IncidentStatusFilter): AlertEventFilterOptions {
-  switch (status) {
-    case 'open':
-      return { status: 'firing' }
-    case 'firing':
-      return { status: 'firing', acknowledged: false }
-    case 'acknowledged':
-      return { status: 'firing', acknowledged: true }
-    case 'resolved':
-      return { status: 'resolved' }
-    case 'suppressed':
-      return { status: 'suppressed' }
-    case 'all':
-      return {}
-  }
-}
 
 export function ConnectionIncidentsView({
   orgSlug,

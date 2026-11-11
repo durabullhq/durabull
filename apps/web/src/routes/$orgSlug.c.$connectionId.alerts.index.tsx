@@ -1,10 +1,8 @@
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import { z } from 'zod'
-import {
-  ConnectionIncidentsView,
-  type IncidentStatusFilter,
-} from '@/components/alerts/connection-incidents-view'
+import { ConnectionIncidentsView } from '@/components/alerts/connection-incidents-view'
+import type { IncidentStatusFilter } from '@/components/alerts/incident-status-filter'
 
 const incidentsSearchSchema = z.object({
   status: z.enum(['open', 'firing', 'acknowledged', 'resolved', 'suppressed', 'all']).catch('open'),

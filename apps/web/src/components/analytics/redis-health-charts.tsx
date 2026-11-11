@@ -16,7 +16,8 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart'
-import { CHART_HEIGHT_CLASS, ChartPanel } from './chart-panel'
+import { ChartPanel } from './chart-panel'
+import { CHART_HEIGHT_CLASS } from './chart-series'
 import { formatRedisHealthChartTick } from './redis-health-chart-format'
 import { type RedisHealthThreshold, thresholdsForChart } from './redis-health-metrics'
 import type { RedisHealthHistoryPoint } from './redis-health-types'

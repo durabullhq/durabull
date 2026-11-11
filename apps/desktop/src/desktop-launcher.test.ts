@@ -96,6 +96,8 @@ describe('DESKTOP_WINDOW_CHROME', () => {
     expect(topBar).toContain("APP_TOP_BAR_HEIGHT_CLASS = 'h-12'")
     const trafficLightSize = 12
     const rowHeight = 48
-    expect<number>(DESKTOP_WINDOW_CHROME.trafficLightPosition.y).toBe((rowHeight - trafficLightSize) / 2)
+    expect<number>(DESKTOP_WINDOW_CHROME.trafficLightPosition.y).toBe(
+      (rowHeight - trafficLightSize) / 2
+    )
   })
 })

@@ -5,7 +5,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Metric, MetricStrip } from '@/components/ui/metric'
 import { Panel, SectionHeader } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
-import { CHART_HEIGHT_CLASS } from './chart-panel'
+import { CHART_HEIGHT_CLASS } from './chart-series'
 import { formatRedisHealthThreshold, type RedisHealthMetric } from './redis-health-metrics'
 import type { RedisHealthHistoryResponse } from './redis-health-types'
 

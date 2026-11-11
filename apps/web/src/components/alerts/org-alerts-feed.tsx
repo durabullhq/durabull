@@ -7,7 +7,7 @@ import {
   eventFiltersForStatus,
   type IncidentStatusFilter,
   STATUS_FILTER_OPTIONS,
-} from '@/components/alerts/connection-incidents-view'
+} from '@/components/alerts/incident-status-filter'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { useConnection } from '@/components/connection-provider'
 import { PageTitle } from '@/components/page-title'

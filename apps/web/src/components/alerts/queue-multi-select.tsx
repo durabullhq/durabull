@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { SEGMENTED_GROUP_CLASS, segmentedItemClass } from '@/components/ui/tabs'
+import { SEGMENTED_GROUP_CLASS, segmentedItemClass } from '@/components/ui/segmented'
 import type { QueueFilterMode } from '@/hooks/use-alerts'
 import { cn } from '@/lib/utils'
 

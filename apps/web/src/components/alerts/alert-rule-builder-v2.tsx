@@ -43,9 +43,9 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SEGMENTED_GROUP_CLASS, segmentedItemClass } from '@/components/ui/segmented'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { SEGMENTED_GROUP_CLASS, segmentedItemClass } from '@/components/ui/tabs'
 import type {
   AlertDestinationRecord,
   AlertRuleMutationInput,

@@ -89,7 +89,15 @@ function InviteSignInForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* The invited address is fixed (shown above); keep it in the form for password managers. */}
-      <input type="email" name="email" autoComplete="username" value={email} readOnly hidden />
+      <input
+        type="email"
+        name="email"
+        aria-label="Email"
+        autoComplete="username"
+        value={email}
+        readOnly
+        hidden
+      />
 
       <AuthField id="password" label="Password">
         <Input
@@ -208,7 +216,15 @@ function InviteSignUpForm({
         />
       </AuthField>
 
-      <input type="email" name="email" autoComplete="username" value={email} readOnly hidden />
+      <input
+        type="email"
+        name="email"
+        aria-label="Email"
+        autoComplete="username"
+        value={email}
+        readOnly
+        hidden
+      />
 
       <AuthField id="password" label="Password" hint="At least 8 characters.">
         <Input

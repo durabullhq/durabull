@@ -5,7 +5,7 @@ import { Badge, type BadgeProps } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Panel, PanelHeader } from '@/components/ui/section'
-import { segmentedItemClass } from '@/components/ui/tabs'
+import { segmentedItemClass } from '@/components/ui/segmented'
 import {
   type JobDependenciesResponse,
   type JobDependencyKind,

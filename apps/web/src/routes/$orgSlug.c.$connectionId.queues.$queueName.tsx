@@ -35,7 +35,7 @@ import {
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { z } from 'zod'
 import { AddJobDialog } from '@/components/add-job-dialog'
-import { SERIES_COLOR } from '@/components/analytics/chart-panel'
+import { SERIES_COLOR } from '@/components/analytics/chart-series'
 import { useAppTopBar } from '@/components/app-top-bar'
 import { DeleteQueueDialog } from '@/components/delete-queue-dialog'
 import { JobRemoveButton } from '@/components/job-remove-button'
@@ -418,6 +418,11 @@ function QueueDetailPage() {
     visibleJobs.length,
   ])
 
+  // The scroll listener reads the latest loader through a ref, so it is attached once per
+  // tab rather than re-attached every time a page of jobs loads.
+  const loadMoreJobsRef = useRef(loadMoreJobs)
+  loadMoreJobsRef.current = loadMoreJobs
+
   useEffect(() => {
     const container = jobsScrollRef.current
     if (!container || section !== 'jobs' || tab !== 'jobs') {
@@ -428,13 +433,13 @@ function QueueDetailPage() {
       const nearBottom =
         container.scrollTop + container.clientHeight >= container.scrollHeight - 240
       if (nearBottom) {
-        loadMoreJobs()
+        loadMoreJobsRef.current()
       }
     }
 
     container.addEventListener('scroll', onScroll)
     return () => container.removeEventListener('scroll', onScroll)
-  }, [loadMoreJobs, section, tab])
+  }, [section, tab])
 
   const updateSearch = useCallback(
     (patch: Partial<z.infer<typeof queueSearchSchema>>) =>
