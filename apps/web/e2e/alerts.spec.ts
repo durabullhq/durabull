@@ -145,10 +145,10 @@ test.describe('Alerts', () => {
 
     await page.getByRole('link', { name: 'Alerts' }).click()
 
-    // Landing view is Incidents, not Rules: status filter + metric cards.
+    // Landing view is Incidents, not Rules: one-click status filters + the resolved count.
     await expect(page).toHaveURL(new RegExp(`/${orgSlug}/c/${connectionId}/alerts/?(\\?.*)?$`))
     await expect(page.getByLabel('Filter incidents by status')).toBeVisible()
-    await expect(page.getByText('Resolved · 24h')).toBeVisible()
+    await expect(page.getByText('resolved in 24h')).toBeVisible()
 
     const viewSwitcher = page.getByRole('navigation', { name: 'Alerts views' })
     await viewSwitcher.getByRole('link', { name: 'Rules' }).click()
@@ -263,9 +263,9 @@ test.describe('Alerts', () => {
     try {
       await page.goto(`/${orgSlug}/c/${connectionId}/alerts/rules`)
       const row = page.getByTestId('alert-rule-row').filter({ hasText: ruleName })
-      // exact: true — the snooze trigger's aria-label contains the rule name,
-      // which itself contains the word "Duplicate".
-      await row.getByRole('button', { name: 'Duplicate', exact: true }).click()
+      // Duplicate lives in the row's overflow menu.
+      await row.getByRole('button', { name: `More actions for ${ruleName}` }).click()
+      await page.getByRole('menuitem', { name: 'Duplicate' }).click()
 
       await expect(page).toHaveURL(new RegExp(`/alerts/new\\?from=${rule.id}$`))
       await expect(page.getByTestId('alert-rule-name-input')).toHaveValue(`${ruleName} (copy)`)
@@ -281,9 +281,9 @@ test.describe('Alerts', () => {
 
     await page.goto(`/${orgSlug}/c/${connectionId}/alerts/rules`)
     const row = page.getByTestId('alert-rule-row').filter({ hasText: ruleName })
-    // exact: true — the snooze trigger's aria-label contains the rule name,
-    // which itself contains the word "Delete".
-    await row.getByRole('button', { name: 'Delete', exact: true }).click()
+    // Delete lives in the row's overflow menu.
+    await row.getByRole('button', { name: `More actions for ${ruleName}` }).click()
+    await page.getByRole('menuitem', { name: 'Delete' }).click()
 
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText('Delete alert rule')).toBeVisible()

@@ -38,33 +38,28 @@ function OrgSlugLayout() {
   const { data: activeOrganization } = useActiveOrganization()
   const setActiveOrg = useSetActiveOrganization()
 
-  // Track if we've already set the active org to prevent loops
-  const hasSetActiveRef = useRef(false)
-
   // Find the organization by slug
   const org = organizations?.find((o) => o.slug === orgSlug)
 
   // Get current active org ID from session
   const activeOrgId = (session as { activeOrganizationId?: string })?.activeOrganizationId
 
-  // Set the active organization when we have the data and it's different
-  useEffect(() => {
-    if (org && activeOrgId !== org.id && !hasSetActiveRef.current && !setActiveOrg.isPending) {
-      hasSetActiveRef.current = true
-      setActiveOrg.mutate(org.id, {
-        onError: () => {
-          // Reset on error so we can retry
-          hasSetActiveRef.current = false
-        },
-      })
-    }
-  }, [org, activeOrgId, setActiveOrg])
+  // The organization we last asked the server to switch to. Keyed by id rather than a
+  // boolean so moving to another organization's URL always triggers a new switch.
+  const requestedOrgIdRef = useRef<string | null>(null)
 
-  // Reset the ref when slug changes (orgSlug in deps is intentional)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: we intentionally reset when orgSlug changes
+  // Switch the server session to the URL's organization when it isn't already active.
   useEffect(() => {
-    hasSetActiveRef.current = false
-  }, [orgSlug])
+    if (!org || isAuthless || activeOrgId === org.id) return
+    if (requestedOrgIdRef.current === org.id) return
+    requestedOrgIdRef.current = org.id
+    setActiveOrg.mutate(org.id, {
+      onError: () => {
+        // Allow "Try again" (and the next render) to request the switch again.
+        requestedOrgIdRef.current = null
+      },
+    })
+  }, [org, activeOrgId, isAuthless, setActiveOrg])
 
   // Show loading while checking auth or fetching organizations
   if (authLoading || orgsLoading) {
@@ -88,11 +83,15 @@ function OrgSlugLayout() {
   }
 
   // Organization-scoped API calls use the session's active organization, so pages
-  // must not render (and start reading or writing) until the server has switched
-  // to the organization in the URL. The active-organization query reflects the
-  // server session and is refetched once the switch succeeds. An install without
-  // accounts has exactly one organization, so there is nothing to wait for.
-  const isOrganizationActive = isAuthless || activeOrganization?.id === org.id
+  // must not render (and start reading or writing) until the server session is on
+  // the organization in the URL: either it already was, or our switch to it has
+  // succeeded. An install without accounts has exactly one organization, so there
+  // is nothing to wait for.
+  const isOrganizationActive =
+    isAuthless ||
+    activeOrgId === org.id ||
+    (setActiveOrg.isSuccess && setActiveOrg.variables === org.id) ||
+    activeOrganization?.id === org.id
   if (!isOrganizationActive) {
     if (setActiveOrg.isError) {
       return (
@@ -103,7 +102,17 @@ function OrgSlugLayout() {
           description={setActiveOrg.error.message}
           className="min-h-[min(420px,60vh)]"
           actions={
-            <Button onClick={() => setActiveOrg.mutate(org.id)} disabled={setActiveOrg.isPending}>
+            <Button
+              onClick={() => {
+                requestedOrgIdRef.current = org.id
+                setActiveOrg.mutate(org.id, {
+                  onError: () => {
+                    requestedOrgIdRef.current = null
+                  },
+                })
+              }}
+              disabled={setActiveOrg.isPending}
+            >
               Try again
             </Button>
           }

@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { expect, test } from '@playwright/test'
 import {
-  MCP_LEGACY_PROTOCOL_VERSION as MCP_PROTOCOL_VERSION,
   MCP_PROTOCOL_VERSION as MCP_CURRENT_PROTOCOL_VERSION,
+  MCP_LEGACY_PROTOCOL_VERSION as MCP_PROTOCOL_VERSION,
 } from '../../../packages/mcp/src/constants'
 
 const MCP_JSON_RPC_VERSION = '2.0'

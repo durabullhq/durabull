@@ -52,7 +52,7 @@ test.describe('Pages', () => {
       await page.goto(`/${TEST_ORG_SLUG}/c/${connection.id}`)
 
       await expect(
-        page.getByRole('heading', { name: 'Failed to load queues', exact: true, level: 2 })
+        page.getByRole('heading', { name: 'Failed to load queues', exact: true })
       ).toBeVisible({ timeout: 25000 })
 
       await expect(
