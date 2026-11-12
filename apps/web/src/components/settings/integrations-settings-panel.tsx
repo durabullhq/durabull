@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SettingsPage } from '@/components/settings/settings-layout'
+import {
+  SlackIntegrationCard,
+  useSlackOauthResultToast,
+} from '@/components/settings/slack-integration-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,6 +20,7 @@ import {
   useSaveLinearIntegration,
   useTestLinearIntegration,
 } from '@/hooks/use-alerts'
+import { useSlackIntegration } from '@/hooks/use-slack'
 
 export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
   const linearIntegrationQuery = useLinearIntegration()
@@ -26,6 +31,9 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
   const [linearTeamId, setLinearTeamId] = useState('')
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const linearIntegration = linearIntegrationQuery.data?.integration ?? null
+  const slackInstallation = useSlackIntegration().data?.installation ?? null
+  const connectedCount = (linearIntegration ? 1 : 0) + (slackInstallation ? 1 : 0)
+  useSlackOauthResultToast()
 
   useEffect(() => {
     setLinearTeamId(linearIntegration?.defaultTeamId ?? '')
@@ -38,7 +46,11 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
       : ({ label: 'Needs attention', variant: 'warning' } as const)
 
   return (
-    <SettingsPage title="Integrations" count={linearIntegration ? '1 connected' : undefined}>
+    <SettingsPage
+      title="Integrations"
+      count={connectedCount > 0 ? `${connectedCount} connected` : undefined}
+    >
+      <SlackIntegrationCard orgSlug={orgSlug} />
       <Panel>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <div className="min-w-0 flex-1">

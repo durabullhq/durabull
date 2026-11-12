@@ -4,6 +4,7 @@ import { controlledStory } from '../src/controlled-story'
 import {
   setBillingTransition,
   setFixtureState,
+  setSlackFixture,
   setUpdateAvailable,
   startFixtures,
 } from '../src/fixtures/network'
@@ -26,6 +27,7 @@ const preview: Preview = {
       setFixtureState(parameters.fixtureState ?? 'ready')
       setUpdateAvailable(parameters.updateAvailable === true)
       setBillingTransition(parameters.billingTransition ?? 'off')
+      setSlackFixture(parameters.slackFixture ?? 'connected')
       setSignedIn(parameters.signedIn !== false)
       setDesktop(parameters.desktop === true)
       return {}
@@ -35,7 +37,7 @@ const preview: Preview = {
     controlledStory,
     (Story, context) => (
       <CatalogProvider
-        key={`${context.id}-${context.parameters.fixtureState ?? 'ready'}`}
+        key={`${context.id}-${context.parameters.fixtureState ?? 'ready'}-${context.parameters.slackFixture ?? 'connected'}`}
         theme={context.globals.theme === 'dark' ? 'dark' : 'light'}
       >
         {context.title.startsWith('Marketing/') ? (

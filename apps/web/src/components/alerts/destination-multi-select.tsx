@@ -1,11 +1,12 @@
 import { Check, ChevronDown, Link2, Mail, Search, Webhook, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { SlackLogo } from '@/components/brand/slack-logo'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import type { AlertDestinationType, AlertRuleDestinationSummary } from '@/hooks/use-alerts'
 import { cn } from '@/lib/utils'
 
-const TYPE_ORDER: AlertDestinationType[] = ['webhook', 'email', 'linear']
+const TYPE_ORDER: AlertDestinationType[] = ['slack', 'webhook', 'email', 'linear']
 
 const TYPE_META: Record<
   AlertDestinationType,
@@ -14,6 +15,7 @@ const TYPE_META: Record<
   webhook: { label: 'Webhooks', icon: Webhook },
   email: { label: 'Email', icon: Mail },
   linear: { label: 'Linear', icon: Link2 },
+  slack: { label: 'Slack', icon: SlackLogo },
 }
 
 interface DestinationMultiSelectProps {

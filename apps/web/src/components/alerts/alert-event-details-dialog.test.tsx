@@ -122,6 +122,32 @@ describe('AlertEventDetailsDialog', () => {
     )
   })
 
+  it('links Slack deliveries to the posted message', () => {
+    renderDialog(
+      createEvent({
+        deliveries: [
+          createDelivery({
+            channelType: 'slack',
+            status: 'delivered',
+            target: 'destination:dest-1',
+            externalIdentifier: '#alerts',
+            externalUrl: 'https://acme.slack.com/archives/C0ALERTS/p1700000001000100',
+            lastError: null,
+            providerMetadata: { destinationName: 'Ops channel', resolvedType: 'slack' },
+          }),
+        ],
+      })
+    )
+
+    expect(screen.getByText('Slack')).toBeInTheDocument()
+    expect(screen.getByText('Ops channel')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /View in Slack \(#alerts\)/ })).toHaveAttribute(
+      'href',
+      'https://acme.slack.com/archives/C0ALERTS/p1700000001000100'
+    )
+    expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument()
+  })
+
   it('explains when no channels were configured', () => {
     renderDialog(createEvent({ deliveries: [] }))
 

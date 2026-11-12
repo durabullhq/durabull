@@ -1,8 +1,15 @@
-import { Link2, Mail, Plus, Send, Webhook } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Link2, Lock, Mail, Plus, Send, Webhook } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { SlackLogo } from '@/components/brand/slack-logo'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SecretInput } from '@/components/secret-input'
+import { SlackDestinationFields } from '@/components/settings/slack-destination-fields'
+import {
+  SlackConnectButton,
+  useSlackOauthResultToast,
+} from '@/components/settings/slack-integration-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,6 +33,7 @@ import type {
   AlertDestinationType,
   AlertDestinationUpdateInput,
   LinearDestinationConfig,
+  SlackDestinationConfig,
 } from '@/hooks/use-alerts'
 import {
   useAlertDestinations,
@@ -36,11 +44,18 @@ import {
   useTestAlertDestination,
   useUpdateAlertDestination,
 } from '@/hooks/use-alerts'
+import { useActiveOrganization } from '@/hooks/use-organization'
+import { useSlackIntegration } from '@/hooks/use-slack'
 
 const TYPE_META: Record<
   AlertDestinationType,
   { label: string; icon: React.ComponentType<{ className?: string }>; description: string }
 > = {
+  slack: {
+    label: 'Slack',
+    icon: SlackLogo,
+    description: 'Post incidents to a channel with acknowledge, resolve, snooze and retry buttons.',
+  },
   webhook: {
     label: 'Webhook',
     icon: Webhook,
@@ -68,6 +83,15 @@ function destinationTargetSummary(destination: AlertDestinationRecord): string {
     const target = destination.config.target
     return typeof target === 'string' ? target : '—'
   }
+  if (destination.type === 'slack') {
+    const config = destination.config as Partial<SlackDestinationConfig>
+    const mention =
+      config.mention === 'here' ? ' · @here' : config.mention === 'channel' ? ' · @channel' : ''
+    const groups = config.userGroupIds?.length
+      ? ` · ${config.userGroupIds.length} group${config.userGroupIds.length === 1 ? '' : 's'}`
+      : ''
+    return `#${config.channelName ?? config.channelId ?? '—'}${mention}${groups}`
+  }
   return Object.keys(destination.config).length > 0 ? 'Linear (custom fields)' : 'Linear defaults'
 }
 
@@ -78,6 +102,8 @@ export function AlertDestinationsPage() {
   const deleteDestination = useDeleteAlertDestination()
   const testDestination = useTestAlertDestination()
   const linearIntegrationQuery = useLinearIntegration()
+  const slackQuery = useSlackIntegration()
+  useSlackOauthResultToast()
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<AlertDestinationRecord | null>(null)
@@ -86,6 +112,11 @@ export function AlertDestinationsPage() {
 
   const destinations = destinationsQuery.data?.destinations ?? []
   const linearConnected = linearIntegrationQuery.data?.integration?.validationStatus === 'valid'
+  const slack = {
+    entitled: slackQuery.data?.entitled !== false,
+    configured: slackQuery.data?.configured === true,
+    connected: slackQuery.data?.installation?.status === 'active',
+  }
 
   async function handleTest(destination: AlertDestinationRecord) {
     setTestingId(destination.id)
@@ -104,6 +135,10 @@ export function AlertDestinationsPage() {
       } else if (destination.type === 'linear') {
         toast.success(`Linear connection verified for ${destination.name}`, {
           description: result.organizationName,
+        })
+      } else if (destination.type === 'slack') {
+        toast.success('Test message posted to Slack', {
+          description: result.channelName ? `#${result.channelName}` : destination.name,
         })
       } else {
         toast.success(`Email delivery is configured for ${destination.name}`)
@@ -178,7 +213,7 @@ export function AlertDestinationsPage() {
             className="py-14"
             icon={Send}
             title="No destinations yet"
-            description="A destination is a webhook, an email address, or Linear. Create one, then pick it on any alert rule."
+            description="A destination is a Slack channel, a webhook, an email address, or Linear. Create one, then pick it on any alert rule."
             actions={
               <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
                 <Plus className="h-4 w-4" />
@@ -206,6 +241,7 @@ export function AlertDestinationsPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         linearConnected={linearConnected}
+        slack={slack}
         isSaving={createDestination.isPending}
         onCreate={async (input) => {
           try {
@@ -339,16 +375,24 @@ function DestinationRow({
   )
 }
 
+interface SlackAvailability {
+  entitled: boolean
+  configured: boolean
+  connected: boolean
+}
+
 function CreateDestinationDialog({
   open,
   onOpenChange,
   linearConnected,
+  slack,
   isSaving,
   onCreate,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   linearConnected: boolean
+  slack: SlackAvailability
   isSaving: boolean
   onCreate: (input: AlertDestinationCreateInput) => Promise<void>
 }) {
@@ -358,6 +402,11 @@ function CreateDestinationDialog({
   const [signingSecret, setSigningSecret] = useState('')
   const [emailTarget, setEmailTarget] = useState('')
   const [linearConfig, setLinearConfig] = useState<LinearDestinationConfig>({})
+  const [slackConfig, setSlackConfig] = useState<Partial<SlackDestinationConfig>>({
+    mention: 'none',
+    threadUpdates: true,
+  })
+  const { data: activeOrganization } = useActiveOrganization()
 
   const reset = () => {
     setType(null)
@@ -366,6 +415,7 @@ function CreateDestinationDialog({
     setSigningSecret('')
     setEmailTarget('')
     setLinearConfig({})
+    setSlackConfig({ mention: 'none', threadUpdates: true })
   }
 
   async function handleSubmit() {
@@ -379,6 +429,13 @@ function CreateDestinationDialog({
       })
     } else if (type === 'email') {
       await onCreate({ type: 'email', name: name.trim(), config: { target: emailTarget.trim() } })
+    } else if (type === 'slack') {
+      if (!slackConfig.channelId) return
+      await onCreate({
+        type: 'slack',
+        name: name.trim() || `Slack #${slackConfig.channelName ?? slackConfig.channelId}`,
+        config: { ...slackConfig, channelId: slackConfig.channelId },
+      })
     } else {
       await onCreate({ type: 'linear', name: name.trim(), config: linearConfig })
     }
@@ -407,6 +464,15 @@ function CreateDestinationDialog({
             {(Object.keys(TYPE_META) as AlertDestinationType[]).map((candidate) => {
               const meta = TYPE_META[candidate]
               const Icon = meta.icon
+              if (candidate === 'slack' && (!slack.entitled || !slack.connected)) {
+                return (
+                  <SlackTypeUnavailable
+                    key={candidate}
+                    slack={slack}
+                    orgSlug={activeOrganization?.slug ?? ''}
+                  />
+                )
+              }
               const disabled = candidate === 'linear' && !linearConnected
 
               return (
@@ -444,7 +510,9 @@ function CreateDestinationDialog({
                     ? 'On-call pipeline'
                     : type === 'email'
                       ? 'Ops inbox'
-                      : 'Linear triage'
+                      : type === 'slack'
+                        ? `Slack #${slackConfig.channelName ?? 'alerts'}`
+                        : 'Linear triage'
                 }
               />
             </div>
@@ -491,6 +559,10 @@ function CreateDestinationDialog({
                 enabled={linearConnected}
               />
             ) : null}
+
+            {type === 'slack' ? (
+              <SlackDestinationFields config={slackConfig} onChange={setSlackConfig} />
+            ) : null}
           </div>
         )}
 
@@ -504,7 +576,11 @@ function CreateDestinationDialog({
             Cancel
           </Button>
           {type !== null ? (
-            <Button type="button" onClick={() => void handleSubmit()} disabled={isSaving}>
+            <Button
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={isSaving || (type === 'slack' && !slackConfig.channelId)}
+            >
               {isSaving ? 'Creating...' : 'Create destination'}
             </Button>
           ) : null}
@@ -537,6 +613,9 @@ function EditDestinationDialog({
   const [linearConfig, setLinearConfig] = useState<LinearDestinationConfig>(
     () => destination.config as LinearDestinationConfig
   )
+  const [slackConfig, setSlackConfig] = useState<Partial<SlackDestinationConfig>>(
+    () => destination.config as Partial<SlackDestinationConfig>
+  )
   const [enabled, setEnabled] = useState(destination.enabled)
 
   async function handleSubmit() {
@@ -550,6 +629,9 @@ function EditDestinationDialog({
     }
     if (destination.type === 'linear') {
       input.config = linearConfig as Record<string, unknown>
+    }
+    if (destination.type === 'slack') {
+      input.config = slackConfig as Record<string, unknown>
     }
     await onSave(input)
   }
@@ -619,6 +701,14 @@ function EditDestinationDialog({
             />
           ) : null}
 
+          {destination.type === 'slack' ? (
+            <SlackDestinationFields
+              config={slackConfig}
+              onChange={setSlackConfig}
+              idPrefix="edit-slack-destination"
+            />
+          ) : null}
+
           <div className="space-y-2">
             <Label>Status</Label>
             <div className="inline-flex rounded-md border bg-background">
@@ -661,6 +751,45 @@ function EditDestinationDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Slack in the type picker when it cannot be used yet: says why and offers the next step. */
+function SlackTypeUnavailable({ slack, orgSlug }: { slack: SlackAvailability; orgSlug: string }) {
+  return (
+    <div
+      className="flex items-start gap-3 rounded-md border bg-background px-4 py-3"
+      data-testid="destination-type-slack"
+    >
+      <SlackLogo className="mt-0.5 h-4 w-4 text-muted-foreground" />
+      <div className="min-w-0 flex-1 space-y-2">
+        <span className="flex items-center gap-2 text-sm font-semibold">
+          Slack
+          {!slack.entitled ? (
+            <Badge variant="outline" className="gap-1">
+              <Lock className="h-3 w-3" aria-hidden />
+              Team plan
+            </Badge>
+          ) : null}
+        </span>
+        <span className="block text-sm text-muted-foreground">
+          {!slack.entitled
+            ? 'Post incidents to Slack and respond from the message. Included with the Team plan.'
+            : !slack.configured
+              ? 'Slack is not set up on this Durabull server yet. See Settings → Integrations.'
+              : 'Connect your Slack workspace to choose a channel.'}
+        </span>
+        {!slack.entitled ? (
+          <Button asChild size="xs" variant="outline">
+            <Link to="/$orgSlug/settings/billing" params={{ orgSlug }}>
+              View plans
+            </Link>
+          </Button>
+        ) : slack.configured ? (
+          <SlackConnectButton returnTo="destinations" variant="outline" />
+        ) : null}
+      </div>
+    </div>
   )
 }
 
