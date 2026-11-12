@@ -278,7 +278,7 @@ function buildLlmsTxt(docPages: Map<string, DocPageMeta>, metaSections: MetaSect
     '',
     '## Comparisons',
     '',
-    'Durabull is a BullMQ operations dashboard with Redis auto-discovery, multiple environments, alerts (email, signed webhooks, Linear), and a hosted MCP server. It does not replace Inngest, Trigger.dev, or Temporal. Those platforms replace the queue runtime.',
+    'Durabull is a BullMQ operations dashboard with Redis auto-discovery, multiple environments, alerts (Slack with in-message actions, email, signed webhooks, Linear), and a hosted MCP server. It does not replace Inngest, Trigger.dev, or Temporal. Those platforms replace the queue runtime.',
     '',
     ...verifiedCompetitors.map((item) =>
       formatLink(`/compare/${item.slug}`, item.title, item.description)

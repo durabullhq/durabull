@@ -173,6 +173,28 @@ endpoints under `/api/auth`, rather than `/api/team`.
 
 See [Linear Integration](/documentation/integrations/linear) for configuration and delivery behavior.
 
+### Slack integration
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/integrations/slack` | Whether Slack is configured and included in the plan, and the workspace installation |
+| `PATCH` | `/api/integrations/slack` | Turn Slack actions (`actionsEnabled`) or link previews (`unfurlsEnabled`) on or off |
+| `DELETE` | `/api/integrations/slack` | Disconnect the workspace and revoke the bot token when no other organization shares it |
+| `POST` | `/api/integrations/slack/connect` | Start the OAuth install; optional `returnTo`: `integrations` or `destinations` |
+| `GET` | `/api/integrations/slack/callback` | OAuth callback |
+| `POST` | `/api/integrations/slack/test` | Validate the bot token with Slack |
+| `GET` | `/api/integrations/slack/channels` | Public channels and private channels the app is in (`?refresh=true` skips the 60-second cache) |
+| `GET` | `/api/integrations/slack/user-groups` | Slack user groups for mentions |
+| `GET` | `/api/integrations/slack/manifest` | Slack app manifest for this deployment |
+
+Slack calls three public endpoints, each verified with `SLACK_SIGNING_SECRET`:
+`POST /api/slack/events` (Events API), `POST /api/slack/commands` (`/durabull`) and
+`POST /api/slack/interactions` (buttons and menus). Create a Slack destination with
+`POST /api/alerts/destinations` and `{"type":"slack","name":"…","config":{"channelId":"C…",
+"channelName":"alerts","mention":"none","userGroupIds":[],"threadUpdates":true}}`.
+Slack routes require the `integrations.slack` plan feature on Durabull Cloud.
+See [Slack App](/documentation/integrations/slack).
+
 ## Connection-Scoped Resources
 
 All routes below are under:
@@ -338,7 +360,8 @@ queue thresholds, failure rates, stalled queues, and Redis health conditions. Se
 
 ## Rate Limits and Payload Constraints
 
-- Production general API limits are `600/minute`; auth is `50/10 seconds`; connection tests are `10/minute` per limiter key.
+- Production general API limits are `600/minute`; auth is `50/10 seconds`; connection tests are `10/minute` per limiter key. Signed Stripe and Slack callbacks are exempt.
+- Slack destination test messages are limited to one every 10 seconds per destination.
 - Limits are in-memory and per process; test, development, CI, or `DISABLE_RATE_LIMIT=true` skip them.
 - Request body limit is `1 MiB`.
 - Bulk job actions cap `jobIds` at `100` per request.

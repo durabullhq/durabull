@@ -205,7 +205,7 @@ export const uiCompetitors: Competitor[] = [
     alternativesPage: true,
     title: 'Durabull vs Taskforce.sh',
     description:
-      'Compare Taskforce.sh and Durabull on BullMQ discovery, alerts, MCP, self-hosting, and price. Taskforce has Slack/PagerDuty today; Durabull has email, webhooks, and Linear, with Slack and PagerDuty coming soon.',
+      'Compare Taskforce.sh and Durabull on BullMQ discovery, alerts, MCP, self-hosting, and price. Both deliver alerts to Slack; Taskforce also has PagerDuty, while Durabull adds email, webhooks, Linear, and Slack actions.',
     keywords: [
       'Taskforce.sh alternative',
       'Taskforce vs Durabull',
@@ -234,7 +234,7 @@ export const uiCompetitors: Competitor[] = [
     whenToChooseThem:
       'Choose Taskforce when you want the BullMQ authors’ dashboard, native Slack/PagerDuty monitors, Pro group views, or PostgreSQL-backed BullMQ support through its connector. Taskforce publishes a SOC 2 Type II report, available on request, for procurement review.',
     whenToChooseDurabull:
-      'Choose Durabull when you want the same Redis-scan model plus MCP, multiple Redis connections per org, Apache-2.0 source you can self-host, and a lower hosted price at the same connection counts (Team $9/mo for 5 connections and 10 members; Business $29/mo for 15 connections and 50 members). Taskforce includes unlimited users on every plan; Durabull caps members. Durabull alerts today are email, signed webhooks, and Linear; Slack and PagerDuty are coming soon.',
+      'Choose Durabull when you want the same Redis-scan model plus MCP, multiple Redis connections per org, Apache-2.0 source you can self-host, and a lower hosted price at the same connection counts (Team $9/mo for 5 connections and 10 members; Business $29/mo for 15 connections and 50 members). Taskforce includes unlimited users on every plan; Durabull caps members. Durabull alerts go to Slack (with acknowledge, resolve, snooze and retry buttons), email, signed webhooks, and Linear; PagerDuty is not built in.',
     rows: [
       {
         feature: 'See queues',
@@ -249,7 +249,8 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, signed webhooks, Linear (Slack, PagerDuty coming soon)',
+        durabull:
+          'Slack app with in-message actions, email, signed webhooks, Linear (no PagerDuty)',
         competitor: 'Email, Slack, PagerDuty',
       },
       {
@@ -277,7 +278,7 @@ export const uiCompetitors: Competitor[] = [
       {
         question: 'Does Durabull replace Taskforce.sh?',
         answer:
-          'For Redis auto-discovery, job inspection, and MCP, the two compare directly. Taskforce has native Slack/PagerDuty monitors today (Durabull’s are coming soon), a SOC 2 Type II report, and first-party BullMQ Pro group views. Durabull is open source under Apache-2.0; its hosted Team plan is $9/month for five connections (Taskforce Growing is $49.95/month for five, with unlimited users).',
+          'For Redis auto-discovery, job inspection, and MCP, the two compare directly. Taskforce has native PagerDuty monitors (Durabull has a native Slack app but no PagerDuty), a SOC 2 Type II report, and first-party BullMQ Pro group views. Durabull is open source under Apache-2.0; its hosted Team plan is $9/month for five connections (Taskforce Growing is $49.95/month for five, with unlimited users).',
       },
     ],
     sources: [

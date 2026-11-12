@@ -121,7 +121,7 @@ export default function PrivacyPage() {
       <PageHeading label="Legal · Durabull" title="Privacy Policy">
         <p>{policyDescription}</p>
         <p className="v2-mono mt-5 text-[var(--v2-muted)]">
-          Last updated: <time dateTime="2026-10-09">October 9, 2026</time>
+          Last updated: <time dateTime="2026-11-12">November 12, 2026</time>
         </p>
       </PageHeading>
 
@@ -347,9 +347,13 @@ function PrivacySharingSection() {
         </li>
         <li>
           <strong className="text-[var(--v2-fg)]">Destinations you configure:</strong> notification
-          recipients, webhook endpoints, and Linear receive incident or issue data for enabled
-          workflows, including job identifiers, failure details, and operational context. You choose
-          these destinations; their operators control the copies they receive.
+          recipients, webhook endpoints, Linear, and Slack receive incident or issue data for
+          enabled workflows, including job identifiers, failure details, and operational context.
+          When you connect Slack, Durabull also stores the workspace name and identifier, an
+          encrypted bot token, and the channel and timestamp of each alert message it posts, and it
+          reads the profile email of Slack users who use the app to match them to organization
+          members (kept in memory for up to ten minutes, not stored). Job payloads are not sent to
+          Slack. You choose these destinations; their operators control the copies they receive.
         </li>
         <li>
           <strong className="text-[var(--v2-fg)]">Support and necessary disclosures:</strong>{' '}

@@ -23,6 +23,7 @@ subscription and never contact Stripe.
 | Enabled alert rules | 3 | 15 | 100 | From 250 |
 | Saved alert destinations | 1 | 5 | 20 | From 50 |
 | Email / webhook / Linear alerts | Email | All | All | All |
+| [Slack app](/documentation/integrations/slack): alerts, actions, `/durabull`, link previews | — | Included | Included | Included |
 | Redis health history | 24 hours | 14 days | 30 days | 30 days |
 | Support | Community | Email, best effort | Priority email (2 business days) | Agreed business hours |
 
@@ -94,7 +95,8 @@ Billing never pauses your queues, deletes jobs, purges Redis, or changes schedul
   stay enabled are kept first.
 - Paused resources keep their configuration and are restored automatically after an upgrade. Paused
   members cannot use existing sessions or tokens for that organization, paused connections stop
-  polling, and webhook or Linear deliveries stop when the plan no longer includes them.
+  polling, and Slack, webhook or Linear deliveries stop when the plan no longer includes them.
+  Buttons and commands in Slack explain that the plan no longer includes the Slack app.
 
 ## History retention
 

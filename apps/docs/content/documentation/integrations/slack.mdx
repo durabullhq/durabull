@@ -1,0 +1,210 @@
+---
+title: Slack App
+description: Send BullMQ alert incidents to Slack, respond from the message, and check queues, incidents and jobs with /durabull.
+---
+
+The Durabull Slack app brings incident response into the channels your team already watches.
+Alerts arrive as rich messages with the failed job, its attempts and its stack trace, and
+everyone in the channel can acknowledge, resolve, snooze the rule or retry the job without
+opening Durabull. The message keeps itself current: when an incident changes anywhere in
+Durabull, the Slack message changes with it.
+
+The Slack app is included with the **Team plan and above** on Durabull Cloud, and with every
+self-hosted deployment.
+
+## What You Get
+
+| Feature | What it does |
+| --- | --- |
+| **Alert destination** | Post incidents from any alert rule to a public or private channel, optionally mentioning `@here`, `@channel` or Slack user groups such as `@oncall`. |
+| **One-click actions** | Acknowledge, unacknowledge, resolve, snooze the rule (30 minutes to 7 days) and retry a failed job from buttons on the message. |
+| **Live messages** | The message turns amber when acknowledged and green when resolved, names who acted, and posts a short thread reply for each change, whether it happened in Slack, the web app, through MCP, or automatically. |
+| **`/durabull` command** | `status`, `alerts`, `queue <name>` and `job <id>` answer privately in any channel. Queue results include pause and resume. |
+| **App Home** | The Durabull app's Home tab shows open incidents and the health of every connection, with quick actions. |
+| **Link previews** | Durabull queue, job and alert rule links pasted by members unfurl with live counts and status. |
+
+## How It Works
+
+1. An alert rule fires and Durabull writes an incident and one delivery per destination to its
+   durable delivery outbox.
+2. A Slack delivery posts a Block Kit message to the destination's channel with the bot token
+   for your workspace, then records the message's channel and timestamp.
+3. When someone presses a button, Slack sends a signed request to Durabull. Durabull verifies
+   the signature, matches the Slack user to a Durabull member by email, and performs the
+   action as that member.
+4. Whenever the incident's state no longer matches what the message shows, Durabull updates
+   the message and posts a thread reply. Changes made in Slack update immediately; changes made
+   elsewhere are picked up by the alert monitor within seconds.
+
+Deliveries retry with backoff on Slack outages and rate limits. Configuration errors, such as an
+archived channel or a removed app, stop retrying and are shown on the incident with the reason.
+
+## Connect Slack (Durabull Cloud)
+
+1. Open **Settings → Integrations** and select **Add to Slack**.
+2. Approve the permissions in Slack. You return to Durabull with the workspace connected.
+3. Pick a channel in the setup checklist and select **Create Slack destination**, or add one
+   under **Settings → Alert destinations → Add destination → Slack**.
+4. Open an alert rule and add the Slack destination under **Notify**.
+5. Use **Test** on the destination to post a test message, and try `/durabull status` in Slack.
+
+Organizations on the Free plan see what the Slack app includes and an **Upgrade to Team**
+button in the same place. Members who are not owners are asked to contact an owner.
+
+Durabull can post to any public channel without joining it. For a private channel, run
+`/invite @Durabull` in the channel first, then reload the channel list.
+
+## Self-Hosted Setup
+
+A self-hosted Durabull talks to Slack through your own Slack app. You create it once from a
+manifest that Durabull generates for your deployment.
+
+### Requirements
+
+- A public HTTPS origin for Durabull. Slack must reach `/api/slack/*` and redirect browsers to
+  `/api/integrations/slack/callback`. For local development, use a tunnel such as ngrok and set
+  `APP_BASE_URL` to the tunnel URL.
+- `DURABULL_SECRET_ENCRYPTION_KEY`, which encrypts the bot token at rest.
+
+### 1. Create the Slack app
+
+Print the manifest for your deployment:
+
+```bash
+bun run slack:manifest -- --base-url https://durabull.example.com
+```
+
+If `APP_BASE_URL` is already set, `bun run slack:manifest` uses it. Organization admins can also
+copy the manifest from **Settings → Integrations** on a deployment where Slack is not configured
+yet.
+
+Then:
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and select **Create New App → From a
+   manifest**.
+2. Pick the workspace that should own the app (it can still be installed by other workspaces).
+3. Paste the JSON, review, and select **Create**.
+
+The manifest configures the bot scopes, the `/durabull` command, interactivity, the Events API
+subscriptions, the App Home tab, link unfurling for your domain, and the OAuth redirect URL.
+
+### 2. Copy the credentials
+
+From the app's **Basic Information** page, copy into Durabull's environment:
+
+| Variable | Where to find it |
+| --- | --- |
+| `SLACK_CLIENT_ID` | App Credentials → Client ID |
+| `SLACK_CLIENT_SECRET` | App Credentials → Client Secret |
+| `SLACK_SIGNING_SECRET` | App Credentials → Signing Secret |
+| `SLACK_APP_ID` | App Credentials → App ID (optional; rejects payloads addressed to other apps) |
+| `SLACK_OAUTH_REDIRECT_URI` | Optional; only when the OAuth callback is not `{APP_BASE_URL}/api/integrations/slack/callback` |
+
+Restart Durabull. The Slack card in **Settings → Integrations** switches from "Not set up" to
+**Add to Slack**.
+
+### 3. Verify the event URL
+
+Slack checks the Events API request URL when you save it. If the manifest was created before
+Durabull was reachable, open **Event Subscriptions** in the Slack app settings and select
+**Retry** next to the request URL once Durabull is running with the signing secret.
+
+### 4. Distribute the app (optional)
+
+To let workspaces other than the one that owns the app install it, enable
+**Manage Distribution → Activate Public Distribution** in the Slack app settings. A single
+workspace can be connected to several Durabull organizations; each keeps its own settings.
+
+## Permissions
+
+| Scope | Why Durabull needs it |
+| --- | --- |
+| `chat:write`, `chat:write.public` | Post and update alert messages, including in public channels the app has not joined. |
+| `channels:read`, `groups:read` | List channels for the destination picker and check that a private channel has the app. |
+| `commands` | The `/durabull` slash command. |
+| `users:read`, `users:read.email` | Match the Slack user who pressed a button or ran a command to a Durabull member. |
+| `usergroups:read` | Offer user groups such as `@oncall` as mentions. |
+| `links:read`, `links:write` | Preview Durabull links pasted in Slack. |
+
+When a new Durabull release needs more scopes, the Slack card shows **Reconnect** and lists the
+missing scopes.
+
+## Who Can Act From Slack
+
+Every action runs as a Durabull member. Durabull reads the Slack user's profile email and looks
+for a member of the organization with the same email address (case-insensitive). If there is no
+match, the user's seat is paused by the plan, or the organization's plan no longer includes the
+Slack app, the action is refused with an explanation only that user can see.
+
+Organization admins can turn off **Allow actions from Slack** in **Settings → Integrations**.
+Messages then show only the **Open in Durabull** button, and commands become read-only.
+
+Slack workspace admins can change members' email addresses. Connect Slack only to workspaces
+whose administrators you trust with the same access as your Durabull organization.
+
+## Slash Command Reference
+
+| Command | Result |
+| --- | --- |
+| `/durabull` or `/durabull status` | Open incidents per Redis connection, with links. |
+| `/durabull alerts` | Newest open incidents with acknowledge and resolve menus. |
+| `/durabull queue <name> [connection]` | Waiting, active, delayed, failed and completed counts, with pause or resume. Queue names are case-sensitive; add a connection name or environment when several connections have the queue. |
+| `/durabull job <id> [queue]` | The job's state, attempts and failure reason. Without a queue, Durabull searches up to 100 queues per connection. |
+| `/durabull help` | Command list. |
+
+Responses are only visible to you. If the Slack workspace is connected to several Durabull
+organizations, results are grouped by organization for those you belong to.
+
+## Link Previews
+
+Pasting a Durabull URL from your deployment unfurls it for organization members:
+
+- `/{org}/c/{connection}/queues/{queue}`: live job counts and paused state.
+- `/{org}/c/{connection}/queues/{queue}/jobs/{id}`: state, attempts and failure reason.
+- `/{org}/c/{connection}/alerts/rules/{rule}`: rule status, snooze and open incidents.
+
+Previews are read-only and only appear when the person who pasted the link is a member of that
+organization. Turn them off with **Preview Durabull links** in **Settings → Integrations**.
+
+## Security
+
+- Every request from Slack is verified with the signing secret (HMAC-SHA256 over the raw body)
+  and rejected if it is more than five minutes old. With `SLACK_APP_ID` set, payloads for other
+  apps are ignored.
+- The bot token, and the refresh token if your Slack app enables token rotation, are encrypted at
+  rest with `DURABULL_SECRET_ENCRYPTION_KEY` and never returned by the API.
+- OAuth uses a single-use, hashed, ten-minute state value bound to the organization and the
+  member who started the connection.
+- Messages contain the rule name, connection and queue names, the incident summary and, for
+  failed jobs, the job id, name, attempts and failure reason. Job payloads are never sent to
+  Slack.
+
+## Disconnecting
+
+**Remove** in **Settings → Integrations** deletes the stored token and revokes it with Slack,
+unless another Durabull organization uses the same workspace installation. Slack destinations and
+alert rules are kept; deliveries to them fail with "Slack is not connected" until you connect
+again.
+
+Removing the app from Slack itself is detected automatically: the card shows **Reconnect
+needed** and Slack deliveries pause.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| The card says "Not set up" | Set `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` and `SLACK_SIGNING_SECRET`, then restart. |
+| Slack says the redirect URL does not match | Recreate the manifest with the right `--base-url`, or set `SLACK_OAUTH_REDIRECT_URI` to the URL registered in Slack. |
+| Buttons show "This app responded with an error" or nothing happens | Check that Slack can reach `https://<your-domain>/api/slack/interactions` and that `SLACK_SIGNING_SECRET` matches the app. |
+| "Your Slack email does not belong to a member" | Invite that email address to the Durabull organization, or change the Slack profile email. |
+| A private channel is missing or disabled in the picker | Run `/invite @Durabull` in the channel, then select **Reload**. |
+| Deliveries fail with `channel_not_found` or `is_archived` | Edit the destination and pick another channel. |
+| Link previews do not appear | Confirm the app manifest lists your domain under unfurl domains, previews are enabled, and the person pasting is a member. |
+| `/durabull` says the workspace is not connected | Connect Slack from **Settings → Integrations** in the organization you want to use. |
+
+## Related Docs
+
+- [Webhooks](/documentation/integrations/webhooks)
+- [Linear Integration](/documentation/integrations/linear)
+- [Plans and Billing](/documentation/deployment/plans-and-billing)
+- [Environment Variables](/documentation/getting-started/environment-variables#slack)

@@ -250,7 +250,7 @@ export const articles: Article[] = [
       {
         heading: 'Durabull: evaluate fleet visibility and agent-assisted operations',
         body: [
-          'Durabull is Apache-2.0 open source. It connects to Redis-backed BullMQ queues and groups connections by environment. It combines queue inspection, Redis health history, alerts, and scoped MCP tools. Alerts are delivered by email, signed webhooks, or Linear today; Slack and PagerDuty delivery are coming soon. Historical BullMQ throughput still requires worker metrics, and some Redis providers restrict worker or INFO introspection.',
+          'Durabull is Apache-2.0 open source. It connects to Redis-backed BullMQ queues and groups connections by environment. It combines queue inspection, Redis health history, alerts, and scoped MCP tools. Alerts are delivered to Slack, where responders can acknowledge, resolve and retry from the message, or by email, signed webhooks, or Linear; PagerDuty is not built in. Historical BullMQ throughput still requires worker metrics, and some Redis providers restrict worker or INFO introspection.',
           'Choose it for evaluation when multiple Redis environments and a shared human-and-agent workflow are central requirements. Test missing permissions and incomplete metrics as well as the happy path. The hosted app has a Free plan, with Team at $9/month and Business at $29/month per organization. Self-hosting brings deployment and monitoring responsibilities.',
         ],
         sourceUrls: urls('connections', 'nativeMetrics', 'mcp', 'health', 'pricing', 'deployment'),

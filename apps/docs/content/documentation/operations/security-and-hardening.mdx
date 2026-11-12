@@ -12,7 +12,11 @@ instances before using it with production workloads.
 - Terminate HTTPS at your reverse proxy or load balancer.
 - Set `APP_BASE_URL` and `VITE_PUBLIC_APP_URL` to the public app origin.
 - Generate and preserve `DURABULL_REDIS_URL_ENCRYPTION_KEY` using `openssl rand -hex 32`.
-- Set a separate `DURABULL_SECRET_ENCRYPTION_KEY` for Linear tokens or webhook signing secrets.
+- Set a separate `DURABULL_SECRET_ENCRYPTION_KEY` for Slack and Linear tokens or webhook signing secrets.
+- If you enable the [Slack App](/documentation/integrations/slack), keep `SLACK_SIGNING_SECRET`
+  private (it authenticates every Slack request), set `SLACK_APP_ID`, and connect only workspaces
+  whose administrators you trust: Slack actions run as the Durabull member whose email matches the
+  Slack profile email. Admins can turn Slack actions off per organization.
 - Keep Redis and PostgreSQL reachable only from trusted services and networks.
 - Back up configuration data and encryption keys, and test recovery before relying on it.
 

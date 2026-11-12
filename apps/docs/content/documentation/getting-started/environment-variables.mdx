@@ -48,7 +48,7 @@ Vite development, the origin is `http://localhost:5173`.
 | `DATABASE_URL` | Optional | Set to use PostgreSQL; empty or unset uses file-backed PGlite. |
 | `DURABULL_PGLITE_DIR` | `data/pglite` relative to the API working directory | PGlite storage directory; preserve it across restarts. |
 | `DURABULL_REDIS_URL_ENCRYPTION_KEY` | Required when saving or synchronizing Redis connections | 32-byte encryption key encoded as 64 hexadecimal characters or base64. |
-| `DURABULL_SECRET_ENCRYPTION_KEY` | Required for persisted integration/signing secrets | Separate 32-byte key for Linear OAuth tokens and webhook signing secrets. |
+| `DURABULL_SECRET_ENCRYPTION_KEY` | Required for persisted integration/signing secrets | Separate 32-byte key for Slack bot tokens, Linear OAuth tokens and webhook signing secrets. |
 | `REDIS_URL` | Optional | Redis URL used by development/seed scripts and as a workload fallback; does not configure an API connection by itself. |
 | `DURABULL_POSTGRES_PORT` | `55432` | Host port for the development Docker PostgreSQL service. Match `DATABASE_URL`. |
 | `DURABULL_REDIS_PORT` | `56379` | Host port for the development Docker Redis service. Match `REDIS_URL`. |
@@ -105,6 +105,23 @@ so `DURABULL_REDIS_URL_ENCRYPTION_KEY` is required.
 Register the exact callback URL in Linear and set `DURABULL_SECRET_ENCRYPTION_KEY` before connecting.
 See [Linear Integration](/documentation/integrations/linear) and
 [Webhook Notifications](/documentation/integrations/webhooks) for setup and delivery behavior.
+
+## Slack
+
+The Slack app is enabled when all three credentials are set. Create the Slack app from the
+manifest printed by `bun run slack:manifest`, then copy the values from its **Basic Information**
+page.
+
+| Variable | Default / requirement | Purpose |
+| --- | --- | --- |
+| `SLACK_CLIENT_ID` | Required for Slack | Slack app client ID. |
+| `SLACK_CLIENT_SECRET` | Required for Slack | Slack app client secret, used for the OAuth install. |
+| `SLACK_SIGNING_SECRET` | Required for Slack | Verifies that events, slash commands and button clicks come from Slack. |
+| `SLACK_APP_ID` | Optional | Ignores Slack payloads addressed to any other app. |
+| `SLACK_OAUTH_REDIRECT_URI` | `{APP_BASE_URL}/api/integrations/slack/callback` | Callback override when the API has a different public origin. |
+
+Slack must reach `APP_BASE_URL` over HTTPS, and `DURABULL_SECRET_ENCRYPTION_KEY` must be set
+before connecting a workspace. See [Slack App](/documentation/integrations/slack).
 
 ## PostHog
 
@@ -190,5 +207,5 @@ DURABULL_REDIS_URL_MAIN_PREFIX=bull
 DURABULL_REDIS_URL_DEFAULT=MAIN
 ```
 
-Add `DURABULL_SECRET_ENCRYPTION_KEY` if you configure Linear or webhook signing. Review
+Add `DURABULL_SECRET_ENCRYPTION_KEY` if you configure Slack, Linear or webhook signing. Review
 [Security and Hardening](/documentation/operations/security-and-hardening) before publishing the app.
