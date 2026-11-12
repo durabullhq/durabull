@@ -160,15 +160,13 @@ async function seed() {
     createdAt: now,
     updatedAt: now,
   })
-  await db
-    .insert(member)
-    .values({
-      id: 'm-ada',
-      organizationId: ORG_ID,
-      userId: 'user-ada',
-      role: 'owner',
-      createdAt: now,
-    })
+  await db.insert(member).values({
+    id: 'm-ada',
+    organizationId: ORG_ID,
+    userId: 'user-ada',
+    role: 'owner',
+    createdAt: now,
+  })
   await db.insert(redisConnection).values({
     id: CONNECTION_ID,
     name: 'Production Redis',
