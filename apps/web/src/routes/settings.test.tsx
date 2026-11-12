@@ -58,6 +58,16 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
+// The Slack card has its own tests; here it only needs to render in place.
+vi.mock('@/components/settings/slack-integration-card', () => ({
+  SlackIntegrationCard: () => <div data-testid="slack-integration-card" />,
+  useSlackOauthResultToast: () => {},
+}))
+
+vi.mock('@/hooks/use-slack', () => ({
+  useSlackIntegration: () => ({ data: undefined }),
+}))
+
 import { IntegrationsSettingsPanel } from '@/components/settings/integrations-settings-panel'
 
 describe('IntegrationsSettingsPanel', () => {
@@ -76,6 +86,7 @@ describe('IntegrationsSettingsPanel', () => {
     mocks.connectLinearIntegrationMutateAsync.mockImplementation(() => new Promise(() => {}))
     render(<IntegrationsSettingsPanel orgSlug="acme" />)
 
+    expect(screen.getByTestId('slack-integration-card')).toBeInTheDocument()
     expect(screen.queryByRole('textbox', { name: /default linear team/i })).not.toBeInTheDocument()
 
     const connectButton = screen.getByRole('button', { name: /connect linear/i })

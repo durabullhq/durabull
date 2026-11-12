@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, spyOn } from 'bun:test'
-import { buildAlertMessage, buildStateChangeReply, mentionPrefix, SLACK_ACTIONS } from './alert-message'
+import {
+  buildAlertMessage,
+  buildStateChangeReply,
+  mentionPrefix,
+  SLACK_ACTIONS,
+} from './alert-message'
 import {
   callSlack,
   isSlackResponseUrl,
@@ -69,7 +74,13 @@ describe('Slack request signatures', () => {
 
   it('rejects tampered bodies, wrong secrets, stale timestamps and missing headers', () => {
     const signature = signSlackRequest({ signingSecret, timestamp, rawBody })
-    const base = { signingSecret, timestamp: String(timestamp), signature, rawBody, nowSeconds: timestamp }
+    const base = {
+      signingSecret,
+      timestamp: String(timestamp),
+      signature,
+      rawBody,
+      nowSeconds: timestamp,
+    }
     expect(verifySlackSignature({ ...base, rawBody: `${rawBody}&x=1` })).toEqual({
       ok: false,
       reason: 'bad_signature',
@@ -104,7 +115,7 @@ describe('Slack alert messages', () => {
     ])
     const serialized = JSON.stringify(content)
     // The stack trace cannot escape its code fence.
-    expect(serialized).not.toContain("mailer.ts:10)```")
+    expect(serialized).not.toContain('mailer.ts:10)```')
     expect(serialized).toContain('send-welcome')
   })
 
@@ -123,7 +134,9 @@ describe('Slack alert messages', () => {
       resolutionReason: 'auto_job_completed',
     })
     expect(actionIds(resolved)).toEqual([`${SLACK_ACTIONS.openLink}.incident`])
-    expect(JSON.stringify(resolved)).toContain('Resolved automatically: the job completed after 42m')
+    expect(JSON.stringify(resolved)).toContain(
+      'Resolved automatically: the job completed after 42m'
+    )
 
     const disabled = buildAlertMessage({ ...view, actionsEnabled: false })
     expect(actionIds(disabled)).toEqual([`${SLACK_ACTIONS.openLink}.incident`])
@@ -136,9 +149,9 @@ describe('Slack alert messages', () => {
   })
 
   it('describes state changes for thread replies', () => {
-    expect(buildStateChangeReply('firing', { ...view, state: 'acknowledged', acknowledgedByName: 'Ada' })).toBe(
-      ':eyes: Acknowledged by *Ada*.'
-    )
+    expect(
+      buildStateChangeReply('firing', { ...view, state: 'acknowledged', acknowledgedByName: 'Ada' })
+    ).toBe(':eyes: Acknowledged by *Ada*.')
     expect(buildStateChangeReply('acknowledged', view)).toContain('Acknowledgement cleared')
     expect(
       buildStateChangeReply('firing', {
@@ -178,7 +191,10 @@ describe('Slash command parsing', () => {
       command: 'queue',
       args: ['email-send', 'production'],
     })
-    expect(parseCommandText('jobs 42 email-send')).toEqual({ command: 'job', args: ['42', 'email-send'] })
+    expect(parseCommandText('jobs 42 email-send')).toEqual({
+      command: 'job',
+      args: ['42', 'email-send'],
+    })
   })
 })
 
@@ -218,7 +234,9 @@ describe('Durabull link parsing', () => {
     expect(
       parseDurabullLink('https://ops.test/durabull/acme/c/c1/queues/q', 'https://ops.test/durabull')
     ).toMatchObject({ kind: 'queue', queueName: 'q' })
-    expect(parseDurabullLink('https://ops.test/other/acme/c/c1/queues/q', 'https://ops.test/durabull')).toBeNull()
+    expect(
+      parseDurabullLink('https://ops.test/other/acme/c/c1/queues/q', 'https://ops.test/durabull')
+    ).toBeNull()
   })
 })
 
@@ -236,7 +254,9 @@ describe('Slack app manifest', () => {
     expect(manifest.settings.interactivity.request_url).toBe(
       'https://app.durabull.test/api/slack/interactions'
     )
-    expect(manifest.features.slash_commands[0]?.url).toBe('https://app.durabull.test/api/slack/commands')
+    expect(manifest.features.slash_commands[0]?.url).toBe(
+      'https://app.durabull.test/api/slack/commands'
+    )
     expect(manifest.features.unfurl_domains).toEqual(['app.durabull.test'])
 
     const authorize = new URL(
@@ -259,7 +279,9 @@ describe('Slack Web API client', () => {
     expect(auth.isAuthError).toBe(true)
     expect(auth.retryable).toBe(false)
 
-    fetchSpy.mockResolvedValueOnce(new Response('slow down', { status: 429, headers: { 'retry-after': '7' } }))
+    fetchSpy.mockResolvedValueOnce(
+      new Response('slow down', { status: 429, headers: { 'retry-after': '7' } })
+    )
     const limited = await callSlack('chat.postMessage', 'xoxb').catch((error) => error)
     expect(limited.retryable).toBe(true)
     expect(limited.rateLimitResetAt.getTime()).toBeGreaterThan(Date.now() + 5_000)

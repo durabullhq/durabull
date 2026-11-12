@@ -129,7 +129,10 @@ class FakeSlack {
           response_metadata: { next_cursor: '' },
         })
       case 'usergroups.list':
-        return Response.json({ ok: true, usergroups: [{ id: 'S0ONCALL', handle: 'oncall', name: 'On-call' }] })
+        return Response.json({
+          ok: true,
+          usergroups: [{ id: 'S0ONCALL', handle: 'oncall', name: 'On-call' }],
+        })
       case 'chat.postMessage':
         this.ts += 1
         return Response.json({ ok: true, channel: body.channel, ts: `${this.ts}.000100` })
@@ -147,7 +150,9 @@ class FakeSlack {
 async function seed() {
   const db = await getDb()
   const now = new Date()
-  await db.insert(organization).values({ id: ORG_ID, name: 'Acme', slug: 'acme', createdAt: now, updatedAt: now })
+  await db
+    .insert(organization)
+    .values({ id: ORG_ID, name: 'Acme', slug: 'acme', createdAt: now, updatedAt: now })
   await db.insert(user).values({
     id: 'user-ada',
     name: 'Ada Lovelace',
@@ -155,7 +160,15 @@ async function seed() {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(member).values({ id: 'm-ada', organizationId: ORG_ID, userId: 'user-ada', role: 'owner', createdAt: now })
+  await db
+    .insert(member)
+    .values({
+      id: 'm-ada',
+      organizationId: ORG_ID,
+      userId: 'user-ada',
+      role: 'owner',
+      createdAt: now,
+    })
   await db.insert(redisConnection).values({
     id: CONNECTION_ID,
     name: 'Production Redis',
@@ -183,7 +196,13 @@ async function seed() {
     type: 'job_failed',
     status: 'firing',
     summary: 'Job 42 failed in email-send',
-    context: { jobId: '42', jobName: 'send-welcome', attemptsMade: 3, attempts: 3, failedReason: 'SMTP timeout' },
+    context: {
+      jobId: '42',
+      jobName: 'send-welcome',
+      attemptsMade: 3,
+      attempts: 3,
+      failedReason: 'SMTP timeout',
+    },
     firedAt: new Date(Date.now() - 5 * 60_000),
   })
   return { rule, event }
@@ -246,7 +265,9 @@ async function install(app: Hono) {
   expect(connect.status).toBe(200)
   const { authorizationUrl } = (await connect.json()) as { authorizationUrl: string }
   const state = new URL(authorizationUrl).searchParams.get('state') ?? ''
-  return app.request(`/api/integrations/slack/callback?code=code-1&state=${encodeURIComponent(state)}`)
+  return app.request(
+    `/api/integrations/slack/callback?code=code-1&state=${encodeURIComponent(state)}`
+  )
 }
 
 async function createSlackDestination(app: Hono) {
@@ -256,7 +277,12 @@ async function createSlackDestination(app: Hono) {
     body: JSON.stringify({
       type: 'slack',
       name: 'Ops channel',
-      config: { channelId: 'C0ALERTS', channelName: 'alerts', mention: 'here', userGroupIds: ['S0ONCALL'] },
+      config: {
+        channelId: 'C0ALERTS',
+        channelName: 'alerts',
+        mention: 'here',
+        userGroupIds: ['S0ONCALL'],
+      },
     }),
   })
   expect(response.status).toBe(201)
@@ -273,8 +299,10 @@ describe('Slack integration', () => {
     Object.assign(mutableEnv, {
       DATABASE_URL: undefined,
       DURABULL_ENV_CONNECTIONS: false,
-      DURABULL_SECRET_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-      DURABULL_REDIS_URL_ENCRYPTION_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      DURABULL_SECRET_ENCRYPTION_KEY:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      DURABULL_REDIS_URL_ENCRYPTION_KEY:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
       APP_BASE_URL: BASE_URL,
       SLACK_CLIENT_ID: 'slack-client-id',
       SLACK_CLIENT_SECRET: 'slack-client-secret',
@@ -322,7 +350,9 @@ describe('Slack integration', () => {
     const app = await createApp()
     const callback = await install(app)
     expect(callback.status).toBe(302)
-    expect(callback.headers.get('location')).toBe(`${BASE_URL}/acme/settings/destinations?slack=connected`)
+    expect(callback.headers.get('location')).toBe(
+      `${BASE_URL}/acme/settings/destinations?slack=connected`
+    )
 
     const exchange = slack.callsTo('oauth.v2.access')[0]
     expect(exchange?.body).toMatchObject({
@@ -370,7 +400,9 @@ describe('Slack integration', () => {
       body: JSON.stringify({ type: 'slack', name: 'Secret', config: { channelId: 'G0SECRET' } }),
     })
     expect(privateChannel.status).toBe(400)
-    expect(((await privateChannel.json()) as { error: string }).error).toContain('/invite @Durabull')
+    expect(((await privateChannel.json()) as { error: string }).error).toContain(
+      '/invite @Durabull'
+    )
 
     const destination = await createSlackDestination(app)
     const channels = (await (await app.request('/api/integrations/slack/channels')).json()) as {
@@ -378,11 +410,15 @@ describe('Slack integration', () => {
     }
     expect(channels.channels.map((channel) => channel.id)).toEqual(['C0ALERTS', 'G0SECRET'])
 
-    const test = await app.request(`/api/alerts/destinations/${destination.id}/test`, { method: 'POST' })
+    const test = await app.request(`/api/alerts/destinations/${destination.id}/test`, {
+      method: 'POST',
+    })
     expect(await test.json()).toMatchObject({ success: true, channelName: 'alerts' })
     expect(slack.callsTo('chat.postMessage').at(-1)?.body.channel).toBe('C0ALERTS')
 
-    const tooSoon = await app.request(`/api/alerts/destinations/${destination.id}/test`, { method: 'POST' })
+    const tooSoon = await app.request(`/api/alerts/destinations/${destination.id}/test`, {
+      method: 'POST',
+    })
     expect(tooSoon.status).toBe(429)
   })
 
@@ -401,7 +437,9 @@ describe('Slack integration', () => {
 
     const post = slack.callsTo('chat.postMessage').at(-1)
     expect(post?.body.channel).toBe('C0ALERTS')
-    expect(String(post?.body.text)).toStartWith('<!here> <!subteam^S0ONCALL> [Firing] Email failures')
+    expect(String(post?.body.text)).toStartWith(
+      '<!here> <!subteam^S0ONCALL> [Firing] Email failures'
+    )
     expect(JSON.stringify(post?.body.attachments)).toContain(SLACK_ACTIONS.retryJob)
 
     const [delivery] = await alertDeliveryRepository.listByEvent(event.id)
@@ -481,13 +519,17 @@ describe('Slack integration', () => {
         team: { id: 'T0ACME' },
         user: { id: 'UADA', team_id: 'T0ACME' },
         container: { type: 'message' },
-        actions: [{ action_id: SLACK_ACTIONS.snooze, selected_option: { value: `${event.id}|240` } }],
+        actions: [
+          { action_id: SLACK_ACTIONS.snooze, selected_option: { value: `${event.id}|240` } },
+        ],
       })
     )
     await flushSlackBackgroundWork()
     const snoozed = await alertRuleRepository.findById(rule.id, ORG_ID)
     expect(snoozed?.mutedUntil?.getTime()).toBeGreaterThan(Date.now() + 3 * 3_600_000)
-    expect(String(slack.callsTo('chat.postMessage').at(-1)?.body.text)).toContain('snoozed *Email failures* for 4 hours')
+    expect(String(slack.callsTo('chat.postMessage').at(-1)?.body.text)).toContain(
+      'snoozed *Email failures* for 4 hours'
+    )
   })
 
   it('turns off Slack actions when the organization disables them', async () => {
@@ -499,7 +541,10 @@ describe('Slack integration', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ actionsEnabled: false }),
     })
-    expect(((await patch.json()) as { installation: { actionsEnabled: boolean } }).installation.actionsEnabled).toBe(false)
+    expect(
+      ((await patch.json()) as { installation: { actionsEnabled: boolean } }).installation
+        .actionsEnabled
+    ).toBe(false)
 
     await app.request(
       interaction({
@@ -531,10 +576,14 @@ describe('Slack integration', () => {
         response_url: 'https://hooks.slack.com/commands/T0ACME/1/xyz',
       }).toString()
 
-    const help = await app.request(signed('/api/slack/commands', form('help'), 'application/x-www-form-urlencoded'))
+    const help = await app.request(
+      signed('/api/slack/commands', form('help'), 'application/x-www-form-urlencoded')
+    )
     expect(JSON.stringify(await help.json())).toContain('/durabull queue')
 
-    const alerts = await app.request(signed('/api/slack/commands', form('alerts'), 'application/x-www-form-urlencoded'))
+    const alerts = await app.request(
+      signed('/api/slack/commands', form('alerts'), 'application/x-www-form-urlencoded')
+    )
     expect(((await alerts.json()) as { text: string }).text).toContain('Checking Durabull')
     await flushSlackBackgroundWork()
     const reply = slack.responseUrlPosts.at(-1)
@@ -544,7 +593,9 @@ describe('Slack integration', () => {
 
     slack.emails.UADA = 'someone@else.test'
     clearSlackProfileCache()
-    await app.request(signed('/api/slack/commands', form('status'), 'application/x-www-form-urlencoded'))
+    await app.request(
+      signed('/api/slack/commands', form('status'), 'application/x-www-form-urlencoded')
+    )
     await flushSlackBackgroundWork()
     expect(JSON.stringify(slack.responseUrlPosts.at(-1))).toContain('does not belong to a member')
   })
@@ -634,7 +685,10 @@ describe('Slack integration', () => {
           user,
           channel: 'C0ALERTS',
           message_ts: '1700000000.000001',
-          links: [{ url: ruleUrl, domain: 'app.durabull.test' }, { url: 'https://example.com/x', domain: 'example.com' }],
+          links: [
+            { url: ruleUrl, domain: 'app.durabull.test' },
+            { url: 'https://example.com/x', domain: 'example.com' },
+          ],
         },
       })
     await app.request(signed('/api/slack/events', shared('UEVE', 'Ev3'), 'application/json'))
@@ -650,11 +704,18 @@ describe('Slack integration', () => {
 
   it('keeps Slack behind the Team plan and nudges Free organizations to upgrade', async () => {
     await seed()
-    setBillingConfigForTests({ enabled: true, enforcement: 'on', launchAt: null, migrationGrantUntil: null })
+    setBillingConfigForTests({
+      enabled: true,
+      enforcement: 'on',
+      launchAt: null,
+      migrationGrantUntil: null,
+    })
     invalidateEntitlementCache()
     const app = await createApp()
 
-    const overview = (await (await app.request('/api/integrations/slack')).json()) as { entitled: boolean }
+    const overview = (await (await app.request('/api/integrations/slack')).json()) as {
+      entitled: boolean
+    }
     expect(overview.entitled).toBe(false)
 
     const connect = await app.request('/api/integrations/slack/connect', {
@@ -678,6 +739,8 @@ describe('Slack integration', () => {
     expect(await removed.json()).toEqual({ success: true, revokedToken: true })
     expect(slack.callsTo('auth.revoke')).toHaveLength(1)
     expect(await slackInstallationRepository.findByOrganization(ORG_ID)).toBeNull()
-    expect(await alertDestinationRepository.listByOrganization(ORG_ID, { type: 'slack' })).toEqual([])
+    expect(await alertDestinationRepository.listByOrganization(ORG_ID, { type: 'slack' })).toEqual(
+      []
+    )
   })
 })
