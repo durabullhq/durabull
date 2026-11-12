@@ -11,6 +11,7 @@ import {
   linearIntegrationRepository,
   organization,
   redisDiscoveredQueueRepository,
+  slackInstallationRepository,
 } from '@durabull/dal'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -43,6 +44,7 @@ import {
   redisHealthConfigSchema,
   restoreRedisHealthSnapshot,
 } from '../lib/redis-health'
+import { queueSlackMessageSync } from '../lib/slack/alerts'
 
 const alertTypeSchema = z.enum([
   'failure_threshold',
@@ -665,7 +667,9 @@ const app = new Hono()
 
       const resolvedEvents = await alertEventRepository.resolveMany(eventIds, organizationId, {
         connectionId,
+        resolvedBy: c.get('user')?.id ?? null,
       })
+      queueSlackMessageSync(resolvedEvents.map((event) => event.id))
 
       return c.json({
         resolvedCount: resolvedEvents.length,
@@ -691,10 +695,16 @@ const app = new Hono()
     if (existing.status === 'resolved') {
       return c.json({ error: 'This alert event is already resolved.' }, 409)
     }
-    const event = await alertEventRepository.resolve(eventId, organizationId)
+    const event = await alertEventRepository.resolve(
+      eventId,
+      organizationId,
+      'manual',
+      c.get('user')?.id ?? null
+    )
     if (!event) {
       return c.json({ error: 'The alert event changed before it could be resolved.' }, 409)
     }
+    queueSlackMessageSync([event.id])
 
     return c.json({ event })
   })
@@ -716,6 +726,7 @@ const app = new Hono()
     }
 
     const event = await alertEventRepository.acknowledge(eventId, organizationId, user.id)
+    if (event) queueSlackMessageSync([event.id])
     if (!event) {
       return c.json({ error: 'Only unacknowledged firing events can be acknowledged.' }, 409)
     }
@@ -736,6 +747,7 @@ const app = new Hono()
     }
 
     const event = await alertEventRepository.unacknowledge(eventId, organizationId)
+    if (event) queueSlackMessageSync([event.id])
     if (!event) {
       return c.json({ error: 'Only acknowledged firing events can be unacknowledged.' }, 409)
     }
@@ -886,6 +898,13 @@ async function validateNotificationChannels(
     }
     if (destination.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
     if (destination.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
+    if (destination.type === 'slack') {
+      await requireFeature(organizationId, 'integrations.slack')
+      const installation = await slackInstallationRepository.findByOrganization(organizationId)
+      if (!installation || installation.status !== 'active') {
+        return 'Slack must be connected before alert rules can route to Slack destinations.'
+      }
+    }
     if (destination.type === 'webhook' && destination.encryptedSigningSecret) {
       try {
         decryptSecret(destination.encryptedSigningSecret)

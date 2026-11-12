@@ -803,7 +803,8 @@ export const alertEventRepository = {
   async resolve(
     id: string,
     organizationId: string,
-    reason: AlertResolutionReason = 'manual'
+    reason: AlertResolutionReason = 'manual',
+    resolvedBy: string | null = null
   ): Promise<AlertEvent | null> {
     const db = await getDb()
     const [row] = await db
@@ -811,6 +812,7 @@ export const alertEventRepository = {
       .set({
         status: 'resolved',
         resolvedAt: new Date(),
+        resolvedBy,
         updatedAt: new Date(),
         linearResolutionSyncPending: true,
         linearResolutionSyncClaimToken: null,
@@ -842,7 +844,11 @@ export const alertEventRepository = {
   async resolveMany(
     ids: string[],
     organizationId: string,
-    options: { connectionId?: string; reason?: AlertResolutionReason } = {}
+    options: {
+      connectionId?: string
+      reason?: AlertResolutionReason
+      resolvedBy?: string | null
+    } = {}
   ): Promise<AlertEvent[]> {
     if (ids.length === 0) return []
     const db = await getDb()
@@ -853,6 +859,7 @@ export const alertEventRepository = {
       .set({
         status: 'resolved',
         resolvedAt: now,
+        resolvedBy: options.resolvedBy ?? null,
         updatedAt: now,
         linearResolutionSyncPending: true,
         linearResolutionSyncClaimToken: null,

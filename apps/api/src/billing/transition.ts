@@ -102,6 +102,8 @@ export async function listTransitionAudience(now = new Date()): Promise<Transiti
       featuresInUse.push('alerts.webhook')
     if (candidates.destinations.some((d) => d.type === 'linear'))
       featuresInUse.push('alerts.linear')
+    if (candidates.destinations.some((d) => d.type === 'slack'))
+      featuresInUse.push('integrations.slack')
     if (candidates.serviceAccounts.length > 0) featuresInUse.push('automation.service_accounts')
     const restrictions = exceededLimits(PLANS.free.limits, usage)
       // Service accounts stop as a feature on Free; listing the count too would repeat it.

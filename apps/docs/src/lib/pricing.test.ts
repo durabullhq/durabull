@@ -22,6 +22,7 @@ describe('published Cloud pricing', () => {
         mcpWrites: enforced.features.includes('mcp.write'),
         webhookAlerts: enforced.features.includes('alerts.webhook'),
         linearAlerts: enforced.features.includes('alerts.linear'),
+        slackApp: enforced.features.includes('integrations.slack'),
       })
       expect(plan.support).toBe(enforced.support)
     }

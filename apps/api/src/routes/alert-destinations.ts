@@ -2,7 +2,11 @@ import {
   type AlertDestination,
   alertDestinationRepository,
   decryptSecret,
+  eq,
+  getDb,
   linearIntegrationRepository,
+  organization,
+  slackInstallationRepository,
 } from '@durabull/dal'
 import { isEmailConfigured } from '@durabull/email'
 import { zValidator } from '@hono/zod-validator'
@@ -14,6 +18,11 @@ import { validateWebhookUrls } from '../lib/alert-webhook-channels'
 import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
 import { LinearApiError, validateLinearAccessToken } from '../lib/linear-client'
 import { getValidLinearAccessToken } from '../lib/linear-oauth'
+import { buildTestMessage } from '../lib/slack/alert-message'
+import { parseSlackDestinationConfig } from '../lib/slack/alerts'
+import { getSlackChannel, postSlackMessage, SlackApiError } from '../lib/slack/client'
+import { appBaseUrl } from '../lib/slack/config'
+import { withSlackToken } from '../lib/slack/token'
 import { requireOrganization } from '../middleware/auth'
 
 const nameSchema = z.string().trim().min(1).max(120)
@@ -26,6 +35,22 @@ const linearConfigSchema = z
     assigneeId: z.string().min(1).optional(),
     stateId: z.string().min(1).optional(),
     priority: z.number().int().min(0).max(4).optional(),
+  })
+  .strict()
+
+const slackConfigSchema = z
+  .object({
+    channelId: z
+      .string()
+      .trim()
+      .regex(/^[CGD][A-Z0-9]{2,}$/, 'Choose a Slack channel.'),
+    channelName: z.string().trim().max(200).optional(),
+    mention: z.enum(['none', 'here', 'channel']).optional(),
+    userGroupIds: z
+      .array(z.string().regex(/^S[A-Z0-9]+$/))
+      .max(5)
+      .optional(),
+    threadUpdates: z.boolean().optional(),
   })
   .strict()
 
@@ -55,6 +80,14 @@ const createDestinationSchema = z.discriminatedUnion('type', [
       enabled: z.boolean().optional(),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('slack'),
+      name: nameSchema,
+      config: slackConfigSchema,
+      enabled: z.boolean().optional(),
+    })
+    .strict(),
 ])
 
 const updateDestinationSchema = z
@@ -68,7 +101,7 @@ const updateDestinationSchema = z
   .strict()
 
 const listQuerySchema = z.object({
-  type: z.enum(['webhook', 'email', 'linear']).optional(),
+  type: z.enum(['webhook', 'email', 'linear', 'slack']).optional(),
 })
 
 async function validateLinearDestinationConfig(
@@ -84,6 +117,55 @@ async function validateLinearDestinationConfig(
   }
   return null
 }
+
+async function validateSlackDestinationConfig(
+  organizationId: string,
+  config: z.infer<typeof slackConfigSchema>
+): Promise<string | null> {
+  const installation = await slackInstallationRepository.findByOrganization(organizationId)
+  if (!installation) {
+    return 'Connect Slack under Settings → Integrations before creating Slack destinations.'
+  }
+  if (installation.status !== 'active') {
+    return 'Slack needs to be reconnected before Slack destinations can be saved.'
+  }
+  try {
+    const channel = await withSlackToken(installation, (token) =>
+      getSlackChannel(token, config.channelId)
+    )
+    if (channel.isArchived) return `#${channel.name} is archived.`
+    if (channel.isPrivate && !channel.isMember) {
+      return `Invite @Durabull to #${channel.name} first: /invite @Durabull in the channel.`
+    }
+  } catch (error) {
+    if (error instanceof SlackApiError && !error.retryable) return error.message
+    // A transient Slack outage should not block saving; delivery retries.
+  }
+  return null
+}
+
+async function organizationName(organizationId: string): Promise<string> {
+  const db = await getDb()
+  const rows = await db
+    .select({ name: organization.name, slug: organization.slug })
+    .from(organization)
+    .where(eq(organization.id, organizationId))
+    .limit(1)
+  return rows[0]?.name ?? 'your organization'
+}
+
+async function organizationSlug(organizationId: string): Promise<string | null> {
+  const db = await getDb()
+  const rows = await db
+    .select({ slug: organization.slug })
+    .from(organization)
+    .where(eq(organization.id, organizationId))
+    .limit(1)
+  return rows[0]?.slug ?? null
+}
+
+const SLACK_TEST_INTERVAL_MS = 10_000
+const lastSlackTestAt = new Map<string, number>()
 
 const app = new Hono()
   .use('*', requireOrganization)
@@ -117,6 +199,7 @@ const app = new Hono()
 
     if (body.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
     if (body.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
+    if (body.type === 'slack') await requireFeature(organizationId, 'integrations.slack')
     await assertCapacity(organizationId, 'alerts.destinations')
 
     if (body.type === 'webhook') {
@@ -129,6 +212,12 @@ const app = new Hono()
       const linearError = await validateLinearDestinationConfig(organizationId, body.config ?? {})
       if (linearError) {
         return c.json({ error: linearError }, 400)
+      }
+    }
+    if (body.type === 'slack') {
+      const slackError = await validateSlackDestinationConfig(organizationId, body.config)
+      if (slackError) {
+        return c.json({ error: slackError }, 400)
       }
     }
 
@@ -192,6 +281,17 @@ const app = new Hono()
         const linearError = await validateLinearDestinationConfig(organizationId, parsed.data)
         if (linearError) {
           return c.json({ error: linearError }, 400)
+        }
+      }
+      if (existing.type === 'slack') {
+        const parsed = slackConfigSchema.safeParse(body.config)
+        if (!parsed.success) {
+          return c.json({ error: 'Slack destinations require a channel.' }, 400)
+        }
+        await requireFeature(organizationId, 'integrations.slack')
+        const slackError = await validateSlackDestinationConfig(organizationId, parsed.data)
+        if (slackError) {
+          return c.json({ error: slackError }, 400)
         }
       }
       if (existing.type === 'webhook') {
@@ -275,6 +375,7 @@ const app = new Hono()
     }
     if (destination.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
     if (destination.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
+    if (destination.type === 'slack') await requireFeature(organizationId, 'integrations.slack')
 
     switch (destination.type) {
       case 'webhook': {
@@ -339,6 +440,53 @@ const app = new Hono()
           return c.json({ success: true, organizationName: result.organizationName })
         } catch (error) {
           if (error instanceof LinearApiError) {
+            return c.json({ success: false, error: error.message }, error.retryable ? 503 : 400)
+          }
+          throw error
+        }
+      }
+      case 'slack': {
+        const last = lastSlackTestAt.get(destination.id) ?? 0
+        if (Date.now() - last < SLACK_TEST_INTERVAL_MS) {
+          return c.json({ error: 'Wait a few seconds before sending another test message.' }, 429)
+        }
+        lastSlackTestAt.set(destination.id, Date.now())
+        const installation = await slackInstallationRepository.findByOrganization(organizationId)
+        if (!installation || installation.status !== 'active') {
+          return c.json(
+            { success: false, error: 'Slack is not connected or needs to be reconnected.' },
+            400
+          )
+        }
+        try {
+          const config = parseSlackDestinationConfig(destination)
+          const [orgName, slug] = await Promise.all([
+            organizationName(organizationId),
+            organizationSlug(organizationId),
+          ])
+          const content = buildTestMessage({
+            channelName: config.channelName ?? null,
+            destinationName: destination.name,
+            organizationName: orgName,
+            settingsUrl: slug
+              ? `${appBaseUrl()}/${encodeURIComponent(slug)}/settings/destinations`
+              : appBaseUrl(),
+          })
+          const startedAt = Date.now()
+          await withSlackToken(installation, (token) =>
+            postSlackMessage(token, {
+              channel: config.channelId,
+              text: content.text,
+              attachments: content.attachments,
+            })
+          )
+          return c.json({
+            success: true,
+            durationMs: Date.now() - startedAt,
+            channelName: config.channelName ?? null,
+          })
+        } catch (error) {
+          if (error instanceof SlackApiError) {
             return c.json({ success: false, error: error.message }, error.retryable ? 503 : 400)
           }
           throw error

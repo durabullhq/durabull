@@ -45,6 +45,8 @@ import queuesRoutes from './routes/queues'
 import redisKeysRoutes from './routes/redis-keys'
 import scheduledJobsRoutes from './routes/scheduled-jobs'
 import serviceAccountsRoutes from './routes/service-accounts'
+import slackEventsRoutes from './routes/slack-events'
+import slackIntegrationRoutes from './routes/slack-integration'
 import teamRoutes from './routes/team'
 import telemetryRoutes, { getTelemetryStatus } from './routes/telemetry'
 import userSettingsRoutes from './routes/user-settings'
@@ -239,6 +241,8 @@ const apiRoutes = new Hono()
   .route('/team', teamRoutes)
   .route('/billing/webhook', billingWebhookRoutes)
   .route('/billing', billingRoutes)
+  .route('/slack', slackEventsRoutes)
+  .route('/integrations/slack', slackIntegrationRoutes)
   .route('/service-accounts', serviceAccountsRoutes)
   // User settings
   .route('/user-settings', userSettingsRoutes)
@@ -381,9 +385,13 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
 
   // General rate limiting for non-auth API endpoints
   app.use('/api/*', async (c, next) => {
-    // Skip auth routes (handled above) and signed Stripe deliveries, which
-    // arrive in bursts from Stripe's shared egress addresses.
-    if (c.req.path.startsWith('/api/auth') || c.req.path === '/api/billing/webhook') {
+    // Skip auth routes (handled above) and signed Stripe and Slack deliveries,
+    // which arrive in bursts from the providers' shared egress addresses.
+    if (
+      c.req.path.startsWith('/api/auth') ||
+      c.req.path === '/api/billing/webhook' ||
+      c.req.path.startsWith('/api/slack/')
+    ) {
       return next()
     }
     return apiRateLimiter(c, next)
@@ -436,6 +444,8 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     .get('/mode', (c) => c.json(getAppMode()))
     .route('/telemetry', telemetryRoutes)
     .route('/billing/webhook', billingWebhookRoutes)
+    // Slack-signed requests (events, slash commands, interactions); no session.
+    .route('/slack', slackEventsRoutes)
 
   // Apply session middleware to routes that need it
   api.use('/session', sessionMiddleware)
@@ -450,6 +460,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     return sessionMiddleware(c, next)
   })
   api.use('/service-accounts/*', sessionMiddleware)
+  api.use('/integrations/*', sessionMiddleware)
   // Connection middleware includes session handling - no need for both
   api.use('/c/:connectionId/*', connectionMiddleware)
 
@@ -474,6 +485,7 @@ export async function createApiApp(options: CreateApiAppOptions = {}) {
     .route('/alerts/destinations', alertDestinationsRoutes)
     .route('/alerts/webhook-destinations', alertWebhookDestinationsRoutes)
     .route('/alerts', alertsGlobalRoutes)
+    .route('/integrations/slack', slackIntegrationRoutes)
     .route('/c/:connectionId/alerts', alertsRoutes)
     .route('/c/:connectionId/queues', queuesRoutes)
     .route('/c/:connectionId/queues', jobsRoutes)

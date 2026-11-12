@@ -40,6 +40,9 @@ export { invitation, member, organization } from './organization/schema'
 export { connectionEnvironments, redisConnection } from './redis-connection/schema'
 export { redisDiscoveredQueue } from './redis-discovered-queue/schema'
 export { redisHealthSample } from './redis-health-sample/schema'
+export { slackAlertMessage } from './slack-alert-message/schema'
+export { slackInstallation } from './slack-installation/schema'
+export { slackOauthState } from './slack-oauth-state/schema'
 // Telemetry installation schema tables
 export { telemetryInstallation } from './telemetry-installation/schema'
 // User schema tables

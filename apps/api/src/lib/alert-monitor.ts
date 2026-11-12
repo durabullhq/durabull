@@ -47,6 +47,7 @@ import {
   isRedisHealthHistoryEnabled,
   recordRedisHealthSnapshot,
 } from './redis-health-history'
+import { syncSlackAlertMessages } from './slack/alerts'
 
 const DEFAULT_DELIVERY_SWEEP_INTERVAL_MS = 15_000
 const MAX_STARTUP_JITTER_MS = 30_000
@@ -470,6 +471,14 @@ async function runResolutionRecoveryCycle(): Promise<void> {
     const pendingSync = await alertEventRepository.findPendingLinearResolutionSync(10)
     if (pendingSync.length > 0) {
       await syncLinearIssuesForResolvedEvents(pendingSync)
+    }
+
+    // Mirror acknowledgements and resolutions made anywhere (web, MCP,
+    // auto-resolve, rule changes) into the Slack messages for those incidents.
+    try {
+      await syncSlackAlertMessages({ limit: 25 })
+    } catch (error) {
+      console.error('[alert-monitor] Slack message sync failed:', error)
     }
 
     const deletionClaimToken = randomUUID()
