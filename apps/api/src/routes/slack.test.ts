@@ -1494,4 +1494,55 @@ describe('Slack integration', () => {
     expect(await getSlackBotToken(installation)).toBe('xoxe.xoxb-from-other-process')
     expect(slack.callsTo('oauth.v2.access')).toHaveLength(0)
   })
+
+  it('posts no thread reply when Slack is disconnected during a message update', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    const posts = slack.callsTo('chat.postMessage').length
+    await alertEventRepository.resolve(event.id, ORG_ID, 'manual', 'user-ada')
+    // The organization removes Slack while the update is in flight.
+    slack.during['chat.update'] = async () => {
+      await slackInstallationRepository.delete(ORG_ID)
+    }
+    await syncSlackAlertMessages()
+    expect(slack.callsTo('chat.update')).toHaveLength(1)
+    expect(slack.callsTo('chat.postMessage')).toHaveLength(posts)
+  })
+
+  it('resumes updating once the app is invited back, even after many not_in_channel checks', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    await alertEventRepository.resolve(event.id, ORG_ID, 'manual', 'user-ada')
+    slack.failures['chat.update'] = 'not_in_channel'
+    const db = await getDb()
+    // More checks than the 50-attempt limit that applies to other failures.
+    for (let check = 0; check < 55; check++) {
+      expect(await syncSlackAlertMessages()).toEqual({ synced: 0, failed: 1 })
+      await db.update(slackAlertMessage).set({ nextSyncAt: new Date(Date.now() - 1000) })
+    }
+    const [waiting] = await slackAlertMessageRepository.listByEvent(event.id)
+    expect(waiting?.syncAttempts).toBe(0)
+
+    // Someone runs /invite @Durabull in the channel.
+    delete slack.failures['chat.update']
+    expect(await syncSlackAlertMessages()).toEqual({ synced: 1, failed: 0 })
+    const [current] = await slackAlertMessageRepository.listByEvent(event.id)
+    expect(current?.renderedState).toBe('resolved')
+  })
 })

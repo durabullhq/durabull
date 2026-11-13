@@ -467,6 +467,8 @@ async function syncOneMessage(
     })
     if (reply) {
       try {
+        // Checked again: Slack may have been disconnected during the update.
+        await assertInstallationCurrent(installation)
         await postSlackMessage(token, {
           channel: claim.channelId,
           thread_ts: claim.messageTs,
@@ -565,13 +567,14 @@ export async function refreshSlackAlertMessages(
       const destination = message.destinationId ? destinations.get(message.destinationId) : null
       if (destination?.type === 'slack' && !slackThreadUpdatesEnabled(destination)) continue
       try {
-        await withSlackToken(installation, (token) =>
-          postSlackMessage(token, {
+        await withSlackToken(installation, async (token) => {
+          await assertInstallationCurrent(installation)
+          return postSlackMessage(token, {
             channel: message.channelId,
             thread_ts: message.messageTs,
             text: note,
           })
-        )
+        })
       } catch (error) {
         if (error instanceof SlackApiError && error.isAuthError) break
         console.warn('[slack] Could not post thread note', {
