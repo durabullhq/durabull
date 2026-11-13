@@ -142,6 +142,56 @@ describe('SlackIntegrationCard', () => {
     expect(mocks.connect).toHaveBeenCalledWith({ returnTo: 'integrations' })
   })
 
+  describe('continuing an install from the direct install URL', () => {
+    const withInstallRequest = () =>
+      window.history.replaceState(null, '', '/acme/settings/integrations?slack=install')
+
+    it('starts OAuth once for an admin and clears the request from the URL', async () => {
+      withInstallRequest()
+      mocks.overview.mockReturnValue({
+        configured: true,
+        entitled: true,
+        canManage: true,
+        installation: null,
+      })
+      mocks.connect.mockResolvedValue({ authorizationUrl: 'https://slack.com/oauth/v2/authorize' })
+      const { rerender } = render(<SlackIntegrationCard orgSlug="acme" />)
+      rerender(<SlackIntegrationCard orgSlug="acme" />)
+
+      await waitFor(() => expect(mocks.connect).toHaveBeenCalledWith({ returnTo: 'integrations' }))
+      expect(mocks.connect).toHaveBeenCalledTimes(1)
+      expect(window.location.search).toBe('')
+    })
+
+    it('does not start OAuth for members who cannot manage Slack', async () => {
+      withInstallRequest()
+      mocks.overview.mockReturnValue({
+        configured: true,
+        entitled: true,
+        canManage: false,
+        installation: null,
+      })
+      render(<SlackIntegrationCard orgSlug="acme" />)
+
+      await waitFor(() => expect(window.location.search).toBe(''))
+      expect(mocks.connect).not.toHaveBeenCalled()
+    })
+
+    it('does not reinstall a workspace that is already connected', async () => {
+      withInstallRequest()
+      mocks.overview.mockReturnValue({
+        configured: true,
+        entitled: true,
+        canManage: true,
+        installation: connectedInstallation,
+      })
+      render(<SlackIntegrationCard orgSlug="acme" />)
+
+      await waitFor(() => expect(window.location.search).toBe(''))
+      expect(mocks.connect).not.toHaveBeenCalled()
+    })
+  })
+
   it('creates the first Slack destination from the setup checklist', async () => {
     mocks.overview.mockReturnValue({
       configured: true,

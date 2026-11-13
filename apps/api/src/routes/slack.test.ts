@@ -430,6 +430,18 @@ describe('Slack integration', () => {
     expect(await slackInstallationRepository.findByOrganization(ORG_ID)).toBeNull()
   })
 
+  it('restarts an install that began in Slack from the direct install URL', async () => {
+    await seed()
+    const app = await createApp()
+    // Slack's App Directory and shareable install links send no state.
+    const response = await app.request('/api/integrations/slack/callback?code=code-from-slack')
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe(`${BASE_URL}/slack/install`)
+    // The code is never exchanged, so the workspace is not attached to anyone.
+    expect(slack.callsTo('oauth.v2.access')).toHaveLength(0)
+    expect(await slackInstallationRepository.findByOrganization(ORG_ID)).toBeNull()
+  })
+
   it('validates Slack destinations and sends a real test message', async () => {
     await seed()
     const app = await createApp()

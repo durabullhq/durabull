@@ -23,6 +23,7 @@ import { type SlackDestinationConfig, useCreateAlertDestination } from '@/hooks/
 import { reportUpgradePromptShown, useBilling } from '@/hooks/use-billing'
 import {
   type SlackInstallationRecord,
+  type SlackIntegrationOverview,
   useConnectSlack,
   useDisconnectSlack,
   useSlackIntegration,
@@ -67,7 +68,8 @@ export function useSlackOauthResultToast() {
     if (handled.current || typeof window === 'undefined') return
     const url = new URL(window.location.href)
     const result = url.searchParams.get('slack')
-    if (!result) return
+    // `install` is a request to start the connection, handled by the Slack card.
+    if (!result || result === 'install') return
     handled.current = true
     const message = url.searchParams.get('message')
     if (result === 'connected') toast.success('Slack connected')
@@ -79,9 +81,57 @@ export function useSlackOauthResultToast() {
   }, [])
 }
 
+/**
+ * Continues an install that started outside Durabull: the direct install URL
+ * (`/slack/install`), Slack's App Directory, or a shareable install link all
+ * land here with `?slack=install`. The OAuth flow starts from Durabull so the
+ * workspace is bound to this organization and the member who approved it.
+ */
+export function useSlackInstallRequest(
+  overview: SlackIntegrationOverview | undefined,
+  connect: ReturnType<typeof useConnectSlack>
+) {
+  const handled = useRef(false)
+  useEffect(() => {
+    if (handled.current || !overview || typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('slack') !== 'install') return
+    handled.current = true
+    url.searchParams.delete('slack')
+    window.history.replaceState(window.history.state, '', url.toString())
+
+    const installation = overview.installation
+    if (!overview.entitled) {
+      toast('The Slack app is included with the Team plan and above', {
+        description: 'Upgrade this organization to connect Slack.',
+      })
+      return
+    }
+    if (!overview.configured) {
+      toast.error('Slack is not set up on this Durabull deployment')
+      return
+    }
+    if (installation?.status === 'active') {
+      toast(`Slack is already connected to ${installation.slackTeamName}`)
+      return
+    }
+    if (!overview.canManage) {
+      toast(ADMIN_ONLY_HINT)
+      return
+    }
+    connect.mutateAsync({ returnTo: 'integrations' }).catch((error: unknown) => {
+      toast.error('Could not start the Slack connection', {
+        description: getErrorMessage(error, 'Please try again.'),
+      })
+    })
+  }, [overview, connect])
+}
+
 export function SlackIntegrationCard({ orgSlug }: { orgSlug: string }) {
   const slackQuery = useSlackIntegration()
   const overview = slackQuery.data
+  const connect = useConnectSlack()
+  useSlackInstallRequest(overview, connect)
 
   if (!overview && slackQuery.isError) {
     return (

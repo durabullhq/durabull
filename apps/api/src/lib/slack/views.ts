@@ -1,7 +1,7 @@
 import type { RedisConnection } from '@durabull/dal'
 import type { Job } from 'bullmq'
 import { SLACK_ACTIONS } from './alert-message'
-import { appBaseUrl, SLACK_SLASH_COMMAND } from './config'
+import { appBaseUrl, SLACK_SLASH_COMMAND, slackInstallUrl } from './config'
 import {
   confirmText,
   mrkdwn,
@@ -377,7 +377,16 @@ export function homeView(input: {
   if (input.noInstallations) {
     blocks.push({
       type: 'section',
-      text: mrkdwn('Durabull is not connected to an organization in this workspace yet.'),
+      text: mrkdwn(
+        'Durabull is not connected to an organization in this workspace yet. A Durabull organization owner or admin can connect it to start receiving alerts here.'
+      ),
+      accessory: {
+        type: 'button',
+        action_id: `${SLACK_ACTIONS.openLink}.install`,
+        text: plainText('Connect Durabull'),
+        url: slackInstallUrl(),
+        style: 'primary',
+      },
     })
   }
 

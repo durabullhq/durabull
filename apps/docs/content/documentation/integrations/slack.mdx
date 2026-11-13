@@ -58,6 +58,20 @@ monitor keeps trying until the messages are current.
 4. Open an alert rule and add the Slack destination under **Notify**.
 5. Use **Test** on the destination to post a test message, and try `/durabull status` in Slack.
 
+### Installing from Slack or a shared link
+
+You can also start from outside Durabull: the **Add to Slack** link
+[`https://app.durabull.io/slack/install`](https://app.durabull.io/slack/install), the Durabull
+listing in the Slack App Directory, or an install link someone shared with you. Durabull asks you
+to sign in, opens **Settings → Integrations** for your current organization and starts the
+connection there, because it needs to know which organization the workspace belongs to. Switch
+organizations first if you belong to several.
+
+If the app was approved in Slack without going through Durabull, Slack sends you back to
+Durabull, which restarts the connection from your organization. Approve it once more in Slack
+(the app is already installed, so this is a single click). Until a Durabull organization is
+connected, the app's Home tab and `/durabull` point workspace members to the install link.
+
 Organizations on the Free plan see what the Slack app includes and an **Upgrade to Team**
 button in the same place. Members who are not owners are asked to contact an owner.
 
@@ -138,9 +152,19 @@ manifest directly.
 
 ### 4. Distribute the app (optional)
 
-To let workspaces other than the one that owns the app install it, enable
-**Manage Distribution → Activate Public Distribution** in the Slack app settings. A single
-workspace can be connected to several Durabull organizations; each keeps its own settings.
+To let workspaces other than the one that owns the app install it:
+
+1. In the Slack app settings, open **Manage Distribution**. The checklist there is already
+   satisfied by the manifest: HTTPS redirect URLs and no hard-coded tokens.
+2. Select **Activate Public Distribution**.
+3. Point people at your deployment's direct install URL, `{APP_BASE_URL}/slack/install`, rather
+   than the **Sharable URL** Slack shows. The direct install URL starts the connection from the
+   person's Durabull organization. Installs that start from Slack's own link still work: Durabull
+   sends the person through the direct install URL to finish, and never attaches a workspace
+   to an organization from a link alone.
+
+A single workspace can be connected to several Durabull organizations; each keeps its own
+settings.
 
 ## Permissions
 
@@ -224,6 +248,9 @@ organization. Turn them off with **Preview Durabull links** in **Settings → In
   apps are ignored.
 - The bot token, and the refresh token if your Slack app enables token rotation, are encrypted at
   rest with `DURABULL_SECRET_ENCRYPTION_KEY` and never returned by the API.
+- Installs that start in Slack (the App Directory or a shareable link) carry no state, so
+  Durabull discards their authorization code and restarts the install from the signed-in
+  member's organization.
 - OAuth uses a single-use, hashed, ten-minute state value bound to the organization and the
   member who started the connection; the callback is refused unless that same member is signed
   in, so an install link cannot be used to attach someone else's workspace to your organization.
