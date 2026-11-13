@@ -19,12 +19,15 @@ function LegacySettingsRedirect() {
   )
   // Billing links in API errors and emails cannot know the organization slug.
   const { section, ...rest } = search
+  // Slack OAuth results land on the page that shows them (and its toast).
   const destination =
     section === 'billing'
       ? '/$orgSlug/settings/billing'
-      : rest.linear
-        ? '/$orgSlug/settings/integrations'
-        : '/$orgSlug/settings/connections'
+      : section === 'destinations'
+        ? '/$orgSlug/settings/destinations'
+        : section === 'integrations' || rest.linear || rest.slack
+          ? '/$orgSlug/settings/integrations'
+          : '/$orgSlug/settings/connections'
 
   if (!activeOrgSlug) {
     return <Navigate to="/" replace />

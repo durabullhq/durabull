@@ -13,7 +13,7 @@ export const DURABULL = {
   multiEnv:
     'Multiple Redis connections per organization, tagged development / staging / production.',
   alerts:
-    'Failure threshold, failure rate, queue stalled, per-job failed, Redis health. Delivery today: email, HMAC-signed webhooks, Linear. Slack and PagerDuty delivery are coming soon.',
+    'Failure threshold, failure rate, queue stalled, per-job failed, Redis health. Delivery: a native Slack app (acknowledge, resolve, snooze and retry from the message; /durabull commands; link previews), email, HMAC-signed webhooks, Linear. PagerDuty delivery is not built in; use a webhook.',
   mcp: `${MCP_FACTS.tools} MCP tools (${MCP_FACTS.readTools} read, ${MCP_FACTS.writeTools} write), ${MCP_FACTS.scopes} OAuth scopes, ${MCP_FACTS.prompts} operator prompts. Hosted at ${MCP_URL}. Write scopes are opt-in: retry, promote, pause/resume, alert ack/resolve/snooze. Destructive Redis commands and payload edits are not exposed over MCP.`,
   caveats: [
     'Connects to Redis-backed BullMQ; BullMQ’s PostgreSQL backend is not currently supported.',

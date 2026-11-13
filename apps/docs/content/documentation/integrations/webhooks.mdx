@@ -5,7 +5,8 @@ description: Route Durabull alert events to HTTPS webhook endpoints with signed 
 
 Webhook notifications let alert rules POST structured JSON to any HTTPS endpoint you control.
 Use them for custom paging, automation (Zapier, n8n), internal incident systems, or middleware
-that forwards alerts into Slack or PagerDuty.
+that forwards alerts into PagerDuty. For Slack, use the native
+[Slack App](/documentation/integrations/slack), which adds buttons and live message updates.
 
 ## Setup
 
@@ -24,7 +25,7 @@ For reusable destinations:
 5. In the connection's alert rule builder, select it under **Saved destinations**.
 
 For a one-off endpoint, choose **Webhook** in the rule builder and enter its URL and optional
-signing secret. Routes can include email and Linear destinations too.
+signing secret. Routes can include Slack, email and Linear destinations too.
 
 Saved destinations are resolved at dispatch time: edits affect pending deliveries and retries
 as well as future alerts. Legacy webhook references can retain enqueue-time URL and secret

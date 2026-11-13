@@ -356,6 +356,8 @@ export const alertDeliveryRepository = {
       retryable: boolean
       nextRetryAt?: Date | null
       expectedClaimedAt: Date
+      /** Replaces the stored metadata, e.g. to label which destination failed. */
+      providerMetadata?: Record<string, unknown>
     }
   ): Promise<boolean> {
     const db = await getDb()
@@ -368,6 +370,7 @@ export const alertDeliveryRepository = {
         claimedAt: null,
         nextRetryAt: options.retryable ? (options.nextRetryAt ?? now) : null,
         lastError: options.error.slice(0, 1000),
+        ...(options.providerMetadata ? { providerMetadata: options.providerMetadata } : {}),
         updatedAt: now,
       })
       .where(

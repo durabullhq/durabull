@@ -18,9 +18,12 @@ export {
   type AlertDestinationType,
   type AlertEmailDestinationConfig,
   type AlertLinearDestinationConfig,
+  type AlertSlackDestinationConfig,
   alertDestination,
   alertDestinationTypes,
   alertWebhookDestination,
+  type SlackMentionMode,
+  slackMentionModes,
 } from './alert-destination/schema'
 export type {
   AlertDestination,
@@ -53,17 +56,17 @@ export type {
 // Billing schema exports
 export {
   type BillingCheckoutAttemptStatus,
+  type BillingLimitsJson,
   type BillingNoticeKind,
   type BillingNoticeStatus,
-  type BillingLimitsJson,
   type BillingResourceKind,
   type BillingWebhookEventStatus,
   billingCheckoutAttempt,
   billingCheckoutAttemptStatuses,
-  billingNoticeKinds,
-  billingNoticeStatuses,
   billingEntitlementOverride,
   billingNoticeDelivery,
+  billingNoticeKinds,
+  billingNoticeStatuses,
   billingOperatorAction,
   billingResourceKinds,
   billingResourceSuspension,
@@ -168,6 +171,21 @@ export { redisHealthSample } from './redis-health-sample/schema'
 export type { NewRedisHealthSample, RedisHealthSample } from './redis-health-sample/types'
 // Relations v2 - single consolidated relations object
 export { relations } from './relations'
+// Slack integration schema exports
+export {
+  type SlackAlertMessageState,
+  slackAlertMessage,
+  slackAlertMessageStates,
+} from './slack-alert-message/schema'
+export type { NewSlackAlertMessage, SlackAlertMessage } from './slack-alert-message/types'
+export {
+  type SlackInstallationStatus,
+  slackInstallation,
+  slackInstallationStatuses,
+} from './slack-installation/schema'
+export type { NewSlackInstallation, SlackInstallation } from './slack-installation/types'
+export { slackOauthState } from './slack-oauth-state/schema'
+export type { NewSlackOauthState, SlackOauthState } from './slack-oauth-state/types'
 // Telemetry installation schema exports
 export { telemetryInstallation } from './telemetry-installation/schema'
 export type {

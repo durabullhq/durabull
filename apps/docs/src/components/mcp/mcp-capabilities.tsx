@@ -142,7 +142,7 @@ const capabilities: Capability[] = [
           tone="accent"
           rows={[
             ['Open incidents', '2 · acknowledged'],
-            ['Notifications', 'email ✓ · webhook ✓ · linear ✓'],
+            ['Notifications', 'slack ✓ · email ✓ · webhook ✓ · linear ✓'],
             ['Snoozed until', '15:04'],
           ]}
         />

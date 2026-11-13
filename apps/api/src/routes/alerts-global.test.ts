@@ -478,6 +478,7 @@ describe('global alerts routes', () => {
   })
 
   it('returns a conflict when a concurrent request wins event resolution', async () => {
+    await seedUser('user-1', 'Test User')
     const rule = await alertRuleRepository.create({
       organizationId: TEST_ORG_ID,
       connectionId: FIRST_CONNECTION_ID,

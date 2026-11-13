@@ -298,6 +298,48 @@ describe('use-alerts', () => {
     })
   })
 
+  it('shows saved-destination deliveries under the type they resolved to', async () => {
+    const queryClient = createQueryClient()
+    globalEventsGetMock.mockResolvedValue({ ok: true })
+    const delivery = (
+      id: string,
+      channelType: string,
+      providerMetadata: Record<string, unknown>
+    ) => ({
+      id,
+      channelType,
+      status: 'delivered',
+      target: 'destination:d',
+      providerMetadata,
+    })
+    handleResMock.mockResolvedValue({
+      events: [
+        {
+          id: 'event-1',
+          deliveries: [
+            delivery('a', 'destination', { resolvedType: 'slack', destinationName: 'Ops' }),
+            delivery('b', 'destination', { type: 'webhook' }),
+            delivery('c', 'destination', { type: 'destination', destinationId: 'd' }),
+            delivery('d', 'email', {}),
+            delivery('e', 'carrier-pigeon', {}),
+          ],
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useGlobalAlertEvents({}), {
+      wrapper: createWrapper(queryClient),
+    })
+
+    await waitFor(() => expect(result.current.data?.events).toHaveLength(1))
+    expect(result.current.data?.events[0]?.deliveries.map((entry) => entry.channelType)).toEqual([
+      'slack',
+      'webhook',
+      'destination',
+      'email',
+    ])
+  })
+
   it('invalidates summary, global, and connection queries after creating a rule', async () => {
     const queryClient = createQueryClient()
     const invalidateQueriesSpy = vi.spyOn(queryClient, 'invalidateQueries')

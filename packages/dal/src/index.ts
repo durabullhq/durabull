@@ -47,9 +47,12 @@ export {
   type AlertDestinationType,
   type AlertEmailDestinationConfig,
   type AlertLinearDestinationConfig,
+  type AlertSlackDestinationConfig,
   alertDestination,
   alertDestinationTypes,
   alertWebhookDestination,
+  type SlackMentionMode,
+  slackMentionModes,
 } from './db/schemas/alert-destination/schema'
 export type {
   AlertDestination,
@@ -198,6 +201,26 @@ export type {
   NewRedisHealthSample,
   RedisHealthSample,
 } from './db/schemas/redis-health-sample/types'
+export {
+  type SlackAlertMessageState,
+  slackAlertMessage,
+  slackAlertMessageStates,
+} from './db/schemas/slack-alert-message/schema'
+export type {
+  NewSlackAlertMessage,
+  SlackAlertMessage,
+} from './db/schemas/slack-alert-message/types'
+export {
+  type SlackInstallationStatus,
+  slackInstallation,
+  slackInstallationStatuses,
+} from './db/schemas/slack-installation/schema'
+export type {
+  NewSlackInstallation,
+  SlackInstallation,
+} from './db/schemas/slack-installation/types'
+export { slackOauthState } from './db/schemas/slack-oauth-state/schema'
+export type { NewSlackOauthState, SlackOauthState } from './db/schemas/slack-oauth-state/types'
 export { telemetryInstallation } from './db/schemas/telemetry-installation/schema'
 export * as userSchema from './db/schemas/user/schema'
 // User schema exports
@@ -253,5 +276,19 @@ export {
   type ServiceAccountSummary,
   serviceAccountRepository,
 } from './repositories/service-account'
+export {
+  type ClaimedSlackAlertMessage,
+  type CreateSlackAlertMessageInput,
+  desiredSlackMessageState,
+  slackAlertMessageRepository,
+} from './repositories/slack-alert-message'
+export {
+  type SlackInstallationSettings,
+  type SlackInstallationWithOrganization,
+  type SlackOrganizationMember,
+  slackInstallationRepository,
+  type UpsertSlackInstallationInput,
+} from './repositories/slack-installation'
+export { hashSlackOauthState, slackOauthStateRepository } from './repositories/slack-oauth-state'
 export { telemetryInstallationRepository } from './repositories/telemetry-installation'
 export { userSettingsRepository } from './repositories/user-settings'

@@ -52,6 +52,8 @@ export const alertEvent = pgTable(
     // firing (and still auto-resolves); ack provenance survives resolution.
     acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
     acknowledgedBy: text('acknowledged_by').references(() => user.id, { onDelete: 'set null' }),
+    /** Member who resolved the incident manually; null for automatic resolutions. */
+    resolvedBy: text('resolved_by').references(() => user.id, { onDelete: 'set null' }),
     notificationSentAt: timestamp('notification_sent_at', { withTimezone: true }),
     linearResolutionSyncPending: boolean('linear_resolution_sync_pending').notNull().default(false),
     linearResolutionSyncClaimToken: text('linear_resolution_sync_claim_token'),

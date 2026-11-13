@@ -50,6 +50,7 @@ function createEvent(overrides: Partial<AlertEvent> = {}): AlertEvent {
     notificationSentAt: null,
     acknowledgedAt: null,
     acknowledgedBy: null,
+    resolvedBy: null,
     linearResolutionAttempts: 0,
     linearResolutionSyncPending: true,
     linearResolutionSyncClaimToken: null,

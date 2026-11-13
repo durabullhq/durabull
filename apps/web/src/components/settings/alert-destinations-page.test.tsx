@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AlertDestinationsPage } from '@/components/settings/alert-destinations-page'
 import type { AlertDestinationRecord } from '@/hooks/use-alerts'
+import { setTestEntitlement } from '@/test/entitlement'
 
 const {
   toastSuccessMock,
@@ -13,7 +14,13 @@ const {
   deleteMutateAsyncMock,
   testMutateAsyncMock,
   refetchMock,
+  slackOverviewMock,
+  connectSlackMock,
+  refetchSlackMock,
 } = vi.hoisted(() => ({
+  slackOverviewMock: vi.fn(),
+  connectSlackMock: vi.fn(),
+  refetchSlackMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   toastErrorMock: vi.fn(),
   useAlertDestinationsMock: vi.fn(),
@@ -43,6 +50,59 @@ vi.mock('@/hooks/use-alerts', () => ({
   useLinearMetadata: () => ({ data: undefined, isLoading: false }),
 }))
 
+vi.mock('@/hooks/use-slack', () => ({
+  useSlackIntegration: () => ({
+    data: slackOverviewMock(),
+    isLoading: false,
+    isError: slackOverviewMock() === undefined,
+    refetch: refetchSlackMock,
+  }),
+  useConnectSlack: () => ({ mutateAsync: connectSlackMock, isPending: false }),
+  useSlackChannels: () => ({
+    data: {
+      channels: [
+        { id: 'C0ALERTS', name: 'alerts', isPrivate: false, isMember: false },
+        { id: 'G0SECRET', name: 'secret', isPrivate: true, isMember: false },
+      ],
+      truncated: false,
+    },
+    isLoading: false,
+    isError: false,
+    refresh: vi.fn(),
+  }),
+  useSlackUserGroups: () => ({
+    data: { userGroups: [{ id: 'S0ONCALL', handle: 'oncall', name: 'On-call' }] },
+    isLoading: false,
+  }),
+}))
+
+vi.mock('@/hooks/use-organization', () => ({
+  useActiveOrganization: () => ({ data: { id: 'org-1', slug: 'acme' } }),
+}))
+
+vi.mock('@/hooks/use-billing', () => ({
+  useBilling: () => ({ data: { enabled: true, canManageBilling: true } }),
+  reportUpgradePromptShown: vi.fn(),
+}))
+
+vi.mock('@tanstack/react-router', () => ({
+  useParams: () => ({ orgSlug: 'acme' }),
+  Link: ({
+    children,
+    to,
+    params,
+    ...props
+  }: {
+    children: React.ReactNode
+    to: string
+    params?: Record<string, string>
+  }) => (
+    <a href={to.replace('$orgSlug', params?.orgSlug ?? '')} {...props}>
+      {children}
+    </a>
+  ),
+}))
+
 function buildDestination(overrides: Partial<AlertDestinationRecord> = {}): AlertDestinationRecord {
   return {
     id: 'dest-1',
@@ -70,6 +130,12 @@ describe('AlertDestinationsPage', () => {
       .mockReset()
       .mockResolvedValue({ success: true, httpStatus: 200, durationMs: 87 })
     refetchMock.mockReset()
+    connectSlackMock.mockReset().mockResolvedValue({ authorizationUrl: 'https://slack.com/oauth' })
+    slackOverviewMock.mockReturnValue({
+      configured: true,
+      entitled: true,
+      installation: { status: 'active' },
+    })
 
     useAlertDestinationsMock.mockReturnValue({
       data: { destinations: [buildDestination()] },
@@ -250,5 +316,101 @@ describe('AlertDestinationsPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(refetchMock).toHaveBeenCalled()
+  })
+
+  it('creates a Slack destination with a channel, mentions and user groups', async () => {
+    const user = userEvent.setup()
+    render(<AlertDestinationsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Add destination' }))
+    await user.click(await screen.findByTestId('destination-type-slack'))
+    const create = screen.getByRole('button', { name: 'Create destination' })
+    expect(create).toBeDisabled()
+
+    const channel = screen.getByLabelText('Channel')
+    expect(screen.getByRole('option', { name: /secret \(invite @Durabull first\)/ })).toBeDisabled()
+    await user.selectOptions(channel, 'C0ALERTS')
+    await user.selectOptions(screen.getByLabelText('Notify'), 'here')
+    await user.selectOptions(screen.getByLabelText('Mention user groups'), 'S0ONCALL')
+    await user.click(create)
+
+    await waitFor(() =>
+      expect(createMutateAsyncMock).toHaveBeenCalledWith({
+        type: 'slack',
+        name: 'Slack #alerts',
+        config: {
+          channelId: 'C0ALERTS',
+          channelName: 'alerts',
+          mention: 'here',
+          userGroupIds: ['S0ONCALL'],
+          threadUpdates: true,
+        },
+      })
+    )
+  })
+
+  it('offers to connect Slack from the type picker when it is not connected', async () => {
+    slackOverviewMock.mockReturnValue({ configured: true, entitled: true, installation: null })
+    const user = userEvent.setup()
+    render(<AlertDestinationsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Add destination' }))
+    const slackOption = await screen.findByTestId('destination-type-slack')
+    expect(slackOption).toHaveTextContent('Connect your Slack workspace')
+    await user.click(screen.getByRole('button', { name: /Add to Slack/ }))
+    expect(connectSlackMock).toHaveBeenCalledWith({ returnTo: 'destinations' })
+  })
+
+  it('offers a retry when the Slack status cannot be loaded, not a setup message', async () => {
+    slackOverviewMock.mockReturnValue(undefined)
+    const user = userEvent.setup()
+    render(<AlertDestinationsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Add destination' }))
+    const slackOption = await screen.findByTestId('destination-type-slack')
+    expect(slackOption).toHaveTextContent('Could not check the Slack connection.')
+    expect(slackOption).not.toHaveTextContent('not set up')
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(refetchSlackMock).toHaveBeenCalled()
+  })
+
+  it('nudges Free organizations toward the Team plan instead of offering Slack', async () => {
+    setTestEntitlement({ plan: 'free' })
+    slackOverviewMock.mockReturnValue({ configured: true, entitled: false, installation: null })
+    const user = userEvent.setup()
+    render(<AlertDestinationsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Add destination' }))
+    const slackOption = await screen.findByTestId('destination-type-slack')
+    expect(slackOption).toBeDisabled()
+    expect(slackOption).toHaveTextContent('Included in the Team plan and above.')
+    expect(screen.getByTestId('destination-upgrade-step')).toHaveTextContent('Upgrade to Team')
+  })
+
+  it('summarises Slack destinations by channel and mentions', () => {
+    useAlertDestinationsMock.mockReturnValue({
+      data: {
+        destinations: [
+          buildDestination({
+            id: 'slack-1',
+            name: 'Ops channel',
+            type: 'slack',
+            url: null,
+            secretConfigured: false,
+            config: {
+              channelId: 'C0ALERTS',
+              channelName: 'alerts',
+              mention: 'here',
+              userGroupIds: ['S1'],
+            },
+          }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: refetchMock,
+    })
+    render(<AlertDestinationsPage />)
+    expect(screen.getByText('#alerts · @here · 1 group')).toBeInTheDocument()
   })
 })

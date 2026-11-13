@@ -26,6 +26,17 @@ const CHANNEL_LABELS: Record<AlertDeliveryRecord['channelType'], string> = {
   email: 'Email',
   linear: 'Linear',
   webhook: 'Webhook',
+  slack: 'Slack',
+  destination: 'Destination',
+}
+
+function externalLinkLabel(delivery: AlertDeliveryRecord): string {
+  if (delivery.channelType === 'slack') {
+    return delivery.externalIdentifier
+      ? `View in Slack (${delivery.externalIdentifier})`
+      : 'View in Slack'
+  }
+  return delivery.externalIdentifier ?? 'Open Linear issue'
 }
 
 const DELIVERY_STATUS_VARIANT: Record<
@@ -222,7 +233,7 @@ function DeliveryRow({
           rel="noreferrer"
           className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline"
         >
-          {delivery.externalIdentifier ?? 'Open Linear issue'}
+          {externalLinkLabel(delivery)}
           <ArrowUpRight className="h-3 w-3" />
         </a>
       ) : null}

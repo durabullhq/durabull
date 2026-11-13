@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import {
   index,
   integer,
@@ -8,7 +9,6 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { sql } from 'drizzle-orm'
 import { alertEvent } from '../alert-event/schema'
 import { baseColumns } from '../common'
 import { organization } from '../organization/schema'

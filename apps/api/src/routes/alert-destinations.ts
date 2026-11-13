@@ -1,8 +1,13 @@
 import {
   type AlertDestination,
+  type AlertSlackDestinationConfig,
   alertDestinationRepository,
   decryptSecret,
+  eq,
+  getDb,
   linearIntegrationRepository,
+  organization,
+  slackInstallationRepository,
 } from '@durabull/dal'
 import { isEmailConfigured } from '@durabull/email'
 import { zValidator } from '@hono/zod-validator'
@@ -20,6 +25,16 @@ import { validateWebhookUrls } from '../lib/alert-webhook-channels'
 import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
 import { LinearApiError, validateLinearAccessToken } from '../lib/linear-client'
 import { getValidLinearAccessToken } from '../lib/linear-oauth'
+import { buildTestMessage } from '../lib/slack/alert-message'
+import {
+  findActiveSlackInstallation,
+  parseSlackDestinationConfig,
+  SLACK_WORKSPACE_CHANGED_MESSAGE,
+  slackDestinationMatchesWorkspace,
+} from '../lib/slack/alerts'
+import { getSlackChannel, postSlackMessage, SlackApiError } from '../lib/slack/client'
+import { appBaseUrl } from '../lib/slack/config'
+import { withSlackToken } from '../lib/slack/token'
 import { requireOrganization } from '../middleware/auth'
 
 const nameSchema = z.string().trim().min(1).max(120)
@@ -32,6 +47,25 @@ const linearConfigSchema = z
     assigneeId: z.string().min(1).optional(),
     stateId: z.string().min(1).optional(),
     priority: z.number().int().min(0).max(4).optional(),
+  })
+  .strict()
+
+const slackConfigSchema = z
+  .object({
+    channelId: z
+      .string()
+      .trim()
+      // Public (C…) and private (G…) channels; direct messages (D…) are not destinations.
+      .regex(/^[CG][A-Z0-9]{2,}$/, 'Choose a Slack channel.'),
+    channelName: z.string().trim().max(200).optional(),
+    mention: z.enum(['none', 'here', 'channel']).optional(),
+    userGroupIds: z
+      .array(z.string().regex(/^S[A-Z0-9]+$/))
+      .max(5)
+      .optional(),
+    threadUpdates: z.boolean().optional(),
+    // Echoed back by clients editing a destination; the server always sets it.
+    slackTeamId: z.string().optional(),
   })
   .strict()
 
@@ -61,6 +95,14 @@ const createDestinationSchema = z.discriminatedUnion('type', [
       enabled: z.boolean().optional(),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('slack'),
+      name: nameSchema,
+      config: slackConfigSchema,
+      enabled: z.boolean().optional(),
+    })
+    .strict(),
 ])
 
 const updateDestinationSchema = z
@@ -74,7 +116,7 @@ const updateDestinationSchema = z
   .strict()
 
 const listQuerySchema = z.object({
-  type: z.enum(['webhook', 'email', 'linear']).optional(),
+  type: z.enum(['webhook', 'email', 'linear', 'slack']).optional(),
 })
 
 async function validateLinearDestinationConfig(
@@ -89,6 +131,81 @@ async function validateLinearDestinationConfig(
     return 'Linear destinations require a teamId or organization default team.'
   }
   return null
+}
+
+/**
+ * Checks a Slack destination's channel against the connected workspace and
+ * returns the config to store, stamped with that workspace so a later switch
+ * to another workspace can tell the channel no longer applies.
+ */
+async function validateSlackDestinationConfig(
+  organizationId: string,
+  config: z.infer<typeof slackConfigSchema>,
+  /** Workspace an existing destination was saved in (updates only). */
+  previous?: { slackTeamId?: unknown }
+): Promise<{ error: string } | { config: AlertSlackDestinationConfig }> {
+  const installation = await slackInstallationRepository.findByOrganization(organizationId)
+  if (!installation) {
+    return {
+      error: 'Connect Slack under Settings → Integrations before creating Slack destinations.',
+    }
+  }
+  if (installation.status !== 'active') {
+    return { error: 'Slack needs to be reconnected before Slack destinations can be saved.' }
+  }
+  let channelName = config.channelName
+  try {
+    const channel = await withSlackToken(installation, (token) =>
+      getSlackChannel(token, config.channelId)
+    )
+    if (channel.isArchived) return { error: `#${channel.name} is archived.` }
+    if (channel.isPrivate && !channel.isMember) {
+      return {
+        error: `Invite @Durabull to #${channel.name} first: /invite @Durabull in the channel.`,
+      }
+    }
+    channelName = channel.name || channelName
+  } catch (error) {
+    // Only a transient Slack outage may skip the check (delivery retries);
+    // anything else (an unreadable stored token, say) must not save a
+    // destination that cannot deliver.
+    if (!(error instanceof SlackApiError)) throw error
+    if (!error.retryable) return { error: error.message }
+    // Moving a destination to the newly connected workspace needs Slack to
+    // confirm the channel exists there, or an old channel id would be rebound.
+    if (previous && previous.slackTeamId !== installation.slackTeamId) {
+      return {
+        error: `Slack could not confirm the channel in the connected workspace (${error.message}). Try again in a moment.`,
+      }
+    }
+  }
+  return { config: { ...config, channelName, slackTeamId: installation.slackTeamId } }
+}
+
+async function findOrganizationLabels(
+  organizationId: string
+): Promise<{ name: string; slug: string | null }> {
+  const db = await getDb()
+  const rows = await db
+    .select({ name: organization.name, slug: organization.slug })
+    .from(organization)
+    .where(eq(organization.id, organizationId))
+    .limit(1)
+  return { name: rows[0]?.name ?? 'your organization', slug: rows[0]?.slug ?? null }
+}
+
+const SLACK_TEST_INTERVAL_MS = 10_000
+const lastSlackTestAt = new Map<string, number>()
+
+/** One Slack test message per destination every few seconds; old entries are pruned. */
+function takeSlackTestSlot(destinationId: string): boolean {
+  const now = Date.now()
+  for (const [id, sentAt] of lastSlackTestAt) {
+    if (now - sentAt >= SLACK_TEST_INTERVAL_MS) lastSlackTestAt.delete(id)
+  }
+  if (lastSlackTestAt.has(destinationId)) return false
+  lastSlackTestAt.set(destinationId, now)
+  return true
 }
 
 const app = new Hono()
@@ -139,6 +256,14 @@ const app = new Hono()
         return c.json({ error: linearError }, 400)
       }
     }
+    let slackConfig: AlertSlackDestinationConfig | null = null
+    if (body.type === 'slack') {
+      const validated = await validateSlackDestinationConfig(organizationId, body.config)
+      if ('error' in validated) {
+        return c.json({ error: validated.error }, 400)
+      }
+      slackConfig = validated.config
+    }
 
     try {
       const destination = await alertDestinationRepository.create({
@@ -147,7 +272,7 @@ const app = new Hono()
         type: body.type,
         url: body.type === 'webhook' ? body.url : null,
         signingSecret: body.type === 'webhook' ? body.signingSecret : undefined,
-        config: body.type === 'webhook' ? {} : (body.config ?? {}),
+        config: body.type === 'webhook' ? {} : (slackConfig ?? body.config ?? {}),
         enabled: body.enabled,
       })
 
@@ -189,6 +314,7 @@ const app = new Hono()
     if (body.signingSecret !== undefined && existing.type !== 'webhook') {
       return c.json({ error: 'Only webhook destinations have a signing secret.' }, 400)
     }
+    let updatedSlackConfig: AlertSlackDestinationConfig | null = null
     if (body.config !== undefined) {
       if (existing.type === 'email') {
         const parsed = z
@@ -208,6 +334,22 @@ const app = new Hono()
         if (linearError) {
           return c.json({ error: linearError }, 400)
         }
+      }
+      if (existing.type === 'slack') {
+        const parsed = slackConfigSchema.safeParse(body.config)
+        if (!parsed.success) {
+          return c.json({ error: 'Slack destinations require a channel.' }, 400)
+        }
+        await requireDeliveryFeature(organizationId, 'slack')
+        const validated = await validateSlackDestinationConfig(
+          organizationId,
+          parsed.data,
+          (existing.config ?? {}) as { slackTeamId?: unknown }
+        )
+        if ('error' in validated) {
+          return c.json({ error: validated.error }, 400)
+        }
+        updatedSlackConfig = validated.config
       }
       if (existing.type === 'webhook') {
         return c.json({ error: 'Webhook destinations are configured via url and secret.' }, 400)
@@ -232,7 +374,7 @@ const app = new Hono()
         name: body.name,
         url: body.url,
         signingSecret: body.signingSecret,
-        config: body.config as AlertDestination['config'] | undefined,
+        config: (updatedSlackConfig ?? body.config) as AlertDestination['config'] | undefined,
         enabled: body.enabled,
       })
 
@@ -354,6 +496,51 @@ const app = new Hono()
           return c.json({ success: true, organizationName: result.organizationName })
         } catch (error) {
           if (error instanceof LinearApiError) {
+            return c.json({ success: false, error: error.message }, error.retryable ? 503 : 400)
+          }
+          throw error
+        }
+      }
+      case 'slack': {
+        if (!takeSlackTestSlot(destination.id)) {
+          return c.json({ error: 'Wait a few seconds before sending another test message.' }, 429)
+        }
+        const installation = await findActiveSlackInstallation(organizationId)
+        if (!installation) {
+          return c.json(
+            { success: false, error: 'Slack is not connected or needs to be reconnected.' },
+            400
+          )
+        }
+        if (!slackDestinationMatchesWorkspace(destination, installation)) {
+          return c.json({ success: false, error: SLACK_WORKSPACE_CHANGED_MESSAGE }, 400)
+        }
+        try {
+          const config = parseSlackDestinationConfig(destination)
+          const { name: orgName, slug } = await findOrganizationLabels(organizationId)
+          const content = buildTestMessage({
+            channelName: config.channelName ?? null,
+            destinationName: destination.name,
+            organizationName: orgName,
+            settingsUrl: slug
+              ? `${appBaseUrl()}/${encodeURIComponent(slug)}/settings/destinations`
+              : appBaseUrl(),
+          })
+          const startedAt = Date.now()
+          await withSlackToken(installation, (token) =>
+            postSlackMessage(token, {
+              channel: config.channelId,
+              text: content.text,
+              attachments: content.attachments,
+            })
+          )
+          return c.json({
+            success: true,
+            durationMs: Date.now() - startedAt,
+            channelName: config.channelName ?? null,
+          })
+        } catch (error) {
+          if (error instanceof SlackApiError) {
             return c.json({ success: false, error: error.message }, error.retryable ? 503 : 400)
           }
           throw error

@@ -124,6 +124,70 @@ function billingFixture() {
     transition: { deadline, noticeSentAt: new Date().toISOString() },
   }
 }
+/** Slack integration preview: which state Settings → Integrations shows. */
+export type SlackFixture = 'connected' | 'disconnected' | 'locked' | 'unconfigured' | 'revoked'
+let slackFixture: SlackFixture = 'connected'
+export function setSlackFixture(value: SlackFixture) {
+  slackFixture = value
+}
+const slackInstallationFixture = {
+  id: 'demo-slack',
+  organizationId: 'demo-org',
+  status: 'active',
+  statusReason: null,
+  slackTeamId: 'T0DEMO',
+  slackTeamName: 'Acme',
+  slackTeamUrl: 'https://acme.slack.com/',
+  botUserId: 'U0DURABULL',
+  scopes:
+    'chat:write,chat:write.public,channels:read,groups:read,commands,users:read,users:read.email,usergroups:read,links:read,links:write',
+  missingScopes: [],
+  actionsEnabled: true,
+  unfurlsEnabled: true,
+  slackDestinationCount: 1,
+  lastValidatedAt: '2026-11-12T09:00:00Z',
+  createdAt: '2026-11-12T09:00:00Z',
+  updatedAt: '2026-11-12T09:00:00Z',
+}
+function slackFixtureResponse(path: string) {
+  if (path.endsWith('/channels'))
+    return {
+      channels: [
+        { id: 'C0ALERTS', name: 'alerts', isPrivate: false, isMember: true, isArchived: false },
+        { id: 'C0DEPLOY', name: 'deploys', isPrivate: false, isMember: false, isArchived: false },
+        {
+          id: 'G0ONCALL',
+          name: 'oncall-private',
+          isPrivate: true,
+          isMember: true,
+          isArchived: false,
+        },
+        { id: 'G0FIN', name: 'finance', isPrivate: true, isMember: false, isArchived: false },
+      ],
+      truncated: false,
+    }
+  if (path.endsWith('/user-groups'))
+    return { userGroups: [{ id: 'S0ONCALL', handle: 'oncall', name: 'On-call engineers' }] }
+  if (path.endsWith('/manifest'))
+    return {
+      manifest: {
+        display_information: { name: 'Durabull' },
+        oauth_config: {
+          redirect_urls: ['https://durabull.example.com/api/integrations/slack/callback'],
+        },
+      },
+    }
+  return {
+    configured: slackFixture !== 'unconfigured',
+    entitled: slackFixture !== 'locked',
+    installation:
+      slackFixture === 'connected'
+        ? slackInstallationFixture
+        : slackFixture === 'revoked'
+          ? { ...slackInstallationFixture, status: 'revoked', statusReason: 'app_uninstalled' }
+          : null,
+  }
+}
 export function setFixtureState(next: FixtureState) {
   state = next
 }
@@ -226,6 +290,7 @@ function readFixture(path: string, url: URL): unknown {
       acknowledgedCount: 0,
     }
   if (path.endsWith('/alerts/destinations')) return { destinations: list(destinations) }
+  if (path.startsWith('/integrations/slack')) return slackFixtureResponse(path)
   if (path.includes('/integrations/linear'))
     return { integration: null, teams: [], projects: [], states: [], priorities: [] }
   if (path.endsWith('/alerts/events'))

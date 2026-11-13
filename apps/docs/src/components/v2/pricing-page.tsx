@@ -70,7 +70,11 @@ function planHighlights(plan: CloudPlan): string[] {
     'All queues on included connections',
     `${prefix}${plan.limits.alertRules} enabled alert rules`,
     `${historyLabel(plan.limits.historyDays)} of Redis health history`,
-    plan.features.webhookAlerts ? 'Email, webhook and Linear alerts' : 'Email alerts',
+    plan.features.slackApp
+      ? 'Slack, email, webhook and Linear alerts'
+      : plan.features.webhookAlerts
+        ? 'Email, webhook and Linear alerts'
+        : 'Email alerts',
     plan.features.mcpWrites ? 'MCP reads and opt-in writes' : 'Read-only MCP',
     plan.limits.serviceAccounts > 0
       ? `${prefix}${countOf(plan.limits.serviceAccounts, 'service account')}`
@@ -218,6 +222,7 @@ const MATRIX: Array<{ label: string; value: (plan: CloudPlan) => string | boolea
   { label: 'Email alerts', value: () => true },
   { label: 'Webhook alerts', value: (p) => p.features.webhookAlerts },
   { label: 'Linear alerts', value: (p) => p.features.linearAlerts },
+  { label: 'Slack app: alerts, actions and /durabull', value: (p) => p.features.slackApp },
   { label: 'Redis health history', value: (p) => historyLabel(p.limits.historyDays) },
   { label: 'Support', value: (p) => p.support },
 ]

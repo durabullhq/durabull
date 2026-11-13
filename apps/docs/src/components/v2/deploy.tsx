@@ -121,7 +121,7 @@ const tiers = [
   {
     name: 'Team',
     price: '$9',
-    detail: '5 connections · 10 members · webhooks, Linear, MCP writes',
+    detail: '5 connections · 10 members · Slack, webhooks, Linear, MCP writes',
   },
   {
     name: 'Business',

@@ -31,13 +31,14 @@ export default function RoadmapPage() {
               'Latency improvements for busy dashboards',
               'Queue health alerts',
               'Webhook alert notifications',
+              'Slack app: alerts, actions, /durabull and link previews',
               'Faster job replays',
             ],
           },
           {
             title: 'Next',
             description: 'Collaboration and workflow improvements.',
-            items: ['Role-based access controls', 'Saved views and filters', 'Slack notifications'],
+            items: ['Role-based access controls', 'Saved views and filters'],
           },
           {
             title: 'Later',

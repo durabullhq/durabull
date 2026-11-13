@@ -149,6 +149,23 @@ export const destinations = [
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   },
+  {
+    id: 'demo-slack-destination',
+    organizationId: 'demo-org',
+    name: 'Slack #alerts',
+    type: 'slack',
+    config: {
+      channelId: 'C0ALERTS',
+      channelName: 'alerts',
+      mention: 'here',
+      userGroupIds: ['S0ONCALL'],
+      threadUpdates: true,
+    },
+    enabled: true,
+    inUseByRuleCount: 2,
+    createdAt: '2026-11-12T09:00:00Z',
+    updatedAt: '2026-11-12T09:00:00Z',
+  },
 ]
 export const scheduler = {
   schedulerId: 'daily-summary',

@@ -119,9 +119,12 @@ export type AlertNotificationChannel =
       destinationId: string
     }
 
+export type AlertDeliveryChannel = 'email' | 'linear' | 'webhook' | 'slack' | 'destination'
+
 export interface AlertDeliveryRecord {
   id: string
-  channelType: 'email' | 'linear' | 'webhook'
+  /** Saved-destination deliveries report the destination's resolved type once known. */
+  channelType: AlertDeliveryChannel
   status: 'pending' | 'claimed' | 'delivered' | 'failed'
   target: string
   attemptCount?: number | null
@@ -193,7 +196,17 @@ export interface LinearMetadataRecord {
   states: Array<{ id: string; name: string; teamId: string }>
 }
 
-export type AlertDestinationType = 'webhook' | 'email' | 'linear'
+export type AlertDestinationType = 'webhook' | 'email' | 'linear' | 'slack'
+
+export type SlackMentionMode = 'none' | 'here' | 'channel'
+
+export interface SlackDestinationConfig {
+  channelId: string
+  channelName?: string
+  mention?: SlackMentionMode
+  userGroupIds?: string[]
+  threadUpdates?: boolean
+}
 
 export interface LinearDestinationConfig {
   teamId?: string
@@ -237,6 +250,7 @@ export type AlertDestinationCreateInput =
     }
   | { type: 'email'; name: string; config: { target: string }; enabled?: boolean }
   | { type: 'linear'; name: string; config?: LinearDestinationConfig; enabled?: boolean }
+  | { type: 'slack'; name: string; config: SlackDestinationConfig; enabled?: boolean }
 
 export interface AlertDestinationUpdateInput {
   name?: string
@@ -251,6 +265,7 @@ export interface AlertDestinationTestResult {
   httpStatus?: number | null
   durationMs?: number
   organizationName?: string
+  channelName?: string | null
   error?: string
 }
 
@@ -403,7 +418,7 @@ function normalizeNotificationChannels(value: unknown): AlertNotificationChannel
 }
 
 function isAlertDestinationType(value: unknown): value is AlertDestinationType {
-  return value === 'webhook' || value === 'email' || value === 'linear'
+  return value === 'webhook' || value === 'email' || value === 'linear' || value === 'slack'
 }
 
 function normalizeAlertDestination(value: unknown): AlertDestinationRecord {
@@ -531,21 +546,31 @@ function normalizeAlertEvent(value: unknown): AlertEventRecord {
   }
 }
 
+const DELIVERY_CHANNELS = ['email', 'linear', 'webhook', 'slack'] as const
+
+function resolveDeliveryChannel(entry: Record<string, unknown>): AlertDeliveryChannel | null {
+  if (entry.channelType === 'destination') {
+    const metadata = isRecord(entry.providerMetadata) ? entry.providerMetadata : {}
+    const resolved = metadata.resolvedType ?? metadata.type
+    return (DELIVERY_CHANNELS as readonly unknown[]).includes(resolved)
+      ? (resolved as AlertDeliveryChannel)
+      : 'destination'
+  }
+  return (DELIVERY_CHANNELS as readonly unknown[]).includes(entry.channelType)
+    ? (entry.channelType as AlertDeliveryChannel)
+    : null
+}
+
 function normalizeAlertDeliveries(value: unknown): AlertDeliveryRecord[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((entry) => {
     if (!isRecord(entry)) return []
-    if (
-      entry.channelType !== 'email' &&
-      entry.channelType !== 'linear' &&
-      entry.channelType !== 'webhook'
-    ) {
-      return []
-    }
+    const channelType = resolveDeliveryChannel(entry)
+    if (!channelType) return []
     return [
       {
         id: typeof entry.id === 'string' ? entry.id : '',
-        channelType: entry.channelType,
+        channelType,
         status:
           entry.status === 'pending' ||
           entry.status === 'claimed' ||
@@ -563,6 +588,15 @@ function normalizeAlertDeliveries(value: unknown): AlertDeliveryRecord[] {
       },
     ]
   })
+}
+
+/**
+ * The Slack card's setup checklist counts Slack destinations, so destination
+ * changes refresh it. (Same key as `slackKeys.overview` in use-slack, which
+ * imports this module.)
+ */
+function invalidateSlackOverview(queryClient: QueryClient, organizationId?: string | null) {
+  void queryClient.invalidateQueries({ queryKey: ['slack', organizationId ?? 'none'], exact: true })
 }
 
 function invalidateAlertQueries(queryClient: QueryClient, connectionId?: string) {
@@ -954,8 +988,10 @@ export function useCreateAlertDestination() {
       const data = await handleRes<AlertDestinationResponse>(res)
       return { destination: normalizeAlertDestination(data.destination) }
     },
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) })
+      invalidateSlackOverview(queryClient, organizationId)
+    },
   })
 }
 
@@ -982,6 +1018,7 @@ export function useUpdateAlertDestination() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) })
+      invalidateSlackOverview(queryClient, organizationId)
       queryClient.invalidateQueries({ queryKey: ['alerts', 'connection'] })
     },
   })
@@ -1002,6 +1039,7 @@ export function useDeleteAlertDestination() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) })
+      invalidateSlackOverview(queryClient, organizationId)
       queryClient.invalidateQueries({ queryKey: ['alerts', 'connection'] })
     },
   })

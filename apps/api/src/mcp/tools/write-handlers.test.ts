@@ -258,6 +258,7 @@ describe('acknowledge_alert_event / unacknowledge_alert_event', () => {
     resolvedAt: null,
     acknowledgedAt: null,
     acknowledgedBy: null,
+    resolvedBy: null,
   }
 
   function deps(overrides: Partial<Parameters<typeof createAcknowledgeAlertEventHandler>[0]> = {}) {

@@ -33,6 +33,7 @@
     "workflows/log-formatting-and-highlighting",
     "---Integrations---",
     "integrations/mcp-server",
+    "integrations/slack",
     "integrations/linear",
     "integrations/webhooks",
     "---Reference---",

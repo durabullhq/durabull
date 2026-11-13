@@ -161,8 +161,8 @@ const cells = [
   },
   {
     title: 'Alerts that find you',
-    body: 'Failure thresholds, failure rates, and stalled-queue rules run in a background monitor. Routes to email, signed webhooks, and Linear.',
-    meta: 'email · webhooks (hmac) · linear',
+    body: 'Failure thresholds, failure rates, and stalled-queue rules run in a background monitor. Routes to Slack with one-click acknowledge, resolve and retry, plus email, signed webhooks, and Linear.',
+    meta: 'slack · email · webhooks (hmac) · linear',
   },
   {
     title: 'Every environment, one org',

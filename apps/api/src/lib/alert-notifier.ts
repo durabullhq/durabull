@@ -40,6 +40,8 @@ import { getWebhookDeliveryTarget } from './alert-webhook-url'
 import { createLinearIssue, LinearApiError } from './linear-client'
 import { resolveLinearIssueFields } from './linear-field-resolver'
 import { getValidLinearAccessToken } from './linear-oauth'
+import { sendSlackDestinationAlert } from './slack/alerts'
+import { SlackApiError } from './slack/client'
 
 class NonRetryableDeliveryError extends Error {
   constructor(message: string) {
@@ -48,19 +50,22 @@ class NonRetryableDeliveryError extends Error {
   }
 }
 
+const DELIVERY_LABELS = { webhook: 'Webhook', linear: 'Linear', slack: 'Slack' } as const
+
 /**
  * Delivery-time entitlement check. A delivery queued while the organization
  * was entitled must not send after the entitlement has ended.
  */
 async function assertDeliveryEntitled(
   organizationId: string,
-  channel: 'email' | 'webhook' | 'linear'
+  channel: 'email' | 'webhook' | 'linear' | 'slack'
 ): Promise<void> {
   const feature = featureForDeliveryType(channel)
   if (!feature) return
+  const label = DELIVERY_LABELS[channel as keyof typeof DELIVERY_LABELS] ?? channel
   if (!(await hasFeature(organizationId, feature))) {
     throw new NonRetryableDeliveryError(
-      `${channel === 'webhook' ? 'Webhook' : 'Linear'} alert delivery is not included in this organization’s current plan.`
+      `${label} alert delivery is not included in this organization’s current plan.`
     )
   }
 }
@@ -233,9 +238,29 @@ export async function processAlertDeliveries(
       await alertDeliveryRepository.markFailed(delivery.id, {
         ...retry,
         expectedClaimedAt: requireClaimedAt(delivery),
+        providerMetadata: await labelFailedDestinationDelivery(delivery, event.organizationId),
       })
     }
   }
+}
+
+/**
+ * A saved-destination delivery only learns its destination's type and name
+ * when it succeeds. Record them on failure too, so the incident shows which
+ * Slack channel, Linear team or inbox needs attention.
+ */
+async function labelFailedDestinationDelivery(
+  delivery: AlertDelivery,
+  organizationId: string
+): Promise<Record<string, unknown> | undefined> {
+  if (delivery.channelType !== 'destination') return undefined
+  const metadata = (delivery.providerMetadata ?? {}) as Record<string, unknown>
+  if (typeof metadata.destinationId !== 'string' || metadata.resolvedType) return undefined
+  const destination = await alertDestinationRepository
+    .findById(metadata.destinationId, organizationId)
+    .catch(() => null)
+  if (!destination) return undefined
+  return { ...metadata, resolvedType: destination.type, destinationName: destination.name }
 }
 
 function getDeliveryProviderMetadata(
@@ -559,7 +584,7 @@ async function sendDestinationAlert(
       `Destination "${destination.name}" is paused because it is above the plan's destination limit.`
     )
   }
-  if (destination.type === 'webhook' || destination.type === 'linear') {
+  if (destination.type !== 'email') {
     await assertDeliveryEntitled(event.organizationId, destination.type)
   }
 
@@ -604,6 +629,18 @@ async function sendDestinationAlert(
         ruleName,
         organizationSlug
       )
+      break
+    }
+    case 'slack': {
+      await sendSlackDestinationAlert({
+        delivery,
+        event,
+        destination,
+        ruleName,
+        connectionName: connection.name,
+        organizationSlug,
+        requireClaimedAt,
+      })
       break
     }
     case 'webhook': {
@@ -896,15 +933,24 @@ function classifyDeliveryFailure(
   }
 
   const message = error instanceof Error ? error.message : String(error)
+  // A disconnected or revoked Slack app is waited out: deliveries retry (at
+  // most hourly) and go out once the same workspace is reconnected, while the
+  // incident is still open. A different workspace (`workspace_changed`) stays final.
+  const slackDisconnected =
+    error instanceof SlackApiError && (error.isAuthError || error.code === 'not_connected')
   const retryable =
-    error instanceof LinearApiError
+    slackDisconnected ||
+    (error instanceof LinearApiError || error instanceof SlackApiError
       ? error.retryable
       : error instanceof WebhookDeliveryError
         ? error.retryable
-        : !(error instanceof NonRetryableDeliveryError)
+        : !(error instanceof NonRetryableDeliveryError))
   if (!retryable) return { error: message, retryable: false }
 
-  const resetAt = error instanceof LinearApiError ? error.rateLimitResetAt : null
+  const resetAt =
+    error instanceof LinearApiError || error instanceof SlackApiError
+      ? error.rateLimitResetAt
+      : null
   const backoffMs = Math.min(60 * 60 * 1000, 2 ** Math.max(0, attemptCount - 1) * 30_000)
   return {
     error: message,
@@ -932,6 +978,7 @@ export const __alertNotifierTestUtils = {
   getSavedWebhookDeliveryTarget,
   resolveWebhookMetadataForDispatch,
   sendDestinationAlert,
+  classifyDeliveryFailure,
   buildLinearIssueTitle,
   buildLinearIssueDescription,
 }

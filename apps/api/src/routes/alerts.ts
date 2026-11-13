@@ -51,6 +51,12 @@ import {
   redisHealthConfigSchema,
   restoreRedisHealthSnapshot,
 } from '../lib/redis-health'
+import {
+  findActiveSlackInstallation,
+  queueSlackMessageSync,
+  SLACK_WORKSPACE_CHANGED_MESSAGE,
+  slackDestinationMatchesWorkspace,
+} from '../lib/slack/alerts'
 
 const alertTypeSchema = z.enum([
   'failure_threshold',
@@ -702,7 +708,9 @@ const app = new Hono()
 
       const resolvedEvents = await alertEventRepository.resolveMany(eventIds, organizationId, {
         connectionId,
+        resolvedBy: c.get('user')?.id ?? null,
       })
+      queueSlackMessageSync(resolvedEvents.map((event) => event.id))
 
       return c.json({
         resolvedCount: resolvedEvents.length,
@@ -728,10 +736,16 @@ const app = new Hono()
     if (existing.status === 'resolved') {
       return c.json({ error: 'This alert event is already resolved.' }, 409)
     }
-    const event = await alertEventRepository.resolve(eventId, organizationId)
+    const event = await alertEventRepository.resolve(
+      eventId,
+      organizationId,
+      'manual',
+      c.get('user')?.id ?? null
+    )
     if (!event) {
       return c.json({ error: 'The alert event changed before it could be resolved.' }, 409)
     }
+    queueSlackMessageSync([event.id])
 
     return c.json({ event })
   })
@@ -753,6 +767,7 @@ const app = new Hono()
     }
 
     const event = await alertEventRepository.acknowledge(eventId, organizationId, user.id)
+    if (event) queueSlackMessageSync([event.id])
     if (!event) {
       return c.json({ error: 'Only unacknowledged firing events can be acknowledged.' }, 409)
     }
@@ -773,6 +788,7 @@ const app = new Hono()
     }
 
     const event = await alertEventRepository.unacknowledge(eventId, organizationId)
+    if (event) queueSlackMessageSync([event.id])
     if (!event) {
       return c.json({ error: 'Only acknowledged firing events can be unacknowledged.' }, 409)
     }
@@ -919,6 +935,15 @@ async function validateNotificationChannels(
       return `Destination "${destination.name}" is paused because it is above your plan's destination limit.`
     }
     await requireDeliveryFeature(organizationId, destination.type)
+    if (destination.type === 'slack') {
+      const installation = await findActiveSlackInstallation(organizationId)
+      if (!installation) {
+        return 'Slack must be connected before alert rules can route to Slack destinations.'
+      }
+      if (!slackDestinationMatchesWorkspace(destination, installation)) {
+        return `Destination "${destination.name}": ${SLACK_WORKSPACE_CHANGED_MESSAGE}`
+      }
+    }
     if (destination.type === 'webhook' && destination.encryptedSigningSecret) {
       try {
         decryptSecret(destination.encryptedSigningSecret)

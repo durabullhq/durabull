@@ -9,3 +9,5 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 export const Default: Story = {}
+export const SlackUpgradeNudge: Story = { parameters: { slackFixture: 'locked' } }
+export const SlackNotConnected: Story = { parameters: { slackFixture: 'disconnected' } }

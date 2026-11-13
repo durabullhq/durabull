@@ -47,6 +47,7 @@ import {
   isRedisHealthHistoryEnabled,
   recordRedisHealthSnapshot,
 } from './redis-health-history'
+import { syncSlackAlertMessages } from './slack/alerts'
 
 const DEFAULT_DELIVERY_SWEEP_INTERVAL_MS = 15_000
 const MAX_STARTUP_JITTER_MS = 30_000
@@ -79,6 +80,7 @@ let isRunning = false
 let pollInProgress = false
 let deliverySweepInProgress = false
 let resolutionRecoveryInProgress = false
+let slackSyncInProgress = false
 let jobAutoResolveInProgress = false
 // Timeouts bound a cycle's wait, but Redis/DB promises may remain alive. Keep
 // those connections registered until their work actually settles so later
@@ -463,9 +465,29 @@ async function processDueAlertDeliveries(): Promise<void> {
   }
 }
 
+/**
+ * Mirrors acknowledgements and resolutions made anywhere (web, MCP,
+ * auto-resolve, rule changes) into the Slack messages for those incidents.
+ * It has its own in-progress guard and is never awaited by the recovery
+ * cycle, so a slow Slack never delays Linear sync or rule deletion (nor
+ * makes the cycle skip its next run), and a Linear outage never holds Slack back.
+ */
+function startSlackMessageSync(): void {
+  if (slackSyncInProgress) return
+  slackSyncInProgress = true
+  void syncSlackAlertMessages({ limit: 25 })
+    .catch((error) => {
+      console.error('[alert-monitor] Slack message sync failed:', error)
+    })
+    .finally(() => {
+      slackSyncInProgress = false
+    })
+}
+
 async function runResolutionRecoveryCycle(): Promise<void> {
   if (resolutionRecoveryInProgress) return
   resolutionRecoveryInProgress = true
+  startSlackMessageSync()
   try {
     const pendingSync = await alertEventRepository.findPendingLinearResolutionSync(10)
     if (pendingSync.length > 0) {

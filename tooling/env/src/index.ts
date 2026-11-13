@@ -116,6 +116,14 @@ const envSchema = z.object({
   LINEAR_OAUTH_CLIENT_SECRET: optionalString,
   LINEAR_OAUTH_REDIRECT_URI: optionalString,
   LINEAR_OAUTH_ACTOR: linearOauthActorSchema,
+  /** Slack app credentials. The Slack integration is available when all three are set. */
+  SLACK_CLIENT_ID: optionalString,
+  SLACK_CLIENT_SECRET: optionalString,
+  SLACK_SIGNING_SECRET: optionalString,
+  /** Optional: rejects Events API and interaction payloads addressed to a different Slack app. */
+  SLACK_APP_ID: optionalString,
+  /** Optional: overrides the OAuth callback derived from APP_BASE_URL. */
+  SLACK_OAUTH_REDIRECT_URI: optionalString,
   DEMO_HEALTH_MAX_AGE_HOURS: optionalNonNegativeInt,
   /** Durabull Cloud subscriptions. Never enable for desktop or self-hosted installs. */
   DURABULL_BILLING_ENABLED: optionalBoolean,

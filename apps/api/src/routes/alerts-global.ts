@@ -25,6 +25,7 @@ import {
   getLinearOauthConfig,
   getValidLinearAccessToken,
 } from '../lib/linear-oauth'
+import { queueSlackMessageSync } from '../lib/slack/alerts'
 import { requireOrganization } from '../middleware/auth'
 
 const linearDefaultsSchema = z.object({
@@ -124,10 +125,16 @@ const app = new Hono()
     if (existing.status === 'resolved') {
       return c.json({ error: 'This alert event is already resolved.' }, 409)
     }
-    const event = await alertEventRepository.resolve(eventId, organizationId)
+    const event = await alertEventRepository.resolve(
+      eventId,
+      organizationId,
+      'manual',
+      c.get('user')?.id ?? null
+    )
     if (!event) {
       return c.json({ error: 'The alert event changed before it could be resolved.' }, 409)
     }
+    queueSlackMessageSync([event.id])
 
     return c.json({ event })
   })
@@ -143,6 +150,7 @@ const app = new Hono()
     }
 
     const event = await alertEventRepository.acknowledge(eventId, organizationId, user.id)
+    if (event) queueSlackMessageSync([event.id])
     if (!event) {
       const existing = await alertEventRepository.findById(eventId, organizationId)
       if (!existing) {
@@ -161,6 +169,7 @@ const app = new Hono()
     }
 
     const event = await alertEventRepository.unacknowledge(eventId, organizationId)
+    if (event) queueSlackMessageSync([event.id])
     if (!event) {
       const existing = await alertEventRepository.findById(eventId, organizationId)
       if (!existing) {

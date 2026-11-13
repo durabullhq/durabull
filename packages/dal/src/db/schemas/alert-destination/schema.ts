@@ -2,7 +2,7 @@ import { boolean, index, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/p
 import { baseColumns } from '../common'
 import { organization } from '../organization/schema'
 
-export const alertDestinationTypes = ['webhook', 'email', 'linear'] as const
+export const alertDestinationTypes = ['webhook', 'email', 'linear', 'slack'] as const
 export type AlertDestinationType = (typeof alertDestinationTypes)[number]
 
 export interface AlertEmailDestinationConfig {
@@ -18,9 +18,27 @@ export interface AlertLinearDestinationConfig {
   priority?: number
 }
 
+export const slackMentionModes = ['none', 'here', 'channel'] as const
+export type SlackMentionMode = (typeof slackMentionModes)[number]
+
+export interface AlertSlackDestinationConfig {
+  channelId: string
+  /** Channel name at the time it was picked, for display only. */
+  channelName?: string
+  /** Broadcast mention added to firing messages. */
+  mention?: SlackMentionMode
+  /** Slack user group ids (S…) mentioned on firing messages, e.g. an on-call group. */
+  userGroupIds?: string[]
+  /** Post acknowledgement and resolution updates as thread replies (default true). */
+  threadUpdates?: boolean
+  /** Slack workspace (team id) the channel was picked in; set by the API on save. */
+  slackTeamId?: string
+}
+
 export type AlertDestinationConfig =
   | AlertEmailDestinationConfig
   | AlertLinearDestinationConfig
+  | AlertSlackDestinationConfig
   | Record<string, never>
 
 export const alertDestination = pgTable(
@@ -32,7 +50,7 @@ export const alertDestination = pgTable(
       .references(() => organization.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     type: text('type').$type<AlertDestinationType>().notNull().default('webhook'),
-    // Webhook destinations only; email/linear destinations keep their settings in config.
+    // Webhook destinations only; email, Linear and Slack destinations keep their settings in config.
     url: text('url'),
     encryptedSigningSecret: text('encrypted_signing_secret'),
     config: jsonb('config').$type<AlertDestinationConfig>().notNull().default({}),

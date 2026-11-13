@@ -30,6 +30,7 @@ across environments. Durabull is open source under the [Apache License 2.0](LICE
 | Install on macOS or Windows | [Desktop apps](https://durabull.io/documentation/getting-started/desktop-apps) |
 | Run a self-hosted instance | [Installation](https://durabull.io/documentation/self-hosting/installation) and [Docker Compose](https://durabull.io/documentation/deployment/docker) |
 | Connect an AI assistant | [MCP server](https://durabull.io/documentation/integrations/mcp-server) |
+| Get alerts in Slack | [Slack app](https://durabull.io/documentation/integrations/slack) |
 | Contribute to the project | [Contributing](CONTRIBUTING.md) |
 
 ## Run from source

@@ -25,6 +25,7 @@ export interface CloudPlan {
     mcpWrites: boolean
     webhookAlerts: boolean
     linearAlerts: boolean
+    slackApp: boolean
   }
   support: string
   cta: { label: string; href: 'signup' | 'contact' }
@@ -46,7 +47,13 @@ export const CLOUD_PLANS: CloudPlan[] = [
       serviceAccounts: 0,
       historyDays: 1,
     },
-    features: { bulkRecovery: false, mcpWrites: false, webhookAlerts: false, linearAlerts: false },
+    features: {
+      bulkRecovery: false,
+      mcpWrites: false,
+      webhookAlerts: false,
+      linearAlerts: false,
+      slackApp: false,
+    },
     support: 'Community and documentation',
     cta: { label: 'Start free', href: 'signup' },
   },
@@ -64,7 +71,13 @@ export const CLOUD_PLANS: CloudPlan[] = [
       serviceAccounts: 1,
       historyDays: 14,
     },
-    features: { bulkRecovery: true, mcpWrites: true, webhookAlerts: true, linearAlerts: true },
+    features: {
+      bulkRecovery: true,
+      mcpWrites: true,
+      webhookAlerts: true,
+      linearAlerts: true,
+      slackApp: true,
+    },
     support: 'Email, best effort',
     cta: { label: 'Start with Team', href: 'signup' },
     highlighted: true,
@@ -83,7 +96,13 @@ export const CLOUD_PLANS: CloudPlan[] = [
       serviceAccounts: 5,
       historyDays: 30,
     },
-    features: { bulkRecovery: true, mcpWrites: true, webhookAlerts: true, linearAlerts: true },
+    features: {
+      bulkRecovery: true,
+      mcpWrites: true,
+      webhookAlerts: true,
+      linearAlerts: true,
+      slackApp: true,
+    },
     support: 'Priority email, target 2 business days',
     cta: { label: 'Try Business free for 14 days', href: 'signup' },
   },
@@ -101,7 +120,13 @@ export const CLOUD_PLANS: CloudPlan[] = [
       serviceAccounts: 25,
       historyDays: 30,
     },
-    features: { bulkRecovery: true, mcpWrites: true, webhookAlerts: true, linearAlerts: true },
+    features: {
+      bulkRecovery: true,
+      mcpWrites: true,
+      webhookAlerts: true,
+      linearAlerts: true,
+      slackApp: true,
+    },
     support: 'Agreed business-hours support',
     cta: { label: 'Contact sales', href: 'contact' },
   },

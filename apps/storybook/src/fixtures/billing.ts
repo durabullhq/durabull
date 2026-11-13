@@ -34,6 +34,7 @@ export const billingOverview = {
     'automation.service_accounts',
     'alerts.webhook',
     'alerts.linear',
+    'integrations.slack',
   ],
   limits: teamLimits,
   usage: {

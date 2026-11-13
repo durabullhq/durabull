@@ -12,6 +12,7 @@ import {
   member,
   organization,
   redisConnection,
+  slackInstallationRepository,
   user,
 } from '@durabull/dal'
 import { BillingEmailError } from '@durabull/email'
@@ -1455,6 +1456,25 @@ describe('Cloud billing', () => {
       await sendTransitionNotices()
       expect(sentEmails[0].restrictions).toEqual([])
       expect(sentEmails[0].featuresInUse).toEqual([])
+    })
+
+    it('lists the Slack app as in use once it is connected, even without destinations', async () => {
+      await startGrant(31)
+      const secretEnv = env as { DURABULL_SECRET_ENCRYPTION_KEY?: string }
+      const originalSecretKey = secretEnv.DURABULL_SECRET_ENCRYPTION_KEY
+      secretEnv.DURABULL_SECRET_ENCRYPTION_KEY =
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      await slackInstallationRepository.upsert({
+        organizationId: AUTHLESS_ORG_ID,
+        slackTeamId: 'T0ACME',
+        slackTeamName: 'Acme',
+        botUserId: 'UBOT',
+        botToken: 'xoxb-test',
+        scopes: 'chat:write',
+      })
+      secretEnv.DURABULL_SECRET_ENCRYPTION_KEY = originalSecretKey
+      await sendTransitionNotices()
+      expect(sentEmails[0].featuresInUse).toEqual(['Slack app'])
     })
 
     it('retries an owner whose email failed, without resending to others', async () => {

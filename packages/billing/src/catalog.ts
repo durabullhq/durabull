@@ -11,7 +11,7 @@
  * change, and keep existing Price IDs mapped for current subscribers.
  */
 
-export const BILLING_CATALOG_VERSION = '2026-10-20'
+export const BILLING_CATALOG_VERSION = '2026-11-12'
 
 export const PLAN_CODES = ['free', 'team', 'business', 'enterprise'] as const
 export type PlanCode = (typeof PLAN_CODES)[number]
@@ -33,6 +33,7 @@ export const FEATURE_KEYS = [
   'automation.service_accounts',
   'alerts.webhook',
   'alerts.linear',
+  'integrations.slack',
 ] as const
 export type FeatureKey = (typeof FEATURE_KEYS)[number]
 
@@ -187,6 +188,11 @@ export const FEATURE_LABELS: Record<FeatureKey, { name: string; outcome: string 
     name: 'Linear alerts',
     outcome: 'Open and resolve Linear issues from alert incidents.',
   },
+  'integrations.slack': {
+    name: 'Slack app',
+    outcome:
+      'Send incidents to Slack channels and acknowledge, resolve, snooze or retry them without leaving Slack.',
+  },
 }
 
 export const LIMIT_LABELS: Record<LimitKey, { name: string; unit: string; singular: string }> = {
@@ -225,6 +231,7 @@ export function formatLimitQuantity(limit: LimitKey, quantity: number): string {
 export const DELIVERY_TYPE_FEATURES = {
   webhook: 'alerts.webhook',
   linear: 'alerts.linear',
+  slack: 'integrations.slack',
 } as const satisfies Record<string, FeatureKey>
 
 export type PaidDeliveryType = keyof typeof DELIVERY_TYPE_FEATURES
