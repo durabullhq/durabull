@@ -15,6 +15,7 @@ import {
   syncSlackAlertMessages,
 } from './alerts'
 import { recordSlackEvent, slackErrorCode } from './analytics'
+import { runInBackground } from './background'
 import {
   postSlackEphemeral,
   postSlackMessage,
@@ -262,6 +263,11 @@ export async function runCommand(input: {
   /** Where the command was typed, for analytics. */
   surface?: SlackSurfaceValue
 }): Promise<CommandReply> {
+  if (parseCommandText(input.text).command === 'help') {
+    // Help answers without looking anyone up; attribute it in the background.
+    recordHelpCommand(input.teamId, input.userId, input.surface ?? SlackSurface.SLASH_COMMAND)
+    return reply('Durabull commands', helpBlocks(input.prefix), false, 'help')
+  }
   let members: CommandAudience = { allowed: [], deniedOrganizationId: null }
   const result = await runCommandForMember(input, (audience) => {
     members = audience
@@ -299,6 +305,32 @@ function recordCommand(
   for (const member of audience.allowed) {
     recordSlackEvent(AnalyticsEvents.SLACK_COMMAND_RUN, { ...slack, ...member }, properties)
   }
+}
+
+/**
+ * Records a help request against the member's organizations. Runs in the
+ * background so the help reply never waits for the Slack profile lookup.
+ */
+export function recordHelpCommand(
+  teamId: string,
+  userId: string,
+  surface: SlackSurfaceValue
+): void {
+  runInBackground('help analytics', async () => {
+    const { allowed, denied, installations } = await resolveSlackUserOrganizations(teamId, userId)
+    recordCommand(
+      { teamId, userId, text: 'help', surface },
+      { text: '', blocks: [], denied: false, outcome: 'help' },
+      {
+        allowed: allowed.map(({ installation, member }) => ({
+          organizationId: installation.organizationId,
+          userId: member.userId,
+        })),
+        deniedOrganizationId:
+          denied[0]?.installation.organizationId ?? installations[0]?.organizationId ?? null,
+      }
+    )
+  })
 }
 
 async function runCommandForMember(
@@ -371,6 +403,8 @@ async function runCommandForMember(
           )
         }
         const blocks: unknown[] = []
+        let lookups = 0
+        let failedLookups = 0
         for (const { installation } of allowed) {
           const connections = await findQueueConnections(
             installation.organizationId,
@@ -378,12 +412,14 @@ async function runCommandForMember(
             rest.join(' ') || undefined
           )
           for (const connection of connections.slice(0, 3)) {
+            lookups++
             try {
               const overview = await getQueueOverview(connection, queueName)
               blocks.push(
                 ...queueBlocks(installation.organizationSlug, overview, installation.actionsEnabled)
               )
             } catch (error) {
+              failedLookups++
               blocks.push(
                 ...errorBlocks(
                   `${connection.name}: ${error instanceof Error ? error.message : 'Redis is unavailable.'}`
@@ -404,7 +440,12 @@ async function runCommandForMember(
           )
         }
         blocks.pop()
-        return reply(`Queue ${queueName}`, blocks)
+        return reply(
+          `Queue ${queueName}`,
+          blocks,
+          false,
+          lookups > 0 && failedLookups === lookups ? 'error' : 'ok'
+        )
       }
       case 'job': {
         const [jobId, queueName] = args
@@ -931,9 +972,21 @@ export async function recordSlackLinkClicks(payload: SlackBlockActionsPayload): 
     action.action_id?.startsWith(SLACK_ACTIONS.openLink)
   )
   if (links.length === 0) return
-  const installations = await slackInstallationRepository.listActiveByTeam(teamId)
-  // With one organization in the workspace the click is clearly its own.
-  const organizationId = installations.length === 1 ? installations[0]?.organizationId : null
+  const slackUserId = payload.user.id
+  // Matched members count as themselves in each of their organizations; anyone
+  // else is counted by a hashed key (with the organization when there is only one).
+  const { allowed, installations } = await resolveSlackUserOrganizations(teamId, slackUserId)
+  const actors: Array<{ organizationId: string | null; userId?: string }> =
+    allowed.length > 0
+      ? allowed.map(({ installation, member }) => ({
+          organizationId: installation.organizationId,
+          userId: member.userId,
+        }))
+      : [
+          {
+            organizationId: installations.length === 1 ? installations[0]!.organizationId : null,
+          },
+        ]
   const surface =
     payload.container?.type === 'view'
       ? SlackSurface.APP_HOME
@@ -942,14 +995,17 @@ export async function recordSlackLinkClicks(payload: SlackBlockActionsPayload): 
         : SlackSurface.MESSAGE
   for (const link of links) {
     const kind = link.action_id.slice(SLACK_ACTIONS.openLink.length + 1)
-    recordSlackEvent(
-      AnalyticsEvents.SLACK_LINK_CLICKED,
-      { organizationId, slackTeamId: teamId, slackUserId: payload.user.id },
-      {
-        slack_surface: kind === 'incident' ? SlackSurface.ALERT_MESSAGE : surface,
-        slack_link_kind: /^[a-z_]{1,32}$/.test(kind) ? kind : 'other',
-      }
-    )
+    for (const actor of actors) {
+      recordSlackEvent(
+        AnalyticsEvents.SLACK_LINK_CLICKED,
+        { ...actor, slackTeamId: teamId, slackUserId },
+        {
+          slack_surface: kind === 'incident' ? SlackSurface.ALERT_MESSAGE : surface,
+          slack_link_kind: /^[a-z_]{1,32}$/.test(kind) ? kind : 'other',
+          slack_organization_count: allowed.length,
+        }
+      )
+    }
   }
 }
 
@@ -1230,32 +1286,45 @@ export async function handleLinkShared(teamId: string, event: SlackLinkSharedEve
       })
     }
   }
-  for (const entry of tally.values()) {
-    recordSlackEvent(
-      AnalyticsEvents.SLACK_LINKS_UNFURLED,
-      {
-        organizationId: entry.organizationId,
-        userId: entry.userId,
-        slackTeamId: teamId,
-        slackUserId: event.user,
-      },
-      {
-        slack_surface: SlackSurface.LINK_UNFURL,
-        slack_outcome: entry.outcome,
-        slack_link_count: entry.count,
-        slack_link_kind: entry.kinds.size === 1 ? [...entry.kinds][0] : 'mixed',
-      }
-    )
+  const recordTally = (outcome?: string, errorCode?: string) => {
+    for (const entry of tally.values()) {
+      // Successful unfurls are only recorded once Slack has accepted them.
+      if ((entry.outcome === 'ok') !== (outcome !== undefined)) continue
+      recordSlackEvent(
+        AnalyticsEvents.SLACK_LINKS_UNFURLED,
+        {
+          organizationId: entry.organizationId,
+          userId: entry.userId,
+          slackTeamId: teamId,
+          slackUserId: event.user,
+        },
+        {
+          slack_surface: SlackSurface.LINK_UNFURL,
+          slack_outcome: outcome ?? entry.outcome,
+          slack_link_count: entry.count,
+          slack_link_kind: entry.kinds.size === 1 ? [...entry.kinds][0] : 'mixed',
+          slack_error_code: errorCode,
+        }
+      )
+    }
   }
+  recordTally()
   if (!tokenInstallation || Object.keys(unfurls).length === 0) return
-  await withSlackToken(tokenInstallation, (token) =>
-    unfurlSlackLinks(
-      token,
-      event.unfurl_id && event.source
-        ? { unfurl_id: event.unfurl_id, source: event.source, unfurls }
-        : { channel: event.channel ?? '', ts: event.message_ts ?? '', unfurls }
+  const unfurlInstallation = tokenInstallation
+  try {
+    await withSlackToken(unfurlInstallation, (token) =>
+      unfurlSlackLinks(
+        token,
+        event.unfurl_id && event.source
+          ? { unfurl_id: event.unfurl_id, source: event.source, unfurls }
+          : { channel: event.channel ?? '', ts: event.message_ts ?? '', unfurls }
+      )
     )
-  )
+  } catch (error) {
+    recordTally('error', slackErrorCode(error))
+    throw error
+  }
+  recordTally('ok')
 }
 
 // ---------------------------------------------------------------------------
@@ -1271,27 +1340,16 @@ export async function handleAppUninstalled(
   reason: string,
   occurredAt?: Date
 ): Promise<void> {
-  // Only for analytics: a failed lookup must not stop the revocation being recorded.
-  const before = await slackInstallationRepository.listActiveByTeam(teamId).catch(() => [])
-  const count = await slackInstallationRepository.markTeamRevoked(teamId, reason, { occurredAt })
-  if (count > 0) console.info('[slack] Workspace access removed', { teamId, reason, count })
-  if (count === 0) return
-  try {
-    const stillActive = new Set(
-      (await slackInstallationRepository.listActiveByTeam(teamId)).map(
-        (installation) => installation.organizationId
-      )
+  const revoked = await slackInstallationRepository.markTeamRevoked(teamId, reason, {
+    occurredAt,
+  })
+  if (revoked.length === 0) return
+  console.info('[slack] Workspace access removed', { teamId, reason, count: revoked.length })
+  for (const organizationId of revoked) {
+    recordSlackEvent(
+      AnalyticsEvents.SLACK_UNINSTALLED_FROM_SLACK,
+      { organizationId },
+      { slack_reason: reason === 'tokens_revoked' ? 'tokens_revoked' : 'app_uninstalled' }
     )
-    for (const installation of before) {
-      if (stillActive.has(installation.organizationId)) continue
-      recordSlackEvent(
-        AnalyticsEvents.SLACK_UNINSTALLED_FROM_SLACK,
-        { organizationId: installation.organizationId },
-        { slack_reason: reason === 'tokens_revoked' ? 'tokens_revoked' : 'app_uninstalled' }
-      )
-    }
-  } catch (error) {
-    // The revocation is recorded; analytics must not make Slack retry it.
-    console.warn('[slack] Could not record uninstall analytics:', String(error))
   }
 }

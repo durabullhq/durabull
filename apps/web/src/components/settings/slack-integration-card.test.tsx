@@ -389,6 +389,7 @@ describe('SlackIntegrationCard', () => {
     await user.click(dialogButtons[dialogButtons.length - 1] as HTMLElement)
     await waitFor(() => expect(mocks.disconnect).toHaveBeenCalled())
     expect(mocks.toastSuccess).toHaveBeenCalledWith('Slack removed')
+    expect(mocks.trackEvent).toHaveBeenCalledWith('dialog_closed', { dialog_type: 'remove_slack' })
   })
 
   it('shows a retry instead of a permanent skeleton when the Slack status fails to load', async () => {

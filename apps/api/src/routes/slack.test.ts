@@ -1718,6 +1718,8 @@ describe('Slack integration', () => {
       slack_state_changed: true,
     })
     expect(identified('slack_link_clicked')[0]?.properties).toMatchObject({
+      distinct_id: 'user-ada',
+      slack_identified_member: true,
       $groups: { organization: ORG_ID },
       slack_link_kind: 'incident',
       slack_surface: 'alert_message',
@@ -1776,7 +1778,14 @@ describe('Slack integration', () => {
     expect(commands).toHaveLength(5)
     // Background commands finish in any order.
     for (const expected of [
-      { slack_surface: 'slash_command', slack_command: 'help', slack_outcome: 'help' },
+      {
+        // Help answers inline, then is attributed to the member in the background.
+        distinct_id: 'user-ada',
+        $groups: { organization: ORG_ID },
+        slack_surface: 'slash_command',
+        slack_command: 'help',
+        slack_outcome: 'help',
+      },
       {
         distinct_id: 'user-ada',
         $groups: { organization: ORG_ID },

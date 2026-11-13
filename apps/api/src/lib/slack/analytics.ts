@@ -60,8 +60,9 @@ export function recordSlackEvent(
     const userKey = slackUserKey(actor, secret)
     const distinctId = actor.userId ?? userKey ?? organizationId
     const includeAnonymous = !(shouldDedupeIdentifiedPosthogEvents() && distinctId)
+    // A failed install-id lookup only drops the anonymous copy, never the identified one.
     const anonymousInstanceId = includeAnonymous
-      ? await options.resolveAnonymousInstanceId()
+      ? await options.resolveAnonymousInstanceId().catch(() => undefined)
       : undefined
     const sessionId =
       userKey ??
@@ -76,7 +77,7 @@ export function recordSlackEvent(
         ...definedProperties(properties),
         slack_identified_member: Boolean(actor.userId),
       },
-      includeAnonymous,
+      includeAnonymous: includeAnonymous && anonymousInstanceId !== undefined,
       anonymousInstanceId,
       sessionId,
       identifiedDistinctId: distinctId,
@@ -94,15 +95,32 @@ export function recordSlackEvent(
 }
 
 /**
- * Keeps an error code only when it looks like a fixed identifier
- * (`channel_not_found`), so free text from a URL or response never reaches analytics.
+ * Errors Slack's OAuth redirect can report. The callback URL is request input,
+ * so anything not on this list is recorded as `other`.
  */
-export function safeErrorCode(code: string | null | undefined): string {
-  return code && /^[a-z0-9_.]{1,64}$/.test(code) ? code : 'other'
+const SLACK_OAUTH_ERRORS = new Set([
+  'access_denied',
+  'bad_redirect_uri',
+  'invalid_client_id',
+  'invalid_request',
+  'invalid_scope',
+  'invalid_team_for_non_distributed_app',
+  'server_error',
+  'team_added_to_org',
+  'temporarily_unavailable',
+  'unauthorized_client',
+])
+
+export function oauthErrorCode(code: string | null | undefined): string {
+  return code && SLACK_OAUTH_ERRORS.has(code) ? code : 'other'
 }
 
-/** A Slack error code safe to record. */
+/**
+ * The code of a Slack API failure. These come from Slack's own JSON `error`
+ * field or Durabull's fixed codes, never from request input; the snake_case
+ * check is a backstop against an unexpected shape.
+ */
 export function slackErrorCode(error: unknown): string {
-  if (error instanceof SlackApiError) return safeErrorCode(error.code)
-  return 'internal_error'
+  if (!(error instanceof SlackApiError)) return 'internal_error'
+  return /^[a-z][a-z0-9_]{0,63}$/.test(error.code) ? error.code : 'other'
 }

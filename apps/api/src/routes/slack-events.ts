@@ -1,8 +1,7 @@
-import { AnalyticsEvents, SlackSurface } from '@durabull/analytics/events'
+import { SlackSurface } from '@durabull/analytics/events'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { SLACK_ACTIONS } from '../lib/slack/alert-message'
-import { recordSlackEvent } from '../lib/slack/analytics'
 import { finishOrContinueInBackground, runInBackground } from '../lib/slack/background'
 import { getSlackConfig, isSlackConfigured } from '../lib/slack/config'
 import {
@@ -13,6 +12,7 @@ import {
   handleLinkShared,
   handleSlashCommand,
   parseCommandText,
+  recordHelpCommand,
   recordSlackLinkClicks,
   type SlackBlockActionsPayload,
   type SlackLinkSharedEvent,
@@ -185,16 +185,8 @@ const app = new Hono()
     const responseUrl = form.get('response_url') ?? ''
 
     if (parseCommandText(text).command === 'help') {
-      // Answered inline without looking anyone up, so only the workspace is known.
-      recordSlackEvent(
-        AnalyticsEvents.SLACK_COMMAND_RUN,
-        { slackTeamId: teamId, slackUserId: userId },
-        {
-          slack_surface: SlackSurface.SLASH_COMMAND,
-          slack_command: 'help',
-          slack_outcome: 'help',
-        }
-      )
+      // Answered inline; the member and organizations are resolved in the background.
+      recordHelpCommand(teamId, userId, SlackSurface.SLASH_COMMAND)
       return c.json({ response_type: 'ephemeral', text: 'Durabull commands', blocks: helpBlocks() })
     }
     runInBackground('slash command', () =>

@@ -788,6 +788,8 @@ export function SlackConnectedCard({
           try {
             await disconnect.mutateAsync()
             setConfirmingRemove(false)
+            // Closing from here bypasses onOpenChange, so record the close too.
+            trackEvent(AnalyticsEvents.DIALOG_CLOSED, { dialog_type: DialogType.REMOVE_SLACK })
             toast.success('Slack removed')
           } catch (error) {
             toast.error('Could not remove Slack', {

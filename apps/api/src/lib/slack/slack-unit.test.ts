@@ -6,7 +6,7 @@ import {
   mentionPrefix,
   SLACK_ACTIONS,
 } from './alert-message'
-import { safeErrorCode } from './analytics'
+import { oauthErrorCode, slackErrorCode } from './analytics'
 import {
   callSlack,
   isAmbiguousSlackFailure,
@@ -411,12 +411,22 @@ describe('Slack status view', () => {
   })
 })
 
-describe('safeErrorCode', () => {
-  it('keeps Slack-style codes and drops anything that could be free text', () => {
-    expect(safeErrorCode('channel_not_found')).toBe('channel_not_found')
-    expect(safeErrorCode('access_denied')).toBe('access_denied')
-    expect(safeErrorCode('Ada Lovelace <ada@example.com>')).toBe('other')
-    expect(safeErrorCode('x'.repeat(65))).toBe('other')
-    expect(safeErrorCode(undefined)).toBe('other')
+describe('analytics error codes', () => {
+  it('keeps only known OAuth errors from the callback URL', () => {
+    expect(oauthErrorCode('access_denied')).toBe('access_denied')
+    expect(oauthErrorCode('invalid_scope')).toBe('invalid_scope')
+    // Short names and domains look like codes but are free text.
+    expect(oauthErrorCode('ada')).toBe('other')
+    expect(oauthErrorCode('ada.lovelace')).toBe('other')
+    expect(oauthErrorCode('customer.example.com')).toBe('other')
+    expect(oauthErrorCode('Ada Lovelace <ada@example.com>')).toBe('other')
+    expect(oauthErrorCode(undefined)).toBe('other')
+  })
+
+  it('keeps snake_case Slack API codes and drops anything else', () => {
+    expect(slackErrorCode(new SlackApiError('channel_not_found'))).toBe('channel_not_found')
+    expect(slackErrorCode(new SlackApiError('customer.example.com'))).toBe('other')
+    expect(slackErrorCode(new SlackApiError('x'.repeat(65)))).toBe('other')
+    expect(slackErrorCode(new Error('boom'))).toBe('internal_error')
   })
 })

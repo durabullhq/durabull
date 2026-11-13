@@ -76,10 +76,8 @@ export function SlackDestinationFields({
                 await channelsQuery.refresh()
                 trackEvent(AnalyticsEvents.SLACK_CHANNELS_REFRESHED, { success: true })
               } catch (error) {
-                trackEvent(AnalyticsEvents.SLACK_CHANNELS_REFRESHED, {
-                  success: false,
-                  error_message: error instanceof Error ? error.message : undefined,
-                })
+                // No error text: the identified PostHog copy is not sanitized.
+                trackEvent(AnalyticsEvents.SLACK_CHANNELS_REFRESHED, { success: false })
                 setRefreshError(
                   error instanceof Error && error.message
                     ? `Could not reload channels: ${error.message}`

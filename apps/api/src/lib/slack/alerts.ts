@@ -281,10 +281,11 @@ export async function sendSlackDestinationAlert(input: {
   const actor = { organizationId: input.event.organizationId }
   try {
     const result = await deliverSlackDestinationAlert(input)
-    if (result === 'posted') {
+    if (result.posted) {
       recordSlackEvent(AnalyticsEvents.SLACK_ALERT_POSTED, actor, {
         ...properties,
-        slack_alert_state: input.event.status,
+        // The state rendered in Slack, which can differ from the queued event's status.
+        slack_alert_state: result.state,
       })
     }
   } catch (error) {
@@ -304,7 +305,7 @@ export async function sendSlackDestinationAlert(input: {
 
 async function deliverSlackDestinationAlert(
   input: Parameters<typeof sendSlackDestinationAlert>[0]
-): Promise<'posted' | 'already_posted'> {
+): Promise<{ posted: false } | { posted: true; state: SlackAlertMessageView['state'] }> {
   const { delivery, destination } = input
   const config = parseSlackDestinationConfig(destination)
   const metadata = (delivery.providerMetadata ?? {}) as Record<string, unknown>
@@ -324,7 +325,7 @@ async function deliverSlackDestinationAlert(
       existing.permalink,
       metadata
     )
-    return 'already_posted'
+    return { posted: false }
   }
 
   const installation = await requireActiveSlackInstallation(input.event.organizationId)
@@ -388,7 +389,7 @@ async function deliverSlackDestinationAlert(
     })
   }
   await markSlackDeliveryDelivered(input, config, posted.ts, permalink, metadata)
-  return 'posted'
+  return { posted: true, state: view.state }
 }
 
 async function markSlackDeliveryDelivered(
@@ -500,6 +501,7 @@ async function syncOneMessage(
   // A refresh-only pass (snooze, retry, settings change) re-renders without a reply.
   const reply =
     threadUpdates && stateChanged ? buildStateChangeReply(claim.renderedState, view) : null
+  let threadReplyPosted = false
 
   await withSlackToken(installation, async (token) => {
     await assertInstallationCurrent(installation)
@@ -518,6 +520,7 @@ async function syncOneMessage(
           thread_ts: claim.messageTs,
           text: reply,
         })
+        threadReplyPosted = true
       } catch (error) {
         // The message itself is current; a missing thread reply is cosmetic.
         console.warn('[slack] Thread reply failed', {
@@ -538,7 +541,7 @@ async function syncOneMessage(
       slack_surface: SlackSurface.ALERT_MESSAGE,
       slack_alert_state: view.state,
       slack_state_changed: stateChanged,
-      slack_thread_updates: Boolean(reply),
+      slack_thread_updates: threadReplyPosted,
       slack_rule_type: event.type,
     }
   )

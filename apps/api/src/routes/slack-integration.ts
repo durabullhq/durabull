@@ -23,7 +23,7 @@ import {
   queueSlackMessageSync,
   slackDestinationMatchesWorkspace,
 } from '../lib/slack/alerts'
-import { recordSlackEvent, safeErrorCode, slackErrorCode } from '../lib/slack/analytics'
+import { oauthErrorCode, recordSlackEvent, slackErrorCode } from '../lib/slack/analytics'
 import {
   exchangeSlackOauthCode,
   listSlackChannels,
@@ -273,8 +273,8 @@ const app = new Hono()
     if (query.error) {
       connectFailed(
         query.error === 'access_denied' ? 'cancelled' : 'slack_error',
-        // Anyone can put text in the callback URL; keep only code-shaped values.
-        safeErrorCode(query.error)
+        // Anyone can put text in the callback URL; only known OAuth errors are kept.
+        oauthErrorCode(query.error)
       )
       // access_denied means the user cancelled on Slack's consent screen.
       return redirectWithResult(c, slug, page, {
