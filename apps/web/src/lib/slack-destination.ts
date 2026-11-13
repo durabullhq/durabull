@@ -19,3 +19,10 @@ export function parseSlackChannelId(value: string): string | null {
   const id = value.trim().toUpperCase()
   return SLACK_CHANNEL_ID_PATTERN.test(id) ? id : null
 }
+
+/**
+ * `?slack=` values that ask the integrations page to begin a Slack install
+ * (set by `/slack/install`): `start` begins OAuth right away, `confirm` asks
+ * a member of several organizations to check the organization first.
+ */
+export const SLACK_INSTALL_REQUEST = { start: 'install', confirm: 'install-confirm' } as const

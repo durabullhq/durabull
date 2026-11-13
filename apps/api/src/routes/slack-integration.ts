@@ -32,6 +32,7 @@ import {
   getSlackConfig,
   isSlackConfigured,
   SLACK_BOT_SCOPES,
+  slackInstallUrl,
   SlackNotConfiguredError,
 } from '../lib/slack/config'
 import {
@@ -188,6 +189,9 @@ const app = new Hono()
       isOrganizationAdmin(c, organizationId),
     ])
     return c.json({
+      // Lets clients tell which organization this answer is for when the
+      // session's active organization changes mid-request.
+      organizationId,
       configured: isSlackConfigured(),
       entitled,
       canManage,
@@ -247,6 +251,14 @@ const app = new Hono()
         slack: query.error === 'access_denied' ? 'cancelled' : 'error',
         message: query.error_description ?? query.error,
       })
+    }
+    if (!query.state && query.code) {
+      // Installed from Slack (the App Directory or a shareable install link),
+      // so nothing ties this workspace to an organization or to a signed-in
+      // member. Accepting the code here would let anyone attach their
+      // workspace to whoever opens the link. Restart from Durabull's direct
+      // install URL instead: Slack re-approves an installed app in one click.
+      return c.redirect(slackInstallUrl(), 302)
     }
     if (!oauthState || !query.code) {
       return redirectWithResult(c, slug, page, {

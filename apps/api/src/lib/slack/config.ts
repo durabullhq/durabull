@@ -51,6 +51,16 @@ export function appBaseUrl(): string {
   return env.APP_BASE_URL.replace(/\/+$/, '')
 }
 
+/**
+ * The app's direct install URL: signs the person in, picks their organization
+ * and starts OAuth from its integrations page. Use it for the Slack App
+ * Directory's "Direct install URL", the website's Add to Slack button, and
+ * anywhere Slack tells a workspace how to connect.
+ */
+export function slackInstallUrl(): string {
+  return `${appBaseUrl()}/slack/install`
+}
+
 /** Slack is available when the deployment has an app's credentials. */
 export function isSlackConfigured(): boolean {
   return Boolean(

@@ -9,6 +9,7 @@ const docsRoot = resolve(import.meta.dir, '../content/documentation')
 const staticPaths = [
   '/',
   '/mcp',
+  '/integrations/slack',
   '/compare',
   '/blog',
   '/features',

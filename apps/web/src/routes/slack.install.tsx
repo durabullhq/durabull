@@ -1,0 +1,119 @@
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { Loader2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { useAppMode } from '@/hooks/use-app-mode'
+import { useAuth } from '@/hooks/use-auth'
+import { useActiveOrganization, useOrganizations } from '@/hooks/use-organization'
+import { SLACK_INSTALL_REQUEST } from '@/lib/slack-destination'
+
+export const Route = createFileRoute('/slack/install')({
+  head: () => ({ meta: [{ title: 'Add Durabull to Slack' }] }),
+  component: SlackInstallRoute,
+})
+
+/**
+ * The Slack app's direct install URL. Slack's App Directory, the marketing
+ * site and shared install links all point here. Durabull needs to know which
+ * organization a workspace belongs to, so the install always runs from that
+ * organization's integrations page: sign in, pick the active organization, and
+ * the Slack card starts the OAuth flow. Members of several organizations are
+ * asked to confirm the organization (or switch) and select Add to Slack.
+ */
+function SlackInstallRoute() {
+  const navigate = useNavigate()
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const { isAuthless } = useAppMode()
+  const {
+    data: organizations,
+    isLoading: orgsLoading,
+    isError: orgsError,
+    refetch: refetchOrganizations,
+    isFetching: orgsFetching,
+  } = useOrganizations()
+  const { data: activeOrg, isLoading: activeOrgLoading } = useActiveOrganization()
+  // An empty list is looked up once more; 'pending' until that lookup settles.
+  const [emptyListRecheck, setEmptyListRecheck] = useState<'idle' | 'pending' | 'done'>('idle')
+  const recheckStarted = useRef(false)
+
+  useEffect(() => {
+    if (authLoading) return
+    if (!isAuthenticated && !isAuthless) {
+      navigate({ to: '/login', search: { redirect: '/slack/install' }, replace: true })
+      return
+    }
+    if (orgsLoading || activeOrgLoading) return
+    // A failed lookup is not "no organizations": never send members to setup for it.
+    if (orgsError) return
+    if (orgsFetching) return
+    if (!organizations || organizations.length === 0) {
+      // An organization joined moments ago (an accepted invitation) can be
+      // missing from a cached list. Look once more before sending the member
+      // to setup, so the install continues when it shows up.
+      if (emptyListRecheck !== 'done') {
+        // Strict Mode runs this effect twice; start the lookup only once and
+        // wait for it to settle before deciding.
+        if (!recheckStarted.current) {
+          recheckStarted.current = true
+          setEmptyListRecheck('pending')
+          void refetchOrganizations().finally(() => setEmptyListRecheck('done'))
+        }
+        return
+      }
+      // Come back here once they have an organization.
+      navigate({ to: '/setup-organization', search: { redirect: '/slack/install' }, replace: true })
+      return
+    }
+    const slug = activeOrg?.slug ?? organizations[0]?.slug
+    if (!slug) return
+    // With several organizations, ask before connecting rather than guessing.
+    const request =
+      organizations.length > 1 ? SLACK_INSTALL_REQUEST.confirm : SLACK_INSTALL_REQUEST.start
+    navigate({
+      href: `/${encodeURIComponent(slug)}/settings/integrations?slack=${request}`,
+      replace: true,
+    })
+  }, [
+    authLoading,
+    isAuthenticated,
+    isAuthless,
+    orgsLoading,
+    orgsError,
+    orgsFetching,
+    refetchOrganizations,
+    emptyListRecheck,
+    activeOrgLoading,
+    organizations,
+    activeOrg,
+    navigate,
+  ])
+
+  if (orgsError) {
+    return (
+      <div className="flex h-full min-h-60 flex-col items-center justify-center gap-3" role="alert">
+        <p className="text-[13px] text-muted-foreground">
+          Could not load your organizations to connect Slack.
+        </p>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={orgsFetching}
+          onClick={() => void refetchOrganizations()}
+        >
+          {orgsFetching ? 'Retrying…' : 'Retry'}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
+      aria-live="polite"
+    >
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+      <p className="text-[13px] text-muted-foreground">Connecting Slack…</p>
+    </div>
+  )
+}

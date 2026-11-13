@@ -21,8 +21,10 @@ import { Panel } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import { type SlackDestinationConfig, useCreateAlertDestination } from '@/hooks/use-alerts'
 import { reportUpgradePromptShown, useBilling } from '@/hooks/use-billing'
+import { useActiveOrganization } from '@/hooks/use-organization'
 import {
   type SlackInstallationRecord,
+  type SlackIntegrationOverview,
   useConnectSlack,
   useDisconnectSlack,
   useSlackIntegration,
@@ -31,7 +33,11 @@ import {
   useUpdateSlackSettings,
 } from '@/hooks/use-slack'
 import { cn } from '@/lib/utils'
-import { DEFAULT_SLACK_DESTINATION_CONFIG, slackDestinationName } from '@/lib/slack-destination'
+import {
+  DEFAULT_SLACK_DESTINATION_CONFIG,
+  SLACK_INSTALL_REQUEST,
+  slackDestinationName,
+} from '@/lib/slack-destination'
 
 const SLACK_DOCS_URL = 'https://durabull.io/documentation/integrations/slack'
 const SLACK_FEATURE = 'integrations.slack' as const
@@ -67,7 +73,8 @@ export function useSlackOauthResultToast() {
     if (handled.current || typeof window === 'undefined') return
     const url = new URL(window.location.href)
     const result = url.searchParams.get('slack')
-    if (!result) return
+    // Install requests are handled by the Slack card.
+    if (!result || isSlackInstallRequest(result)) return
     handled.current = true
     const message = url.searchParams.get('message')
     if (result === 'connected') toast.success('Slack connected')
@@ -79,9 +86,96 @@ export function useSlackOauthResultToast() {
   }, [])
 }
 
+/**
+ * Continues an install that started outside Durabull: the direct install URL
+ * (`/slack/install`), Slack's App Directory, or a shareable install link all
+ * land here with `?slack=install` (or `install-confirm` for members of
+ * several organizations, who choose before anything starts). The OAuth flow starts from Durabull so the
+ * workspace is bound to this organization and the member who approved it.
+ */
+function isSlackInstallRequest(value: string): boolean {
+  return (Object.values(SLACK_INSTALL_REQUEST) as string[]).includes(value)
+}
+
+export function useSlackInstallRequest(
+  orgSlug: string,
+  overview: SlackIntegrationOverview | undefined,
+  connect: ReturnType<typeof useConnectSlack>
+) {
+  const handled = useRef(false)
+  // OAuth and the overview both use the session's active organization. Wait
+  // until it is the organization in the URL, so a stale overview from the
+  // previously active organization never decides the install.
+  const { data: activeOrganization } = useActiveOrganization()
+  const isCurrentOrganization = activeOrganization?.slug === orgSlug
+  // Only an overview the API confirmed is for this organization may start
+  // OAuth or decide what to tell the member. Older APIs omit organizationId.
+  const verified =
+    Boolean(activeOrganization?.id) && overview?.organizationId === activeOrganization?.id
+  const unverifiable = overview != null && overview.organizationId == null
+  useEffect(() => {
+    if (
+      handled.current ||
+      !overview ||
+      !isCurrentOrganization ||
+      !(verified || unverifiable) ||
+      typeof window === 'undefined'
+    )
+      return
+    const url = new URL(window.location.href)
+    const request = url.searchParams.get('slack')
+    if (!request || !isSlackInstallRequest(request)) return
+    handled.current = true
+    url.searchParams.delete('slack')
+    window.history.replaceState(window.history.state, '', url.toString())
+
+    if (!verified) {
+      // This API cannot confirm which organization the overview is for, so
+      // leave the decision to the member instead of starting OAuth.
+      toast('Select Add to Slack to connect Slack to this organization')
+      return
+    }
+
+    const installation = overview.installation
+    if (!overview.entitled) {
+      toast('The Slack app is included with the Team plan and above', {
+        description: 'Upgrade this organization to connect Slack.',
+      })
+      return
+    }
+    if (!overview.configured) {
+      toast.error('Slack is not set up on this Durabull deployment')
+      return
+    }
+    if (installation?.status === 'active') {
+      toast(`Slack is already connected to ${installation.slackTeamName}`)
+      return
+    }
+    if (!overview.canManage) {
+      toast(ADMIN_ONLY_HINT)
+      return
+    }
+    if (request === SLACK_INSTALL_REQUEST.confirm) {
+      toast('Select Add to Slack to connect Slack to this organization', {
+        description:
+          'You belong to several organizations. Switch organizations first if Slack should connect to another one.',
+        duration: 15_000,
+      })
+      return
+    }
+    connect.mutateAsync({ returnTo: 'integrations' }).catch((error: unknown) => {
+      toast.error('Could not start the Slack connection', {
+        description: getErrorMessage(error, 'Please try again.'),
+      })
+    })
+  }, [overview, connect, isCurrentOrganization, verified, unverifiable])
+}
+
 export function SlackIntegrationCard({ orgSlug }: { orgSlug: string }) {
   const slackQuery = useSlackIntegration()
   const overview = slackQuery.data
+  const connect = useConnectSlack()
+  useSlackInstallRequest(orgSlug, overview, connect)
 
   if (!overview && slackQuery.isError) {
     return (

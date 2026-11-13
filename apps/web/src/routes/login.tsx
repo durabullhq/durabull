@@ -276,7 +276,7 @@ function LoginPage() {
               Sign up
             </Link>
           ) : (
-            <Link to="/signup" className={authLinkClassName}>
+            <Link to="/signup" search={{ redirect }} className={authLinkClassName}>
               Sign up
             </Link>
           )}

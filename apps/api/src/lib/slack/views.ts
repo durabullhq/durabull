@@ -219,6 +219,11 @@ export function incidentListBlocks(
   return blocks
 }
 
+/** Job counts with thousands separators, e.g. 12,480. */
+function formatCount(value: number): string {
+  return value.toLocaleString('en-US')
+}
+
 export function queueBlocks(
   slug: string,
   overview: QueueOverview,
@@ -236,11 +241,13 @@ export function queueBlocks(
     {
       type: 'section',
       fields: [
-        mrkdwn(`*Waiting*\n${counts.waiting + counts.prioritized}`),
-        mrkdwn(`*Active*\n${counts.active}`),
-        mrkdwn(`*Delayed*\n${counts.delayed}`),
-        mrkdwn(`*Failed*\n${counts.failed > 0 ? `:red_circle: ${counts.failed}` : '0'}`),
-        mrkdwn(`*Completed*\n${counts.completed}`),
+        mrkdwn(`*Waiting*\n${formatCount(counts.waiting + counts.prioritized)}`),
+        mrkdwn(`*Active*\n${formatCount(counts.active)}`),
+        mrkdwn(`*Delayed*\n${formatCount(counts.delayed)}`),
+        mrkdwn(
+          `*Failed*\n${counts.failed > 0 ? `:red_circle: ${formatCount(counts.failed)}` : '0'}`
+        ),
+        mrkdwn(`*Completed*\n${formatCount(counts.completed)}`),
       ],
     },
   ]

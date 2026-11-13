@@ -1,5 +1,6 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AuthMethod } from '@durabull/analytics/events'
+import { isSafeAppRedirectPath } from '@durabull/auth/client'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
@@ -19,6 +20,8 @@ import { getAuthErrorMessage, useAuth } from '@/hooks/use-auth'
 
 interface SignupSearch {
   invitationId?: string
+  /** App path to return to once the account has an organization (e.g. /slack/install). */
+  redirect?: string
 }
 
 export const Route = createFileRoute('/signup')({
@@ -27,12 +30,16 @@ export const Route = createFileRoute('/signup')({
       typeof search.invitationId === 'string' && search.invitationId.length > 0
         ? search.invitationId
         : undefined,
+    redirect:
+      typeof search.redirect === 'string' && isSafeAppRedirectPath(search.redirect)
+        ? search.redirect
+        : undefined,
   }),
   component: SignupPage,
 })
 
 function SignupPage() {
-  const { invitationId } = Route.useSearch()
+  const { invitationId, redirect } = Route.useSearch()
   const navigate = useNavigate()
   const { signIn, signUp, isLoading: sessionLoading, refetch } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
@@ -46,7 +53,11 @@ function SignupPage() {
   })
 
   const invitationPath = invitationId ? `/invite/${invitationId}` : null
-  const postSignUpPath = invitationPath ?? '/setup-organization'
+  const postSignUpPath =
+    invitationPath ??
+    (redirect
+      ? `/setup-organization?redirect=${encodeURIComponent(redirect)}`
+      : '/setup-organization')
 
   const getOAuthCallbackURL = () => {
     if (typeof window === 'undefined') return undefined
@@ -59,7 +70,7 @@ function SignupPage() {
       navigate({ to: '/invite/$invitationId', params: { invitationId } })
       return
     }
-    navigate({ to: '/setup-organization' })
+    navigate({ to: '/setup-organization', search: { redirect } })
   }
 
   // Redirect if already authenticated (handled by root layout)

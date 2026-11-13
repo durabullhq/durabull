@@ -59,6 +59,7 @@ export function V2FinalCta() {
 
 const footerLinks = [
   { label: 'Durabull MCP', href: '/mcp' },
+  { label: 'Slack app', href: '/integrations/slack' },
   { label: 'Compare', href: '/compare' },
   { label: 'Guides', href: '/blog' },
   { label: 'Documentation', href: '/documentation' },

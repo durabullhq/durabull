@@ -21,7 +21,7 @@ import {
   SlackApiError,
   unfurlSlackLinks,
 } from './client'
-import { appBaseUrl, SLACK_SLASH_COMMAND } from './config'
+import { appBaseUrl, SLACK_SLASH_COMMAND, slackInstallUrl } from './config'
 import {
   escapeSlackText,
   mrkdwn,
@@ -256,8 +256,7 @@ async function runCommandForMember(
     input.userId
   )
   if (installations.length === 0) {
-    const message =
-      'Durabull is not connected to this Slack workspace. An organization admin can connect it under Settings → Integrations.'
+    const message = `Durabull is not connected to this Slack workspace yet. A Durabull organization owner or admin can connect it at ${slackInstallUrl()}`
     return reply(message, errorBlocks(message), true)
   }
   if (allowed.length === 0) {

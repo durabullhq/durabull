@@ -17,6 +17,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SetupOrganizationRouteImport } from './routes/setup-organization'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SlackInstallRouteImport } from './routes/slack.install'
 import { Route as OrgSlugIndexRouteImport } from './routes/$orgSlug.index'
 import { Route as OrgSlugAlertsRouteImport } from './routes/$orgSlug.alerts'
 import { Route as OrgSlugAnalyticsRouteImport } from './routes/$orgSlug.analytics'
@@ -93,6 +94,11 @@ const SetupOrganizationRoute = SetupOrganizationRouteImport.update({
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SlackInstallRoute = SlackInstallRouteImport.update({
+  id: '/slack/install',
+  path: '/slack/install',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrgSlugIndexRoute = OrgSlugIndexRouteImport.update({
@@ -314,6 +320,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/setup-organization': typeof SetupOrganizationRoute
   '/signup': typeof SignupRoute
+  '/slack/install': typeof SlackInstallRoute
   '/$orgSlug/alerts': typeof OrgSlugAlertsRoute
   '/$orgSlug/analytics': typeof OrgSlugAnalyticsRoute
   '/$orgSlug/connections': typeof OrgSlugConnectionsRoute
@@ -360,6 +367,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/setup-organization': typeof SetupOrganizationRoute
   '/signup': typeof SignupRoute
+  '/slack/install': typeof SlackInstallRoute
   '/$orgSlug/alerts': typeof OrgSlugAlertsRoute
   '/$orgSlug/analytics': typeof OrgSlugAnalyticsRoute
   '/$orgSlug/connections': typeof OrgSlugConnectionsRoute
@@ -405,6 +413,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/setup-organization': typeof SetupOrganizationRoute
   '/signup': typeof SignupRoute
+  '/slack/install': typeof SlackInstallRoute
   '/$orgSlug/alerts': typeof OrgSlugAlertsRoute
   '/$orgSlug/analytics': typeof OrgSlugAnalyticsRoute
   '/$orgSlug/connections': typeof OrgSlugConnectionsRoute
@@ -454,6 +463,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup-organization'
     | '/signup'
+    | '/slack/install'
     | '/$orgSlug/alerts'
     | '/$orgSlug/analytics'
     | '/$orgSlug/connections'
@@ -500,6 +510,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup-organization'
     | '/signup'
+    | '/slack/install'
     | '/$orgSlug/alerts'
     | '/$orgSlug/analytics'
     | '/$orgSlug/connections'
@@ -544,6 +555,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup-organization'
     | '/signup'
+    | '/slack/install'
     | '/$orgSlug/alerts'
     | '/$orgSlug/analytics'
     | '/$orgSlug/connections'
@@ -592,6 +604,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SetupOrganizationRoute: typeof SetupOrganizationRoute
   SignupRoute: typeof SignupRoute
+  SlackInstallRoute: typeof SlackInstallRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
 }
 
@@ -651,6 +664,13 @@ declare module '@tanstack/react-router' {
       path: '/signup'
       fullPath: '/signup'
       preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/slack/install': {
+      id: '/slack/install'
+      path: '/slack/install'
+      fullPath: '/slack/install'
+      preLoaderRoute: typeof SlackInstallRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/$orgSlug/': {
@@ -1044,6 +1064,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SetupOrganizationRoute: SetupOrganizationRoute,
   SignupRoute: SignupRoute,
+  SlackInstallRoute: SlackInstallRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
 }
 export const routeTree = rootRouteImport
