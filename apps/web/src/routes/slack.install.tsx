@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
 import { useActiveOrganization, useOrganizations } from '@/hooks/use-organization'
+import { SLACK_INSTALL_REQUEST } from '@/lib/slack-destination'
 
 export const Route = createFileRoute('/slack/install')({
   head: () => ({ meta: [{ title: 'Add Durabull to Slack' }] }),
@@ -15,7 +16,8 @@ export const Route = createFileRoute('/slack/install')({
  * site and shared install links all point here. Durabull needs to know which
  * organization a workspace belongs to, so the install always runs from that
  * organization's integrations page: sign in, pick the active organization, and
- * the Slack card starts the OAuth flow.
+ * the Slack card starts the OAuth flow. Members of several organizations are
+ * asked to confirm the organization (or switch) and select Add to Slack.
  */
 function SlackInstallRoute() {
   const navigate = useNavigate()
@@ -37,8 +39,11 @@ function SlackInstallRoute() {
     }
     const slug = activeOrg?.slug ?? organizations[0]?.slug
     if (!slug) return
+    // With several organizations, ask before connecting rather than guessing.
+    const request =
+      organizations.length > 1 ? SLACK_INSTALL_REQUEST.confirm : SLACK_INSTALL_REQUEST.start
     navigate({
-      href: `/${encodeURIComponent(slug)}/settings/integrations?slack=install`,
+      href: `/${encodeURIComponent(slug)}/settings/integrations?slack=${request}`,
       replace: true,
     })
   }, [

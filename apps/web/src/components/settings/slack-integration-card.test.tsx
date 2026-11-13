@@ -163,6 +163,21 @@ describe('SlackIntegrationCard', () => {
       expect(window.location.search).toBe('')
     })
 
+    it('asks members of several organizations to confirm instead of starting OAuth', async () => {
+      window.history.replaceState(null, '', '/acme/settings/integrations?slack=install-confirm')
+      mocks.overview.mockReturnValue({
+        configured: true,
+        entitled: true,
+        canManage: true,
+        installation: null,
+      })
+      render(<SlackIntegrationCard orgSlug="acme" />)
+
+      await waitFor(() => expect(window.location.search).toBe(''))
+      expect(mocks.connect).not.toHaveBeenCalled()
+      expect(screen.getByRole('button', { name: /Add to Slack/ })).toBeInTheDocument()
+    })
+
     it('does not start OAuth for members who cannot manage Slack', async () => {
       withInstallRequest()
       mocks.overview.mockReturnValue({

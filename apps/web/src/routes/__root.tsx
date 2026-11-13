@@ -221,7 +221,15 @@ function RootLayout() {
 
   // Protected routes require authentication unless authless mode is enabled.
   if (!isAuthenticated && !isAuthless) {
-    return <Navigate to="/login" replace />
+    // Bring people back to deep links (such as /slack/install) after signing in.
+    const returnTo = `${location.pathname}${location.searchStr ?? ''}`
+    return (
+      <Navigate
+        to="/login"
+        search={location.pathname === '/' ? {} : { redirect: returnTo }}
+        replace
+      />
+    )
   }
 
   const displayUser = {

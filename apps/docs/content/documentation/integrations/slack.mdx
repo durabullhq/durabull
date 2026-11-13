@@ -64,8 +64,9 @@ You can also start from outside Durabull: the **Add to Slack** link
 [`https://app.durabull.io/slack/install`](https://app.durabull.io/slack/install), the Durabull
 listing in the Slack App Directory, or an install link someone shared with you. Durabull asks you
 to sign in, opens **Settings → Integrations** for your current organization and starts the
-connection there, because it needs to know which organization the workspace belongs to. Switch
-organizations first if you belong to several.
+connection there, because it needs to know which organization the workspace belongs to. If you
+belong to several organizations, nothing starts automatically: check the organization (switch if
+needed) and select **Add to Slack**.
 
 If the app was approved in Slack without going through Durabull, Slack sends you back to
 Durabull, which restarts the connection from your organization. Approve it once more in Slack
@@ -157,11 +158,14 @@ To let workspaces other than the one that owns the app install it:
 1. In the Slack app settings, open **Manage Distribution**. The checklist there is already
    satisfied by the manifest: HTTPS redirect URLs and no hard-coded tokens.
 2. Select **Activate Public Distribution**.
-3. Point people at your deployment's direct install URL, `{APP_BASE_URL}/slack/install`, rather
+3. Under **Basic Information → Display Information**, upload an app icon (Slack requires one,
+   512–2000 px square). `apps/web/public/favicon-512x512.png` works.
+4. Point people at your deployment's direct install URL, `{APP_BASE_URL}/slack/install`, rather
    than the **Sharable URL** Slack shows. The direct install URL starts the connection from the
    person's Durabull organization. Installs that start from Slack's own link still work: Durabull
    sends the person through the direct install URL to finish, and never attaches a workspace
-   to an organization from a link alone.
+   to an organization from a link alone. If you list the app in the Slack Marketplace, enter the
+   same URL as the listing's **Direct install URL**.
 
 A single workspace can be connected to several Durabull organizations; each keeps its own
 settings.
