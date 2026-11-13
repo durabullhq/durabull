@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
@@ -32,7 +32,9 @@ function SlackInstallRoute() {
     isFetching: orgsFetching,
   } = useOrganizations()
   const { data: activeOrg, isLoading: activeOrgLoading } = useActiveOrganization()
-  const recheckedEmptyList = useRef(false)
+  // An empty list is looked up once more; 'pending' until that lookup settles.
+  const [emptyListRecheck, setEmptyListRecheck] = useState<'idle' | 'pending' | 'done'>('idle')
+  const recheckStarted = useRef(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -48,9 +50,14 @@ function SlackInstallRoute() {
       // An organization joined moments ago (an accepted invitation) can be
       // missing from a cached list. Look once more before sending the member
       // to setup, so the install continues when it shows up.
-      if (!recheckedEmptyList.current) {
-        recheckedEmptyList.current = true
-        void refetchOrganizations()
+      if (emptyListRecheck !== 'done') {
+        // Strict Mode runs this effect twice; start the lookup only once and
+        // wait for it to settle before deciding.
+        if (!recheckStarted.current) {
+          recheckStarted.current = true
+          setEmptyListRecheck('pending')
+          void refetchOrganizations().finally(() => setEmptyListRecheck('done'))
+        }
         return
       }
       // Come back here once they have an organization.
@@ -74,6 +81,7 @@ function SlackInstallRoute() {
     orgsError,
     orgsFetching,
     refetchOrganizations,
+    emptyListRecheck,
     activeOrgLoading,
     organizations,
     activeOrg,

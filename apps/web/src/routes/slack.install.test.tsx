@@ -1,5 +1,5 @@
-import { render, waitFor } from '@testing-library/react'
-import type { ComponentType } from 'react'
+import { act, render, waitFor } from '@testing-library/react'
+import { type ComponentType, StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -35,6 +35,7 @@ describe('/slack/install', () => {
   beforeEach(() => {
     mocks.navigate.mockReset()
     mocks.refetch.mockReset()
+    mocks.refetch.mockResolvedValue(undefined)
     mocks.organizations = { data: [], isFetching: false }
   })
 
@@ -55,16 +56,23 @@ describe('/slack/install', () => {
     )
   })
 
-  it('sends members with no organization to setup after the recheck, keeping the redirect', async () => {
-    const { rerender } = render(<SlackInstall />)
+  it('waits for a pending recheck under Strict Mode before choosing setup', async () => {
+    let finishRefetch: () => void = () => {}
+    mocks.refetch.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishRefetch = resolve
+      })
+    )
+    render(
+      <StrictMode>
+        <SlackInstall />
+      </StrictMode>
+    )
     expect(mocks.refetch).toHaveBeenCalledTimes(1)
-
-    mocks.organizations = { data: [], isFetching: true }
-    rerender(<SlackInstall />)
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(mocks.navigate).not.toHaveBeenCalled()
 
-    mocks.organizations = { data: [], isFetching: false }
-    rerender(<SlackInstall />)
+    await act(async () => finishRefetch())
     await waitFor(() =>
       expect(mocks.navigate).toHaveBeenCalledWith({
         to: '/setup-organization',
