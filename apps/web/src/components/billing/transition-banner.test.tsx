@@ -11,7 +11,9 @@ const { billingState, activeState } = vi.hoisted(() => ({
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/billing">{children}</a>,
 }))
-vi.mock('@/hooks/use-billing', () => ({ useBilling: () => ({ data: billingState.data }) }))
+vi.mock('@/hooks/use-entitlement', () => ({
+  useEntitlement: () => ({ plan: billingState.data }),
+}))
 vi.mock('@/hooks/use-organization', () => ({
   useActiveOrganization: () => ({ data: { slug: activeState.slug } }),
 }))

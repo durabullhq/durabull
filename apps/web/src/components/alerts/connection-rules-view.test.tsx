@@ -16,6 +16,7 @@ const {
   deleteRuleMutateAsyncMock,
   snoozeRuleMutateAsyncMock,
   unsnoozeRuleMutateAsyncMock,
+  connectionState,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   toastSuccessMock: vi.fn(),
@@ -28,6 +29,9 @@ const {
   deleteRuleMutateAsyncMock: vi.fn(),
   snoozeRuleMutateAsyncMock: vi.fn(),
   unsnoozeRuleMutateAsyncMock: vi.fn(),
+  connectionState: {
+    current: { id: 'conn-1', name: 'Primary Redis', enabled: true, suspended: false },
+  },
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -60,10 +64,8 @@ vi.mock('@/components/app-top-bar', () => ({
 
 vi.mock('@/components/connection-provider', () => ({
   useConnection: () => ({
-    currentConnection: {
-      id: 'conn-1',
-      name: 'Primary Redis',
-    },
+    currentConnection: connectionState.current,
+    connections: [connectionState.current],
   }),
 }))
 
@@ -132,6 +134,12 @@ const baseRulesQuery = {
 
 describe('ConnectionRulesView', () => {
   beforeEach(() => {
+    connectionState.current = {
+      id: 'conn-1',
+      name: 'Primary Redis',
+      enabled: true,
+      suspended: false,
+    }
     navigateMock.mockReset()
     toastSuccessMock.mockReset()
     updateRuleMutateAsyncMock.mockReset().mockResolvedValue(undefined)
@@ -230,6 +238,42 @@ describe('ConnectionRulesView', () => {
       params: { orgSlug: 'acme', connectionId: 'conn-1' },
       search: { from: 'rule-1' },
     })
+  })
+
+  it('offers only muting and deleting on a connection the plan has paused', () => {
+    connectionState.current = { ...connectionState.current, suspended: true }
+    useConnectionAlertRulesMock.mockReturnValue({
+      isLoading: false,
+      data: {
+        rules: [
+          buildRule(),
+          buildRule({ id: 'rule-2', name: 'Already muted', enabled: false, state: 'disabled' }),
+        ],
+      },
+    })
+
+    render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
+
+    expect(screen.getAllByRole('button', { name: 'Mute' })).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: 'Enable' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Duplicate' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(2)
+  })
+
+  it('does not offer to create rules on a paused connection with none', () => {
+    connectionState.current = { ...connectionState.current, suspended: true }
+    useConnectionAlertRulesMock.mockReturnValue({ isLoading: false, data: { rules: [] } })
+    render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
+    expect(screen.getByText('No alert rules on this connection')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /scratch/i })).not.toBeInTheDocument()
+  })
+
+  it('does not open the rule editor for a paused connection', async () => {
+    connectionState.current = { ...connectionState.current, suspended: true }
+    const user = userEvent.setup()
+    render(<ConnectionRulesView orgSlug="acme" connectionId="conn-1" />)
+    await user.click(screen.getByText('Delivery failures'))
+    expect(navigateMock).not.toHaveBeenCalled()
   })
 
   it('renders the rule state badge for enabled, snoozed, and muted rules', () => {

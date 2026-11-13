@@ -1271,8 +1271,13 @@ async function runJobAutoResolveCycle(): Promise<void> {
   jobAutoResolveInProgress = true
 
   try {
+    // Plan-suspended connections are never dialed, here or in the poll cycle.
+    // They are left out of the query itself, so their events cannot take
+    // every slot of the batch.
+    const suspended = await loadBillingSuspensions()
     const events = await alertEventRepository.findFiringJobEvents({
       limit: JOB_AUTO_RESOLVE_BATCH_LIMIT,
+      excludeConnectionIds: [...suspended.connections],
     })
     if (events.length === 0) return
 

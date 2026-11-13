@@ -12,7 +12,13 @@ import { isEmailConfigured } from '@durabull/email'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { assertCapacity, isResourceSuspended, requireFeature } from '../billing/entitlements'
+import {
+  assertCapacity,
+  isResourceSuspended,
+  rebalanceCapacity,
+  requireDeliveryFeature,
+  suspendedResourceIds,
+} from '../billing/entitlements'
 import { toBillingHttpError } from '../billing/errors'
 import { validateWebhookUrls } from '../lib/alert-webhook-channels'
 import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
@@ -176,12 +182,15 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
-    const destinations = await alertDestinationRepository.listByOrganization(organizationId, {
-      type,
-    })
+    const [destinations, suspended] = await Promise.all([
+      alertDestinationRepository.listByOrganization(organizationId, { type }),
+      suspendedResourceIds(organizationId, 'alert_destination'),
+    ])
     const withUsage = await Promise.all(
       destinations.map(async (destination) => ({
         ...serializeDestination(destination),
+        // Paused by the plan's destination limit: nothing is delivered to it.
+        suspended: suspended.has(destination.id),
         inUseByRuleCount: await alertDestinationRepository.countRuleReferences(
           destination.id,
           organizationId
@@ -197,9 +206,7 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
-    if (body.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
-    if (body.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
-    if (body.type === 'slack') await requireFeature(organizationId, 'integrations.slack')
+    await requireDeliveryFeature(organizationId, body.type)
     await assertCapacity(organizationId, 'alerts.destinations')
 
     if (body.type === 'webhook') {
@@ -251,6 +258,13 @@ const app = new Hono()
       return c.json({ error: 'Destination not found' }, 404)
     }
 
+    // Turning a paid destination back on needs the plan that delivers to it.
+    // Editing or disabling one stays possible so a downgraded organization can
+    // tidy up.
+    if (body.enabled === true && !existing.enabled) {
+      await requireDeliveryFeature(organizationId, existing.type)
+    }
+
     if (body.url !== undefined) {
       if (existing.type !== 'webhook') {
         return c.json({ error: 'Only webhook destinations have a URL.' }, 400)
@@ -288,7 +302,7 @@ const app = new Hono()
         if (!parsed.success) {
           return c.json({ error: 'Slack destinations require a channel.' }, 400)
         }
-        await requireFeature(organizationId, 'integrations.slack')
+        await requireDeliveryFeature(organizationId, 'slack')
         const slackError = await validateSlackDestinationConfig(organizationId, parsed.data)
         if (slackError) {
           return c.json({ error: slackError }, 400)
@@ -353,6 +367,7 @@ const app = new Hono()
     if (!deleted) {
       return c.json({ error: 'Destination not found' }, 404)
     }
+    await rebalanceCapacity(organizationId)
 
     return c.json({ ok: true })
   })
@@ -373,9 +388,7 @@ const app = new Hono()
     if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
       return c.json({ error: 'Destination is paused because it is above your plan limit.' }, 409)
     }
-    if (destination.type === 'webhook') await requireFeature(organizationId, 'alerts.webhook')
-    if (destination.type === 'linear') await requireFeature(organizationId, 'alerts.linear')
-    if (destination.type === 'slack') await requireFeature(organizationId, 'integrations.slack')
+    await requireDeliveryFeature(organizationId, destination.type)
 
     switch (destination.type) {
       case 'webhook': {

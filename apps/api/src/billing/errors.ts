@@ -4,11 +4,13 @@ import {
   FEATURE_LABELS,
   type FeatureKey,
   type FeatureNotEntitledBody,
+  formatLimitQuantity,
   isLimitKey,
   LIMIT_LABELS,
   PLANS,
   type PlanCode,
   type PlanLimitReachedBody,
+  type PlanLimitUnspecifiedBody,
   requiredPlanForFeature,
   requiredPlanForLimit,
 } from '@durabull/billing'
@@ -46,9 +48,14 @@ export class PlanLimitReachedError extends Error {
     readonly allowed: number
   ) {
     const requiredPlan = requiredPlanForLimit(limit, allowed + 1)
-    const label = LIMIT_LABELS[limit]
+    const upgrade =
+      requiredPlan === 'enterprise'
+        ? `contact us about ${PLANS[requiredPlan].name}`
+        : `upgrade to ${PLANS[requiredPlan].name}`
     super(
-      `Your plan includes ${allowed} ${label.unit}. Remove or disable one, or upgrade to ${PLANS[requiredPlan].name} for more.`
+      allowed === 0
+        ? `Your plan does not include ${LIMIT_LABELS[limit].unit}. To add one, ${upgrade}.`
+        : `Your plan includes ${formatLimitQuantity(limit, allowed)} and all are in use. Free one up, or ${upgrade} for more.`
     )
     this.name = 'PlanLimitReachedError'
     this.requiredPlan = requiredPlan
@@ -89,7 +96,7 @@ export class BillingStateUnverifiedError extends Error {
 
 export type BillingHttpError =
   | { status: 403; body: FeatureNotEntitledBody }
-  | { status: 409; body: PlanLimitReachedBody }
+  | { status: 409; body: PlanLimitReachedBody | PlanLimitUnspecifiedBody }
   | { status: 503; body: BillingStateUnverifiedBody }
 
 /**
@@ -101,7 +108,10 @@ export function toBillingHttpError(error: unknown): BillingHttpError | null {
   if (error instanceof PlanLimitReachedError) return { status: 409, body: error.toBody() }
   if (error instanceof BillingStateUnverifiedError) return { status: 503, body: error.toBody() }
   const violation = parsePlanLimitDbError(error)
-  if (violation && isLimitKey(violation.limit) && violation.limit !== 'history.redis_health_days') {
+  if (!violation) return null
+  if (isLimitKey(violation.limit)) {
+    // The history window is not a resource count; nothing to free up.
+    if (violation.limit === 'history.redis_health_days') return null
     const limitError = new PlanLimitReachedError(
       violation.limit as CapacityLimitKey,
       violation.usage,
@@ -109,5 +119,15 @@ export function toBillingHttpError(error: unknown): BillingHttpError | null {
     )
     return { status: 409, body: limitError.toBody() }
   }
-  return null
+  // The trigger rejected the write but its detail could not be read. Still a
+  // plan boundary, never an internal error.
+  return {
+    status: 409,
+    body: {
+      error: 'Plan limit reached',
+      message: 'This organization is at a limit of its plan. Free a resource up or upgrade.',
+      code: 'plan_limit_unspecified',
+      billingUrl: getBillingUrl(),
+    },
+  }
 }

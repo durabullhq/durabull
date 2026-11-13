@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { isSafeAppRedirectPath, isSafeOAuthRedirectUri, resolveSafeAppRedirectPath } from './safe-redirect'
+import {
+  isSafeAppRedirectPath,
+  isSafeOAuthRedirectUri,
+  resolveSafeAppRedirectPath,
+} from './safe-redirect'
 
 describe('safe-redirect', () => {
   test('rejects protocol-relative and external paths', () => {

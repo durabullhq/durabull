@@ -1,6 +1,7 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { isOwnerOrAdminRole } from '@durabull/utils/roles'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import {
   CircleAlert,
   CircleCheck,
@@ -12,7 +13,13 @@ import {
   MoreHorizontal,
   Plus,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  BillingLink,
+  CapacityCount,
+  LimitReachedNote,
+  PausedBadge,
+} from '@/components/billing/plan-access'
 import { useConnection } from '@/components/connection-provider'
 import { CopyButton, SettingsPage, useSettingsTopBar } from '@/components/settings/settings-layout'
 import { StatusIndicator } from '@/components/status-badge'
@@ -59,7 +66,10 @@ import {
   useTestConnection,
   useUpdateConnection,
 } from '@/hooks/use-connections'
+import { useEntitlement } from '@/hooks/use-entitlement'
 import { useOrganizationMembers } from '@/hooks/use-organization'
+import { ApiError, isPlanDenial } from '@/lib/api'
+import { limitDenial } from '@/lib/billing'
 import { cn } from '@/lib/utils'
 
 type ConnectionEnvironment = 'development' | 'staging' | 'production'
@@ -117,20 +127,29 @@ export function ConnectionsSettingsPage({
   const { user } = useAuth()
   const { data: members } = useOrganizationMembers()
   const currentMembership = members?.find((m) => m.userId === user?.id)
-  const canViewSecrets =
-    isAuthless || currentMembership?.role === 'owner' || currentMembership?.role === 'admin'
+  const canViewSecrets = isAuthless || isOwnerOrAdminRole(currentMembership?.role)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editingConnection, setEditingConnection] = useState<RedisConnection | null>(null)
   const [deletingConnection, setDeletingConnection] = useState<RedisConnection | null>(null)
+  const entitlement = useEntitlement()
+  // At the limit, say so before the form is filled in rather than after.
+  const openCreateDialog = useCallback(() => {
+    const current = entitlement.capacity('connections.enabled')
+    if (current.atLimit) {
+      limitDenial('connections.enabled', current)
+      return
+    }
+    setCreateDialogOpen(true)
+  }, [entitlement])
   const mobileActions = useMemo(
     () =>
       !envConnections ? (
-        <DropdownMenuItem onClick={() => setCreateDialogOpen(true)}>
+        <DropdownMenuItem onClick={openCreateDialog}>
           <Plus className="mr-2 h-4 w-4" />
           Add connection
         </DropdownMenuItem>
       ) : undefined,
-    [envConnections]
+    [envConnections, openCreateDialog]
   )
 
   useSettingsTopBar('Connections', { mobileActions })
@@ -139,10 +158,18 @@ export function ConnectionsSettingsPage({
     trackEvent(AnalyticsEvents.CONNECTIONS_VIEWED)
   }, [])
 
-  useEffect(() => {
-    if (!createFromSearch || envConnections) return
-    setCreateDialogOpen(true)
-  }, [createFromSearch, envConnections])
+  // A create link opens the form only once the plan is known and has room;
+  // at the limit the page explains why instead of opening a form that
+  // cannot be saved. Closing the form ends the link's effect.
+  const [createLinkDismissed, setCreateLinkDismissed] = useState(false)
+  const createLinkActive =
+    createFromSearch && !envConnections && !createLinkDismissed && !entitlement.isLoading
+  const linkAtLimit = createLinkActive && entitlement.capacity('connections.enabled').atLimit
+  const createFormOpen = createDialogOpen || (createLinkActive && !linkAtLimit)
+  const setCreateFormOpen = (open: boolean) => {
+    setCreateDialogOpen(open)
+    if (!open) setCreateLinkDismissed(true)
+  }
 
   // Production first, then by name, so the riskiest rows are always at the top.
   const sortedConnections = useMemo(
@@ -182,10 +209,13 @@ export function ConnectionsSettingsPage({
     .join(' · ')
 
   const addButton = !envConnections ? (
-    <Button onClick={() => setCreateDialogOpen(true)} size="xs" data-testid="add-connection-button">
-      <Plus className="h-3.5 w-3.5" aria-hidden />
-      Add connection
-    </Button>
+    <div className="flex items-center gap-3">
+      <CapacityCount limit="connections.enabled" />
+      <Button onClick={openCreateDialog} size="xs" data-testid="add-connection-button">
+        <Plus className="h-3.5 w-3.5" aria-hidden />
+        Add connection
+      </Button>
+    </div>
   ) : null
   const hasConnections = connections.length > 0
 
@@ -201,6 +231,7 @@ export function ConnectionsSettingsPage({
       }
       actions={isLoading || hasConnections ? addButton : undefined}
     >
+      {linkAtLimit ? <LimitReachedNote limit="connections.enabled" /> : null}
       {isLoading ? (
         <Panel className="divide-y">
           {[0, 1, 2].map((row) => (
@@ -260,8 +291,8 @@ export function ConnectionsSettingsPage({
         <>
           {/* Create Dialog */}
           <ConnectionFormDialog
-            open={createDialogOpen}
-            onOpenChange={setCreateDialogOpen}
+            open={createFormOpen}
+            onOpenChange={setCreateFormOpen}
             mode="create"
           />
 
@@ -316,6 +347,15 @@ function ConnectionRow({
           <span className="truncate font-medium">{connection.name}</span>
           {connection.isDefault ? <Badge variant="neutral">Default</Badge> : null}
         </div>
+        {suspended ? (
+          <p
+            className="mt-1 pl-[18px] text-xs text-muted-foreground"
+            data-testid="connection-paused-note"
+          >
+            Above your plan’s connection limit, so its queues and alerts are paused. Nothing in
+            Redis was changed. <BillingLink>Choose which stay enabled or upgrade</BillingLink>
+          </p>
+        ) : null}
       </TableCell>
 
       <TableCell>
@@ -369,7 +409,7 @@ function ConnectionRow({
 
       <TableCell className="whitespace-nowrap">
         {suspended ? (
-          <Badge variant="warning">Paused by plan limit</Badge>
+          <PausedBadge />
         ) : (
           <StatusIndicator status={enabled ? 'enabled' : 'disabled'} showPulse={false} />
         )}
@@ -427,7 +467,7 @@ function ConnectionRow({
   )
 }
 
-function FormError({ message }: { message: string | undefined }) {
+function FormError({ message, action }: { message: string | undefined; action?: ReactNode }) {
   if (!message) return null
   return (
     <p
@@ -435,7 +475,10 @@ function FormError({ message }: { message: string | undefined }) {
       className="flex items-start gap-2 rounded-md bg-status-danger/10 px-3 py-2 text-[13px] text-status-danger"
     >
       <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-      <span>{message}</span>
+      <span>
+        {message}
+        {action ? <> {action}</> : null}
+      </span>
     </p>
   )
 }
@@ -809,7 +852,14 @@ function ConnectionFormDialog({
               </span>
             </label>
 
-            <FormError message={createMutation.error?.message || updateMutation.error?.message} />
+            {/* The upgrade prompt already explains a plan denial. */}
+            <FormError
+              message={
+                isPlanDenial(createMutation.error ?? updateMutation.error)
+                  ? undefined
+                  : createMutation.error?.message || updateMutation.error?.message
+              }
+            />
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -848,6 +898,7 @@ function DeleteConnectionDialog({
 }) {
   const [confirmName, setConfirmName] = useState('')
   const deleteMutation = useDeleteConnection()
+  const { orgSlug } = useParams({ strict: false }) as { orgSlug?: string }
 
   const isConfirmed = connection && confirmName === connection.name
   const isDeleting = deleteMutation.isPending
@@ -922,7 +973,23 @@ function DeleteConnectionDialog({
             )}
           </div>
 
-          <FormError message={deleteMutation.error?.message} />
+          <FormError
+            message={deleteMutation.error?.message}
+            action={
+              connection &&
+              orgSlug &&
+              deleteMutation.error instanceof ApiError &&
+              deleteMutation.error.code === 'connection_has_alert_rules' ? (
+                <Link
+                  to="/$orgSlug/c/$connectionId/alerts/rules"
+                  params={{ orgSlug, connectionId: connection.id }}
+                  className="font-medium underline underline-offset-2"
+                >
+                  Open its alert rules
+                </Link>
+              ) : null
+            }
+          />
         </div>
 
         <DialogFooter>

@@ -1,9 +1,25 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
-import { afterEach } from 'vitest'
+import { afterEach, vi } from 'vitest'
+import { resetTestEntitlement, testEntitlement } from './entitlement'
+
+// Plan state comes from the server; component tests get an unrestricted
+// entitlement unless they choose a plan with setTestEntitlement.
+vi.mock('@/hooks/use-entitlement', () => ({
+  useEntitlement: () => testEntitlement.current,
+  useFeature: (feature: Parameters<typeof testEntitlement.current.feature>[0]) => ({
+    ...testEntitlement.current.feature(feature),
+    canManageBilling: testEntitlement.current.canManageBilling,
+  }),
+  useCapacity: (limit: Parameters<typeof testEntitlement.current.capacity>[0]) => ({
+    ...testEntitlement.current.capacity(limit),
+    canManageBilling: testEntitlement.current.canManageBilling,
+  }),
+}))
 
 afterEach(() => {
   cleanup()
+  resetTestEntitlement()
 })
 
 // jsdom lacks layout APIs that Radix popper-based components (dropdowns,

@@ -53,6 +53,12 @@ Owners manage billing in **Settings → Billing**. Payment details, invoices, re
 changes, and cancellation use Stripe-hosted pages; Durabull never sees card numbers. Other members see
 the plan and usage and can ask the owner to upgrade.
 
+- **Invoices**: Settings → Billing lists the organization's recent invoices with links to view each
+  one or download its PDF. **Manage billing** opens the full history, receipts, and tax details on
+  Stripe.
+- **Shortcuts**: updating the payment method, switching plan or billing interval, and cancelling each
+  open Stripe on that step.
+
 - **Trial**: one 14-day Business trial per eligible organization, started from Settings → Billing,
   with no payment method required. Without a payment method the organization returns to Free when
   the trial ends.
@@ -93,10 +99,15 @@ Billing never pauses your queues, deletes jobs, purges Redis, or changes schedul
   accounts stay enabled. Without a choice, Durabull keeps the founding owner and the oldest resources
   and pauses the newest extras; other owners count like any member. Alert rules on connections that
   stay enabled are kept first.
-- Paused resources keep their configuration and are restored automatically after an upgrade. Paused
-  members cannot use existing sessions or tokens for that organization, paused connections stop
-  polling, and Slack, webhook or Linear deliveries stop when the plan no longer includes them.
-  Buttons and commands in Slack explain that the plan no longer includes the Slack app.
+- Paused resources keep their configuration and are restored automatically after an upgrade, or as
+  soon as there is room: for example after deleting or disabling another connection or removing a
+  member. Paused members cannot use existing sessions or tokens for that organization, paused
+  connections stop polling, and Slack, webhook or Linear deliveries stop when the plan no longer
+  includes them. Buttons and commands in Slack explain that the plan no longer includes the Slack app.
+- Alert rules on a paused connection are paused with it and do not count toward the rule limit. They
+  can still be viewed and deleted.
+- A banner in the app tells members when resources are paused or an adjustment window is open, and
+  tells owners when a payment failed or a trial is about to end.
 
 ## History retention
 

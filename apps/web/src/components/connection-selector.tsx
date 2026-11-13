@@ -24,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { isUsableConnection } from '@/lib/connection-usable'
 import { cn } from '@/lib/utils'
 import { useConnection } from './connection-provider'
 
@@ -212,7 +213,21 @@ export function ConnectionSelector() {
                     className={cn('h-2 w-2 shrink-0 rounded-full', envConfig.dot)}
                     aria-hidden
                   />
-                  <span className="flex-1 truncate">{connection.name}</span>
+                  <span
+                    className={cn(
+                      'flex-1 truncate',
+                      !isUsableConnection(connection) && 'text-muted-foreground'
+                    )}
+                  >
+                    {connection.name}
+                  </span>
+                  {connection.suspended ? (
+                    <span className="ml-2 shrink-0 text-xs text-status-warning">
+                      Paused by plan
+                    </span>
+                  ) : connection.enabled === false ? (
+                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">Disabled</span>
+                  ) : null}
                   {currentConnection?.id === connection.id && (
                     <Check className="ml-2 h-3.5 w-3.5 text-foreground" />
                   )}

@@ -1,6 +1,7 @@
 import { Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { FeatureUpgradeNote } from '@/components/billing/plan-access'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -10,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useEntitlement } from '@/hooks/use-entitlement'
 import {
   RETRY_QUEUE_STATUSES,
   type RetryQueueStatus,
@@ -71,6 +73,8 @@ export function RetryQueueDialog({
     : Array.from(selectedStatuses).reduce((sum, status) => sum + jobCounts[status], 0)
   const canRetry = hasStatusSelection && selectedJobsEstimate > 0
   const isRetrying = retryMutation.isPending
+  // Retrying a queue by status is bulk recovery; single-job retry is not.
+  const bulkAllowed = useEntitlement().can('jobs.bulk_recovery')
 
   const toggleStatus = (status: RetryQueueStatus) => {
     if (retryAll) return
@@ -190,11 +194,13 @@ export function RetryQueueDialog({
           </p>
         </fieldset>
 
+        <FeatureUpgradeNote feature="jobs.bulk_recovery" />
+
         <DialogFooter className="gap-2 sm:gap-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isRetrying}>
             Cancel
           </Button>
-          <Button onClick={handleRetry} disabled={!canRetry || isRetrying}>
+          <Button onClick={handleRetry} disabled={!canRetry || isRetrying || !bulkAllowed}>
             {isRetrying ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (

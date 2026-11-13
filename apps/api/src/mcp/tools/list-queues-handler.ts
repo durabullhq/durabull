@@ -1,7 +1,7 @@
 import { redisDiscoveredQueueRepository } from '@durabull/dal'
-import { getQueue } from '../../lib/redis'
-import { toRedisConnectionOptions } from '../../lib/connection-options'
 import type { ListQueuesHandlerInput, ListQueuesHandlerOutput } from '@durabull/mcp'
+import { toRedisConnectionOptions } from '../../lib/connection-options'
+import { getQueue } from '../../lib/redis'
 import { decodeCursor, encodeCursor, requireConnectionForPrincipal } from './shared'
 
 export async function listQueuesHandler(

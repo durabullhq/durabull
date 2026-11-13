@@ -1,5 +1,6 @@
 // Public exports - only expose the repository and types
 
+export { hasMemberRole, isOwnerOrAdminRole, isOwnerRole } from '@durabull/utils/roles'
 // Re-export drizzle-orm utilities to ensure consistent versions across the monorepo
 export { and, eq, or, sql } from 'drizzle-orm'
 

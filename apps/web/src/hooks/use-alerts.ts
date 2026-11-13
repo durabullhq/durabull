@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useActiveOrganization } from '@/hooks/use-organization'
 import { api, handleRes, type InferResponseType } from '@/lib/api'
+import { PLAN_USAGE_META } from '@/lib/plan-usage'
 
 type ConnectionAlertsEndpoint = (typeof api.c)[':connectionId']['alerts']
 
@@ -726,6 +727,7 @@ export function useCreateAlertRule(connectionId: string | undefined) {
   const queryClient = useQueryClient()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (input: AlertRuleMutationInput) => {
       const res = await api.c[':connectionId'].alerts.rules.$post({
         param: { connectionId: connectionId! },
@@ -742,6 +744,7 @@ export function useUpdateAlertRule(connectionId: string | undefined) {
   const queryClient = useQueryClient()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async ({
       ruleId,
       input,
@@ -764,6 +767,7 @@ export function useDeleteAlertRule(connectionId: string | undefined) {
   const queryClient = useQueryClient()
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (ruleId: string) => {
       const res = await api.c[':connectionId'].alerts.rules[':ruleId'].$delete({
         param: { connectionId: connectionId!, ruleId },
@@ -969,6 +973,7 @@ export function useCreateAlertDestination() {
   const organizationId = activeOrganization?.id
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (input: AlertDestinationCreateInput) => {
       const res = await api.alerts.destinations.$post({ json: input })
       const data = await handleRes<AlertDestinationResponse>(res)
@@ -985,6 +990,7 @@ export function useUpdateAlertDestination() {
   const organizationId = activeOrganization?.id
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async ({
       destinationId,
       input,
@@ -1012,6 +1018,7 @@ export function useDeleteAlertDestination() {
   const organizationId = activeOrganization?.id
 
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (destinationId: string) => {
       const res = await api.alerts.destinations[':destinationId'].$delete({
         param: { destinationId },

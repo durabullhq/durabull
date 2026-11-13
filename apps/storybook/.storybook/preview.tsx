@@ -2,6 +2,7 @@ import type { Preview } from '@storybook/react-vite'
 import { CatalogProvider } from '../src/catalog-provider'
 import { controlledStory } from '../src/controlled-story'
 import {
+  setBillingScenario,
   setBillingTransition,
   setFixtureState,
   setSlackFixture,
@@ -27,6 +28,7 @@ const preview: Preview = {
       setFixtureState(parameters.fixtureState ?? 'ready')
       setUpdateAvailable(parameters.updateAvailable === true)
       setBillingTransition(parameters.billingTransition ?? 'off')
+      setBillingScenario(parameters.billingScenario ?? 'team')
       setSlackFixture(parameters.slackFixture ?? 'connected')
       setSignedIn(parameters.signedIn !== false)
       setDesktop(parameters.desktop === true)

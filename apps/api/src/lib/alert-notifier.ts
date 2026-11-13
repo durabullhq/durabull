@@ -1,3 +1,4 @@
+import { featureForDeliveryType } from '@durabull/billing'
 import {
   type AlertDelivery,
   type AlertDestination,
@@ -53,18 +54,15 @@ class NonRetryableDeliveryError extends Error {
  * Delivery-time entitlement check. A delivery queued while the organization
  * was entitled must not send after the entitlement has ended.
  */
-const DELIVERY_FEATURES = {
-  webhook: { feature: 'alerts.webhook', label: 'Webhook' },
-  linear: { feature: 'alerts.linear', label: 'Linear' },
-  slack: { feature: 'integrations.slack', label: 'Slack' },
-} as const
+const DELIVERY_LABELS = { webhook: 'Webhook', linear: 'Linear', slack: 'Slack' } as const
 
 async function assertDeliveryEntitled(
   organizationId: string,
   channel: 'email' | 'webhook' | 'linear' | 'slack'
 ): Promise<void> {
-  if (channel === 'email') return
-  const { feature, label } = DELIVERY_FEATURES[channel]
+  const feature = featureForDeliveryType(channel)
+  if (!feature) return
+  const label = DELIVERY_LABELS[channel as keyof typeof DELIVERY_LABELS] ?? channel
   if (!(await hasFeature(organizationId, feature))) {
     throw new NonRetryableDeliveryError(
       `${label} alert delivery is not included in this organization’s current plan.`
@@ -678,6 +676,18 @@ async function sendWebhookAlert(
       throw new WebhookDeliveryError(metadata.deliveryError, { retryable: true })
     }
     throw new NonRetryableDeliveryError(metadata.deliveryError)
+  }
+  // A saved destination referenced by a webhook channel is paused with the
+  // plan like any other destination.
+  const savedDestinationId =
+    metadata && typeof metadata.destinationId === 'string' ? metadata.destinationId : null
+  if (
+    savedDestinationId &&
+    (await isResourceSuspended(event.organizationId, 'alert_destination', savedDestinationId))
+  ) {
+    throw new NonRetryableDeliveryError(
+      "This webhook destination is paused because it is above the plan's destination limit."
+    )
   }
   const channel = parseWebhookChannel(metadata)
   const secret = await resolveWebhookSigningSecret(event, channel.url, metadata)

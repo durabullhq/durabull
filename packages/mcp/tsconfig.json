@@ -3,14 +3,8 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": [
-      "ES2022",
-      "DOM"
-    ],
-    "types": [
-      "bun",
-      "node"
-    ],
+    "lib": ["ES2022", "DOM"],
+    "types": ["bun", "node"],
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
@@ -18,9 +12,5 @@
     "allowSyntheticDefaultImports": true,
     "jsx": "react-jsx"
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "scripts/**/*.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts"]
 }

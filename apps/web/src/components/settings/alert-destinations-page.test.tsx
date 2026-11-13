@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AlertDestinationsPage } from '@/components/settings/alert-destinations-page'
 import type { AlertDestinationRecord } from '@/hooks/use-alerts'
+import { setTestEntitlement } from '@/test/entitlement'
 
 const {
   toastSuccessMock,
@@ -78,6 +79,7 @@ vi.mock('@/hooks/use-billing', () => ({
 }))
 
 vi.mock('@tanstack/react-router', () => ({
+  useParams: () => ({ orgSlug: 'acme' }),
   Link: ({
     children,
     to,
@@ -353,17 +355,16 @@ describe('AlertDestinationsPage', () => {
   })
 
   it('nudges Free organizations toward the Team plan instead of offering Slack', async () => {
+    setTestEntitlement({ plan: 'free' })
     slackOverviewMock.mockReturnValue({ configured: true, entitled: false, installation: null })
     const user = userEvent.setup()
     render(<AlertDestinationsPage />)
 
     await user.click(screen.getByRole('button', { name: 'Add destination' }))
     const slackOption = await screen.findByTestId('destination-type-slack')
-    expect(slackOption).toHaveTextContent('Team plan')
-    expect(screen.getByRole('link', { name: 'View plans' })).toHaveAttribute(
-      'href',
-      '/acme/settings/billing'
-    )
+    expect(slackOption).toBeDisabled()
+    expect(slackOption).toHaveTextContent('Included in the Team plan and above.')
+    expect(screen.getByTestId('destination-upgrade-step')).toHaveTextContent('Upgrade to Team')
   })
 
   it('summarises Slack destinations by channel and mentions', () => {

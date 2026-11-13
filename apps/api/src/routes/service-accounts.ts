@@ -1,4 +1,4 @@
-import { billingRepository, serviceAccountRepository } from '@durabull/dal'
+import { billingRepository, isOwnerOrAdminRole, serviceAccountRepository } from '@durabull/dal'
 import { env } from '@durabull/env'
 import {
   getCanonicalMcpResourceUri,
@@ -10,7 +10,12 @@ import {
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { assertCapacity, requireFeature, suspendedResourceIds } from '../billing/entitlements'
+import {
+  assertCapacity,
+  rebalanceCapacity,
+  requireFeature,
+  suspendedResourceIds,
+} from '../billing/entitlements'
 import { requireOrganization } from '../middleware/auth'
 
 const EXPIRY_DAYS = [30, 90, 365] as const
@@ -37,7 +42,7 @@ function expiresAt(days: (typeof EXPIRY_DAYS)[number]): Date {
 async function canManage(organizationId: string, userId: string | undefined): Promise<boolean> {
   if (!userId) return false
   const membership = await billingRepository.findMembership(organizationId, userId)
-  return membership?.role === 'owner' || membership?.role === 'admin'
+  return isOwnerOrAdminRole(membership?.role)
 }
 
 const FORBIDDEN = {
@@ -130,6 +135,7 @@ const app = new Hono()
       await assertCapacity(organizationId, 'service_accounts.enabled')
     }
     await serviceAccountRepository.setDisabled(organizationId, id, disabled)
+    if (disabled && !existing.disabled) await rebalanceCapacity(organizationId)
     return c.json({ id, disabled })
   })
 
@@ -139,6 +145,7 @@ const app = new Hono()
     if (!user || !(await canManage(organizationId, user.id))) return c.json(FORBIDDEN, 403)
     const deleted = await serviceAccountRepository.delete(organizationId, c.req.param('id'))
     if (!deleted) return c.json({ error: 'Service account not found' }, 404)
+    await rebalanceCapacity(organizationId)
     return c.json({ success: true })
   })
 

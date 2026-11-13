@@ -6,7 +6,12 @@ import {
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { assertCapacity, requireFeature } from '../billing/entitlements'
+import {
+  assertCapacity,
+  isResourceSuspended,
+  rebalanceCapacity,
+  requireDeliveryFeature,
+} from '../billing/entitlements'
 import { toBillingHttpError } from '../billing/errors'
 import { validateWebhookUrls } from '../lib/alert-webhook-channels'
 import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
@@ -43,7 +48,7 @@ const app = new Hono()
       return c.json({ error: 'Organization is required' }, 403)
     }
 
-    await requireFeature(organizationId, 'alerts.webhook')
+    await requireDeliveryFeature(organizationId, 'webhook')
     await assertCapacity(organizationId, 'alerts.destinations')
     const urlError = await validateWebhookUrls([{ type: 'webhook', url: body.url }])
     if (urlError) {
@@ -86,6 +91,10 @@ const app = new Hono()
       if (urlError) {
         return c.json({ error: urlError }, 400)
       }
+    }
+
+    if (body.enabled === true && !existing.enabled) {
+      await requireDeliveryFeature(organizationId, 'webhook')
     }
 
     if (body.enabled === false) {
@@ -156,6 +165,7 @@ const app = new Hono()
     if (!deleted) {
       return c.json({ error: 'Webhook destination not found' }, 404)
     }
+    await rebalanceCapacity(organizationId)
 
     return c.json({ ok: true })
   })
@@ -165,7 +175,7 @@ const app = new Hono()
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
-    await requireFeature(organizationId, 'alerts.webhook')
+    await requireDeliveryFeature(organizationId, 'webhook')
 
     const destination = await alertWebhookDestinationRepository.findById(
       destinationId,
@@ -177,6 +187,9 @@ const app = new Hono()
 
     if (!destination.enabled) {
       return c.json({ error: 'Webhook destination is disabled.' }, 400)
+    }
+    if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
+      return c.json({ error: 'Destination is paused because it is above your plan limit.' }, 409)
     }
 
     let secret: string | undefined

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, handleRes, type InferResponseType } from '@/lib/api'
+import { PLAN_USAGE_META } from '@/lib/plan-usage'
 import { billingKeys } from './use-billing'
 import { useActiveOrganization } from './use-organization'
 
@@ -37,6 +38,7 @@ function useInvalidate() {
 export function useCreateServiceAccount() {
   const invalidate = useInvalidate()
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (input: {
       name: string
       description?: string
@@ -69,6 +71,7 @@ export function useRotateServiceAccountToken() {
 export function useSetServiceAccountDisabled() {
   const invalidate = useInvalidate()
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (input: { id: string; disabled: boolean }) =>
       handleRes<{ id: string; disabled: boolean }>(
         await api['service-accounts'][':id'].$patch({
@@ -83,6 +86,7 @@ export function useSetServiceAccountDisabled() {
 export function useDeleteServiceAccount() {
   const invalidate = useInvalidate()
   return useMutation({
+    meta: PLAN_USAGE_META,
     mutationFn: async (id: string) =>
       handleRes<{ success: boolean }>(
         await api['service-accounts'][':id'].$delete({ param: { id } })

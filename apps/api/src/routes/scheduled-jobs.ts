@@ -1,7 +1,7 @@
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
-import { discoverQueues, getQueue } from '../lib/redis'
 import { getConnectionRedisOptions } from '../lib/connection-options'
+import { discoverQueues, getQueue } from '../lib/redis'
 import {
   buildScheduledJobCreateInput,
   buildScheduledJobUpdateInput,

@@ -1,5 +1,6 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents } from '@durabull/analytics/events'
+import { isOwnerOrAdminRole } from '@durabull/utils/roles'
 import { Link } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
 import { ArrowUpRight, Check, CircleAlert, Eye, EyeOff, Github, Loader2 } from 'lucide-react'
@@ -85,8 +86,7 @@ export function OrganizationOnboarding({
   const [linkingProvider, setLinkingProvider] = useState<ProviderId | null>(null)
 
   const currentMembership = members.find((member) => member.userId === user?.id)
-  const canManageMembers =
-    !isAuthless && (currentMembership?.role === 'owner' || currentMembership?.role === 'admin')
+  const canManageMembers = !isAuthless && isOwnerOrAdminRole(currentMembership?.role)
   const linkedProviders = accounts.filter(
     (account): account is LinkedAccount & { providerId: ProviderId } =>
       account.providerId === 'google' || account.providerId === 'github'

@@ -1,6 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 
-import { isAllowedHost, type IsAllowedHostOptions } from '../config/allowed-hosts'
+import { type IsAllowedHostOptions, isAllowedHost } from '../config/allowed-hosts'
 
 export function createHostValidationMiddleware(
   allowedHosts: ReadonlySet<string>,

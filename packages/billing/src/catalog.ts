@@ -195,13 +195,52 @@ export const FEATURE_LABELS: Record<FeatureKey, { name: string; outcome: string 
   },
 }
 
-export const LIMIT_LABELS: Record<LimitKey, { name: string; unit: string }> = {
-  'connections.enabled': { name: 'Enabled Redis connections', unit: 'connections' },
-  'members.reserved': { name: 'Members and pending invitations', unit: 'members' },
-  'alerts.enabled': { name: 'Enabled alert rules', unit: 'rules' },
-  'alerts.destinations': { name: 'Saved alert destinations', unit: 'destinations' },
-  'service_accounts.enabled': { name: 'Service accounts', unit: 'service accounts' },
-  'history.redis_health_days': { name: 'Redis health history', unit: 'days' },
+export const LIMIT_LABELS: Record<LimitKey, { name: string; unit: string; singular: string }> = {
+  'connections.enabled': {
+    name: 'Enabled Redis connections',
+    unit: 'connections',
+    singular: 'connection',
+  },
+  // Members and pending invitations both hold one, so the unit is the seat.
+  'members.reserved': {
+    name: 'Members and pending invitations',
+    unit: 'seats',
+    singular: 'seat',
+  },
+  'alerts.enabled': { name: 'Enabled alert rules', unit: 'alert rules', singular: 'alert rule' },
+  'alerts.destinations': {
+    name: 'Saved alert destinations',
+    unit: 'alert destinations',
+    singular: 'alert destination',
+  },
+  'service_accounts.enabled': {
+    name: 'Service accounts',
+    unit: 'service accounts',
+    singular: 'service account',
+  },
+  'history.redis_health_days': { name: 'Redis health history', unit: 'days', singular: 'day' },
+}
+
+/** "1 connection", "5 connections": a quantity of a limited resource in words. */
+export function formatLimitQuantity(limit: LimitKey, quantity: number): string {
+  const label = LIMIT_LABELS[limit]
+  return `${quantity} ${quantity === 1 ? label.singular : label.unit}`
+}
+
+/** The plan feature each alert delivery type needs. Email is included in every plan. */
+export const DELIVERY_TYPE_FEATURES = {
+  webhook: 'alerts.webhook',
+  linear: 'alerts.linear',
+  slack: 'integrations.slack',
+} as const satisfies Record<string, FeatureKey>
+
+export type PaidDeliveryType = keyof typeof DELIVERY_TYPE_FEATURES
+
+/** The feature a delivery channel or saved destination type needs, or null when every plan has it. */
+export function featureForDeliveryType(type: string): FeatureKey | null {
+  return Object.hasOwn(DELIVERY_TYPE_FEATURES, type)
+    ? DELIVERY_TYPE_FEATURES[type as PaidDeliveryType]
+    : null
 }
 
 export function isPlanCode(value: unknown): value is PlanCode {

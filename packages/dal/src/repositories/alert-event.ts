@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { uuidv7 } from '@durabull/utils/uuid'
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { alertCheckCursor } from '../db/schemas/alert-check-cursor/schema'
 import {
@@ -790,12 +790,26 @@ export const alertEventRepository = {
    * job has since completed. Ordered oldest-first so long-firing events are
    * checked before fresh ones when the limit truncates the sweep.
    */
-  async findFiringJobEvents(options: { limit: number }): Promise<AlertEvent[]> {
+  async findFiringJobEvents(options: {
+    limit: number
+    /**
+     * Connections to leave out (paused by a plan). Filtered before the limit,
+     * so their events cannot fill every batch and starve other connections.
+     */
+    excludeConnectionIds?: readonly string[]
+  }): Promise<AlertEvent[]> {
     const db = await getDb()
+    const excluded = options.excludeConnectionIds ?? []
     return db
       .select()
       .from(alertEvent)
-      .where(and(eq(alertEvent.status, 'firing'), sql`${alertEvent.context}->>'jobId' IS NOT NULL`))
+      .where(
+        and(
+          eq(alertEvent.status, 'firing'),
+          sql`${alertEvent.context}->>'jobId' IS NOT NULL`,
+          excluded.length > 0 ? notInArray(alertEvent.connectionId, [...excluded]) : undefined
+        )
+      )
       .orderBy(alertEvent.firedAt)
       .limit(options.limit)
   },

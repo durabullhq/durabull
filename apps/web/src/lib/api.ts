@@ -45,9 +45,38 @@ export const BILLING_DENIED_EVENT = 'durabull:billing-denied'
  * Billing denials are surfaced once by the global upgrade prompt, so every
  * call site gets a consistent explanation of the required plan.
  */
-function announceBillingDenial(body: unknown): void {
+export function announceBillingDenial(body: unknown): void {
   if (typeof window === 'undefined' || !isBillingErrorBody(body)) return
   window.dispatchEvent(new CustomEvent<BillingErrorBody>(BILLING_DENIED_EVENT, { detail: body }))
+}
+
+/**
+ * A plan denial (feature not included, limit reached, state unverified). The
+ * global upgrade prompt already explains these, so call sites skip their own
+ * error toast or inline message for them.
+ */
+export function isPlanDenial(error: unknown): boolean {
+  return error instanceof ApiError && error.billing !== undefined
+}
+
+/**
+ * Errors that describe a state rather than a transient failure: retrying the
+ * request cannot change the answer, it only delays the explanation.
+ */
+const SETTLED_ERROR_CODES = new Set([
+  'member_suspended',
+  'connection_suspended',
+  'connection_disabled',
+  'feature_not_entitled',
+  'plan_limit_reached',
+  'plan_limit_unspecified',
+  'billing_owner_required',
+])
+
+export function isSettledError(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.code !== undefined && SETTLED_ERROR_CODES.has(error.code)
+  )
 }
 
 /**

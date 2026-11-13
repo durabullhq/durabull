@@ -1,7 +1,19 @@
-import { Link } from '@tanstack/react-router'
-import { Link2, Lock, Mail, Plus, Send, Webhook } from 'lucide-react'
+import {
+  comparePlans,
+  featureForDeliveryType,
+  PLANS,
+  type PlanCode,
+} from '@durabull/api-client/billing'
+import { Link2, Mail, Plus, Send, Webhook } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import {
+  CapacityCount,
+  LimitReachedNote,
+  PausedBadge,
+  PlanBadge,
+  UpgradeNextStep,
+} from '@/components/billing/plan-access'
 import { SlackLogo } from '@/components/brand/slack-logo'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SecretInput } from '@/components/secret-input'
@@ -44,8 +56,9 @@ import {
   useTestAlertDestination,
   useUpdateAlertDestination,
 } from '@/hooks/use-alerts'
-import { useActiveOrganization } from '@/hooks/use-organization'
+import { useEntitlement } from '@/hooks/use-entitlement'
 import { useSlackIntegration } from '@/hooks/use-slack'
+import { isPlanDenial } from '@/lib/api'
 
 const TYPE_META: Record<
   AlertDestinationType,
@@ -112,8 +125,7 @@ export function AlertDestinationsPage() {
 
   const destinations = destinationsQuery.data?.destinations ?? []
   const linearConnected = linearIntegrationQuery.data?.integration?.validationStatus === 'valid'
-  const slack = {
-    entitled: slackQuery.data?.entitled !== false,
+  const slack: SlackAvailability = {
     configured: slackQuery.data?.configured === true,
     connected: slackQuery.data?.installation?.status === 'active',
   }
@@ -144,6 +156,7 @@ export function AlertDestinationsPage() {
         toast.success(`Email delivery is configured for ${destination.name}`)
       }
     } catch (error) {
+      if (isPlanDenial(error)) return
       toast.error(`Test failed for ${destination.name}`, {
         description: getErrorMessage(error, 'Please try again.'),
       })
@@ -173,10 +186,13 @@ export function AlertDestinationsPage() {
         count={destinations.length > 0 ? destinations.length : undefined}
         description="Where incidents are sent. Shared by every connection in this organization — edit once and every rule that routes to it follows."
         actions={
-          <Button type="button" size="xs" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            Add destination
-          </Button>
+          <div className="flex items-center gap-3">
+            <CapacityCount limit="alerts.destinations" />
+            <Button type="button" size="xs" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              Add destination
+            </Button>
+          </div>
         }
       />
       <Panel>
@@ -249,6 +265,7 @@ export function AlertDestinationsPage() {
             toast.success('Destination created', { description: input.name })
             setCreateOpen(false)
           } catch (error) {
+            if (isPlanDenial(error)) return
             toast.error('Failed to create destination', {
               description: getErrorMessage(error, 'Please check the fields and try again.'),
             })
@@ -271,6 +288,7 @@ export function AlertDestinationsPage() {
               toast.success('Destination updated', { description: editTarget.name })
               setEditTarget(null)
             } catch (error) {
+              if (isPlanDenial(error)) return
               toast.error('Failed to update destination', {
                 description: getErrorMessage(error, 'Please check the fields and try again.'),
               })
@@ -311,6 +329,11 @@ function DestinationRow({
   const meta = TYPE_META[destination.type]
   const Icon = meta.icon
   const inUse = destination.inUseByRuleCount > 0
+  const entitlement = useEntitlement()
+  const paused = entitlement.isPaused('alert_destination', destination.id)
+  // After a downgrade the destination is kept, but nothing is delivered to it.
+  const paidFeature = featureForDeliveryType(destination.type)
+  const requiredPlan = paidFeature ? entitlement.feature(paidFeature).requiredPlan : null
 
   return (
     <div className="px-4 py-3" data-testid="alert-destination-row">
@@ -320,7 +343,15 @@ function DestinationRow({
             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-label={meta.label} />
             <span className="text-[13px] font-semibold">{destination.name}</span>
             <Badge variant="neutral">{meta.label}</Badge>
-            {destination.enabled ? null : <Badge variant="neutral">Disabled</Badge>}
+            {paused ? (
+              <PausedBadge />
+            ) : requiredPlan ? (
+              <Badge variant="warning" data-testid="destination-needs-plan">
+                Not delivering · needs {PLANS[requiredPlan].name}
+              </Badge>
+            ) : destination.enabled ? null : (
+              <Badge variant="neutral">Disabled</Badge>
+            )}
             <span className="text-xs text-muted-foreground">
               {inUse
                 ? `In use by ${destination.inUseByRuleCount} rule${destination.inUseByRuleCount === 1 ? '' : 's'}`
@@ -376,8 +407,9 @@ function DestinationRow({
 }
 
 interface SlackAvailability {
-  entitled: boolean
+  /** The deployment has Slack app credentials. */
   configured: boolean
+  /** The organization's Slack workspace is connected and active. */
   connected: boolean
 }
 
@@ -406,7 +438,20 @@ function CreateDestinationDialog({
     mention: 'none',
     threadUpdates: true,
   })
-  const { data: activeOrganization } = useActiveOrganization()
+  const entitlement = useEntitlement()
+  const atLimit = entitlement.capacity('alerts.destinations').atLimit
+  const lockedPlan = (candidate: AlertDestinationType) => {
+    const feature = featureForDeliveryType(candidate)
+    return feature ? entitlement.feature(feature).requiredPlan : null
+  }
+  // The lowest plan that unlocks a locked destination type, if any is locked.
+  const unlockPlan = (Object.keys(TYPE_META) as AlertDestinationType[])
+    .map(lockedPlan)
+    .reduce<PlanCode | null>(
+      (lowest, plan) =>
+        plan !== null && (lowest === null || comparePlans(plan, lowest) < 0) ? plan : lowest,
+      null
+    )
 
   const reset = () => {
     setType(null)
@@ -461,19 +506,18 @@ function CreateDestinationDialog({
 
         {type === null ? (
           <div className="grid gap-3">
+            <LimitReachedNote limit="alerts.destinations" />
             {(Object.keys(TYPE_META) as AlertDestinationType[]).map((candidate) => {
               const meta = TYPE_META[candidate]
               const Icon = meta.icon
-              if (candidate === 'slack' && (!slack.entitled || !slack.connected)) {
-                return (
-                  <SlackTypeUnavailable
-                    key={candidate}
-                    slack={slack}
-                    orgSlug={activeOrganization?.slug ?? ''}
-                  />
-                )
+              // The plan comes first: connecting Linear is itself a paid step,
+              // so "connect it first" would send a Free organization nowhere.
+              const requiredPlan = lockedPlan(candidate)
+              if (candidate === 'slack' && !requiredPlan && !atLimit && !slack.connected) {
+                return <SlackTypeNeedsConnection key={candidate} configured={slack.configured} />
               }
-              const disabled = candidate === 'linear' && !linearConnected
+              const needsLinear = !requiredPlan && candidate === 'linear' && !linearConnected
+              const disabled = atLimit || Boolean(requiredPlan) || needsLinear
 
               return (
                 <button
@@ -485,17 +529,27 @@ function CreateDestinationDialog({
                   data-testid={`destination-type-${candidate}`}
                 >
                   <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span>
-                    <span className="block text-sm font-semibold">{meta.label}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-sm font-semibold">
+                      {meta.label}
+                      {requiredPlan ? <PlanBadge plan={requiredPlan} /> : null}
+                    </span>
                     <span className="mt-0.5 block text-sm text-muted-foreground">
-                      {disabled
-                        ? 'Connect the Linear integration under Settings → Integrations first.'
-                        : meta.description}
+                      {requiredPlan
+                        ? `Included in the ${PLANS[requiredPlan].name} plan and above.`
+                        : needsLinear
+                          ? 'Connect the Linear integration under Settings → Integrations first.'
+                          : meta.description}
                     </span>
                   </span>
                 </button>
               )
             })}
+            {unlockPlan && !atLimit ? (
+              <p className="text-sm text-muted-foreground" data-testid="destination-upgrade-step">
+                <UpgradeNextStep plan={unlockPlan} />
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-4">
@@ -754,8 +808,8 @@ function EditDestinationDialog({
   )
 }
 
-/** Slack in the type picker when it cannot be used yet: says why and offers the next step. */
-function SlackTypeUnavailable({ slack, orgSlug }: { slack: SlackAvailability; orgSlug: string }) {
+/** Slack in the type picker before the workspace is connected: says why and offers to connect. */
+function SlackTypeNeedsConnection({ configured }: { configured: boolean }) {
   return (
     <div
       className="flex items-start gap-3 rounded-md border bg-background px-4 py-3"
@@ -763,31 +817,13 @@ function SlackTypeUnavailable({ slack, orgSlug }: { slack: SlackAvailability; or
     >
       <SlackLogo className="mt-0.5 h-4 w-4 text-muted-foreground" />
       <div className="min-w-0 flex-1 space-y-2">
-        <span className="flex items-center gap-2 text-sm font-semibold">
-          Slack
-          {!slack.entitled ? (
-            <Badge variant="outline" className="gap-1">
-              <Lock className="h-3 w-3" aria-hidden />
-              Team plan
-            </Badge>
-          ) : null}
-        </span>
+        <span className="block text-sm font-semibold">Slack</span>
         <span className="block text-sm text-muted-foreground">
-          {!slack.entitled
-            ? 'Post incidents to Slack and respond from the message. Included with the Team plan.'
-            : !slack.configured
-              ? 'Slack is not set up on this Durabull server yet. See Settings → Integrations.'
-              : 'Connect your Slack workspace to choose a channel.'}
+          {configured
+            ? 'Connect your Slack workspace to choose a channel.'
+            : 'Slack is not set up on this Durabull server yet. See Settings → Integrations.'}
         </span>
-        {!slack.entitled ? (
-          <Button asChild size="xs" variant="outline">
-            <Link to="/$orgSlug/settings/billing" params={{ orgSlug }}>
-              View plans
-            </Link>
-          </Button>
-        ) : slack.configured ? (
-          <SlackConnectButton returnTo="destinations" variant="outline" />
-        ) : null}
+        {configured ? <SlackConnectButton returnTo="destinations" variant="outline" /> : null}
       </div>
     </div>
   )

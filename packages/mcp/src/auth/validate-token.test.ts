@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 
 import { MCP_SCOPE_DISCOVER } from './scopes'
-import { extractBearerToken, validateMcpAccessTokenClaims } from './validate-token'
 import type { McpAccessTokenClaims } from './types'
+import { extractBearerToken, validateMcpAccessTokenClaims } from './validate-token'
 
 const canonicalResourceUri = 'https://app.example.com/mcp'
 

@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
+import { FeatureUpgradeNote } from '@/components/billing/plan-access'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SettingsPage } from '@/components/settings/settings-layout'
 import {
@@ -20,7 +21,9 @@ import {
   useSaveLinearIntegration,
   useTestLinearIntegration,
 } from '@/hooks/use-alerts'
+import { useEntitlement } from '@/hooks/use-entitlement'
 import { useSlackIntegration } from '@/hooks/use-slack'
+import { isPlanDenial } from '@/lib/api'
 
 export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
   const linearIntegrationQuery = useLinearIntegration()
@@ -31,6 +34,7 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
   const [linearTeamId, setLinearTeamId] = useState('')
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const linearIntegration = linearIntegrationQuery.data?.integration ?? null
+  const linearAllowed = useEntitlement().can('alerts.linear')
   const slackInstallation = useSlackIntegration().data?.installation ?? null
   const connectedCount = (linearIntegration ? 1 : 0) + (slackInstallation ? 1 : 0)
   useSlackOauthResultToast()
@@ -80,6 +84,7 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
                   const result = await connectLinearIntegration.mutateAsync()
                   window.location.assign(result.authorizationUrl)
                 } catch (error) {
+                  if (isPlanDenial(error)) return
                   console.error('Failed to start Linear OAuth:', error)
                   toast.error('Failed to start Linear connection', {
                     description: getErrorMessage(
@@ -89,7 +94,7 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
                   })
                 }
               }}
-              disabled={connectLinearIntegration.isPending}
+              disabled={connectLinearIntegration.isPending || !linearAllowed}
             >
               {connectLinearIntegration.isPending ? 'Connecting…' : 'Connect Linear'}
             </Button>
@@ -129,6 +134,9 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
             </div>
           )}
         </div>
+        {linearIntegration ? null : (
+          <FeatureUpgradeNote feature="alerts.linear" className="mx-4 mb-3" />
+        )}
 
         {linearIntegration ? (
           <form

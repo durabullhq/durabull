@@ -10,7 +10,7 @@ import { env } from '@durabull/env'
 import { zValidator } from '@hono/zod-validator'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
-import { requireFeature } from '../billing/entitlements'
+import { requireDeliveryFeature } from '../billing/entitlements'
 import { sanitizeAlertDeliveryForClient } from '../lib/alert-webhook-channels'
 import { withVisibleActor } from '../lib/authless'
 import {
@@ -195,7 +195,7 @@ const app = new Hono()
     if (!organizationId) {
       return c.json({ error: 'Organization is required' }, 403)
     }
-    await requireFeature(organizationId, 'alerts.linear')
+    await requireDeliveryFeature(organizationId, 'linear')
     if (!user) {
       return c.json({ error: 'User is required' }, 401)
     }

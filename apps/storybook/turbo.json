@@ -1,7 +1,5 @@
 {
-  "extends": [
-    "//"
-  ],
+  "extends": ["//"],
   "tasks": {
     "build": {
       "dependsOn": [],
@@ -19,9 +17,7 @@
         "$TURBO_ROOT$/packages/analytics/src/events.ts",
         "$TURBO_ROOT$/apps/docs/app/**"
       ],
-      "outputs": [
-        "dist/**"
-      ]
+      "outputs": ["dist/**"]
     },
     "typecheck": {
       "dependsOn": []

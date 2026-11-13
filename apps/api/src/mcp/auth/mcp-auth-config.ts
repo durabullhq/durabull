@@ -1,5 +1,5 @@
-import { getCanonicalMcpResourceUri } from '@durabull/mcp/auth'
 import { env } from '@durabull/env'
+import { getCanonicalMcpResourceUri } from '@durabull/mcp/auth'
 
 /** Default dev-only bearer when `MCP_AUTHLESS_BEARER_TOKEN` is unset (non-production). */
 export const DEFAULT_AUTHLESS_MCP_BEARER_TOKEN = 'durabull-authless-mcp'

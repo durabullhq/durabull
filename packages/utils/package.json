@@ -10,6 +10,12 @@
       "import": "./src/uuid.ts",
       "require": "./src/uuid.ts",
       "default": "./src/uuid.ts"
+    },
+    "./roles": {
+      "types": "./src/roles.ts",
+      "import": "./src/roles.ts",
+      "require": "./src/roles.ts",
+      "default": "./src/roles.ts"
     }
   },
   "scripts": {

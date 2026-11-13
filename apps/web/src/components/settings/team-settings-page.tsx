@@ -1,7 +1,10 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
+import { isOwnerOrAdminRole, isOwnerRole } from '@durabull/utils/roles'
 import { Loader2, MoreHorizontal, Search, UserPlus, Users } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
+import { CapacityCount, PausedBadge } from '@/components/billing/plan-access'
 import {
   LocalInstallNotice,
   SettingsPage,
@@ -40,6 +43,7 @@ import {
 } from '@/components/ui/table'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
+import { useEntitlement } from '@/hooks/use-entitlement'
 import {
   type Invitation,
   MEMBER_ROLES,
@@ -54,6 +58,8 @@ import {
   useResendInvitation,
   useUpdateMemberRole,
 } from '@/hooks/use-organization'
+import { isPlanDenial } from '@/lib/api'
+import { limitDenial } from '@/lib/billing'
 
 const roles: { value: MemberRole; label: string; description: string }[] = [
   {
@@ -112,7 +118,8 @@ function MemberAvatar({ member }: { member: OrganizationMember }) {
 }
 
 function MutationError({ error }: { error: Error | null }) {
-  if (!error) return null
+  // The upgrade prompt already explains a plan denial (no seat left).
+  if (!error || isPlanDenial(error)) return null
   return (
     <p role="alert" className="text-[13px] text-status-danger">
       {error.message}
@@ -139,19 +146,27 @@ export function TeamSettingsPage() {
   const isLoading = orgLoading || membersLoading || invitationsLoading
 
   const currentMembership = members?.find((m) => m.userId === user?.id)
-  const canManageMembers =
-    !isAuthless &&
-    (currentMembership?.role === MEMBER_ROLES.OWNER ||
-      currentMembership?.role === MEMBER_ROLES.ADMIN)
+  const canManageMembers = !isAuthless && isOwnerOrAdminRole(currentMembership?.role)
+  const entitlement = useEntitlement()
+  // Members and pending invitations share the plan's seats. With none left,
+  // say so before an email address is typed in.
+  const openInviteDialog = useCallback(() => {
+    const current = entitlement.capacity('members.reserved')
+    if (current.atLimit) {
+      limitDenial('members.reserved', current)
+      return
+    }
+    setInviteDialogOpen(true)
+  }, [entitlement])
   const mobileActions = useMemo(
     () =>
       canManageMembers ? (
-        <DropdownMenuItem onClick={() => setInviteDialogOpen(true)}>
+        <DropdownMenuItem onClick={openInviteDialog}>
           <UserPlus className="mr-2 h-4 w-4" />
           Invite member
         </DropdownMenuItem>
       ) : undefined,
-    [canManageMembers]
+    [canManageMembers, openInviteDialog]
   )
 
   useSettingsTopBar('Team', { mobileActions })
@@ -183,9 +198,7 @@ export function TeamSettingsPage() {
 
   const totalMembers = members?.length ?? 0
   const pendingInvites = invitations?.length ?? 0
-  const admins =
-    members?.filter((m) => m.role === MEMBER_ROLES.ADMIN || m.role === MEMBER_ROLES.OWNER).length ??
-    0
+  const admins = members?.filter((m) => isOwnerOrAdminRole(m.role)).length ?? 0
   const columnCount = canManageMembers ? 5 : 4
 
   return (
@@ -200,10 +213,13 @@ export function TeamSettingsPage() {
       }
       actions={
         canManageMembers ? (
-          <Button onClick={() => setInviteDialogOpen(true)} size="xs">
-            <UserPlus className="h-3.5 w-3.5" aria-hidden />
-            Invite member
-          </Button>
+          <div className="flex items-center gap-3">
+            <CapacityCount limit="members.reserved" />
+            <Button onClick={openInviteDialog} size="xs">
+              <UserPlus className="h-3.5 w-3.5" aria-hidden />
+              Invite member
+            </Button>
+          </div>
         ) : undefined
       }
     >
@@ -277,7 +293,7 @@ export function TeamSettingsPage() {
                   member={member}
                   isCurrentUser={member.userId === user?.id}
                   showActions={canManageMembers}
-                  canManage={canManageMembers && member.role !== MEMBER_ROLES.OWNER}
+                  canManage={canManageMembers && !isOwnerRole(member.role)}
                   onRemove={() => {
                     trackEvent(AnalyticsEvents.DIALOG_OPENED, {
                       [AnalyticsProperties.DIALOG_TYPE]: DialogType.REMOVE_MEMBER,
@@ -407,6 +423,8 @@ function MemberRow({
 }) {
   const roleConfig = getRoleConfig(member.role)
   const updateRoleMutation = useUpdateMemberRole()
+  // Paused by the plan's member limit: still a member, but without access.
+  const seatPaused = useEntitlement().isPaused('member', member.id)
 
   const handleRoleChange = async (newRole: MemberRole) => {
     if (newRole !== member.role) {
@@ -426,6 +444,7 @@ function MemberRow({
             <div className="flex items-center gap-2">
               <p className="truncate font-medium">{member.user.name}</p>
               {isCurrentUser && <Badge variant="outline">You</Badge>}
+              {seatPaused ? <PausedBadge /> : null}
             </div>
             <p className="truncate text-xs text-muted-foreground" title={member.user.email}>
               {member.user.email}
@@ -508,20 +527,34 @@ function InvitationRow({
   const roleConfig = getRoleConfig(invitation.role)
   const resendMutation = useResendInvitation()
 
+  const invitationPaused = useEntitlement().isPaused('invitation', invitation.id)
+
   const handleResend = async () => {
-    await resendMutation.mutateAsync({
-      email: invitation.email,
-      role: invitation.role,
-      organizationId,
-    })
+    try {
+      await resendMutation.mutateAsync({
+        email: invitation.email,
+        role: invitation.role,
+        organizationId,
+      })
+      toast.success('Invitation sent again', { description: invitation.email })
+    } catch (error) {
+      // A seat-limit denial is explained by the upgrade prompt.
+      if (isPlanDenial(error)) return
+      toast.error('Could not resend the invitation', {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    }
   }
 
   return (
     <TableRow>
       <TableCell className="font-medium">
-        <span className="block max-w-56 truncate sm:max-w-none" title={invitation.email}>
-          {invitation.email}
-        </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="block max-w-56 truncate sm:max-w-none" title={invitation.email}>
+            {invitation.email}
+          </span>
+          {invitationPaused ? <PausedBadge /> : null}
+        </div>
       </TableCell>
       <TableCell>{roleConfig.label}</TableCell>
       <TableCell className="whitespace-nowrap font-mono tabular-nums text-muted-foreground">

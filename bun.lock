@@ -133,6 +133,7 @@
         "@durabull/api-client": "workspace:*",
         "@durabull/auth": "workspace:*",
         "@durabull/env": "workspace:*",
+        "@durabull/utils": "workspace:*",
         "@radix-ui/react-alert-dialog": "^1.1.15",
         "@radix-ui/react-avatar": "^1.1.11",
         "@radix-ui/react-collapsible": "^1.1.11",
