@@ -41,6 +41,8 @@ export const slackAlertMessage = pgTable(
     syncLeaseToken: text('sync_lease_token'),
     /** Re-render even though the incident state is unchanged (snooze, settings change). */
     refreshRequestedAt: timestamp('refresh_requested_at', { withTimezone: true }),
+    /** Bumped by every refresh request; a sync clears only the generation it rendered. */
+    refreshGeneration: integer('refresh_generation').notNull().default(0),
     lastSyncError: text('last_sync_error'),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
   },

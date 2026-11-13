@@ -202,7 +202,9 @@ email-send?" works like `queue email-send`. Mentioning the app with nothing else
 | `/durabull help` | Command list. |
 
 If the Slack workspace is connected to several Durabull organizations, results are grouped by
-organization for those you belong to.
+organization for those you belong to. When an @Durabull answer in a channel would cover more than
+one organization, it is shown only to you, because people in the channel may not belong to all of
+them.
 
 ## Link Previews
 
@@ -238,18 +240,22 @@ organization. Turn them off with **Preview Durabull links** in **Settings → In
 
 ## Disconnecting
 
-**Remove** in **Settings → Integrations** deletes the stored token and revokes it with Slack,
-unless another Durabull organization uses the same workspace installation. Slack destinations and
-alert rules are kept; deliveries to them fail with "Slack is not connected" until you connect
-again. After reconnecting, use **Retry** on an incident's failed Slack delivery to send it.
-Messages already posted resume updating once the same workspace is connected again.
+**Remove** in **Settings → Integrations** uninstalls the app from the workspace (revoking every
+token it holds there) and deletes the stored token, unless another Durabull organization uses the
+same workspace installation, in which case only this organization's connection is removed.
+Nothing more is posted for this organization from that moment, even by work already in progress.
 
-If Slack does not confirm that the token was revoked (for example, during a Slack outage),
-removal stops and Slack stays connected, so you can try again without leaving a working token
-behind. A token Slack already rejects is treated as revoked.
+Slack destinations and alert rules are kept. While Slack is disconnected, deliveries to them wait
+and retry (at most hourly) for as long as the incident is open, so they go out once the same
+workspace is connected again. Messages already posted resume updating then too.
+
+If Slack does not confirm the uninstall (for example, during a Slack outage), removal stops and
+Slack stays connected, so you can try again without leaving a working token behind. A token Slack
+already rejects is treated as revoked.
 
 Removing the app from Slack itself is detected automatically: the card shows **Reconnect
-needed**, and Slack deliveries fail with a reconnect message until you reconnect.
+needed**, and Slack deliveries wait until you reconnect. Slack does not deliver uninstall events
+in order, so an old event that arrives after you reconnect does not disconnect you again.
 
 ### Switching workspaces
 

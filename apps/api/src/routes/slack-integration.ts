@@ -22,6 +22,7 @@ import {
   listSlackUserGroups,
   SlackApiError,
   type SlackChannel,
+  slackAppsUninstall,
   slackAuthRevoke,
   slackAuthTest,
 } from '../lib/slack/client'
@@ -263,6 +264,10 @@ const app = new Hono()
           'Finish connecting Slack while signed in to Durabull as the member who started it.',
       })
     }
+    // Roles can change while the Slack consent screen is open.
+    if (!(await isOrganizationAdmin(c, oauthState.organizationId))) {
+      return redirectWithResult(c, slug, page, { slack: 'error', message: ADMIN_ONLY_MESSAGE })
+    }
 
     try {
       if (!(await hasFeature(oauthState.organizationId, 'integrations.slack'))) {
@@ -349,7 +354,14 @@ const app = new Hono()
     let revokedToken = false
     if (shared === 0 && installation.status === 'active') {
       try {
-        await slackAuthRevoke(decryptSecret(installation.encryptedBotToken))
+        const token = decryptSecret(installation.encryptedBotToken)
+        if (isSlackConfigured()) {
+          // Uninstalling revokes every token the app holds in the workspace.
+          const { clientId, clientSecret } = getSlackConfig()
+          await slackAppsUninstall({ token, clientId, clientSecret })
+        } else {
+          await slackAuthRevoke(token)
+        }
         revokedToken = true
       } catch (error) {
         // A token Slack already rejects is as good as revoked. Anything else

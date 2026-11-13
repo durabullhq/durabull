@@ -8,6 +8,7 @@ import {
 } from './alert-message'
 import {
   callSlack,
+  isAmbiguousSlackFailure,
   isSlackResponseUrl,
   listSlackUserGroups,
   postToSlackResponseUrl,
@@ -337,6 +338,17 @@ describe('Slack app manifest', () => {
 describe('Slack Web API client', () => {
   afterEach(() => {
     ;(globalThis.fetch as unknown as { mockRestore?: () => void }).mockRestore?.()
+  })
+
+  it('treats a null or non-object JSON body as an unreadable, ambiguous answer', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch')
+    for (const body of ['null', '[]', '"ok"']) {
+      fetchSpy.mockResolvedValueOnce(new Response(body, { status: 200 }))
+      const error = await callSlack('chat.postMessage', 'xoxb').catch((caught) => caught)
+      expect(error).toBeInstanceOf(SlackApiError)
+      expect(error.code).toBe('invalid_response')
+      expect(isAmbiguousSlackFailure(error)).toBe(true)
+    }
   })
 
   it('classifies Slack errors for the delivery outbox', async () => {

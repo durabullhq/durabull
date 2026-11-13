@@ -214,6 +214,11 @@ export interface CommandReply {
   blocks: unknown[]
   /** The requester is not a member of any connected organization; reply privately. */
   denied: boolean
+  /**
+   * The answer covers several Durabull organizations. Channel members may
+   * belong to only one of them, so it is never posted to a shared channel.
+   */
+  multipleOrganizations?: boolean
 }
 
 function reply(text: string, blocks: unknown[], denied = false): CommandReply {
@@ -231,6 +236,17 @@ export async function runCommand(input: {
   text: string
   prefix: string
 }): Promise<CommandReply> {
+  let organizations = 0
+  const result = await runCommandForMember(input, (count) => {
+    organizations = count
+  })
+  return organizations > 1 ? { ...result, multipleOrganizations: true } : result
+}
+
+async function runCommandForMember(
+  input: { teamId: string; userId: string; text: string; prefix: string },
+  reportOrganizations: (count: number) => void
+): Promise<CommandReply> {
   const { prefix } = input
   const { command, args } = parseCommandText(input.text)
   if (command === 'help') return reply('Durabull commands', helpBlocks(prefix))
@@ -249,6 +265,7 @@ export async function runCommand(input: {
       denied[0]?.message ?? 'You are not a member of a connected Durabull organization.'
     return reply(message, errorBlocks(message), true)
   }
+  reportOrganizations(allowed.length)
 
   try {
     switch (command) {
@@ -423,12 +440,25 @@ export async function handleConversationMessage(message: SlackConversationMessag
   })
   const threadTs = message.direct ? message.threadTs : (message.threadTs ?? message.ts)
   await withSlackToken(tokenInstallation, async (token) => {
-    if (result.denied && !message.direct) {
+    if ((result.denied || result.multipleOrganizations) && !message.direct) {
       await postSlackEphemeral(token, {
         channel: message.channel,
         user: message.userId,
         text: result.text,
-        blocks: result.blocks,
+        blocks: result.multipleOrganizations
+          ? [
+              // Slack allows 50 blocks per message.
+              ...result.blocks.slice(0, 49),
+              {
+                type: 'context',
+                elements: [
+                  mrkdwn(
+                    'Only you can see this: it covers more than one Durabull organization, and people in this channel may not belong to all of them. Use `/durabull` for private answers.'
+                  ),
+                ],
+              },
+            ]
+          : result.blocks,
         ...(threadTs ? { thread_ts: threadTs } : {}),
       })
       return
@@ -711,7 +741,9 @@ export async function handleBlockActions(payload: SlackBlockActionsPayload): Pro
     }
     // Shared alert messages update in place and post a thread note, so only
     // failures (or replies to the user's own ephemeral results) need feedback.
-    if (!result.ok || fromEphemeral) {
+    // A successful pause or resume also replaces the queue message, so its
+    // counts and button match the new state.
+    if (!result.ok || fromEphemeral || replaceOriginal) {
       await respond(payload.response_url, {
         text: result.ok ? result.text : `:warning: ${result.text}`,
         blocks: replaceOriginal ? result.blocks : undefined,
@@ -927,7 +959,15 @@ export async function handleLinkShared(teamId: string, event: SlackLinkSharedEve
 // Lifecycle
 // ---------------------------------------------------------------------------
 
-export async function handleAppUninstalled(teamId: string, reason: string): Promise<void> {
-  const count = await slackInstallationRepository.markTeamRevoked(teamId, reason)
+/**
+ * Slack does not deliver uninstall and revocation events in order, so a late
+ * event only revokes installations that existed when it happened.
+ */
+export async function handleAppUninstalled(
+  teamId: string,
+  reason: string,
+  occurredAt?: Date
+): Promise<void> {
+  const count = await slackInstallationRepository.markTeamRevoked(teamId, reason, { occurredAt })
   if (count > 0) console.info('[slack] Workspace access removed', { teamId, reason, count })
 }

@@ -41,6 +41,8 @@ export const slackInstallation = pgTable(
     /** Durabull links pasted in Slack are previewed for members of this organization. */
     unfurlsEnabled: boolean('unfurls_enabled').notNull().default(true),
     lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }),
+    /** When the current tokens were installed (each OAuth reconnect resets it). */
+    installedAt: timestamp('installed_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     teamIdx: index('slack_installation_team_idx').on(table.slackTeamId),

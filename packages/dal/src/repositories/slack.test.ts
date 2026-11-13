@@ -123,6 +123,12 @@ describe('Slack repositories', () => {
     expect(active.map((row) => row.organizationSlug)).toEqual(['acme', 'beta'])
     expect(await slackInstallationRepository.countOtherInstallationsForTeam('T1', ORG_A)).toBe(1)
 
+    // An event from before both installations does not revoke them.
+    expect(
+      await slackInstallationRepository.markTeamRevoked('T1', 'app_uninstalled', {
+        occurredAt: new Date(Date.now() - 60_000),
+      })
+    ).toBe(0)
     expect(await slackInstallationRepository.markTeamRevoked('T1', 'app_uninstalled')).toBe(2)
     expect(await slackInstallationRepository.listActiveByTeam('T1')).toEqual([])
     // A revoked installation no longer holds the shared bot token.
@@ -239,7 +245,16 @@ describe('Slack repositories', () => {
     ])
     const refreshed = await slackAlertMessageRepository.claimOutOfSync()
     expect(refreshed).toHaveLength(1)
+    // Another refresh lands while that pass is rendering: it must survive the
+    // first pass's completion (generations, not clocks, decide).
+    await slackAlertMessageRepository.requestRefresh([event.id])
     await slackAlertMessageRepository.markSynced(refreshed[0]!, {
+      state: 'acknowledged',
+      acknowledgedBy: 'user-ada',
+    })
+    const pendingRefresh = await slackAlertMessageRepository.claimOutOfSync()
+    expect(pendingRefresh).toHaveLength(1)
+    await slackAlertMessageRepository.markSynced(pendingRefresh[0]!, {
       state: 'acknowledged',
       acknowledgedBy: 'user-ada',
     })

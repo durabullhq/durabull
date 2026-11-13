@@ -38,11 +38,12 @@ const SYNC_RETRY_BASE_MS = 30_000
 const SYNC_RETRY_MAX_MS = 30 * 60_000
 const SYNC_MAX_ATTEMPTS = 50
 const DISCONNECTED_RECHECK_MS = 10 * 60_000
+const NOT_IN_CHANNEL_RECHECK_MS = 30 * 60_000
 
 /**
  * Slack errors after which a posted message cannot be updated until Slack
  * access changes. `not_in_channel` is left out: it clears when the app is
- * invited back, so it retries with backoff like other failures.
+ * invited back, so it is rechecked periodically without using up attempts.
  */
 const PERMANENT_UPDATE_ERRORS = new Set([
   'channel_not_found',
@@ -125,6 +126,21 @@ export async function requireActiveSlackInstallation(
     })
   }
   return installation
+}
+
+/**
+ * Re-reads the installation immediately before writing to Slack. Loading a
+ * message's content takes a moment; if the organization disconnected Slack
+ * (or connected another workspace) meanwhile, nothing is posted, even when
+ * the bot token still works because another organization shares it.
+ */
+async function assertInstallationCurrent(installation: SlackInstallation): Promise<void> {
+  const current = await slackInstallationRepository.findByOrganization(installation.organizationId)
+  if (!current || current.status !== 'active' || current.slackTeamId !== installation.slackTeamId) {
+    throw new SlackInstallationUnavailableError(
+      'Slack was disconnected while this message was being prepared.'
+    )
+  }
 }
 
 async function getOrganizationSlug(organizationId: string): Promise<string | null> {
@@ -252,9 +268,15 @@ export async function sendSlackDestinationAlert(input: {
 
   const existing = await slackAlertMessageRepository.findByDelivery(delivery.id)
   if (existing) {
+    // Report where the message actually went, even if the destination's
+    // channel was changed before this retry.
+    const postedConfig =
+      existing.channelId === config.channelId
+        ? config
+        : { ...config, channelId: existing.channelId, channelName: undefined }
     await markSlackDeliveryDelivered(
       input,
-      config,
+      postedConfig,
       existing.messageTs,
       existing.permalink,
       metadata
@@ -281,6 +303,7 @@ export async function sendSlackDestinationAlert(input: {
   const content = buildAlertMessage(view, { mention })
 
   const { posted, permalink } = await withSlackToken(installation, async (token) => {
+    await assertInstallationCurrent(installation)
     let posted: { channel: string; ts: string }
     try {
       posted = await postSlackMessage(token, {
@@ -435,6 +458,7 @@ async function syncOneMessage(
     threadUpdates && stateChanged ? buildStateChangeReply(claim.renderedState, view) : null
 
   await withSlackToken(installation, async (token) => {
+    await assertInstallationCurrent(installation)
     await updateSlackMessage(token, {
       channel: claim.channelId,
       ts: claim.messageTs,
@@ -482,6 +506,16 @@ async function recordSyncFailure(claim: ClaimedSlackAlertMessage, error: unknown
     )
     return
   }
+  if (error instanceof SlackApiError && error.code === 'not_in_channel') {
+    // Clears when someone invites the app back, which Durabull is not told
+    // about; keep checking without using up attempts.
+    await slackAlertMessageRepository.defer(
+      claim,
+      new Date(Date.now() + NOT_IN_CHANNEL_RECHECK_MS),
+      text
+    )
+    return
+  }
   if (error instanceof SlackApiError && PERMANENT_UPDATE_ERRORS.has(error.code)) {
     // Parked until the workspace is reconnected, which revives its messages.
     await slackAlertMessageRepository.abandon(claim, text)
@@ -490,10 +524,15 @@ async function recordSyncFailure(claim: ClaimedSlackAlertMessage, error: unknown
   const attempts = claim.syncAttempts + 1
   const resetAt = error instanceof SlackApiError ? error.rateLimitResetAt : null
   const backoff = Math.min(SYNC_RETRY_MAX_MS, SYNC_RETRY_BASE_MS * 2 ** Math.max(0, attempts - 1))
-  await slackAlertMessageRepository.markSyncFailed(claim, {
+  const recorded = await slackAlertMessageRepository.markSyncFailed(claim, {
     error: text,
     nextSyncAt: attempts >= SYNC_MAX_ATTEMPTS ? null : (resetAt ?? new Date(Date.now() + backoff)),
   })
+  if (!recorded && isAmbiguousSlackFailure(error)) {
+    // Slack may have applied this (older) view after the worker that took the
+    // message over finished. Ask for one more pass from current state.
+    await slackAlertMessageRepository.requestRefresh([claim.alertEventId])
+  }
 }
 
 /**

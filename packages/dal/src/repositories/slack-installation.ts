@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from 'drizzle-orm'
+import { and, eq, lt, ne, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { member, organization } from '../db/schemas/organization/schema'
 import { slackInstallation } from '../db/schemas/slack-installation/schema'
@@ -111,6 +111,7 @@ export const slackInstallationRepository = {
       scopes: input.scopes,
       installedByUserId: input.installedByUserId ?? null,
       installedBySlackUserId: input.installedBySlackUserId ?? null,
+      installedAt: now,
       status: 'active' as const,
       statusReason: null,
       lastValidatedAt: now,
@@ -212,14 +213,31 @@ export const slackInstallationRepository = {
     return rows.length > 0
   },
 
-  /** Slack reported the app was uninstalled or its tokens revoked for a whole workspace. */
-  async markTeamRevoked(slackTeamId: string, reason: string): Promise<number> {
+  /**
+   * Slack reported the app was uninstalled or its tokens revoked for a whole
+   * workspace. With `occurredAt`, installations made after the event (a
+   * reconnect that beat a late event) keep their new tokens.
+   */
+  async markTeamRevoked(
+    slackTeamId: string,
+    reason: string,
+    options: { occurredAt?: Date } = {}
+  ): Promise<number> {
     const db = await getDb()
+    // Slack event times have one-second precision; a reconnect in the same
+    // second as the event is treated as revoked too (the safe side).
+    const installedBefore = options.occurredAt
+      ? new Date(options.occurredAt.getTime() + 1000)
+      : null
     const rows = await db
       .update(slackInstallation)
       .set({ status: 'revoked', statusReason: reason, updatedAt: new Date() })
       .where(
-        and(eq(slackInstallation.slackTeamId, slackTeamId), eq(slackInstallation.status, 'active'))
+        and(
+          eq(slackInstallation.slackTeamId, slackTeamId),
+          eq(slackInstallation.status, 'active'),
+          installedBefore ? lt(slackInstallation.installedAt, installedBefore) : undefined
+        )
       )
       .returning({ id: slackInstallation.id })
     return rows.length

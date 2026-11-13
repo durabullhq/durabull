@@ -72,6 +72,8 @@ function appIdMismatch(apiAppId: unknown): boolean {
 }
 
 interface SlackEventEnvelope {
+  /** When the event happened, in Unix seconds. */
+  event_time?: number
   type: string
   challenge?: string
   team_id?: string
@@ -152,7 +154,13 @@ const app = new Hono()
         if (event.type === 'tokens_revoked' && (event.tokens?.bot?.length ?? 0) === 0) break
         // Recorded before acknowledging: if it fails, a 500 makes Slack retry the event.
         try {
-          await handleAppUninstalled(teamId, event.type)
+          await handleAppUninstalled(
+            teamId,
+            event.type,
+            typeof envelope.event_time === 'number'
+              ? new Date(envelope.event_time * 1000)
+              : undefined
+          )
         } catch (error) {
           if (envelope.event_id) seenEventIds.delete(envelope.event_id)
           console.error('[slack] Recording workspace revocation failed:', error)

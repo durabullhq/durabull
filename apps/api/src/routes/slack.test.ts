@@ -13,6 +13,8 @@ import {
   member,
   organization,
   redisConnection,
+  eq,
+  slackAlertMessage,
   slackAlertMessageRepository,
   slackInstallationRepository,
   user,
@@ -59,7 +61,7 @@ class FakeSlack {
     // A Slack Connect guest whose own workspace gave them a member's email.
     UEXT: 'ada@example.com',
   }
-  teams: Record<string, string> = { UEXT: 'T0OTHER' }
+  teams: Record<string, string | undefined> = { UEXT: 'T0OTHER' }
   channels: Record<string, { name: string; is_private: boolean; is_member: boolean }> = {
     C0ALERTS: { name: 'alerts', is_private: false, is_member: false },
     G0SECRET: { name: 'secret', is_private: true, is_member: false },
@@ -67,6 +69,10 @@ class FakeSlack {
   failures: Record<string, string> = {}
   /** Methods whose request never gets an answer (the fetch itself throws). */
   throws: Record<string, Error> = {}
+  /** Runs before a method answers, to simulate work happening meanwhile. */
+  during: Record<string, () => Promise<void>> = {}
+  /** Raw JSON bodies to answer with, e.g. `null`. */
+  raw: Record<string, string> = {}
   private ts = 1_700_000_000
   spy: Mock<typeof fetch>
 
@@ -97,6 +103,8 @@ class FakeSlack {
       ? JSON.parse(raw)
       : Object.fromEntries(new URLSearchParams(raw))
     this.calls.push({ method, body })
+    await this.during[method]?.()
+    if (this.raw[method] !== undefined) return new Response(this.raw[method])
     if (this.throws[method]) throw this.throws[method]
     if (this.failures[method]) return Response.json({ ok: false, error: this.failures[method] })
 
@@ -127,7 +135,7 @@ class FakeSlack {
           ok: true,
           user: {
             id,
-            team_id: this.teams[id] ?? 'T0ACME',
+            team_id: id in this.teams ? this.teams[id] : 'T0ACME',
             name: id,
             profile: { email: this.emails[id] },
           },
@@ -943,7 +951,12 @@ describe('Slack integration', () => {
     await install(app)
     const removed = await app.request('/api/integrations/slack', { method: 'DELETE' })
     expect(await removed.json()).toEqual({ success: true, revokedToken: true })
-    expect(slack.callsTo('auth.revoke')).toHaveLength(1)
+    // Uninstalling revokes every token the app holds in the workspace.
+    expect(slack.callsTo('apps.uninstall')).toHaveLength(1)
+    expect(slack.callsTo('apps.uninstall')[0]?.body).toMatchObject({
+      client_id: 'slack-client-id',
+      client_secret: 'slack-client-secret',
+    })
     expect(await slackInstallationRepository.findByOrganization(ORG_ID)).toBeNull()
     expect(await alertDestinationRepository.listByOrganization(ORG_ID, { type: 'slack' })).toEqual(
       []
@@ -978,13 +991,13 @@ describe('Slack integration', () => {
     const app = await createApp()
     await install(app)
 
-    slack.failures['auth.revoke'] = 'service_unavailable'
+    slack.failures['apps.uninstall'] = 'service_unavailable'
     const failed = await app.request('/api/integrations/slack', { method: 'DELETE' })
     expect(failed.status).toBe(503)
     expect(await slackInstallationRepository.findByOrganization(ORG_ID)).not.toBeNull()
 
     // A token Slack already rejects counts as revoked.
-    slack.failures['auth.revoke'] = 'token_revoked'
+    slack.failures['apps.uninstall'] = 'token_revoked'
     const removed = await app.request('/api/integrations/slack', { method: 'DELETE' })
     expect(await removed.json()).toEqual({ success: true, revokedToken: true })
     expect(await slackInstallationRepository.findByOrganization(ORG_ID)).toBeNull()
@@ -1214,5 +1227,221 @@ describe('Slack integration', () => {
       resolvedType: 'slack',
       destinationName: 'Ops channel',
     })
+  })
+
+  it('refuses a Slack user whose profile names no workspace', async () => {
+    const { event } = await seed()
+    const app = await createApp()
+    await install(app)
+    slack.emails.UNOTEAM = 'ada@example.com'
+    slack.teams.UNOTEAM = undefined
+    await app.request(
+      interaction({
+        type: 'block_actions',
+        team: { id: 'T0ACME' },
+        user: { id: 'UNOTEAM' },
+        container: { type: 'message' },
+        response_url: 'https://hooks.slack.com/actions/T0ACME/9/xyz',
+        actions: [{ action_id: SLACK_ACTIONS.acknowledge, value: event.id }],
+      })
+    )
+    await flushSlackBackgroundWork()
+    expect((await alertEventRepository.findById(event.id, ORG_ID))?.acknowledgedAt).toBeNull()
+    expect(String(slack.responseUrlPosts.at(-1)?.text)).toContain(
+      'only available to members of the Slack workspace'
+    )
+  })
+
+  it('answers privately in a channel when the answer covers several organizations', async () => {
+    await seed()
+    const db = await getDb()
+    const now = new Date()
+    await db
+      .insert(organization)
+      .values({ id: 'slack-org-2', name: 'Beta', slug: 'beta', createdAt: now, updatedAt: now })
+    await db.insert(member).values({
+      id: 'm-ada-2',
+      organizationId: 'slack-org-2',
+      userId: 'user-ada',
+      role: 'owner',
+      createdAt: now,
+    })
+    await slackInstallationRepository.upsert({
+      organizationId: 'slack-org-2',
+      slackTeamId: 'T0ACME',
+      slackTeamName: 'Acme',
+      botUserId: 'UBOT',
+      botToken: 'xoxb-beta',
+      scopes: SLACK_BOT_SCOPES.join(','),
+    })
+    const app = await createApp()
+    await install(app)
+    const mention = JSON.stringify({
+      type: 'event_callback',
+      api_app_id: 'A0DURABULL',
+      team_id: 'T0ACME',
+      event_id: 'EvMulti',
+      event: {
+        type: 'app_mention',
+        user: 'UADA',
+        channel: 'C0ALERTS',
+        ts: '1700000100.000100',
+        text: '<@UBOT> status',
+      },
+    })
+    await app.request(signed('/api/slack/events', mention, 'application/json'))
+    await flushSlackBackgroundWork()
+    expect(slack.callsTo('chat.postMessage')).toHaveLength(0)
+    const ephemeral = slack.callsTo('chat.postEphemeral').at(-1)
+    expect(ephemeral?.body.user).toBe('UADA')
+    expect(JSON.stringify(ephemeral?.body.blocks)).toContain('more than one Durabull organization')
+  })
+
+  it('ignores a late uninstall event for a workspace that was reconnected since', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+    const lateUninstall = JSON.stringify({
+      type: 'event_callback',
+      api_app_id: 'A0DURABULL',
+      team_id: 'T0ACME',
+      event_id: 'EvLate',
+      event_time: Math.floor(Date.now() / 1000) - 120,
+      event: { type: 'app_uninstalled' },
+    })
+    await app.request(signed('/api/slack/events', lateUninstall, 'application/json'))
+    expect((await slackInstallationRepository.findByOrganization(ORG_ID))?.status).toBe('active')
+  })
+
+  it('refuses to finish OAuth for a member who lost the admin role meanwhile', async () => {
+    await seed()
+    const app = await createApp()
+    const state = await startInstall(app)
+    const db = await getDb()
+    await db.update(member).set({ role: 'member' }).where(eq(member.id, 'm-ada'))
+    const callback = await finishInstall(app, state)
+    expect(callback.headers.get('location')).toContain('slack=error')
+    expect(slack.callsTo('oauth.v2.access')).toHaveLength(0)
+    expect(await slackInstallationRepository.findByOrganization(ORG_ID)).toBeNull()
+  })
+
+  it('keeps checking messages whose channel removed the app, without using up attempts', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    slack.failures['chat.update'] = 'not_in_channel'
+    await alertEventRepository.resolve(event.id, ORG_ID, 'manual', 'user-ada')
+    expect(await syncSlackAlertMessages()).toEqual({ synced: 0, failed: 1 })
+    const [message] = await slackAlertMessageRepository.listByEvent(event.id)
+    expect(message?.syncAttempts).toBe(0)
+    expect(message?.nextSyncAt?.getTime()).toBeGreaterThan(Date.now() + 20 * 60_000)
+  })
+
+  it('asks for another pass when an unconfirmed update raced a newer worker', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    const [message] = await slackAlertMessageRepository.listByEvent(event.id)
+    await alertEventRepository.acknowledge(event.id, ORG_ID, 'user-ada')
+    // While this worker waits on Slack, its lease passes to another worker,
+    // and Slack never confirms this worker's update.
+    slack.during['chat.update'] = async () => {
+      const db = await getDb()
+      await db
+        .update(slackAlertMessage)
+        .set({ syncLeaseToken: 'other-worker' })
+        .where(eq(slackAlertMessage.id, message!.id))
+    }
+    slack.throws['chat.update'] = Object.assign(new Error('timed out'), { name: 'TimeoutError' })
+    expect(await syncSlackAlertMessages()).toEqual({ synced: 0, failed: 1 })
+    const [after] = await slackAlertMessageRepository.listByEvent(event.id)
+    expect(after?.refreshRequestedAt).not.toBeNull()
+  })
+
+  it('does not move a destination to a new workspace without confirming its channel', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await slackInstallationRepository.upsert({
+      organizationId: ORG_ID,
+      slackTeamId: 'T0BETA',
+      slackTeamName: 'Beta',
+      botUserId: 'UBOT2',
+      botToken: 'xoxb-beta',
+      scopes: SLACK_BOT_SCOPES.join(','),
+    })
+    slack.failures['conversations.info'] = 'service_unavailable'
+    const response = await app.request(`/api/alerts/destinations/${destination.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: { channelId: 'C0ALERTS', channelName: 'alerts' } }),
+    })
+    expect(response.status).toBe(400)
+    const saved = await alertDestinationRepository.findById(destination.id, ORG_ID)
+    expect(saved?.config).toMatchObject({ slackTeamId: 'T0ACME' })
+  })
+
+  it('does not post when Slack is disconnected while the message is being prepared', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    // The organization removes Slack while the message is being prepared;
+    // another organization may still share the bot token, so Slack would accept it.
+    const original = slackInstallationRepository.findByOrganization.bind(
+      slackInstallationRepository
+    )
+    let reads = 0
+    const spy = spyOn(slackInstallationRepository, 'findByOrganization').mockImplementation(
+      async (organizationId: string) => {
+        reads += 1
+        // The first read loads the installation; the re-check before posting sees it gone.
+        return reads === 1 ? original(organizationId) : null
+      }
+    )
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    spy.mockRestore()
+    expect(slack.callsTo('chat.postMessage')).toHaveLength(0)
+    const [delivery] = await alertDeliveryRepository.listByEvent(event.id)
+    expect(delivery?.status).toBe('failed')
+    expect(delivery?.nextRetryAt).not.toBeNull()
+  })
+
+  it('retries deliveries while Slack is disconnected instead of failing them for good', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await slackInstallationRepository.markTeamRevoked('T0ACME', 'app_uninstalled')
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    const [delivery] = await alertDeliveryRepository.listByEvent(event.id)
+    expect(delivery?.status).toBe('failed')
+    expect(delivery?.nextRetryAt).not.toBeNull()
+    expect(String(delivery?.lastError)).toContain('reconnected')
   })
 })

@@ -140,7 +140,9 @@ async function validateLinearDestinationConfig(
  */
 async function validateSlackDestinationConfig(
   organizationId: string,
-  config: z.infer<typeof slackConfigSchema>
+  config: z.infer<typeof slackConfigSchema>,
+  /** Workspace an existing destination was saved in (updates only). */
+  previous?: { slackTeamId?: unknown }
 ): Promise<{ error: string } | { config: AlertSlackDestinationConfig }> {
   const installation = await slackInstallationRepository.findByOrganization(organizationId)
   if (!installation) {
@@ -164,8 +166,18 @@ async function validateSlackDestinationConfig(
     }
     channelName = channel.name || channelName
   } catch (error) {
-    if (error instanceof SlackApiError && !error.retryable) return { error: error.message }
-    // A transient Slack outage should not block saving; delivery retries.
+    // Only a transient Slack outage may skip the check (delivery retries);
+    // anything else (an unreadable stored token, say) must not save a
+    // destination that cannot deliver.
+    if (!(error instanceof SlackApiError)) throw error
+    if (!error.retryable) return { error: error.message }
+    // Moving a destination to the newly connected workspace needs Slack to
+    // confirm the channel exists there, or an old channel id would be rebound.
+    if (previous && previous.slackTeamId !== installation.slackTeamId) {
+      return {
+        error: `Slack could not confirm the channel in the connected workspace (${error.message}). Try again in a moment.`,
+      }
+    }
   }
   return { config: { ...config, channelName, slackTeamId: installation.slackTeamId } }
 }
@@ -329,7 +341,11 @@ const app = new Hono()
           return c.json({ error: 'Slack destinations require a channel.' }, 400)
         }
         await requireDeliveryFeature(organizationId, 'slack')
-        const validated = await validateSlackDestinationConfig(organizationId, parsed.data)
+        const validated = await validateSlackDestinationConfig(
+          organizationId,
+          parsed.data,
+          (existing.config ?? {}) as { slackTeamId?: unknown }
+        )
         if ('error' in validated) {
           return c.json({ error: validated.error }, 400)
         }

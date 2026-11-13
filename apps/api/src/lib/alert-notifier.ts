@@ -933,12 +933,18 @@ function classifyDeliveryFailure(
   }
 
   const message = error instanceof Error ? error.message : String(error)
+  // A disconnected or revoked Slack app is waited out: deliveries retry (at
+  // most hourly) and go out once the same workspace is reconnected, while the
+  // incident is still open. A different workspace (`workspace_changed`) stays final.
+  const slackDisconnected =
+    error instanceof SlackApiError && (error.isAuthError || error.code === 'not_connected')
   const retryable =
-    error instanceof LinearApiError || error instanceof SlackApiError
+    slackDisconnected ||
+    (error instanceof LinearApiError || error instanceof SlackApiError
       ? error.retryable
       : error instanceof WebhookDeliveryError
         ? error.retryable
-        : !(error instanceof NonRetryableDeliveryError)
+        : !(error instanceof NonRetryableDeliveryError))
   if (!retryable) return { error: message, retryable: false }
 
   const resetAt =

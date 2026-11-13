@@ -92,8 +92,8 @@ export async function resolveSlackActor(
   })
   // Slack Connect guests keep their own workspace, whose admins control their
   // emails; only people in the installed workspace (or its Enterprise Grid) act.
+  // A profile without a workspace is not a match: only a positive one authorizes.
   const sameWorkspace =
-    !slackUser.teamId ||
     slackUser.teamId === installation.slackTeamId ||
     (installation.slackEnterpriseId !== null &&
       slackUser.enterpriseId === installation.slackEnterpriseId)

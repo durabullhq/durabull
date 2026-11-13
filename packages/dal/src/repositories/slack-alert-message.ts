@@ -15,7 +15,8 @@ const PARKED_ATTEMPTS = 1_000_000
 
 export type ClaimedSlackAlertMessage = SlackAlertMessage & {
   leaseToken: string
-  claimedAt: Date
+  /** The refresh request this claim renders; newer requests stay pending. */
+  claimedRefreshGeneration: number
 }
 
 function leaseHeld(claim: { id: string; leaseToken: string }) {
@@ -171,17 +172,31 @@ export const slackAlertMessageRepository = {
         LIMIT ${limit}
         FOR UPDATE OF message SKIP LOCKED
       )
-      RETURNING target.id
+      RETURNING target.id, target.refresh_generation AS "refreshGeneration"
     `)
-    const ids = rowsFromExecute<{ id: string }>(result).map((row) => row.id)
-    if (ids.length === 0) return []
-    const rows = await db.select().from(slackAlertMessage).where(inArray(slackAlertMessage.id, ids))
-    return rows.map((row) => ({ ...row, leaseToken, claimedAt }))
+    const claimed = new Map(
+      rowsFromExecute<{ id: string; refreshGeneration: number }>(result).map((row) => [
+        row.id,
+        Number(row.refreshGeneration),
+      ])
+    )
+    if (claimed.size === 0) return []
+    const rows = await db
+      .select()
+      .from(slackAlertMessage)
+      .where(inArray(slackAlertMessage.id, [...claimed.keys()]))
+    // The generation comes from the claim itself, so a refresh requested
+    // after it (even by a replica with a different clock) stays pending.
+    return rows.map((row) => ({
+      ...row,
+      leaseToken,
+      claimedRefreshGeneration: claimed.get(row.id) ?? row.refreshGeneration,
+    }))
   },
 
   /** Records what Slack now shows; ignored when the lease was lost to another worker. */
   async markSynced(
-    claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken' | 'claimedAt'>,
+    claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken' | 'claimedRefreshGeneration'>,
     rendered: { state: SlackAlertMessageState; acknowledgedBy: string | null }
   ): Promise<boolean> {
     const db = await getDb()
@@ -195,7 +210,7 @@ export const slackAlertMessageRepository = {
         nextSyncAt: null,
         syncLeaseToken: null,
         // A refresh requested while this worker was busy still needs its own pass.
-        refreshRequestedAt: sql`CASE WHEN ${slackAlertMessage.refreshRequestedAt} > ${claim.claimedAt} THEN ${slackAlertMessage.refreshRequestedAt} ELSE NULL END`,
+        refreshRequestedAt: sql`CASE WHEN ${slackAlertMessage.refreshGeneration} = ${claim.claimedRefreshGeneration} THEN NULL ELSE ${slackAlertMessage.refreshRequestedAt} END`,
         lastSyncError: null,
         lastSyncedAt: now,
         updatedAt: now,
@@ -208,9 +223,9 @@ export const slackAlertMessageRepository = {
   async markSyncFailed(
     claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken'>,
     failure: { error: string; nextSyncAt: Date | null }
-  ): Promise<void> {
+  ): Promise<boolean> {
     const db = await getDb()
-    await db
+    const rows = await db
       .update(slackAlertMessage)
       .set({
         syncAttempts: sql`${slackAlertMessage.syncAttempts} + 1`,
@@ -222,6 +237,8 @@ export const slackAlertMessageRepository = {
         updatedAt: new Date(),
       })
       .where(leaseHeld(claim))
+      .returning({ id: slackAlertMessage.id })
+    return rows.length > 0
   },
 
   /** Retries later without using up an attempt (Slack is disconnected for now). */
@@ -229,9 +246,9 @@ export const slackAlertMessageRepository = {
     claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken'>,
     until: Date,
     reason: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const db = await getDb()
-    await db
+    const rows = await db
       .update(slackAlertMessage)
       .set({
         nextSyncAt: until,
@@ -240,15 +257,17 @@ export const slackAlertMessageRepository = {
         updatedAt: new Date(),
       })
       .where(leaseHeld(claim))
+      .returning({ id: slackAlertMessage.id })
+    return rows.length > 0
   },
 
   /** Stops syncing messages that cannot be updated until Slack access changes. */
   async abandon(
     claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken'>,
     error: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const db = await getDb()
-    await db
+    const rows = await db
       .update(slackAlertMessage)
       .set({
         syncAttempts: PARKED_ATTEMPTS,
@@ -258,6 +277,8 @@ export const slackAlertMessageRepository = {
         updatedAt: new Date(),
       })
       .where(leaseHeld(claim))
+      .returning({ id: slackAlertMessage.id })
+    return rows.length > 0
   },
 
   /** Asks the sync loop to re-render these incidents' messages from their current state. */
@@ -267,7 +288,11 @@ export const slackAlertMessageRepository = {
     const now = new Date()
     const rows = await db
       .update(slackAlertMessage)
-      .set({ refreshRequestedAt: now, updatedAt: now })
+      .set({
+        refreshRequestedAt: now,
+        refreshGeneration: sql`${slackAlertMessage.refreshGeneration} + 1`,
+        updatedAt: now,
+      })
       .where(inArray(slackAlertMessage.alertEventId, alertEventIds))
       .returning({ id: slackAlertMessage.id })
     return rows.length
@@ -279,7 +304,9 @@ export const slackAlertMessageRepository = {
     const now = new Date()
     const result = await db.execute(sql`
       UPDATE ${slackAlertMessage} AS message
-      SET refresh_requested_at = ${now}, updated_at = ${now}
+      SET refresh_requested_at = ${now},
+        refresh_generation = message.refresh_generation + 1,
+        updated_at = ${now}
       FROM ${alertEvent} AS event
       WHERE event.id = message.alert_event_id
         AND message.organization_id = ${organizationId}

@@ -113,18 +113,27 @@ async function readSlackResponse(response: Response): Promise<SlackResponse> {
       message: `Slack returned HTTP ${response.status}.`,
     })
   }
-  let body: SlackResponse
+  let body: unknown
   try {
-    body = (await response.json()) as SlackResponse
+    body = await response.json()
   } catch {
+    body = undefined
+  }
+  // Anything but a JSON object (including `null`) is unreadable, and so an
+  // ambiguous outcome for writes.
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new SlackApiError('invalid_response', {
       status: response.status,
       retryable: response.status >= 500,
       message: `Slack returned an unreadable response (HTTP ${response.status}).`,
     })
   }
+  return checkSlackBody(body as SlackResponse, response.status)
+}
+
+function checkSlackBody(body: SlackResponse, status: number): SlackResponse {
   if (!body.ok) {
-    throw new SlackApiError(body.error ?? 'unknown_error', { status: response.status })
+    throw new SlackApiError(body.error ?? 'unknown_error', { status })
   }
   return body
 }
@@ -337,6 +346,21 @@ export async function slackAuthTest(token: string): Promise<SlackAuthTest> {
 
 export async function slackAuthRevoke(token: string): Promise<void> {
   await callSlack('auth.revoke', token)
+}
+
+/**
+ * Removes the app from the workspace, revoking every token it holds there
+ * (with token rotation, `auth.revoke` would only revoke the one passed).
+ */
+export async function slackAppsUninstall(input: {
+  token: string
+  clientId: string
+  clientSecret: string
+}): Promise<void> {
+  await callSlack('apps.uninstall', input.token, {
+    client_id: input.clientId,
+    client_secret: input.clientSecret,
+  })
 }
 
 export interface SlackChannel {
