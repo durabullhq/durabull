@@ -10,9 +10,10 @@ export function buildSlackAppManifest(input: {
   baseUrl: string
   appName?: string
   /**
-   * Leave out Event Subscriptions. Slack verifies the events URL when a
-   * manifest is saved, so an app created before Durabull is reachable is
-   * created without it; save the full manifest once Durabull is deployed.
+   * Leave out Event Subscriptions (and link unfurling, which depends on them).
+   * Slack verifies the events URL when a manifest is saved, so an app created
+   * before Durabull is reachable is created without them; save the full
+   * manifest once Durabull is deployed.
    */
   skipEvents?: boolean
 }) {
@@ -45,7 +46,8 @@ export function buildSlackAppManifest(input: {
           should_escape: false,
         },
       ],
-      unfurl_domains: [hostname],
+      // Slack only accepts unfurl domains alongside an Events API subscription.
+      ...(input.skipEvents ? {} : { unfurl_domains: [hostname] }),
     },
     oauth_config: {
       redirect_urls: [`${baseUrl}/api/integrations/slack/callback`],

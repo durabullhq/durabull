@@ -257,13 +257,16 @@ describe('Slack app manifest', () => {
     expect(manifest.features.slash_commands[0]?.url).toBe(
       'https://app.durabull.test/api/slack/commands'
     )
-    expect(manifest.features.unfurl_domains).toEqual(['app.durabull.test'])
+    expect((manifest.features as { unfurl_domains?: string[] }).unfurl_domains).toEqual([
+      'app.durabull.test',
+    ])
 
     const beforeDeploy = buildSlackAppManifest({
       baseUrl: 'https://app.durabull.test',
       skipEvents: true,
     })
     expect('event_subscriptions' in beforeDeploy.settings).toBe(false)
+    expect('unfurl_domains' in beforeDeploy.features).toBe(false)
     expect(beforeDeploy.settings.interactivity.request_url).toBe(
       'https://app.durabull.test/api/slack/interactions'
     )

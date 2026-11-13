@@ -115,7 +115,9 @@ bun run slack:manifest -- --base-url https://durabull.example.com --skip-events
 
 Then, once Durabull is running with the credentials, open **App Manifest** in the Slack app
 settings, paste the full manifest (without `--skip-events`) and save. Slack verifies
-`/api/slack/events` and enables the App Home, link previews and uninstall detection.
+`/api/slack/events` and enables link previews, the App Home tab's live content and uninstall
+detection. (Slack only accepts link-preview domains together with event subscriptions, so
+`--skip-events` leaves both out.)
 
 ### 4. Distribute the app (optional)
 
