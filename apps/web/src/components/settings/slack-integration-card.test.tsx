@@ -48,6 +48,10 @@ vi.mock('@/hooks/use-slack', () => ({
   useSlackUserGroups: () => ({ data: { userGroups: [] }, isLoading: false }),
 }))
 
+vi.mock('@/hooks/use-organization', () => ({
+  useActiveOrganization: () => ({ data: { id: 'org-1', slug: 'acme' } }),
+}))
+
 vi.mock('@/hooks/use-alerts', () => ({
   useCreateAlertDestination: () => ({ mutateAsync: mocks.createDestination, isPending: false }),
 }))
@@ -176,6 +180,22 @@ describe('SlackIntegrationCard', () => {
       await waitFor(() => expect(window.location.search).toBe(''))
       expect(mocks.connect).not.toHaveBeenCalled()
       expect(screen.getByRole('button', { name: /Add to Slack/ })).toBeInTheDocument()
+    })
+
+    it('waits until the active organization is the one in the URL', async () => {
+      withInstallRequest()
+      mocks.overview.mockReturnValue({
+        configured: true,
+        entitled: true,
+        canManage: true,
+        installation: null,
+      })
+      // The session's active organization is still acme; the URL is another org.
+      render(<SlackIntegrationCard orgSlug="globex" />)
+
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(mocks.connect).not.toHaveBeenCalled()
+      expect(window.location.search).toBe('?slack=install')
     })
 
     it('does not start OAuth for members who cannot manage Slack', async () => {

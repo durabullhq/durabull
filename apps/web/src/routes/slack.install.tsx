@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
 import { useEffect } from 'react'
+import { Button } from '@/components/ui/button'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
 import { useActiveOrganization, useOrganizations } from '@/hooks/use-organization'
@@ -23,7 +24,13 @@ function SlackInstallRoute() {
   const navigate = useNavigate()
   const { isAuthenticated, isLoading: authLoading } = useAuth()
   const { isAuthless } = useAppMode()
-  const { data: organizations, isLoading: orgsLoading } = useOrganizations()
+  const {
+    data: organizations,
+    isLoading: orgsLoading,
+    isError: orgsError,
+    refetch: refetchOrganizations,
+    isFetching: orgsFetching,
+  } = useOrganizations()
   const { data: activeOrg, isLoading: activeOrgLoading } = useActiveOrganization()
 
   useEffect(() => {
@@ -33,6 +40,8 @@ function SlackInstallRoute() {
       return
     }
     if (orgsLoading || activeOrgLoading) return
+    // A failed lookup is not "no organizations": never send members to setup for it.
+    if (orgsError) return
     if (!organizations || organizations.length === 0) {
       // Come back here once they have an organization.
       navigate({ to: '/setup-organization', search: { redirect: '/slack/install' }, replace: true })
@@ -52,11 +61,34 @@ function SlackInstallRoute() {
     isAuthenticated,
     isAuthless,
     orgsLoading,
+    orgsError,
     activeOrgLoading,
     organizations,
     activeOrg,
     navigate,
   ])
+
+  if (orgsError) {
+    return (
+      <div
+        className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
+        role="alert"
+      >
+        <p className="text-[13px] text-muted-foreground">
+          Could not load your organizations to connect Slack.
+        </p>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={orgsFetching}
+          onClick={() => void refetchOrganizations()}
+        >
+          {orgsFetching ? 'Retrying…' : 'Retry'}
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <div

@@ -21,6 +21,7 @@ import { Panel } from '@/components/ui/section'
 import { Skeleton } from '@/components/ui/skeleton'
 import { type SlackDestinationConfig, useCreateAlertDestination } from '@/hooks/use-alerts'
 import { reportUpgradePromptShown, useBilling } from '@/hooks/use-billing'
+import { useActiveOrganization } from '@/hooks/use-organization'
 import {
   type SlackInstallationRecord,
   type SlackIntegrationOverview,
@@ -97,12 +98,19 @@ function isSlackInstallRequest(value: string): boolean {
 }
 
 export function useSlackInstallRequest(
+  orgSlug: string,
   overview: SlackIntegrationOverview | undefined,
   connect: ReturnType<typeof useConnectSlack>
 ) {
   const handled = useRef(false)
+  // OAuth and the overview both use the session's active organization. Wait
+  // until it is the organization in the URL, so a stale overview from the
+  // previously active organization never decides the install.
+  const { data: activeOrganization } = useActiveOrganization()
+  const isCurrentOrganization = activeOrganization?.slug === orgSlug
   useEffect(() => {
-    if (handled.current || !overview || typeof window === 'undefined') return
+    if (handled.current || !overview || !isCurrentOrganization || typeof window === 'undefined')
+      return
     const url = new URL(window.location.href)
     const request = url.searchParams.get('slack')
     if (!request || !isSlackInstallRequest(request)) return
@@ -142,14 +150,14 @@ export function useSlackInstallRequest(
         description: getErrorMessage(error, 'Please try again.'),
       })
     })
-  }, [overview, connect])
+  }, [overview, connect, isCurrentOrganization])
 }
 
 export function SlackIntegrationCard({ orgSlug }: { orgSlug: string }) {
   const slackQuery = useSlackIntegration()
   const overview = slackQuery.data
   const connect = useConnectSlack()
-  useSlackInstallRequest(overview, connect)
+  useSlackInstallRequest(orgSlug, overview, connect)
 
   if (!overview && slackQuery.isError) {
     return (
