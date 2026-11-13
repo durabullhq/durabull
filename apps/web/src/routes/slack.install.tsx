@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAppMode } from '@/hooks/use-app-mode'
 import { useAuth } from '@/hooks/use-auth'
@@ -32,6 +32,7 @@ function SlackInstallRoute() {
     isFetching: orgsFetching,
   } = useOrganizations()
   const { data: activeOrg, isLoading: activeOrgLoading } = useActiveOrganization()
+  const recheckedEmptyList = useRef(false)
 
   useEffect(() => {
     if (authLoading) return
@@ -42,7 +43,16 @@ function SlackInstallRoute() {
     if (orgsLoading || activeOrgLoading) return
     // A failed lookup is not "no organizations": never send members to setup for it.
     if (orgsError) return
+    if (orgsFetching) return
     if (!organizations || organizations.length === 0) {
+      // An organization joined moments ago (an accepted invitation) can be
+      // missing from a cached list. Look once more before sending the member
+      // to setup, so the install continues when it shows up.
+      if (!recheckedEmptyList.current) {
+        recheckedEmptyList.current = true
+        void refetchOrganizations()
+        return
+      }
       // Come back here once they have an organization.
       navigate({ to: '/setup-organization', search: { redirect: '/slack/install' }, replace: true })
       return
@@ -62,6 +72,8 @@ function SlackInstallRoute() {
     isAuthless,
     orgsLoading,
     orgsError,
+    orgsFetching,
+    refetchOrganizations,
     activeOrgLoading,
     organizations,
     activeOrg,
