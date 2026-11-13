@@ -229,8 +229,11 @@ function SetupOrganizationPage() {
         : undefined
 
       if (!acceptedOrg) {
-        // Fall back to the index route, which will re-resolve once caches refresh.
-        navigate({ to: '/' })
+        // Fall back to a route that re-resolves organizations once caches
+        // refresh: the requested destination (such as /slack/install, which
+        // looks them up itself), or the index route.
+        if (continueTo) navigate({ href: continueTo })
+        else navigate({ to: '/' })
         return
       }
 
