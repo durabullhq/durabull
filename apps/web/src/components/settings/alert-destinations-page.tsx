@@ -17,7 +17,11 @@ import {
 import { SlackLogo } from '@/components/brand/slack-logo'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SecretInput } from '@/components/secret-input'
-import { SlackDestinationFields } from '@/components/settings/slack-destination-fields'
+import {
+  DEFAULT_SLACK_DESTINATION_CONFIG,
+  SlackDestinationFields,
+  slackDestinationName,
+} from '@/components/settings/slack-destination-fields'
 import {
   SlackConnectButton,
   useSlackOauthResultToast,
@@ -128,6 +132,7 @@ export function AlertDestinationsPage() {
   const slack: SlackAvailability = {
     configured: slackQuery.data?.configured === true,
     connected: slackQuery.data?.installation?.status === 'active',
+    canManage: slackQuery.data?.canManage !== false,
   }
 
   async function handleTest(destination: AlertDestinationRecord) {
@@ -411,6 +416,8 @@ interface SlackAvailability {
   configured: boolean
   /** The organization's Slack workspace is connected and active. */
   connected: boolean
+  /** The member may connect Slack (owners and admins). */
+  canManage: boolean
 }
 
 function CreateDestinationDialog({
@@ -434,10 +441,9 @@ function CreateDestinationDialog({
   const [signingSecret, setSigningSecret] = useState('')
   const [emailTarget, setEmailTarget] = useState('')
   const [linearConfig, setLinearConfig] = useState<LinearDestinationConfig>({})
-  const [slackConfig, setSlackConfig] = useState<Partial<SlackDestinationConfig>>({
-    mention: 'none',
-    threadUpdates: true,
-  })
+  const [slackConfig, setSlackConfig] = useState<Partial<SlackDestinationConfig>>(
+    DEFAULT_SLACK_DESTINATION_CONFIG
+  )
   const entitlement = useEntitlement()
   const atLimit = entitlement.capacity('alerts.destinations').atLimit
   const lockedPlan = (candidate: AlertDestinationType) => {
@@ -460,7 +466,7 @@ function CreateDestinationDialog({
     setSigningSecret('')
     setEmailTarget('')
     setLinearConfig({})
-    setSlackConfig({ mention: 'none', threadUpdates: true })
+    setSlackConfig(DEFAULT_SLACK_DESTINATION_CONFIG)
   }
 
   async function handleSubmit() {
@@ -478,7 +484,7 @@ function CreateDestinationDialog({
       if (!slackConfig.channelId) return
       await onCreate({
         type: 'slack',
-        name: name.trim() || `Slack #${slackConfig.channelName ?? slackConfig.channelId}`,
+        name: name.trim() || slackDestinationName(slackConfig),
         config: { ...slackConfig, channelId: slackConfig.channelId },
       })
     } else {
@@ -514,7 +520,13 @@ function CreateDestinationDialog({
               // so "connect it first" would send a Free organization nowhere.
               const requiredPlan = lockedPlan(candidate)
               if (candidate === 'slack' && !requiredPlan && !atLimit && !slack.connected) {
-                return <SlackTypeNeedsConnection key={candidate} configured={slack.configured} />
+                return (
+                  <SlackTypeNeedsConnection
+                    key={candidate}
+                    configured={slack.configured}
+                    canManage={slack.canManage}
+                  />
+                )
               }
               const needsLinear = !requiredPlan && candidate === 'linear' && !linearConnected
               const disabled = atLimit || Boolean(requiredPlan) || needsLinear
@@ -565,7 +577,7 @@ function CreateDestinationDialog({
                     : type === 'email'
                       ? 'Ops inbox'
                       : type === 'slack'
-                        ? `Slack #${slackConfig.channelName ?? 'alerts'}`
+                        ? slackDestinationName(slackConfig)
                         : 'Linear triage'
                 }
               />
@@ -809,7 +821,13 @@ function EditDestinationDialog({
 }
 
 /** Slack in the type picker before the workspace is connected: says why and offers to connect. */
-function SlackTypeNeedsConnection({ configured }: { configured: boolean }) {
+function SlackTypeNeedsConnection({
+  configured,
+  canManage,
+}: {
+  configured: boolean
+  canManage: boolean
+}) {
   return (
     <div
       className="flex items-start gap-3 rounded-md border bg-background px-4 py-3"
@@ -819,11 +837,15 @@ function SlackTypeNeedsConnection({ configured }: { configured: boolean }) {
       <div className="min-w-0 flex-1 space-y-2">
         <span className="block text-sm font-semibold">Slack</span>
         <span className="block text-sm text-muted-foreground">
-          {configured
-            ? 'Connect your Slack workspace to choose a channel.'
-            : 'Slack is not set up on this Durabull server yet. See Settings → Integrations.'}
+          {!configured
+            ? 'Slack is not set up on this Durabull server yet. See Settings → Integrations.'
+            : canManage
+              ? 'Connect your Slack workspace to choose a channel.'
+              : 'Ask an organization owner or admin to connect Slack, then pick a channel here.'}
         </span>
-        {configured ? <SlackConnectButton returnTo="destinations" variant="outline" /> : null}
+        {configured && canManage ? (
+          <SlackConnectButton returnTo="destinations" variant="outline" />
+        ) : null}
       </div>
     </div>
   )

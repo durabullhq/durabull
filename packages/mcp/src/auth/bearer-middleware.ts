@@ -13,8 +13,8 @@ import {
   buildMcpMissingBearerResponse,
   buildMcpUnauthorizedResponse,
 } from './json-rpc-auth-response'
-import type { McpAccessTokenClaims } from './types'
 import { extractBearerToken, validateMcpAccessTokenClaims } from './validate-token'
+import type { McpAccessTokenClaims } from './types'
 
 export interface McpBearerAuthMiddlewareOptions {
   canonicalResourceUri: string

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import {
   alertDestinationRepository,
+  billingRepository,
   decryptSecret,
   eq,
   getDb,
@@ -31,8 +32,10 @@ import {
   SLACK_BOT_SCOPES,
   SlackNotConfiguredError,
 } from '../lib/slack/config'
+import { findActiveSlackInstallation } from '../lib/slack/alerts'
 import { buildSlackAppManifest } from '../lib/slack/manifest'
 import { withSlackToken } from '../lib/slack/token'
+import { isAuthlessMode } from '../lib/authless'
 import { requireOrganization } from '../middleware/auth'
 
 const RETURN_TO_PAGES = ['integrations', 'destinations'] as const
@@ -138,8 +141,23 @@ function isReturnToPage(value: string): value is ReturnToPage {
   return (RETURN_TO_PAGES as readonly string[]).includes(value)
 }
 
-function slackErrorStatus(error: SlackApiError) {
-  return error.retryable ? 503 : error.isAuthError ? 401 : 400
+const ADMIN_ROLES = new Set(['owner', 'admin'])
+const ADMIN_ONLY_MESSAGE = 'Only organization owners and admins can change the Slack integration.'
+
+/** Connecting, configuring and removing Slack is limited to owners and admins. */
+async function isOrganizationAdmin(c: Context, organizationId: string): Promise<boolean> {
+  if (isAuthlessMode()) return true
+  const user = c.get('user')
+  if (!user) return false
+  const membership = await billingRepository.findMembership(organizationId, user.id)
+  return (membership?.role ?? '').split(',').some((role) => ADMIN_ROLES.has(role.trim()))
+}
+
+/** JSON error response for a failed Slack call; anything that is not a Slack error is rethrown. */
+function slackFailure(c: Context, error: unknown) {
+  if (!(error instanceof SlackApiError)) throw error
+  const status = error.retryable ? 503 : error.isAuthError ? 401 : 400
+  return c.json({ error: error.message, code: error.code }, status)
 }
 
 const app = new Hono()
@@ -153,13 +171,15 @@ const app = new Hono()
   .get('/', async (c) => {
     const organizationId = c.get('organizationId')
     if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
-    const [installation, entitled] = await Promise.all([
+    const [installation, entitled, canManage] = await Promise.all([
       slackInstallationRepository.findByOrganization(organizationId),
       hasFeature(organizationId, 'integrations.slack'),
+      isOrganizationAdmin(c, organizationId),
     ])
     return c.json({
       configured: isSlackConfigured(),
       entitled,
+      canManage,
       installation: installation
         ? serializeInstallation(installation, await countSlackDestinations(organizationId))
         : null,
@@ -169,6 +189,9 @@ const app = new Hono()
     const organizationId = c.get('organizationId')
     const user = c.get('user')
     if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
+    if (!(await isOrganizationAdmin(c, organizationId))) {
+      return c.json({ error: ADMIN_ONLY_MESSAGE }, 403)
+    }
     await requireFeature(organizationId, 'integrations.slack')
     if (!user) return c.json({ error: 'User is required' }, 401)
 
@@ -220,6 +243,16 @@ const app = new Hono()
         message: 'The Slack sign-in link expired. Start the connection again.',
       })
     }
+    // The browser finishing the install must be signed in as the member who
+    // started it. Otherwise someone could send their own install link to a
+    // Slack admin and attach that workspace to the sender's organization.
+    if (!isAuthlessMode() && c.get('user')?.id !== oauthState.userId) {
+      return redirectWithResult(c, slug, page, {
+        slack: 'error',
+        message:
+          'Finish connecting Slack while signed in to Durabull as the member who started it.',
+      })
+    }
 
     try {
       if (!(await hasFeature(oauthState.organizationId, 'integrations.slack'))) {
@@ -268,6 +301,9 @@ const app = new Hono()
   .patch('/', zValidator('json', updateSchema), async (c) => {
     const organizationId = c.get('organizationId')
     if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
+    if (!(await isOrganizationAdmin(c, organizationId))) {
+      return c.json({ error: ADMIN_ONLY_MESSAGE }, 403)
+    }
     const installation = await slackInstallationRepository.updateSettings(
       organizationId,
       c.req.valid('json')
@@ -283,6 +319,9 @@ const app = new Hono()
   .delete('/', async (c) => {
     const organizationId = c.get('organizationId')
     if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
+    if (!(await isOrganizationAdmin(c, organizationId))) {
+      return c.json({ error: ADMIN_ONLY_MESSAGE }, 403)
+    }
     const installation = await slackInstallationRepository.findByOrganization(organizationId)
     if (!installation) return c.json({ success: true })
 
@@ -306,31 +345,30 @@ const app = new Hono()
   .post('/test', async (c) => {
     const organizationId = c.get('organizationId')
     if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
+    await requireFeature(organizationId, 'integrations.slack')
     const installation = await slackInstallationRepository.findByOrganization(organizationId)
     if (!installation) return c.json({ error: 'Slack is not connected.' }, 404)
     try {
-      const identity = await withSlackToken({ ...installation, status: 'active' }, (token) =>
-        slackAuthTest(token)
-      )
+      // A revoked installation is still worth testing: if Slack accepts the
+      // token again, the test marks it active.
+      const identity = await withSlackToken(installation, (token) => slackAuthTest(token), {
+        allowRevoked: true,
+      })
       if (identity.teamId && identity.teamId !== installation.slackTeamId) {
         return c.json({ error: 'The bot token belongs to a different Slack workspace.' }, 400)
       }
       await slackInstallationRepository.markValidated(organizationId)
       return c.json({ ok: true, teamName: identity.teamName, url: identity.url })
     } catch (error) {
-      if (error instanceof SlackApiError) {
-        return c.json({ error: error.message, code: error.code }, slackErrorStatus(error))
-      }
-      throw error
+      return slackFailure(c, error)
     }
   })
   .get('/channels', zValidator('query', channelsQuerySchema), async (c) => {
     const organizationId = c.get('organizationId')
     if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
-    const installation = await slackInstallationRepository.findByOrganization(organizationId)
-    if (!installation || installation.status !== 'active') {
-      return c.json({ error: 'Slack is not connected.' }, 400)
-    }
+    await requireFeature(organizationId, 'integrations.slack')
+    const installation = await findActiveSlackInstallation(organizationId)
+    if (!installation) return c.json({ error: 'Slack is not connected.' }, 400)
     const cached = channelCache.get(organizationId)
     if (c.req.valid('query').refresh !== 'true' && cached && cached.expiresAt > Date.now()) {
       return c.json(cached.value)
@@ -341,33 +379,31 @@ const app = new Hono()
       channelCache.set(organizationId, { value, expiresAt: Date.now() + CHANNEL_CACHE_TTL_MS })
       return c.json(value)
     } catch (error) {
-      if (error instanceof SlackApiError) {
-        return c.json({ error: error.message, code: error.code }, slackErrorStatus(error))
-      }
-      throw error
+      return slackFailure(c, error)
     }
   })
   .get('/user-groups', async (c) => {
     const organizationId = c.get('organizationId')
     if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
-    const installation = await slackInstallationRepository.findByOrganization(organizationId)
-    if (!installation || installation.status !== 'active') {
-      return c.json({ error: 'Slack is not connected.' }, 400)
-    }
+    await requireFeature(organizationId, 'integrations.slack')
+    const installation = await findActiveSlackInstallation(organizationId)
+    if (!installation) return c.json({ error: 'Slack is not connected.' }, 400)
     try {
       const userGroups = await withSlackToken(installation, (token) => listSlackUserGroups(token))
       userGroups.sort((a, b) => a.handle.localeCompare(b.handle))
       return c.json({ userGroups })
     } catch (error) {
-      if (error instanceof SlackApiError) {
-        return c.json({ error: error.message, code: error.code }, slackErrorStatus(error))
-      }
-      throw error
+      return slackFailure(c, error)
     }
   })
   .get('/manifest', (c) => {
     // Lets self-hosters copy the exact app manifest for this deployment from settings.
-    return c.json({ manifest: buildSlackAppManifest({ baseUrl: appBaseUrl() }) })
+    return c.json({
+      manifest: buildSlackAppManifest({
+        baseUrl: appBaseUrl(),
+        redirectUri: env.SLACK_OAUTH_REDIRECT_URI?.trim() || undefined,
+      }),
+    })
   })
 
 export function clearSlackChannelCache(): void {

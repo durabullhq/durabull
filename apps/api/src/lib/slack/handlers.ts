@@ -7,7 +7,12 @@ import {
   slackInstallationRepository,
 } from '@durabull/dal'
 import { SLACK_ACTIONS, SNOOZE_OPTIONS } from './alert-message'
-import { buildIncidentUrls, refreshSlackAlertMessages, syncSlackAlertMessages } from './alerts'
+import {
+  buildIncidentUrls,
+  jobIdFromEventContext,
+  refreshSlackAlertMessages,
+  syncSlackAlertMessages,
+} from './alerts'
 import {
   postToSlackResponseUrl,
   publishSlackHomeView,
@@ -16,7 +21,7 @@ import {
 } from './client'
 import { appBaseUrl, SLACK_SLASH_COMMAND } from './config'
 import { escapeSlackText, mrkdwn, ruleTypeLabel, slackDate, slackInline, slackLink } from './format'
-import { resolveSlackActor, resolveSlackUserOrganizations } from './identity'
+import { isMemberDenial, resolveSlackActor, resolveSlackUserOrganizations } from './identity'
 import {
   findJob,
   findQueueConnections,
@@ -107,16 +112,20 @@ export async function loadOpenIncidents(
         queueName: event.queueName,
         ruleId: event.alertRuleId,
         eventType: event.type,
-        jobId: jobIdFromContext(event.context),
+        jobId: jobIdFromEventContext(event.context),
       }).incident,
     })),
   }
 }
 
-function jobIdFromContext(context: unknown): string | null {
-  const source =
-    typeof context === 'object' && context !== null ? (context as Record<string, unknown>) : {}
-  return typeof source.jobId === 'string' ? source.jobId : null
+function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const value = key(item)
+    if (seen.has(value)) return false
+    seen.add(value)
+    return true
+  })
 }
 
 function capBlocks(blocks: unknown[]): unknown[] {
@@ -464,7 +473,7 @@ export async function performIncidentAction(input: {
     case 'retry': {
       if (event.type !== 'job_failed')
         return { ok: false, text: 'Only job-failed incidents have a job to retry.' }
-      const jobId = jobIdFromContext(event.context)
+      const jobId = jobIdFromEventContext(event.context)
       if (!jobId) return { ok: false, text: 'This incident does not reference a job.' }
       try {
         await retryFailedJob(orgId, {
@@ -662,10 +671,16 @@ export async function publishHomeTab(
   )
   const view = homeView({
     orgs,
-    denied: denied.map(({ installation, message }) => ({
-      organizationName: installation.organizationName,
-      message,
-    })),
+    // Organizations are only named to their own members.
+    denied: uniqueBy(
+      denied.map((denial) => ({
+        organizationName: isMemberDenial(denial)
+          ? denial.installation.organizationName
+          : 'Durabull',
+        message: denial.message,
+      })),
+      (entry) => `${entry.organizationName}:${entry.message}`
+    ),
     noInstallations: installations.length === 0,
   }) as { type: string; blocks: unknown[] }
   if (notice) {

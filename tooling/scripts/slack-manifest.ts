@@ -4,6 +4,7 @@
  *   bun run slack:manifest                         # uses APP_BASE_URL
  *   bun run slack:manifest -- --base-url https://durabull.example.com --name "Durabull (staging)"
  *   bun run slack:manifest -- --skip-events    # create the app before Durabull is reachable
+ *   bun run slack:manifest -- --redirect-uri https://api.example.com/api/integrations/slack/callback
  *
  * Paste the JSON at https://api.slack.com/apps → Create New App → From a manifest.
  */
@@ -19,6 +20,7 @@ const { values } = parseArgs({
     'base-url': { type: 'string' },
     name: { type: 'string' },
     'skip-events': { type: 'boolean' },
+    'redirect-uri': { type: 'string' },
   },
 })
 
@@ -39,7 +41,12 @@ if (parsed.protocol !== 'https:') {
 
 console.log(
   JSON.stringify(
-    buildSlackAppManifest({ baseUrl, appName: values.name, skipEvents: values['skip-events'] }),
+    buildSlackAppManifest({
+      baseUrl,
+      appName: values.name,
+      skipEvents: values['skip-events'],
+      redirectUri: values['redirect-uri'],
+    }),
     null,
     2
   )

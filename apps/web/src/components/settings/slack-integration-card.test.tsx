@@ -201,6 +201,32 @@ describe('SlackIntegrationCard', () => {
     expect(screen.getByText(/needs more Slack permissions \(links:write\)/)).toBeInTheDocument()
   })
 
+  it('shows members who are not owners or admins what to ask for instead of controls', () => {
+    mocks.overview.mockReturnValue({
+      configured: true,
+      entitled: true,
+      canManage: false,
+      installation: null,
+    })
+    const { unmount } = render(<SlackIntegrationCard orgSlug="acme" />)
+    expect(screen.queryByRole('button', { name: /Add to Slack/ })).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Ask an organization owner or admin to connect Slack.')
+    ).toBeInTheDocument()
+    unmount()
+
+    mocks.overview.mockReturnValue({
+      configured: true,
+      entitled: true,
+      canManage: false,
+      installation: connectedInstallation,
+    })
+    render(<SlackIntegrationCard orgSlug="acme" />)
+    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Allow actions from Slack/)).toBeDisabled()
+    expect(screen.getByLabelText(/Preview Durabull links/)).toBeDisabled()
+  })
+
   it('removes Slack after confirmation', async () => {
     mocks.overview.mockReturnValue({
       configured: true,

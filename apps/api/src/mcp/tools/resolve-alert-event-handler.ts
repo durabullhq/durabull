@@ -22,7 +22,14 @@ export async function resolveAlertEventHandler(
     throw new McpToolError('conflict', 'This alert event is already resolved.')
   }
 
-  const event = await alertEventRepository.resolve(input.eventId, connection.organizationId)
+  // Service accounts have no member to credit; a user principal is recorded as the resolver.
+  const resolvedBy = input.principal.type === 'delegated_user' ? input.principal.userId : null
+  const event = await alertEventRepository.resolve(
+    input.eventId,
+    connection.organizationId,
+    'manual',
+    resolvedBy
+  )
   if (!event) {
     throw new McpToolError('conflict', 'The alert event changed before it could be resolved.')
   }

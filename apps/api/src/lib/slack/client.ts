@@ -368,7 +368,9 @@ export async function getSlackChannel(token: string, channelId: string): Promise
 
 export interface SlackUser {
   id: string
+  /** Home workspace; differs from the installation for Slack Connect guests. */
   teamId: string | null
+  enterpriseId: string | null
   name: string
   email: string | null
   isBot: boolean
@@ -385,6 +387,7 @@ export async function getSlackUser(token: string, userId: string): Promise<Slack
         real_name?: string
         deleted?: boolean
         is_bot?: boolean
+        enterprise_user?: { enterprise_id?: string }
         profile?: { email?: string; real_name?: string; display_name?: string }
       }
     }
@@ -394,6 +397,7 @@ export async function getSlackUser(token: string, userId: string): Promise<Slack
   return {
     id: user.id,
     teamId: user.team_id ?? null,
+    enterpriseId: user.enterprise_user?.enterprise_id ?? null,
     name:
       user.profile?.display_name ||
       user.profile?.real_name ||

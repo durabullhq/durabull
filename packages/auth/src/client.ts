@@ -1,11 +1,8 @@
 import { organizationClient } from 'better-auth/client/plugins'
 import { createAuthClient } from 'better-auth/react'
 
-export type {
-  LabeledConsentScope,
-  McpOAuthConsentContext,
-  McpOAuthConsentSearch,
-} from './mcp-consent'
+export { submitOAuthConsent } from './submit-oauth-consent'
+export type { SubmitOAuthConsentInput, SubmitOAuthConsentResult } from './submit-oauth-consent'
 export {
   buildLoginRedirectForConsent,
   buildMcpAuthorizeResumeUrl,
@@ -15,9 +12,12 @@ export {
   parseConsentScopeList,
   parseMcpOAuthConsentSearch,
 } from './mcp-consent'
+export type {
+  LabeledConsentScope,
+  McpOAuthConsentContext,
+  McpOAuthConsentSearch,
+} from './mcp-consent'
 export { isSafeAppRedirectPath, resolveSafeAppRedirectPath } from './safe-redirect'
-export type { SubmitOAuthConsentInput, SubmitOAuthConsentResult } from './submit-oauth-consent'
-export { submitOAuthConsent } from './submit-oauth-consent'
 
 /**
  * Get the base URL for the auth client.

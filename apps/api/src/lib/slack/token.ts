@@ -15,8 +15,11 @@ export class SlackInstallationUnavailableError extends Error {
  * A usable bot token for the installation. Rotating tokens (only issued when
  * the Slack app enables token rotation) are refreshed shortly before expiry.
  */
-export async function getSlackBotToken(installation: SlackInstallation): Promise<string> {
-  if (installation.status !== 'active') {
+export async function getSlackBotToken(
+  installation: SlackInstallation,
+  options: { allowRevoked?: boolean } = {}
+): Promise<string> {
+  if (installation.status !== 'active' && !options.allowRevoked) {
     throw new SlackInstallationUnavailableError(
       'Slack needs to be reconnected for this organization.'
     )
@@ -60,9 +63,13 @@ export async function getSlackBotToken(installation: SlackInstallation): Promise
  */
 export async function withSlackToken<T>(
   installation: SlackInstallation,
-  fn: (token: string) => Promise<T>
+  fn: (token: string) => Promise<T>,
+  options: {
+    /** Try the stored token even when it was marked revoked (connection test, recovery). */
+    allowRevoked?: boolean
+  } = {}
 ): Promise<T> {
-  const token = await getSlackBotToken(installation)
+  const token = await getSlackBotToken(installation, options)
   try {
     return await fn(token)
   } catch (error) {

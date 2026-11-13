@@ -1,6 +1,6 @@
-import type { GetJobHandlerInput, GetJobHandlerOutput } from '@durabull/mcp'
-import { toRedisConnectionOptions } from '../../lib/connection-options'
 import { getQueue } from '../../lib/redis'
+import { toRedisConnectionOptions } from '../../lib/connection-options'
+import type { GetJobHandlerInput, GetJobHandlerOutput } from '@durabull/mcp'
 import { McpToolError, requireConnectionForPrincipal } from './shared'
 
 interface GetJobHandlerDeps {

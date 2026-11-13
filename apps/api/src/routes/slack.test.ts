@@ -51,7 +51,13 @@ interface SlackCall {
 class FakeSlack {
   calls: SlackCall[] = []
   responseUrlPosts: Array<Record<string, unknown>> = []
-  emails: Record<string, string> = { UADA: 'ada@example.com', UEVE: 'eve@elsewhere.test' }
+  emails: Record<string, string> = {
+    UADA: 'ada@example.com',
+    UEVE: 'eve@elsewhere.test',
+    // A Slack Connect guest whose own workspace gave them a member's email.
+    UEXT: 'ada@example.com',
+  }
+  teams: Record<string, string> = { UEXT: 'T0OTHER' }
   channels: Record<string, { name: string; is_private: boolean; is_member: boolean }> = {
     C0ALERTS: { name: 'alerts', is_private: false, is_member: false },
     G0SECRET: { name: 'secret', is_private: true, is_member: false },
@@ -114,7 +120,12 @@ class FakeSlack {
         const id = String(body.user)
         return Response.json({
           ok: true,
-          user: { id, team_id: 'T0ACME', name: id, profile: { email: this.emails[id] } },
+          user: {
+            id,
+            team_id: this.teams[id] ?? 'T0ACME',
+            name: id,
+            profile: { email: this.emails[id] },
+          },
         })
       }
       case 'conversations.info': {
@@ -160,13 +171,17 @@ async function seed() {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(member).values({
-    id: 'm-ada',
-    organizationId: ORG_ID,
-    userId: 'user-ada',
-    role: 'owner',
+  await db.insert(user).values({
+    id: 'user-bob',
+    name: 'Bob Member',
+    email: 'bob@example.com',
     createdAt: now,
+    updatedAt: now,
   })
+  await db.insert(member).values([
+    { id: 'm-ada', organizationId: ORG_ID, userId: 'user-ada', role: 'owner', createdAt: now },
+    { id: 'm-bob', organizationId: ORG_ID, userId: 'user-bob', role: 'member', createdAt: now },
+  ])
   await db.insert(redisConnection).values({
     id: CONNECTION_ID,
     name: 'Production Redis',
@@ -206,6 +221,10 @@ async function seed() {
   return { rule, event }
 }
 
+const ADA = { id: 'user-ada', email: 'ada@example.com', name: 'Ada Lovelace' }
+const BOB = { id: 'user-bob', email: 'bob@example.com', name: 'Bob Member' }
+let sessionUser = ADA
+
 async function createApp() {
   const { default: integrationRoutes } = await import('./slack-integration')
   const { default: destinationRoutes } = await import('./alert-destinations')
@@ -220,9 +239,7 @@ async function createApp() {
   session.use('*', async (c, next) => {
     c.set('organizationId', ORG_ID)
     c.set('user', {
-      id: 'user-ada',
-      email: 'ada@example.com',
-      name: 'Ada Lovelace',
+      ...sessionUser,
       emailVerified: true,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -308,6 +325,7 @@ describe('Slack integration', () => {
       SLACK_APP_ID: 'A0DURABULL',
       SLACK_OAUTH_REDIRECT_URI: undefined,
     })
+    sessionUser = ADA
     clearSlackProfileCache()
     clearSlackChannelCache()
     clearSlackEventDedupe()
@@ -332,7 +350,12 @@ describe('Slack integration', () => {
     await seed()
     const app = await createApp()
     const response = await app.request('/api/integrations/slack')
-    expect(await response.json()).toEqual({ configured: true, entitled: true, installation: null })
+    expect(await response.json()).toEqual({
+      configured: true,
+      entitled: true,
+      canManage: true,
+      installation: null,
+    })
 
     mutableEnv.SLACK_SIGNING_SECRET = undefined
     const unconfigured = await app.request('/api/integrations/slack/connect', {
@@ -727,6 +750,95 @@ describe('Slack integration', () => {
       feature: 'integrations.slack',
       requiredPlan: 'team',
     })
+  })
+
+  it('refuses an OAuth callback finished by someone other than the member who started it', async () => {
+    await seed()
+    const app = await createApp()
+    const connect = await app.request('/api/integrations/slack/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    const { authorizationUrl } = (await connect.json()) as { authorizationUrl: string }
+    const state = new URL(authorizationUrl).searchParams.get('state') ?? ''
+
+    sessionUser = BOB
+    const callback = await app.request(
+      `/api/integrations/slack/callback?code=code-1&state=${encodeURIComponent(state)}`
+    )
+    expect(callback.headers.get('location')).toContain('slack=error')
+    expect(slack.callsTo('oauth.v2.access')).toHaveLength(0)
+    expect(await slackInstallationRepository.findByOrganization(ORG_ID)).toBeNull()
+  })
+
+  it('limits connecting, changing and removing Slack to owners and admins', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+    sessionUser = BOB
+
+    const connect = await app.request('/api/integrations/slack/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(connect.status).toBe(403)
+    const patch = await app.request('/api/integrations/slack', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actionsEnabled: false }),
+    })
+    expect(patch.status).toBe(403)
+    const remove = await app.request('/api/integrations/slack', { method: 'DELETE' })
+    expect(remove.status).toBe(403)
+    expect(slack.callsTo('auth.revoke')).toHaveLength(0)
+
+    // Members can still use Slack once it is connected.
+    expect((await app.request('/api/integrations/slack/channels')).status).toBe(200)
+  })
+
+  it('refuses Slack Connect guests even when their email matches a member', async () => {
+    const { event } = await seed()
+    const app = await createApp()
+    await install(app)
+
+    await app.request(
+      interaction({
+        type: 'block_actions',
+        team: { id: 'T0ACME' },
+        user: { id: 'UEXT', team_id: 'T0OTHER' },
+        container: { type: 'message' },
+        response_url: 'https://hooks.slack.com/actions/T0ACME/9/ext',
+        actions: [{ action_id: SLACK_ACTIONS.resolve, value: event.id }],
+      })
+    )
+    await flushSlackBackgroundWork()
+    expect((await alertEventRepository.findById(event.id, ORG_ID))?.status).toBe('firing')
+    const reply = String(slack.responseUrlPosts.at(-1)?.text)
+    expect(reply).toContain('only available to members of the Slack workspace')
+    expect(reply).not.toContain('Acme')
+  })
+
+  it('waits for a reconnect instead of giving up on messages while Slack is disconnected', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    await slackInstallationRepository.markTeamRevoked('T0ACME', 'app_uninstalled')
+    await alertEventRepository.resolve(event.id, ORG_ID, 'manual', 'user-ada')
+
+    expect(await syncSlackAlertMessages()).toEqual({ synced: 1, failed: 0 })
+    const [waiting] = await slackAlertMessageRepository.listByEvent(event.id)
+    expect(waiting).toMatchObject({ renderedState: 'firing', syncAttempts: 0 })
+    expect(waiting?.nextSyncAt?.getTime()).toBeGreaterThan(Date.now())
+    expect(slack.callsTo('chat.update')).toHaveLength(0)
   })
 
   it('removes the installation and revokes the token when no other organization shares it', async () => {

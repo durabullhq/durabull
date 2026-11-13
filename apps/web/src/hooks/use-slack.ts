@@ -27,6 +27,8 @@ export interface SlackIntegrationOverview {
   configured: boolean
   /** The organization's plan includes the Slack app. */
   entitled: boolean
+  /** The signed-in member is an owner or admin and may connect, change or remove Slack. */
+  canManage: boolean
   installation: SlackInstallationRecord | null
 }
 
@@ -93,6 +95,7 @@ export function useSlackIntegration() {
       return {
         configured: data.configured === true,
         entitled: data.entitled !== false,
+        canManage: data.canManage !== false,
         installation: normalizeSlackInstallation(data.installation),
       }
     },

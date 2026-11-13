@@ -1,6 +1,6 @@
 import type { JobSchedulerJson, RepeatOptions } from 'bullmq'
 import { z } from 'zod'
-import { type JobTemplateOptionsInput, optionalJobTemplateOptionsSchema } from './job-options'
+import { optionalJobTemplateOptionsSchema, type JobTemplateOptionsInput } from './job-options'
 
 const MAX_SCHEDULER_ID_LENGTH = 128
 const MAX_JOB_NAME_LENGTH = 120

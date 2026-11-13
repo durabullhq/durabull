@@ -87,6 +87,6 @@ describe('resolveAlertEventHandler', () => {
     expect(result.connectionId).toBe('conn-1')
     expect(result.event.status).toBe('resolved')
     expect(result.event.resolvedAt).toBe(resolvedAt.toISOString())
-    expect(resolve).toHaveBeenCalledWith('event-1', 'org-1')
+    expect(resolve).toHaveBeenCalledWith('event-1', 'org-1', 'manual', null)
   })
 })

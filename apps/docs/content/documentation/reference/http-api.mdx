@@ -178,10 +178,10 @@ See [Linear Integration](/documentation/integrations/linear) for configuration a
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/integrations/slack` | Whether Slack is configured and included in the plan, and the workspace installation |
-| `PATCH` | `/api/integrations/slack` | Turn Slack actions (`actionsEnabled`) or link previews (`unfurlsEnabled`) on or off |
-| `DELETE` | `/api/integrations/slack` | Disconnect the workspace and revoke the bot token when no other organization shares it |
-| `POST` | `/api/integrations/slack/connect` | Start the OAuth install; optional `returnTo`: `integrations` or `destinations` |
-| `GET` | `/api/integrations/slack/callback` | OAuth callback |
+| `PATCH` | `/api/integrations/slack` | Turn Slack actions (`actionsEnabled`) or link previews (`unfurlsEnabled`) on or off (owners and admins) |
+| `DELETE` | `/api/integrations/slack` | Disconnect the workspace and revoke the bot token when no other organization shares it (owners and admins) |
+| `POST` | `/api/integrations/slack/connect` | Start the OAuth install (owners and admins); optional `returnTo`: `integrations` or `destinations` |
+| `GET` | `/api/integrations/slack/callback` | OAuth callback; must be completed by the member who started the install |
 | `POST` | `/api/integrations/slack/test` | Validate the bot token with Slack |
 | `GET` | `/api/integrations/slack/channels` | Public channels and private channels the app is in (`?refresh=true` skips the 60-second cache) |
 | `GET` | `/api/integrations/slack/user-groups` | Slack user groups for mentions |

@@ -17,15 +17,15 @@ const activeClientIds = new Set()
  */
 const pendingRequests = new Map()
 
-addEventListener('install', () => {
+addEventListener('install', function () {
   self.skipWaiting()
 })
 
-addEventListener('activate', (event) => {
+addEventListener('activate', function (event) {
   event.waitUntil(self.clients.claim())
 })
 
-addEventListener('message', (event) => {
+addEventListener('message', function (event) {
   const clientId = Reflect.get(event.source || {}, 'id')
 
   if (!clientId || !self.clients) {
@@ -115,14 +115,17 @@ addEventListener('message', (event) => {
           break
         }
       }
-    })()
+    })(),
   )
 })
 
-addEventListener('fetch', (event) => {
+addEventListener('fetch', function (event) {
   // Opening the DevTools triggers the "only-if-cached" request
   // that cannot be handled by the worker. Bypass such requests.
-  if (event.request.cache === 'only-if-cached' && event.request.mode !== 'same-origin') {
+  if (
+    event.request.cache === 'only-if-cached' &&
+    event.request.mode !== 'same-origin'
+  ) {
     return
   }
 
@@ -155,7 +158,9 @@ async function handleRequest(event, requestId) {
     }
 
     pending.add(responsePromise)
-    responsePromise.finally(() => pending.delete(responsePromise)).catch(() => {})
+    responsePromise
+      .finally(() => pending.delete(responsePromise))
+      .catch(() => {})
   }
 
   let response
@@ -219,7 +224,9 @@ async function handleRequest(event, requestId) {
           },
         },
       },
-      responseClone && responseClone.body ? [serializedRequest.body, responseClone.body] : []
+      responseClone && responseClone.body
+        ? [serializedRequest.body, responseClone.body]
+        : [],
     )
   }
 
@@ -298,7 +305,9 @@ async function getResponse(event, client, requestId) {
     const acceptHeader = headers.get('accept')
     if (acceptHeader) {
       const values = acceptHeader.split(',').map((value) => value.trim())
-      const filteredValues = values.filter((value) => value !== 'msw/passthrough')
+      const filteredValues = values.filter(
+        (value) => value !== 'msw/passthrough',
+      )
 
       if (filteredValues.length > 0) {
         headers.set('accept', filteredValues.join(', '))
@@ -334,7 +343,7 @@ async function getResponse(event, client, requestId) {
         ...serializedRequest,
       },
     },
-    [serializedRequest.body]
+    [serializedRequest.body],
   )
 
   switch (clientMessage.type) {
@@ -386,7 +395,10 @@ function sendToClient(client, message, transferrables = []) {
       resolve(event.data)
     }
 
-    client.postMessage(message, [channel.port2, ...transferrables.filter(Boolean)])
+    client.postMessage(message, [
+      channel.port2,
+      ...transferrables.filter(Boolean),
+    ])
   })
 }
 

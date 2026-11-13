@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, mock } from 'bun:test'
 
 import {
   isAllowedPosthogHostname,
-  type PosthogBatchCapture,
   resolvePosthogBatchUrl,
   sendPosthogBatch,
+  type PosthogBatchCapture,
 } from './posthog-batch'
 
 describe('isAllowedPosthogHostname', () => {

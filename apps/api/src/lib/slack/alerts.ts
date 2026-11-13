@@ -26,11 +26,12 @@ import {
 import { runInBackground } from './background'
 import { getSlackPermalink, postSlackMessage, SlackApiError, updateSlackMessage } from './client'
 import { appBaseUrl } from './config'
-import { withSlackToken } from './token'
+import { SlackInstallationUnavailableError, withSlackToken } from './token'
 
 const SYNC_RETRY_BASE_MS = 30_000
 const SYNC_RETRY_MAX_MS = 30 * 60_000
 const SYNC_MAX_ATTEMPTS = 50
+const DISCONNECTED_RECHECK_MS = 10 * 60_000
 
 /** Slack errors after which a posted message can never be updated again. */
 const PERMANENT_UPDATE_ERRORS = new Set([
@@ -40,10 +41,6 @@ const PERMANENT_UPDATE_ERRORS = new Set([
   'edit_window_closed',
   'is_archived',
   'not_in_channel',
-  'invalid_auth',
-  'account_inactive',
-  'token_revoked',
-  'not_connected',
 ])
 
 export function parseSlackDestinationConfig(
@@ -71,6 +68,19 @@ export function parseSlackDestinationConfig(
       : [],
     threadUpdates: source.threadUpdates !== false,
   }
+}
+
+/** The organization's Slack installation when it is connected and usable, otherwise null. */
+/** Thread updates are on unless the destination turned them off. */
+function slackThreadUpdatesEnabled(destination: Pick<AlertDestination, 'config'>): boolean {
+  return asRecord(destination.config).threadUpdates !== false
+}
+
+export async function findActiveSlackInstallation(
+  organizationId: string
+): Promise<SlackInstallation | null> {
+  const installation = await slackInstallationRepository.findByOrganization(organizationId)
+  return installation?.status === 'active' ? installation : null
 }
 
 export async function requireActiveSlackInstallation(
@@ -101,9 +111,18 @@ async function getOrganizationSlug(organizationId: string): Promise<string | nul
   return rows[0]?.slug ?? null
 }
 
+function asRecord(context: unknown): Record<string, unknown> {
+  return typeof context === 'object' && context !== null ? (context as Record<string, unknown>) : {}
+}
+
+/** The BullMQ job id a job-failed incident refers to, if any. */
+export function jobIdFromEventContext(context: unknown): string | null {
+  const jobId = asRecord(context).jobId
+  return typeof jobId === 'string' ? jobId : null
+}
+
 function jobDetails(context: unknown): SlackAlertMessageView['job'] {
-  const source =
-    typeof context === 'object' && context !== null ? (context as Record<string, unknown>) : {}
+  const source = asRecord(context)
   if (typeof source.jobId !== 'string') return null
   return {
     id: source.jobId,
@@ -172,6 +191,7 @@ export async function loadSlackAlertView(
     acknowledgedByName,
     resolvedAt: event.resolvedAt,
     resolvedByName,
+    // The column predates Slack; it records the reason for every resolution, not only Linear's.
     resolutionReason: event.linearResolutionReason,
     job,
     urls: buildIncidentUrls({
@@ -336,8 +356,20 @@ async function syncOneMessage(
     )
   }
   const installation = installations.get(message.organizationId)
-  if (!installation || installation.slackTeamId !== message.slackTeamId) {
-    await slackAlertMessageRepository.abandon(message.id, 'Slack is no longer connected.')
+  if (installation && installation.slackTeamId !== message.slackTeamId) {
+    await slackAlertMessageRepository.abandon(
+      message.id,
+      'The organization is now connected to a different Slack workspace.'
+    )
+    return
+  }
+  if (!installation || installation.status !== 'active') {
+    // Picked up again after Slack is reconnected; waiting does not use up retries.
+    await slackAlertMessageRepository.defer(
+      message.id,
+      new Date(Date.now() + DISCONNECTED_RECHECK_MS),
+      'Slack is not connected.'
+    )
     return
   }
   const view = await loadSlackAlertView(event, installation)
@@ -346,9 +378,7 @@ async function syncOneMessage(
     ? await alertDestinationRepository.findById(message.destinationId, message.organizationId)
     : null
   const threadUpdates =
-    destination?.type === 'slack'
-      ? (destination.config as AlertSlackDestinationConfig).threadUpdates !== false
-      : true
+    destination?.type === 'slack' ? slackThreadUpdatesEnabled(destination) : true
   const reply = threadUpdates ? buildStateChangeReply(message.renderedState, view) : null
 
   await withSlackToken(installation, async (token) => {
@@ -382,6 +412,18 @@ async function syncOneMessage(
 
 async function recordSyncFailure(message: SlackAlertMessage, error: unknown): Promise<void> {
   const text = error instanceof Error ? error.message : String(error)
+  if (
+    (error instanceof SlackApiError && error.isAuthError) ||
+    error instanceof SlackInstallationUnavailableError
+  ) {
+    // The installation is marked for reconnect; resume once it is fixed.
+    await slackAlertMessageRepository.defer(
+      message.id,
+      new Date(Date.now() + DISCONNECTED_RECHECK_MS),
+      text
+    )
+    return
+  }
   if (error instanceof SlackApiError && PERMANENT_UPDATE_ERRORS.has(error.code)) {
     await slackAlertMessageRepository.abandon(message.id, text)
     return
@@ -405,8 +447,8 @@ export async function refreshSlackAlertMessages(
 ): Promise<void> {
   const messages = await slackAlertMessageRepository.listByEvent(event.id)
   if (messages.length === 0) return
-  const installation = await slackInstallationRepository.findByOrganization(event.organizationId)
-  if (!installation || installation.status !== 'active') return
+  const installation = await findActiveSlackInstallation(event.organizationId)
+  if (!installation) return
   const view = await loadSlackAlertView(event, installation)
   const content = buildAlertMessage(view)
   await withSlackToken(installation, async (token) => {

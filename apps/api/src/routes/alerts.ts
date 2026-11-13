@@ -12,7 +12,6 @@ import {
   linearIntegrationRepository,
   organization,
   redisDiscoveredQueueRepository,
-  slackInstallationRepository,
 } from '@durabull/dal'
 import { zValidator } from '@hono/zod-validator'
 import { Hono } from 'hono'
@@ -52,7 +51,7 @@ import {
   redisHealthConfigSchema,
   restoreRedisHealthSnapshot,
 } from '../lib/redis-health'
-import { queueSlackMessageSync } from '../lib/slack/alerts'
+import { findActiveSlackInstallation, queueSlackMessageSync } from '../lib/slack/alerts'
 
 const alertTypeSchema = z.enum([
   'failure_threshold',
@@ -932,8 +931,7 @@ async function validateNotificationChannels(
     }
     await requireDeliveryFeature(organizationId, destination.type)
     if (destination.type === 'slack') {
-      const installation = await slackInstallationRepository.findByOrganization(organizationId)
-      if (!installation || installation.status !== 'active') {
+      if (!(await findActiveSlackInstallation(organizationId))) {
         return 'Slack must be connected before alert rules can route to Slack destinations.'
       }
     }

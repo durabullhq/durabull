@@ -78,6 +78,7 @@ export function IntegrationsSettingsPanel({ orgSlug }: { orgSlug: string }) {
           {!linearIntegration ? (
             <Button
               type="button"
+              variant="outline"
               size="xs"
               onClick={async () => {
                 try {

@@ -14,7 +14,11 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SlackLogo } from '@/components/brand/slack-logo'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { SlackDestinationFields } from '@/components/settings/slack-destination-fields'
+import {
+  DEFAULT_SLACK_DESTINATION_CONFIG,
+  SlackDestinationFields,
+  slackDestinationName,
+} from '@/components/settings/slack-destination-fields'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/section'
@@ -38,7 +42,7 @@ const SLACK_FEATURE = 'integrations.slack' as const
 const HIGHLIGHTS = [
   {
     title: 'Incidents in your channels',
-    detail: 'Rich alerts with the failed job, attempts and stack trace, colour-coded by state.',
+    detail: 'Rich alerts with the failed job, attempts and failure reason, colour-coded by state.',
   },
   {
     title: 'Respond without switching apps',
@@ -97,8 +101,14 @@ export function SlackIntegrationCard({ orgSlug }: { orgSlug: string }) {
 
   if (!overview.entitled) return <SlackUpgradeCard orgSlug={orgSlug} />
   if (!overview.configured && !overview.installation) return <SlackNotConfiguredCard />
-  if (!overview.installation) return <SlackConnectCard />
-  return <SlackConnectedCard orgSlug={orgSlug} installation={overview.installation} />
+  if (!overview.installation) return <SlackConnectCard canManage={overview.canManage} />
+  return (
+    <SlackConnectedCard
+      orgSlug={orgSlug}
+      installation={overview.installation}
+      canManage={overview.canManage}
+    />
+  )
 }
 
 function CardHeader({
@@ -295,13 +305,21 @@ function ConnectButton({
 
 export { ConnectButton as SlackConnectButton }
 
-export function SlackConnectCard() {
+const ADMIN_ONLY_HINT = 'Ask an organization owner or admin to connect Slack.'
+
+export function SlackConnectCard({ canManage = true }: { canManage?: boolean }) {
   return (
     <Panel data-testid="slack-connect-card">
       <CardHeader
         status={<Badge variant="neutral">Not connected</Badge>}
         subtitle="Send incidents to Slack and respond from the message."
-        actions={<ConnectButton />}
+        actions={
+          canManage ? (
+            <ConnectButton />
+          ) : (
+            <span className="text-xs text-muted-foreground">{ADMIN_ONLY_HINT}</span>
+          )
+        }
       />
       <div className="border-t px-4 py-4">
         <HighlightList />
@@ -374,9 +392,12 @@ function ChecklistItem({
 export function SlackConnectedCard({
   orgSlug,
   installation,
+  canManage = true,
 }: {
   orgSlug: string
   installation: SlackInstallationRecord
+  /** Owners and admins may reconnect, remove and change settings. */
+  canManage?: boolean
 }) {
   const updateSettings = useUpdateSlackSettings()
   const disconnect = useDisconnectSlack()
@@ -387,6 +408,16 @@ export function SlackConnectedCard({
   const needsReconnect = installation.status !== 'active'
   const needsScopes = !needsReconnect && installation.missingScopes.length > 0
   const hasDestination = installation.slackDestinationCount > 0
+
+  async function saveSetting(input: { actionsEnabled?: boolean; unfurlsEnabled?: boolean }) {
+    try {
+      await updateSettings.mutateAsync(input)
+    } catch (error) {
+      toast.error('Could not update Slack settings', {
+        description: getErrorMessage(error, 'Please try again.'),
+      })
+    }
+  }
 
   const workspace = installation.slackTeamUrl ? (
     <a
@@ -415,7 +446,13 @@ export function SlackConnectedCard({
         actions={
           <>
             {needsReconnect || needsScopes ? (
-              <ConnectButton label="Reconnect" />
+              canManage ? (
+                <ConnectButton label="Reconnect" />
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Ask an owner or admin to reconnect.
+                </span>
+              )
             ) : (
               <Button
                 type="button"
@@ -436,15 +473,17 @@ export function SlackConnectedCard({
                 {test.isPending ? 'Testing…' : 'Test connection'}
               </Button>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              className="text-status-danger hover:text-status-danger"
-              onClick={() => setConfirmingRemove(true)}
-            >
-              Remove
-            </Button>
+            {canManage ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                className="text-status-danger hover:text-status-danger"
+                onClick={() => setConfirmingRemove(true)}
+              >
+                Remove
+              </Button>
+            ) : null}
           </>
         }
       />
@@ -471,7 +510,8 @@ export function SlackConnectedCard({
                 : 'Choose a channel for alerts'
             }
           >
-            {hasDestination || needsReconnect ? (
+            {/* While a reconnect is pending, Reconnect stays the card's one primary action. */}
+            {hasDestination || needsReconnect || needsScopes ? (
               <Link
                 to="/$orgSlug/settings/destinations"
                 params={{ orgSlug }}
@@ -489,12 +529,11 @@ export function SlackConnectedCard({
                   try {
                     await createDestination.mutateAsync({
                       type: 'slack',
-                      name: `Slack #${channelConfig.channelName ?? channelConfig.channelId}`,
+                      name: slackDestinationName(channelConfig),
                       config: {
+                        ...DEFAULT_SLACK_DESTINATION_CONFIG,
                         channelId: channelConfig.channelId,
                         channelName: channelConfig.channelName,
-                        mention: 'none',
-                        threadUpdates: true,
                       },
                     })
                     toast.success('Slack destination created', {
@@ -554,32 +593,16 @@ export function SlackConnectedCard({
           label="Allow actions from Slack"
           description="Members can acknowledge, resolve, snooze, retry and pause from Slack. Slack users act as the Durabull member with the same email."
           checked={installation.actionsEnabled}
-          disabled={updateSettings.isPending}
-          onChange={async (checked) => {
-            try {
-              await updateSettings.mutateAsync({ actionsEnabled: checked })
-            } catch (error) {
-              toast.error('Could not update Slack settings', {
-                description: getErrorMessage(error, 'Please try again.'),
-              })
-            }
-          }}
+          disabled={!canManage || updateSettings.isPending}
+          onChange={(checked) => void saveSetting({ actionsEnabled: checked })}
         />
         <SettingToggle
           id="slack-unfurls-enabled"
           label="Preview Durabull links"
           description="Queue, job and alert rule links pasted by members show live details in the channel."
           checked={installation.unfurlsEnabled}
-          disabled={updateSettings.isPending}
-          onChange={async (checked) => {
-            try {
-              await updateSettings.mutateAsync({ unfurlsEnabled: checked })
-            } catch (error) {
-              toast.error('Could not update Slack settings', {
-                description: getErrorMessage(error, 'Please try again.'),
-              })
-            }
-          }}
+          disabled={!canManage || updateSettings.isPending}
+          onChange={(checked) => void saveSetting({ unfurlsEnabled: checked })}
         />
       </div>
 

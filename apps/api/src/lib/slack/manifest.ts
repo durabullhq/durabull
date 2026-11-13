@@ -9,6 +9,8 @@ import { SLACK_BOT_EVENTS, SLACK_BOT_SCOPES, SLACK_SLASH_COMMAND } from './confi
 export function buildSlackAppManifest(input: {
   baseUrl: string
   appName?: string
+  /** OAuth callback when it differs from {baseUrl}/api/integrations/slack/callback. */
+  redirectUri?: string
   /**
    * Leave out Event Subscriptions (and link unfurling, which depends on them).
    * Slack verifies the events URL when a manifest is saved, so an app created
@@ -50,7 +52,7 @@ export function buildSlackAppManifest(input: {
       ...(input.skipEvents ? {} : { unfurl_domains: [hostname] }),
     },
     oauth_config: {
-      redirect_urls: [`${baseUrl}/api/integrations/slack/callback`],
+      redirect_urls: [input.redirectUri ?? `${baseUrl}/api/integrations/slack/callback`],
       scopes: { bot: [...SLACK_BOT_SCOPES] },
     },
     settings: {

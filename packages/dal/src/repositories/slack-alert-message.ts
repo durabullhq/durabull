@@ -197,6 +197,15 @@ export const slackAlertMessageRepository = {
       .where(eq(slackAlertMessage.id, id))
   },
 
+  /** Retries later without using up an attempt (Slack is disconnected for now). */
+  async defer(id: string, until: Date, reason: string): Promise<void> {
+    const db = await getDb()
+    await db
+      .update(slackAlertMessage)
+      .set({ nextSyncAt: until, lastSyncError: reason.slice(0, 1000), updatedAt: new Date() })
+      .where(eq(slackAlertMessage.id, id))
+  },
+
   /** Stops syncing messages that can never be updated (channel deleted, app removed). */
   async abandon(id: string, error: string): Promise<void> {
     const db = await getDb()

@@ -25,7 +25,7 @@ import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
 import { LinearApiError, validateLinearAccessToken } from '../lib/linear-client'
 import { getValidLinearAccessToken } from '../lib/linear-oauth'
 import { buildTestMessage } from '../lib/slack/alert-message'
-import { parseSlackDestinationConfig } from '../lib/slack/alerts'
+import { findActiveSlackInstallation, parseSlackDestinationConfig } from '../lib/slack/alerts'
 import { getSlackChannel, postSlackMessage, SlackApiError } from '../lib/slack/client'
 import { appBaseUrl } from '../lib/slack/config'
 import { withSlackToken } from '../lib/slack/token'
@@ -150,28 +150,31 @@ async function validateSlackDestinationConfig(
   return null
 }
 
-async function organizationName(organizationId: string): Promise<string> {
+async function findOrganizationLabels(
+  organizationId: string
+): Promise<{ name: string; slug: string | null }> {
   const db = await getDb()
   const rows = await db
     .select({ name: organization.name, slug: organization.slug })
     .from(organization)
     .where(eq(organization.id, organizationId))
     .limit(1)
-  return rows[0]?.name ?? 'your organization'
-}
-
-async function organizationSlug(organizationId: string): Promise<string | null> {
-  const db = await getDb()
-  const rows = await db
-    .select({ slug: organization.slug })
-    .from(organization)
-    .where(eq(organization.id, organizationId))
-    .limit(1)
-  return rows[0]?.slug ?? null
+  return { name: rows[0]?.name ?? 'your organization', slug: rows[0]?.slug ?? null }
 }
 
 const SLACK_TEST_INTERVAL_MS = 10_000
 const lastSlackTestAt = new Map<string, number>()
+
+/** One Slack test message per destination every few seconds; old entries are pruned. */
+function takeSlackTestSlot(destinationId: string): boolean {
+  const now = Date.now()
+  for (const [id, sentAt] of lastSlackTestAt) {
+    if (now - sentAt >= SLACK_TEST_INTERVAL_MS) lastSlackTestAt.delete(id)
+  }
+  if (lastSlackTestAt.has(destinationId)) return false
+  lastSlackTestAt.set(destinationId, now)
+  return true
+}
 
 const app = new Hono()
   .use('*', requireOrganization)
@@ -459,13 +462,11 @@ const app = new Hono()
         }
       }
       case 'slack': {
-        const last = lastSlackTestAt.get(destination.id) ?? 0
-        if (Date.now() - last < SLACK_TEST_INTERVAL_MS) {
+        if (!takeSlackTestSlot(destination.id)) {
           return c.json({ error: 'Wait a few seconds before sending another test message.' }, 429)
         }
-        lastSlackTestAt.set(destination.id, Date.now())
-        const installation = await slackInstallationRepository.findByOrganization(organizationId)
-        if (!installation || installation.status !== 'active') {
+        const installation = await findActiveSlackInstallation(organizationId)
+        if (!installation) {
           return c.json(
             { success: false, error: 'Slack is not connected or needs to be reconnected.' },
             400
@@ -473,10 +474,7 @@ const app = new Hono()
         }
         try {
           const config = parseSlackDestinationConfig(destination)
-          const [orgName, slug] = await Promise.all([
-            organizationName(organizationId),
-            organizationSlug(organizationId),
-          ])
+          const { name: orgName, slug } = await findOrganizationLabels(organizationId)
           const content = buildTestMessage({
             channelName: config.channelName ?? null,
             destinationName: destination.name,

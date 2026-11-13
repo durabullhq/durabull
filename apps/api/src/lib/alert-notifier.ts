@@ -50,12 +50,12 @@ class NonRetryableDeliveryError extends Error {
   }
 }
 
+const DELIVERY_LABELS = { webhook: 'Webhook', linear: 'Linear', slack: 'Slack' } as const
+
 /**
  * Delivery-time entitlement check. A delivery queued while the organization
  * was entitled must not send after the entitlement has ended.
  */
-const DELIVERY_LABELS = { webhook: 'Webhook', linear: 'Linear', slack: 'Slack' } as const
-
 async function assertDeliveryEntitled(
   organizationId: string,
   channel: 'email' | 'webhook' | 'linear' | 'slack'

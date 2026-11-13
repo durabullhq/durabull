@@ -8,6 +8,17 @@ import { Select } from '@/components/ui/select'
 import type { SlackDestinationConfig, SlackMentionMode } from '@/hooks/use-alerts'
 import { useSlackChannels, useSlackUserGroups } from '@/hooks/use-slack'
 
+/** Settings a new Slack destination starts with. */
+export const DEFAULT_SLACK_DESTINATION_CONFIG: Partial<SlackDestinationConfig> = {
+  mention: 'none',
+  threadUpdates: true,
+}
+
+/** Default destination name for a channel, e.g. "Slack #alerts". */
+export function slackDestinationName(config: Partial<SlackDestinationConfig>): string {
+  return `Slack #${config.channelName ?? config.channelId ?? 'alerts'}`
+}
+
 const MENTION_OPTIONS: Array<{ value: SlackMentionMode; label: string }> = [
   { value: 'none', label: 'No broadcast mention' },
   { value: 'here', label: '@here (active members)' },

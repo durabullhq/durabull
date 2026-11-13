@@ -4,7 +4,7 @@ description: Send BullMQ alert incidents to Slack, respond from the message, and
 ---
 
 The Durabull Slack app brings incident response into the channels your team already watches.
-Alerts arrive as rich messages with the failed job, its attempts and its stack trace, and
+Alerts arrive as rich messages with the failed job, its attempts and its failure reason, and
 everyone in the channel can acknowledge, resolve, snooze the rule or retry the job without
 opening Durabull. The message keeps itself current: when an incident changes anywhere in
 Durabull, the Slack message changes with it.
@@ -41,7 +41,9 @@ archived channel or a removed app, stop retrying and are shown on the incident w
 
 ## Connect Slack (Durabull Cloud)
 
-1. Open **Settings → Integrations** and select **Add to Slack**.
+1. As an organization owner or admin, open **Settings → Integrations** and select
+   **Add to Slack**. Finish the Slack consent screen in the same browser, signed in to Durabull
+   as the same member.
 2. Approve the permissions in Slack. You return to Durabull with the workspace connected.
 3. Pick a channel in the setup checklist and select **Create Slack destination**, or add one
    under **Settings → Alert destinations → Add destination → Slack**.
@@ -146,11 +148,20 @@ for a member of the organization with the same email address (case-insensitive).
 match, the user's seat is paused by the plan, or the organization's plan no longer includes the
 Slack app, the action is refused with an explanation only that user can see.
 
-Organization admins can turn off **Allow actions from Slack** in **Settings → Integrations**.
-Messages then show only the **Open in Durabull** button, and commands become read-only.
+Only people in the Slack workspace where Durabull is installed (or another workspace in the
+same Enterprise Grid) can act. Guests from other organizations in a Slack Connect channel see the
+message but their clicks are refused, because their own workspace controls their email address.
+
+Organization owners and admins can turn off **Allow actions from Slack** in **Settings →
+Integrations**. New messages, and messages that change state afterwards, show only the **Open in
+Durabull** button; clicks on buttons in older messages are refused with an explanation. Queue
+results from `/durabull` stop offering pause and resume.
 
 Slack workspace admins can change members' email addresses. Connect Slack only to workspaces
 whose administrators you trust with the same access as your Durabull organization.
+
+Connecting, changing and removing the Slack integration is limited to organization owners and
+admins. Any member can create Slack destinations once Slack is connected.
 
 ## Slash Command Reference
 
@@ -184,7 +195,12 @@ organization. Turn them off with **Preview Durabull links** in **Settings → In
 - The bot token, and the refresh token if your Slack app enables token rotation, are encrypted at
   rest with `DURABULL_SECRET_ENCRYPTION_KEY` and never returned by the API.
 - OAuth uses a single-use, hashed, ten-minute state value bound to the organization and the
-  member who started the connection.
+  member who started the connection; the callback is refused unless that same member is signed
+  in, so an install link cannot be used to attach someone else's workspace to your organization.
+- People who are not members of the organization are never told its name.
+- Event de-duplication, the channel list cache and the test-message limit are kept in memory per
+  API process. With several API replicas, a Slack retry or a quick second test can reach another
+  replica; every action involved is safe to repeat.
 - Messages contain the rule name, connection and queue names, the incident summary and, for
   failed jobs, the job id, name, attempts and failure reason. Job payloads are never sent to
   Slack.
@@ -194,17 +210,20 @@ organization. Turn them off with **Preview Durabull links** in **Settings → In
 **Remove** in **Settings → Integrations** deletes the stored token and revokes it with Slack,
 unless another Durabull organization uses the same workspace installation. Slack destinations and
 alert rules are kept; deliveries to them fail with "Slack is not connected" until you connect
-again.
+again. After reconnecting, use **Retry** on an incident's failed Slack delivery to send it.
+Messages already posted resume updating once the same workspace is connected again.
 
 Removing the app from Slack itself is detected automatically: the card shows **Reconnect
-needed** and Slack deliveries pause.
+needed**, and Slack deliveries fail with a reconnect message until you reconnect.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
 | The card says "Not set up" | Set `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` and `SLACK_SIGNING_SECRET`, then restart. |
-| Slack says the redirect URL does not match | Recreate the manifest with the right `--base-url`, or set `SLACK_OAUTH_REDIRECT_URI` to the URL registered in Slack. |
+| Slack says the redirect URL does not match | Recreate the manifest with the right `--base-url` (and `--redirect-uri` if you set `SLACK_OAUTH_REDIRECT_URI`), so the URL registered in Slack matches Durabull's. |
+| "Finish connecting Slack while signed in…" after approving in Slack | Start **Add to Slack** again from the browser where you are signed in to Durabull; the install must be finished by the member who started it. |
+| "Only organization owners and admins can change the Slack integration" | Ask an owner or admin to connect, change or remove Slack. |
 | Buttons show "This app responded with an error" or nothing happens | Check that Slack can reach `https://<your-domain>/api/slack/interactions` and that `SLACK_SIGNING_SECRET` matches the app. |
 | "Your Slack email does not belong to a member" | Invite that email address to the Durabull organization, or change the Slack profile email. |
 | A private channel is missing or disabled in the picker | Run `/invite @Durabull` in the channel, then select **Reload**. |

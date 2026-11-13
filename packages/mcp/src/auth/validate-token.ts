@@ -1,6 +1,6 @@
-import { normalizeResourceUri } from './normalize-resource-uri'
 import { missingScopes, tokenHasScopes } from './scopes'
 import type { McpAccessTokenClaims, McpTokenValidationResult } from './types'
+import { normalizeResourceUri } from './normalize-resource-uri'
 
 export interface ValidateMcpAccessTokenOptions {
   canonicalResourceUri: string
