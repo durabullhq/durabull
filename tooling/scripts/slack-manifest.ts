@@ -3,17 +3,22 @@
  *
  *   bun run slack:manifest                         # uses APP_BASE_URL
  *   bun run slack:manifest -- --base-url https://durabull.example.com --name "Durabull (staging)"
+ *   bun run slack:manifest -- --skip-events    # create the app before Durabull is reachable
  *
  * Paste the JSON at https://api.slack.com/apps → Create New App → From a manifest.
  */
 import { parseArgs } from 'node:util'
-import { env } from '@durabull/env'
-import { buildSlackAppManifest } from '../../apps/api/src/lib/slack/manifest'
+
+// Keep stdout pure JSON so it can be piped or pasted straight into Slack.
+process.env.DOTENV_CONFIG_QUIET = 'true'
+const { env } = await import('@durabull/env')
+const { buildSlackAppManifest } = await import('../../apps/api/src/lib/slack/manifest')
 
 const { values } = parseArgs({
   options: {
     'base-url': { type: 'string' },
     name: { type: 'string' },
+    'skip-events': { type: 'boolean' },
   },
 })
 
@@ -32,4 +37,10 @@ if (parsed.protocol !== 'https:') {
   process.exit(1)
 }
 
-console.log(JSON.stringify(buildSlackAppManifest({ baseUrl, appName: values.name }), null, 2))
+console.log(
+  JSON.stringify(
+    buildSlackAppManifest({ baseUrl, appName: values.name, skipEvents: values['skip-events'] }),
+    null,
+    2
+  )
+)

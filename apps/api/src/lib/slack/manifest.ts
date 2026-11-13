@@ -6,7 +6,16 @@ import { SLACK_BOT_EVENTS, SLACK_BOT_SCOPES, SLACK_SLASH_COMMAND } from './confi
  * derived from the deployment's public origin, and the scopes are the ones the
  * OAuth flow requests.
  */
-export function buildSlackAppManifest(input: { baseUrl: string; appName?: string }) {
+export function buildSlackAppManifest(input: {
+  baseUrl: string
+  appName?: string
+  /**
+   * Leave out Event Subscriptions. Slack verifies the events URL when a
+   * manifest is saved, so an app created before Durabull is reachable is
+   * created without it; save the full manifest once Durabull is deployed.
+   */
+  skipEvents?: boolean
+}) {
   const baseUrl = input.baseUrl.replace(/\/+$/, '')
   const { hostname } = new URL(baseUrl)
   const appName = input.appName?.trim() || 'Durabull'
@@ -43,10 +52,14 @@ export function buildSlackAppManifest(input: { baseUrl: string; appName?: string
       scopes: { bot: [...SLACK_BOT_SCOPES] },
     },
     settings: {
-      event_subscriptions: {
-        request_url: `${baseUrl}/api/slack/events`,
-        bot_events: [...SLACK_BOT_EVENTS],
-      },
+      ...(input.skipEvents
+        ? {}
+        : {
+            event_subscriptions: {
+              request_url: `${baseUrl}/api/slack/events`,
+              bot_events: [...SLACK_BOT_EVENTS],
+            },
+          }),
       interactivity: {
         is_enabled: true,
         request_url: `${baseUrl}/api/slack/interactions`,

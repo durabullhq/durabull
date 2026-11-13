@@ -105,9 +105,17 @@ Restart Durabull. The Slack card in **Settings → Integrations** switches from 
 
 ### 3. Verify the event URL
 
-Slack checks the Events API request URL when you save it. If the manifest was created before
-Durabull was reachable, open **Event Subscriptions** in the Slack app settings and select
-**Retry** next to the request URL once Durabull is running with the signing secret.
+Slack checks the Events API request URL when a manifest is saved, so Durabull must already be
+running with `SLACK_SIGNING_SECRET` set. If you are creating the app before Durabull is reachable
+(for example, before a deploy), create it from a manifest without event subscriptions:
+
+```bash
+bun run slack:manifest -- --base-url https://durabull.example.com --skip-events
+```
+
+Then, once Durabull is running with the credentials, open **App Manifest** in the Slack app
+settings, paste the full manifest (without `--skip-events`) and save. Slack verifies
+`/api/slack/events` and enables the App Home, link previews and uninstall detection.
 
 ### 4. Distribute the app (optional)
 

@@ -247,10 +247,10 @@ describe('Slack app manifest', () => {
     expect(manifest.oauth_config.redirect_urls).toEqual([
       'https://app.durabull.test/api/integrations/slack/callback',
     ])
-    expect(manifest.settings.event_subscriptions.request_url).toBe(
+    expect(manifest.settings.event_subscriptions?.request_url).toBe(
       'https://app.durabull.test/api/slack/events'
     )
-    expect(manifest.settings.event_subscriptions.bot_events).toEqual([...SLACK_BOT_EVENTS])
+    expect(manifest.settings.event_subscriptions?.bot_events).toEqual([...SLACK_BOT_EVENTS])
     expect(manifest.settings.interactivity.request_url).toBe(
       'https://app.durabull.test/api/slack/interactions'
     )
@@ -258,6 +258,15 @@ describe('Slack app manifest', () => {
       'https://app.durabull.test/api/slack/commands'
     )
     expect(manifest.features.unfurl_domains).toEqual(['app.durabull.test'])
+
+    const beforeDeploy = buildSlackAppManifest({
+      baseUrl: 'https://app.durabull.test',
+      skipEvents: true,
+    })
+    expect('event_subscriptions' in beforeDeploy.settings).toBe(false)
+    expect(beforeDeploy.settings.interactivity.request_url).toBe(
+      'https://app.durabull.test/api/slack/interactions'
+    )
 
     const authorize = new URL(
       buildSlackAuthorizeUrl({ clientId: 'cid', redirectUri: 'https://x.test/cb', state: 's' })
