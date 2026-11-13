@@ -72,6 +72,12 @@ const MARKETING_LINKS: MarketingLink[] = [
     description: `Operate BullMQ from Claude, ChatGPT, Cursor, and any MCP client. ${MCP_FACTS.tools} tools, OAuth scopes, Queue Explorer.`,
   },
   {
+    path: '/integrations/slack',
+    title: 'Durabull for Slack',
+    description:
+      'BullMQ alert incidents in Slack with acknowledge, resolve, snooze and retry buttons, /durabull queue and job lookups, App Home and link previews. Team plan and up.',
+  },
+  {
     path: '/compare',
     title: 'Comparison hub',
     description:
