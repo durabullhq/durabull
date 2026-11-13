@@ -153,6 +153,7 @@ describe('SlackIntegrationCard', () => {
     it('starts OAuth once for an admin and clears the request from the URL', async () => {
       withInstallRequest()
       mocks.overview.mockReturnValue({
+        organizationId: 'org-1',
         configured: true,
         entitled: true,
         canManage: true,
@@ -170,6 +171,7 @@ describe('SlackIntegrationCard', () => {
     it('asks members of several organizations to confirm instead of starting OAuth', async () => {
       window.history.replaceState(null, '', '/acme/settings/integrations?slack=install-confirm')
       mocks.overview.mockReturnValue({
+        organizationId: 'org-1',
         configured: true,
         entitled: true,
         canManage: true,
@@ -182,9 +184,41 @@ describe('SlackIntegrationCard', () => {
       expect(screen.getByRole('button', { name: /Add to Slack/ })).toBeInTheDocument()
     })
 
+    it('never starts OAuth from an overview without a confirmed organization', async () => {
+      withInstallRequest()
+      // An older API omits organizationId, so nothing ties this overview to acme.
+      mocks.overview.mockReturnValue({
+        configured: true,
+        entitled: true,
+        canManage: true,
+        installation: null,
+      })
+      render(<SlackIntegrationCard orgSlug="acme" />)
+
+      await waitFor(() => expect(window.location.search).toBe(''))
+      expect(mocks.connect).not.toHaveBeenCalled()
+    })
+
+    it('ignores an overview answered for another organization', async () => {
+      withInstallRequest()
+      mocks.overview.mockReturnValue({
+        organizationId: 'org-2',
+        configured: true,
+        entitled: true,
+        canManage: true,
+        installation: null,
+      })
+      render(<SlackIntegrationCard orgSlug="acme" />)
+
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(mocks.connect).not.toHaveBeenCalled()
+      expect(window.location.search).toBe('?slack=install')
+    })
+
     it('waits until the active organization is the one in the URL', async () => {
       withInstallRequest()
       mocks.overview.mockReturnValue({
+        organizationId: 'org-1',
         configured: true,
         entitled: true,
         canManage: true,
@@ -201,6 +235,7 @@ describe('SlackIntegrationCard', () => {
     it('does not start OAuth for members who cannot manage Slack', async () => {
       withInstallRequest()
       mocks.overview.mockReturnValue({
+        organizationId: 'org-1',
         configured: true,
         entitled: true,
         canManage: false,
@@ -215,6 +250,7 @@ describe('SlackIntegrationCard', () => {
     it('does not reinstall a workspace that is already connected', async () => {
       withInstallRequest()
       mocks.overview.mockReturnValue({
+        organizationId: 'org-1',
         configured: true,
         entitled: true,
         canManage: true,

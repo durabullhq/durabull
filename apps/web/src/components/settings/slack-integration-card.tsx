@@ -107,12 +107,20 @@ export function useSlackInstallRequest(
   // until it is the organization in the URL, so a stale overview from the
   // previously active organization never decides the install.
   const { data: activeOrganization } = useActiveOrganization()
-  const isCurrentOrganization =
-    activeOrganization?.slug === orgSlug &&
-    // Older APIs omit organizationId; then the query key is the only check.
-    (overview?.organizationId == null || overview.organizationId === activeOrganization.id)
+  const isCurrentOrganization = activeOrganization?.slug === orgSlug
+  // Only an overview the API confirmed is for this organization may start
+  // OAuth or decide what to tell the member. Older APIs omit organizationId.
+  const verified =
+    Boolean(activeOrganization?.id) && overview?.organizationId === activeOrganization?.id
+  const unverifiable = overview != null && overview.organizationId == null
   useEffect(() => {
-    if (handled.current || !overview || !isCurrentOrganization || typeof window === 'undefined')
+    if (
+      handled.current ||
+      !overview ||
+      !isCurrentOrganization ||
+      !(verified || unverifiable) ||
+      typeof window === 'undefined'
+    )
       return
     const url = new URL(window.location.href)
     const request = url.searchParams.get('slack')
@@ -120,6 +128,13 @@ export function useSlackInstallRequest(
     handled.current = true
     url.searchParams.delete('slack')
     window.history.replaceState(window.history.state, '', url.toString())
+
+    if (!verified) {
+      // This API cannot confirm which organization the overview is for, so
+      // leave the decision to the member instead of starting OAuth.
+      toast('Select Add to Slack to connect Slack to this organization')
+      return
+    }
 
     const installation = overview.installation
     if (!overview.entitled) {
@@ -153,7 +168,7 @@ export function useSlackInstallRequest(
         description: getErrorMessage(error, 'Please try again.'),
       })
     })
-  }, [overview, connect, isCurrentOrganization])
+  }, [overview, connect, isCurrentOrganization, verified, unverifiable])
 }
 
 export function SlackIntegrationCard({ orgSlug }: { orgSlug: string }) {
