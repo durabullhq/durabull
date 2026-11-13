@@ -1,4 +1,5 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { randomUUID } from 'node:crypto'
+import { and, eq, gt, inArray, isNotNull, or, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { alertEvent } from '../db/schemas/alert-event/schema'
 import { slackAlertMessage } from '../db/schemas/slack-alert-message/schema'
@@ -9,6 +10,20 @@ import type {
 
 /** Lease taken on a message while it is being re-rendered in Slack. */
 const SYNC_LEASE_MS = 2 * 60_000
+/** Attempt count that takes a message out of the sync loop until it is revived. */
+const PARKED_ATTEMPTS = 1_000_000
+
+export type ClaimedSlackAlertMessage = SlackAlertMessage & {
+  leaseToken: string
+  claimedAt: Date
+}
+
+function leaseHeld(claim: { id: string; leaseToken: string }) {
+  return and(
+    eq(slackAlertMessage.id, claim.id),
+    eq(slackAlertMessage.syncLeaseToken, claim.leaseToken)
+  )
+}
 
 function rowsFromExecute<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[]
@@ -111,15 +126,18 @@ export const slackAlertMessageRepository = {
   },
 
   /**
-   * Leases messages whose incident state no longer matches what Slack shows.
+   * Leases messages whose incident state no longer matches what Slack shows,
+   * or that were asked to re-render. Each claim gets its own lease token, and
+   * completion writes only land while that token still holds the row.
    * Pass `alertEventIds` to sync specific incidents right after they change.
    */
   async claimOutOfSync(
     options: { limit?: number; alertEventIds?: string[]; maxAttempts?: number } = {}
-  ): Promise<SlackAlertMessage[]> {
+  ): Promise<ClaimedSlackAlertMessage[]> {
     const db = await getDb()
-    const now = new Date()
-    const leaseUntil = new Date(now.getTime() + SYNC_LEASE_MS)
+    const claimedAt = new Date()
+    const leaseUntil = new Date(claimedAt.getTime() + SYNC_LEASE_MS)
+    const leaseToken = randomUUID()
     const limit = options.limit ?? 25
     const maxAttempts = options.maxAttempts ?? 50
     if (options.alertEventIds && options.alertEventIds.length === 0) return []
@@ -132,7 +150,7 @@ export const slackAlertMessageRepository = {
 
     const result = await db.execute(sql`
       UPDATE ${slackAlertMessage} AS target
-      SET next_sync_at = ${leaseUntil}, updated_at = ${now}
+      SET next_sync_at = ${leaseUntil}, sync_lease_token = ${leaseToken}, updated_at = ${claimedAt}
       WHERE target.id IN (
         SELECT message.id
         FROM ${slackAlertMessage} AS message
@@ -144,8 +162,9 @@ export const slackAlertMessageRepository = {
               AND event.acknowledged_at IS NOT NULL
               AND event.acknowledged_by IS DISTINCT FROM message.rendered_acknowledged_by
             )
+            OR message.refresh_requested_at IS NOT NULL
           )
-          AND (message.next_sync_at IS NULL OR message.next_sync_at <= ${now})
+          AND (message.next_sync_at IS NULL OR message.next_sync_at <= ${claimedAt})
           AND message.sync_attempts < ${maxAttempts}
           ${eventFilter}
         ORDER BY message.updated_at
@@ -156,31 +175,38 @@ export const slackAlertMessageRepository = {
     `)
     const ids = rowsFromExecute<{ id: string }>(result).map((row) => row.id)
     if (ids.length === 0) return []
-    return db.select().from(slackAlertMessage).where(inArray(slackAlertMessage.id, ids))
+    const rows = await db.select().from(slackAlertMessage).where(inArray(slackAlertMessage.id, ids))
+    return rows.map((row) => ({ ...row, leaseToken, claimedAt }))
   },
 
+  /** Records what Slack now shows; ignored when the lease was lost to another worker. */
   async markSynced(
-    id: string,
+    claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken' | 'claimedAt'>,
     rendered: { state: SlackAlertMessageState; acknowledgedBy: string | null }
-  ): Promise<void> {
+  ): Promise<boolean> {
     const db = await getDb()
     const now = new Date()
-    await db
+    const rows = await db
       .update(slackAlertMessage)
       .set({
         renderedState: rendered.state,
         renderedAcknowledgedBy: rendered.acknowledgedBy,
         syncAttempts: 0,
         nextSyncAt: null,
+        syncLeaseToken: null,
+        // A refresh requested while this worker was busy still needs its own pass.
+        refreshRequestedAt: sql`CASE WHEN ${slackAlertMessage.refreshRequestedAt} > ${claim.claimedAt} THEN ${slackAlertMessage.refreshRequestedAt} ELSE NULL END`,
         lastSyncError: null,
         lastSyncedAt: now,
         updatedAt: now,
       })
-      .where(eq(slackAlertMessage.id, id))
+      .where(leaseHeld(claim))
+      .returning({ id: slackAlertMessage.id })
+    return rows.length > 0
   },
 
   async markSyncFailed(
-    id: string,
+    claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken'>,
     failure: { error: string; nextSyncAt: Date | null }
   ): Promise<void> {
     const db = await getDb()
@@ -192,31 +218,96 @@ export const slackAlertMessageRepository = {
         // A null retry time with attempts exhausted parks the row; the claim
         // query skips it once sync_attempts reaches the limit.
         nextSyncAt: failure.nextSyncAt,
+        syncLeaseToken: null,
         updatedAt: new Date(),
       })
-      .where(eq(slackAlertMessage.id, id))
+      .where(leaseHeld(claim))
   },
 
   /** Retries later without using up an attempt (Slack is disconnected for now). */
-  async defer(id: string, until: Date, reason: string): Promise<void> {
-    const db = await getDb()
-    await db
-      .update(slackAlertMessage)
-      .set({ nextSyncAt: until, lastSyncError: reason.slice(0, 1000), updatedAt: new Date() })
-      .where(eq(slackAlertMessage.id, id))
-  },
-
-  /** Stops syncing messages that can never be updated (channel deleted, app removed). */
-  async abandon(id: string, error: string): Promise<void> {
+  async defer(
+    claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken'>,
+    until: Date,
+    reason: string
+  ): Promise<void> {
     const db = await getDb()
     await db
       .update(slackAlertMessage)
       .set({
-        syncAttempts: 1_000_000,
-        lastSyncError: error.slice(0, 1000),
-        nextSyncAt: null,
+        nextSyncAt: until,
+        syncLeaseToken: null,
+        lastSyncError: reason.slice(0, 1000),
         updatedAt: new Date(),
       })
-      .where(eq(slackAlertMessage.id, id))
+      .where(leaseHeld(claim))
+  },
+
+  /** Stops syncing messages that cannot be updated until Slack access changes. */
+  async abandon(
+    claim: Pick<ClaimedSlackAlertMessage, 'id' | 'leaseToken'>,
+    error: string
+  ): Promise<void> {
+    const db = await getDb()
+    await db
+      .update(slackAlertMessage)
+      .set({
+        syncAttempts: PARKED_ATTEMPTS,
+        lastSyncError: error.slice(0, 1000),
+        nextSyncAt: null,
+        syncLeaseToken: null,
+        updatedAt: new Date(),
+      })
+      .where(leaseHeld(claim))
+  },
+
+  /** Asks the sync loop to re-render these incidents' messages from their current state. */
+  async requestRefresh(alertEventIds: string[]): Promise<number> {
+    if (alertEventIds.length === 0) return 0
+    const db = await getDb()
+    const now = new Date()
+    const rows = await db
+      .update(slackAlertMessage)
+      .set({ refreshRequestedAt: now, updatedAt: now })
+      .where(inArray(slackAlertMessage.alertEventId, alertEventIds))
+      .returning({ id: slackAlertMessage.id })
+    return rows.length
+  },
+
+  /** Re-renders every message for the organization's open incidents (e.g. Slack actions toggled). */
+  async requestRefreshForOpenIncidents(organizationId: string): Promise<string[]> {
+    const db = await getDb()
+    const now = new Date()
+    const result = await db.execute(sql`
+      UPDATE ${slackAlertMessage} AS message
+      SET refresh_requested_at = ${now}, updated_at = ${now}
+      FROM ${alertEvent} AS event
+      WHERE event.id = message.alert_event_id
+        AND message.organization_id = ${organizationId}
+        AND event.status = 'firing'
+      RETURNING message.alert_event_id AS "alertEventId"
+    `)
+    return [
+      ...new Set(rowsFromExecute<{ alertEventId: string }>(result).map((row) => row.alertEventId)),
+    ]
+  },
+
+  /**
+   * Gives parked messages another chance after Slack access returns (the
+   * workspace was reconnected), so incidents in it update again.
+   */
+  async reviveForWorkspace(organizationId: string, slackTeamId: string): Promise<number> {
+    const db = await getDb()
+    const rows = await db
+      .update(slackAlertMessage)
+      .set({ syncAttempts: 0, nextSyncAt: null, syncLeaseToken: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(slackAlertMessage.organizationId, organizationId),
+          eq(slackAlertMessage.slackTeamId, slackTeamId),
+          or(gt(slackAlertMessage.syncAttempts, 0), isNotNull(slackAlertMessage.nextSyncAt))
+        )
+      )
+      .returning({ id: slackAlertMessage.id })
+    return rows.length
   },
 }

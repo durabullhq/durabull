@@ -16,6 +16,7 @@ import { buildSlackAuthorizeUrl, SLACK_BOT_EVENTS, SLACK_BOT_SCOPES } from './co
 import { escapeSlackText, formatDuration, slackCodeBlock } from './format'
 import { parseCommandText, parseDurabullLink, stripMentions } from './handlers'
 import { buildSlackAppManifest } from './manifest'
+import { statusBlocks } from './views'
 import { signSlackRequest, verifySlackSignature } from './verify'
 
 const view = {
@@ -117,6 +118,24 @@ describe('Slack alert messages', () => {
     // The stack trace cannot escape its code fence.
     expect(serialized).not.toContain('mailer.ts:10)```')
     expect(serialized).toContain('send-welcome')
+  })
+
+  it('keeps confirmation dialogs within Slack’s 300-character limit', () => {
+    const content = buildAlertMessage({
+      ...view,
+      ruleName: '&'.repeat(200),
+      queueName: '<'.repeat(200),
+    })
+    const confirms: Array<{ text: { type: string; text: string } }> = []
+    JSON.stringify(content, (key, value) => {
+      if (key === 'confirm' && value?.title) confirms.push(value)
+      return value
+    })
+    expect(confirms.length).toBeGreaterThan(0)
+    for (const confirm of confirms) {
+      expect(confirm.text.type).toBe('plain_text')
+      expect(confirm.text.text.length).toBeLessThanOrEqual(300)
+    }
   })
 
   it('swaps acknowledge for unacknowledge and names the responder', () => {
@@ -335,5 +354,23 @@ describe('Slack Web API client', () => {
     await expect(postToSlackResponseUrl('https://evil.test/x', { text: 'hi' })).rejects.toThrow(
       'non-Slack'
     )
+  })
+})
+
+describe('Slack status view', () => {
+  it('counts incidents on hidden connections before declaring an all-clear', () => {
+    const blocks = statusBlocks([
+      {
+        organizationName: 'Acme',
+        organizationSlug: 'acme',
+        connections: [{ id: 'c1', name: 'Primary', environment: null, firing: 0, acknowledged: 0 }],
+        disabledConnections: 1,
+        hiddenOpen: { firing: 2, acknowledged: 0 },
+      },
+    ])
+    const text = JSON.stringify(blocks)
+    expect(text).not.toContain('No open incidents')
+    expect(text).toContain('*2* open incidents')
+    expect(text).toContain('with 2 open incident(s) counted above')
   })
 })

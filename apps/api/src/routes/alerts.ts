@@ -51,7 +51,12 @@ import {
   redisHealthConfigSchema,
   restoreRedisHealthSnapshot,
 } from '../lib/redis-health'
-import { findActiveSlackInstallation, queueSlackMessageSync } from '../lib/slack/alerts'
+import {
+  findActiveSlackInstallation,
+  queueSlackMessageSync,
+  SLACK_WORKSPACE_CHANGED_MESSAGE,
+  slackDestinationMatchesWorkspace,
+} from '../lib/slack/alerts'
 
 const alertTypeSchema = z.enum([
   'failure_threshold',
@@ -931,8 +936,12 @@ async function validateNotificationChannels(
     }
     await requireDeliveryFeature(organizationId, destination.type)
     if (destination.type === 'slack') {
-      if (!(await findActiveSlackInstallation(organizationId))) {
+      const installation = await findActiveSlackInstallation(organizationId)
+      if (!installation) {
         return 'Slack must be connected before alert rules can route to Slack destinations.'
+      }
+      if (!slackDestinationMatchesWorkspace(destination, installation)) {
+        return `Destination "${destination.name}": ${SLACK_WORKSPACE_CHANGED_MESSAGE}`
       }
     }
     if (destination.type === 'webhook' && destination.encryptedSigningSecret) {

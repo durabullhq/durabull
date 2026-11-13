@@ -1,5 +1,6 @@
 import {
   type AlertDestination,
+  type AlertSlackDestinationConfig,
   alertDestinationRepository,
   decryptSecret,
   eq,
@@ -25,7 +26,12 @@ import { sendRateLimitedTestWebhook } from '../lib/alert-webhook-rate-limit'
 import { LinearApiError, validateLinearAccessToken } from '../lib/linear-client'
 import { getValidLinearAccessToken } from '../lib/linear-oauth'
 import { buildTestMessage } from '../lib/slack/alert-message'
-import { findActiveSlackInstallation, parseSlackDestinationConfig } from '../lib/slack/alerts'
+import {
+  findActiveSlackInstallation,
+  parseSlackDestinationConfig,
+  SLACK_WORKSPACE_CHANGED_MESSAGE,
+  slackDestinationMatchesWorkspace,
+} from '../lib/slack/alerts'
 import { getSlackChannel, postSlackMessage, SlackApiError } from '../lib/slack/client'
 import { appBaseUrl } from '../lib/slack/config'
 import { withSlackToken } from '../lib/slack/token'
@@ -57,6 +63,8 @@ const slackConfigSchema = z
       .max(5)
       .optional(),
     threadUpdates: z.boolean().optional(),
+    // Echoed back by clients editing a destination; the server always sets it.
+    slackTeamId: z.string().optional(),
   })
   .strict()
 
@@ -124,30 +132,41 @@ async function validateLinearDestinationConfig(
   return null
 }
 
+/**
+ * Checks a Slack destination's channel against the connected workspace and
+ * returns the config to store, stamped with that workspace so a later switch
+ * to another workspace can tell the channel no longer applies.
+ */
 async function validateSlackDestinationConfig(
   organizationId: string,
   config: z.infer<typeof slackConfigSchema>
-): Promise<string | null> {
+): Promise<{ error: string } | { config: AlertSlackDestinationConfig }> {
   const installation = await slackInstallationRepository.findByOrganization(organizationId)
   if (!installation) {
-    return 'Connect Slack under Settings → Integrations before creating Slack destinations.'
+    return {
+      error: 'Connect Slack under Settings → Integrations before creating Slack destinations.',
+    }
   }
   if (installation.status !== 'active') {
-    return 'Slack needs to be reconnected before Slack destinations can be saved.'
+    return { error: 'Slack needs to be reconnected before Slack destinations can be saved.' }
   }
+  let channelName = config.channelName
   try {
     const channel = await withSlackToken(installation, (token) =>
       getSlackChannel(token, config.channelId)
     )
-    if (channel.isArchived) return `#${channel.name} is archived.`
+    if (channel.isArchived) return { error: `#${channel.name} is archived.` }
     if (channel.isPrivate && !channel.isMember) {
-      return `Invite @Durabull to #${channel.name} first: /invite @Durabull in the channel.`
+      return {
+        error: `Invite @Durabull to #${channel.name} first: /invite @Durabull in the channel.`,
+      }
     }
+    channelName = channel.name || channelName
   } catch (error) {
-    if (error instanceof SlackApiError && !error.retryable) return error.message
+    if (error instanceof SlackApiError && !error.retryable) return { error: error.message }
     // A transient Slack outage should not block saving; delivery retries.
   }
-  return null
+  return { config: { ...config, channelName, slackTeamId: installation.slackTeamId } }
 }
 
 async function findOrganizationLabels(
@@ -224,11 +243,13 @@ const app = new Hono()
         return c.json({ error: linearError }, 400)
       }
     }
+    let slackConfig: AlertSlackDestinationConfig | null = null
     if (body.type === 'slack') {
-      const slackError = await validateSlackDestinationConfig(organizationId, body.config)
-      if (slackError) {
-        return c.json({ error: slackError }, 400)
+      const validated = await validateSlackDestinationConfig(organizationId, body.config)
+      if ('error' in validated) {
+        return c.json({ error: validated.error }, 400)
       }
+      slackConfig = validated.config
     }
 
     try {
@@ -238,7 +259,7 @@ const app = new Hono()
         type: body.type,
         url: body.type === 'webhook' ? body.url : null,
         signingSecret: body.type === 'webhook' ? body.signingSecret : undefined,
-        config: body.type === 'webhook' ? {} : (body.config ?? {}),
+        config: body.type === 'webhook' ? {} : (slackConfig ?? body.config ?? {}),
         enabled: body.enabled,
       })
 
@@ -280,6 +301,7 @@ const app = new Hono()
     if (body.signingSecret !== undefined && existing.type !== 'webhook') {
       return c.json({ error: 'Only webhook destinations have a signing secret.' }, 400)
     }
+    let updatedSlackConfig: AlertSlackDestinationConfig | null = null
     if (body.config !== undefined) {
       if (existing.type === 'email') {
         const parsed = z
@@ -306,10 +328,11 @@ const app = new Hono()
           return c.json({ error: 'Slack destinations require a channel.' }, 400)
         }
         await requireDeliveryFeature(organizationId, 'slack')
-        const slackError = await validateSlackDestinationConfig(organizationId, parsed.data)
-        if (slackError) {
-          return c.json({ error: slackError }, 400)
+        const validated = await validateSlackDestinationConfig(organizationId, parsed.data)
+        if ('error' in validated) {
+          return c.json({ error: validated.error }, 400)
         }
+        updatedSlackConfig = validated.config
       }
       if (existing.type === 'webhook') {
         return c.json({ error: 'Webhook destinations are configured via url and secret.' }, 400)
@@ -334,7 +357,7 @@ const app = new Hono()
         name: body.name,
         url: body.url,
         signingSecret: body.signingSecret,
-        config: body.config as AlertDestination['config'] | undefined,
+        config: (updatedSlackConfig ?? body.config) as AlertDestination['config'] | undefined,
         enabled: body.enabled,
       })
 
@@ -471,6 +494,9 @@ const app = new Hono()
             { success: false, error: 'Slack is not connected or needs to be reconnected.' },
             400
           )
+        }
+        if (!slackDestinationMatchesWorkspace(destination, installation)) {
+          return c.json({ success: false, error: SLACK_WORKSPACE_CHANGED_MESSAGE }, 400)
         }
         try {
           const config = parseSlackDestinationConfig(destination)

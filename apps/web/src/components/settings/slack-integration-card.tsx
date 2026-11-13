@@ -14,11 +14,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { SlackLogo } from '@/components/brand/slack-logo'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import {
-  DEFAULT_SLACK_DESTINATION_CONFIG,
-  SlackDestinationFields,
-  slackDestinationName,
-} from '@/components/settings/slack-destination-fields'
+import { SlackDestinationFields } from '@/components/settings/slack-destination-fields'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/section'
@@ -35,6 +31,7 @@ import {
   useUpdateSlackSettings,
 } from '@/hooks/use-slack'
 import { cn } from '@/lib/utils'
+import { DEFAULT_SLACK_DESTINATION_CONFIG, slackDestinationName } from '@/lib/slack-destination'
 
 const SLACK_DOCS_URL = 'https://durabull.io/documentation/integrations/slack'
 const SLACK_FEATURE = 'integrations.slack' as const

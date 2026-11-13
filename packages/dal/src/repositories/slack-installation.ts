@@ -75,7 +75,7 @@ export const slackInstallationRepository = {
     }))
   },
 
-  /** Number of other organizations whose installation shares this workspace. */
+  /** Number of other organizations with an active installation in this workspace. */
   async countOtherInstallationsForTeam(
     slackTeamId: string,
     excludingOrganizationId: string
@@ -87,7 +87,8 @@ export const slackInstallationRepository = {
       .where(
         and(
           eq(slackInstallation.slackTeamId, slackTeamId),
-          ne(slackInstallation.organizationId, excludingOrganizationId)
+          ne(slackInstallation.organizationId, excludingOrganizationId),
+          eq(slackInstallation.status, 'active')
         )
       )
     return Number(row?.count ?? 0)
@@ -123,9 +124,14 @@ export const slackInstallationRepository = {
     return row
   },
 
+  /**
+   * Stores rotated tokens. With `expectedRefreshToken` (the encrypted value the
+   * caller redeemed) the write only lands if no one else rotated them first.
+   */
   async updateTokens(
     organizationId: string,
-    tokens: { botToken: string; refreshToken?: string | null; botTokenExpiresAt?: Date | null }
+    tokens: { botToken: string; refreshToken?: string | null; botTokenExpiresAt?: Date | null },
+    options: { expectedRefreshToken?: string } = {}
   ): Promise<SlackInstallation | null> {
     const db = await getDb()
     const [row] = await db
@@ -138,7 +144,14 @@ export const slackInstallationRepository = {
         botTokenExpiresAt: tokens.botTokenExpiresAt ?? null,
         updatedAt: new Date(),
       })
-      .where(eq(slackInstallation.organizationId, organizationId))
+      .where(
+        and(
+          eq(slackInstallation.organizationId, organizationId),
+          options.expectedRefreshToken
+            ? eq(slackInstallation.encryptedRefreshToken, options.expectedRefreshToken)
+            : undefined
+        )
+      )
       .returning()
     return row ?? null
   },
@@ -172,16 +185,31 @@ export const slackInstallationRepository = {
       .where(eq(slackInstallation.organizationId, organizationId))
   },
 
+  /**
+   * Sets the installation's status. With `onlyIfBotToken` (the encrypted token
+   * a failed call used) it only applies while that token is still the stored
+   * one, so a late failure from an old token cannot revoke a reconnect.
+   */
   async markStatus(
     organizationId: string,
     status: SlackInstallationStatus,
-    reason: string | null
-  ): Promise<void> {
+    reason: string | null,
+    options: { onlyIfBotToken?: string } = {}
+  ): Promise<boolean> {
     const db = await getDb()
-    await db
+    const rows = await db
       .update(slackInstallation)
       .set({ status, statusReason: reason, updatedAt: new Date() })
-      .where(eq(slackInstallation.organizationId, organizationId))
+      .where(
+        and(
+          eq(slackInstallation.organizationId, organizationId),
+          options.onlyIfBotToken
+            ? eq(slackInstallation.encryptedBotToken, options.onlyIfBotToken)
+            : undefined
+        )
+      )
+      .returning({ id: slackInstallation.id })
+    return rows.length > 0
   },
 
   /** Slack reported the app was uninstalled or its tokens revoked for a whole workspace. */

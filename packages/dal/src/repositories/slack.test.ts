@@ -125,6 +125,8 @@ describe('Slack repositories', () => {
 
     expect(await slackInstallationRepository.markTeamRevoked('T1', 'app_uninstalled')).toBe(2)
     expect(await slackInstallationRepository.listActiveByTeam('T1')).toEqual([])
+    // A revoked installation no longer holds the shared bot token.
+    expect(await slackInstallationRepository.countOtherInstallationsForTeam('T1', ORG_A)).toBe(0)
 
     // Reinstalling reactivates the row and keeps the settings toggles.
     await slackInstallationRepository.updateSettings(ORG_A, { unfurlsEnabled: false })
@@ -215,7 +217,29 @@ describe('Slack repositories', () => {
     // The lease keeps a second worker from claiming the same message.
     expect(await slackAlertMessageRepository.claimOutOfSync()).toEqual([])
 
-    await slackAlertMessageRepository.markSynced(message.id, {
+    const claim = claimed[0]!
+    // A worker whose lease was taken over cannot record its result.
+    expect(
+      await slackAlertMessageRepository.markSynced(
+        { ...claim, leaseToken: 'stale-worker' },
+        { state: 'acknowledged', acknowledgedBy: 'user-ada' }
+      )
+    ).toBe(false)
+    expect(
+      await slackAlertMessageRepository.markSynced(claim, {
+        state: 'acknowledged',
+        acknowledgedBy: 'user-ada',
+      })
+    ).toBe(true)
+    expect(await slackAlertMessageRepository.claimOutOfSync()).toEqual([])
+
+    // A refresh request re-renders even though the incident state is unchanged.
+    expect(await slackAlertMessageRepository.requestRefreshForOpenIncidents(ORG_A)).toEqual([
+      event.id,
+    ])
+    const refreshed = await slackAlertMessageRepository.claimOutOfSync()
+    expect(refreshed).toHaveLength(1)
+    await slackAlertMessageRepository.markSynced(refreshed[0]!, {
       state: 'acknowledged',
       acknowledgedBy: 'user-ada',
     })
@@ -228,12 +252,11 @@ describe('Slack repositories', () => {
     const afterResolve = await slackAlertMessageRepository.claimOutOfSync()
     expect(afterResolve).toHaveLength(1)
 
-    await slackAlertMessageRepository.abandon(message.id, 'channel_not_found')
-    await slackAlertMessageRepository.markSyncFailed(message.id, {
-      error: 'still broken',
-      nextSyncAt: null,
-    })
+    // Parked messages stay out of the loop until the workspace is reconnected.
+    await slackAlertMessageRepository.abandon(afterResolve[0]!, 'not_in_channel')
     expect(await slackAlertMessageRepository.claimOutOfSync()).toEqual([])
+    expect(await slackAlertMessageRepository.reviveForWorkspace(ORG_A, 'T1')).toBe(1)
+    expect(await slackAlertMessageRepository.claimOutOfSync()).toHaveLength(1)
     expect(
       await slackAlertMessageRepository.findByChannelMessage('C1', '1700000000.000100')
     ).toMatchObject({ id: message.id })

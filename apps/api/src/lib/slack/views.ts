@@ -3,6 +3,7 @@ import type { Job } from 'bullmq'
 import { SLACK_ACTIONS } from './alert-message'
 import { appBaseUrl, SLACK_SLASH_COMMAND } from './config'
 import {
+  confirmText,
   mrkdwn,
   plainText,
   ruleTypeLabel,
@@ -11,6 +12,7 @@ import {
   slackDate,
   slackInline,
   slackLink,
+  truncate,
 } from './format'
 import type { QueueOverview } from './operations'
 
@@ -38,6 +40,8 @@ export interface OrganizationStatus {
     acknowledged: number
   }>
   disabledConnections: number
+  /** Open incidents on connections that are disabled or paused (not listed above). */
+  hiddenOpen: { firing: number; acknowledged: number }
 }
 
 function orgUrl(slug: string, path = ''): string {
@@ -96,8 +100,12 @@ function environmentLabel(environment: string | null | undefined): string {
 export function statusBlocks(orgs: OrganizationStatus[]): unknown[] {
   const blocks: unknown[] = []
   for (const org of orgs) {
-    const open = org.connections.reduce((sum, c) => sum + c.firing + c.acknowledged, 0)
-    const firing = org.connections.reduce((sum, c) => sum + c.firing, 0)
+    // Incidents on hidden connections still count: the all-clear must be true.
+    const firing = org.connections.reduce((sum, c) => sum + c.firing, org.hiddenOpen.firing)
+    const open = org.connections.reduce(
+      (sum, c) => sum + c.firing + c.acknowledged,
+      org.hiddenOpen.firing + org.hiddenOpen.acknowledged
+    )
     blocks.push({
       type: 'section',
       text: mrkdwn(
@@ -134,7 +142,13 @@ export function statusBlocks(orgs: OrganizationStatus[]): unknown[] {
       blocks.push({
         type: 'context',
         elements: [
-          mrkdwn(`${org.disabledConnections} disabled or paused connection(s) not shown.`),
+          mrkdwn(
+            `${org.disabledConnections} disabled or paused connection(s) not shown${
+              org.hiddenOpen.firing + org.hiddenOpen.acknowledged > 0
+                ? `, with ${org.hiddenOpen.firing + org.hiddenOpen.acknowledged} open incident(s) counted above`
+                : ''
+            }.`
+          ),
         ],
       })
     }
@@ -249,8 +263,8 @@ export function queueBlocks(
             value,
             confirm: {
               title: plainText('Pause this queue?'),
-              text: mrkdwn(
-                `Workers stop picking up new jobs from ${slackCode(queueName, 100)} until it is resumed. Active jobs finish.`
+              text: confirmText(
+                `Workers stop picking up new jobs from ${truncate(queueName, 150)} until it is resumed. Active jobs finish.`
               ),
               confirm: plainText('Pause'),
               deny: plainText('Cancel'),

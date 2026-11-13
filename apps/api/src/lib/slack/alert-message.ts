@@ -1,5 +1,6 @@
 import type { SlackAlertMessageState, SlackMentionMode } from '@durabull/dal'
 import {
+  confirmText,
   escapeSlackText,
   formatDuration,
   mrkdwn,
@@ -10,6 +11,7 @@ import {
   slackDate,
   slackInline,
   slackLink,
+  truncate,
 } from './format'
 
 /** Block Kit action ids handled by the interactions endpoint. */
@@ -256,8 +258,8 @@ function buildActions(view: SlackAlertMessageView): unknown[] {
     value: view.eventId,
     confirm: {
       title: plainText('Resolve incident?'),
-      text: mrkdwn(
-        `Resolve *${slackInline(view.ruleName, 100)}* on ${slackCode(view.queueName, 100)}? It fires again if the condition returns.`
+      text: confirmText(
+        `Resolve "${truncate(view.ruleName, 100)}" on ${truncate(view.queueName, 100)}? It fires again if the condition returns.`
       ),
       confirm: plainText('Resolve'),
       deny: plainText('Cancel'),
@@ -271,8 +273,8 @@ function buildActions(view: SlackAlertMessageView): unknown[] {
       value: view.eventId,
       confirm: {
         title: plainText('Retry this job?'),
-        text: mrkdwn(
-          `Move job ${slackCode(view.job.id, 100)} in ${slackCode(view.queueName, 100)} back to waiting so a worker runs it again.`
+        text: confirmText(
+          `Move job ${truncate(view.job.id, 100)} in ${truncate(view.queueName, 100)} back to waiting so a worker runs it again.`
         ),
         confirm: plainText('Retry'),
         deny: plainText('Cancel'),

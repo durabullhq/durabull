@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { SLACK_ACTIONS } from '../lib/slack/alert-message'
-import { runInBackground } from '../lib/slack/background'
+import { finishOrContinueInBackground, runInBackground } from '../lib/slack/background'
 import { getSlackConfig, isSlackConfigured } from '../lib/slack/config'
 import {
   handleAppUninstalled,
@@ -148,13 +148,18 @@ const app = new Hono()
         }
         break
       case 'app_uninstalled':
-        runInBackground('uninstall', () => handleAppUninstalled(teamId, 'app_uninstalled'))
-        break
-      case 'tokens_revoked':
-        if ((event.tokens?.bot?.length ?? 0) > 0) {
-          runInBackground('token revocation', () => handleAppUninstalled(teamId, 'tokens_revoked'))
+      case 'tokens_revoked': {
+        if (event.type === 'tokens_revoked' && (event.tokens?.bot?.length ?? 0) === 0) break
+        // Recorded before acknowledging: if it fails, a 500 makes Slack retry the event.
+        try {
+          await handleAppUninstalled(teamId, event.type)
+        } catch (error) {
+          if (envelope.event_id) seenEventIds.delete(envelope.event_id)
+          console.error('[slack] Recording workspace revocation failed:', error)
+          return c.json({ error: 'Could not record the revocation.' }, 500)
         }
         break
+      }
     }
     return c.body(null, 200)
   })
@@ -198,7 +203,10 @@ const app = new Hono()
       )
       if (!onlyLinks) {
         const actions = payload as SlackBlockActionsPayload
-        runInBackground('interaction', () => handleBlockActions(actions))
+        // Slack does not retry interactions, so give the action most of the
+        // three-second window to finish (and persist) before acknowledging;
+        // slower work, such as re-rendering many messages, finishes after.
+        await finishOrContinueInBackground('interaction', () => handleBlockActions(actions))
       }
     }
     return c.body(null, 200)

@@ -22,7 +22,15 @@ import {
   unfurlSlackLinks,
 } from './client'
 import { appBaseUrl, SLACK_SLASH_COMMAND } from './config'
-import { escapeSlackText, mrkdwn, ruleTypeLabel, slackDate, slackInline, slackLink } from './format'
+import {
+  escapeSlackText,
+  mrkdwn,
+  ruleTypeLabel,
+  slackCode,
+  slackDate,
+  slackInline,
+  slackLink,
+} from './format'
 import { isMemberDenial, resolveSlackActor, resolveSlackUserOrganizations } from './identity'
 import {
   findJob,
@@ -62,6 +70,13 @@ export async function loadOrganizationStatus(
     alertEventRepository.summarizeOpenByOrganization(installation.organizationId),
   ])
   const byConnection = new Map(summary.map((row) => [row.connectionId, row]))
+  const visible = new Set(usable.map((connection) => connection.id))
+  const hiddenOpen = { firing: 0, acknowledged: 0 }
+  for (const row of summary) {
+    if (visible.has(row.connectionId)) continue
+    hiddenOpen.firing += row.firing
+    hiddenOpen.acknowledged += row.acknowledged
+  }
   return {
     organizationName: installation.organizationName,
     organizationSlug: installation.organizationSlug,
@@ -73,6 +88,7 @@ export async function loadOrganizationStatus(
       acknowledged: byConnection.get(connection.id)?.acknowledged ?? 0,
     })),
     disabledConnections: Math.max(0, connections.length - usable.length),
+    hiddenOpen,
   }
 }
 
@@ -580,7 +596,16 @@ async function performQueueAction(input: {
         ok: true,
         text: `${queueName} ${input.paused ? 'paused' : 'resumed'}.`,
         blocks: [
-          ...queueBlocks(installation.organizationSlug, overview, installation.actionsEnabled),
+          ...(overview
+            ? queueBlocks(installation.organizationSlug, overview, installation.actionsEnabled)
+            : [
+                {
+                  type: 'section',
+                  text: mrkdwn(
+                    `${slackCode(queueName, 100)} is ${input.paused ? 'paused' : 'running again'}. Its counts could not be refreshed; run ${SLACK_SLASH_COMMAND} queue ${slackInline(queueName, 100)} to see them.`
+                  ),
+                },
+              ]),
           {
             type: 'context',
             elements: [

@@ -17,7 +17,6 @@ const AUTH_ERROR_CODES = new Set([
   'token_expired',
   'team_access_not_granted',
   'org_login_required',
-  'ekm_access_denied',
   'two_factor_setup_required',
 ])
 
@@ -130,11 +129,56 @@ async function readSlackResponse(response: Response): Promise<SlackResponse> {
   return body
 }
 
+/** Connection errors raised before a request reaches Slack (Node and Bun spellings). */
+const CONNECT_FAILURE_CODES = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'ConnectionRefused',
+  'FailedToOpenSocket',
+])
+
+function isConnectFailure(error: unknown): boolean {
+  const codes = [
+    (error as { code?: unknown } | null)?.code,
+    (error as { cause?: { code?: unknown } } | null)?.cause?.code,
+  ]
+  return codes.some((code) => typeof code === 'string' && CONNECT_FAILURE_CODES.has(code))
+}
+
+/**
+ * Failures after which Slack may or may not have acted on the request: it was
+ * sent, but no definite answer came back. Rate limits and connection failures
+ * are definite, so they are not in this set.
+ */
+const AMBIGUOUS_ERROR_CODES = new Set([
+  'request_timeout',
+  'network_error',
+  'service_unavailable',
+  'invalid_response',
+  'internal_error',
+  'fatal_error',
+])
+
+/** True when a write may have taken effect in Slack even though it reported failure. */
+export function isAmbiguousSlackFailure(error: unknown): boolean {
+  return error instanceof SlackApiError && AMBIGUOUS_ERROR_CODES.has(error.code)
+}
+
 async function sendRequest(url: string, init: RequestInit): Promise<Response> {
   try {
     return await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'TimeoutError'
+    if (!timedOut && isConnectFailure(error)) {
+      throw new SlackApiError('connect_failed', {
+        status: 503,
+        retryable: true,
+        message: `Could not reach Slack: ${error instanceof Error ? error.message : String(error)}`,
+      })
+    }
     throw new SlackApiError(timedOut ? 'request_timeout' : 'network_error', {
       status: 503,
       retryable: true,

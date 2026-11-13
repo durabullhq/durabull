@@ -39,6 +39,13 @@ self-hosted deployment.
 
 Deliveries retry with backoff on Slack outages and rate limits. Configuration errors, such as an
 archived channel or a removed app, stop retrying and are shown on the incident with the reason.
+If Slack accepts a post but its answer never arrives (a timeout or a dropped connection), the
+delivery stops instead of retrying, because Slack may already have posted it: check the channel,
+and use **Retry** on the delivery only if the message is not there.
+
+Snoozing a rule, retrying a job or turning Slack actions on or off re-renders the affected
+messages from the incident's current state. If Slack is unavailable at that moment, the alert
+monitor keeps trying until the messages are current.
 
 ## Connect Slack (Durabull Cloud)
 
@@ -56,6 +63,10 @@ button in the same place. Members who are not owners are asked to contact an own
 
 Durabull can post to any public channel without joining it. For a private channel, run
 `/invite @Durabull` in the channel first, then reload the channel list.
+
+The picker lists up to 10,000 channels. In larger workspaces it also offers a channel ID field:
+in Slack, open the channel's name, then **About**, and copy the **Channel ID** (it starts with
+`C`, or `G` for older private channels).
 
 ## Self-Hosted Setup
 
@@ -218,7 +229,10 @@ organization. Turn them off with **Preview Durabull links** in **Settings → In
   replica; every action involved is safe to repeat.
 - Messages contain the rule name, connection and queue names, the incident summary and, for
   failed jobs, the job id, name, attempts and failure reason. Job payloads are never sent to
-  Slack.
+  Slack, but the failure reason is the error message your worker threw, so keep job data out of
+  error messages if it must not reach Slack.
+- Slack profile emails used to match members are held in memory for at most ten minutes and are
+  never stored. Buttons and other actions always read the current email from Slack.
 
 ## Disconnecting
 
@@ -228,8 +242,19 @@ alert rules are kept; deliveries to them fail with "Slack is not connected" unti
 again. After reconnecting, use **Retry** on an incident's failed Slack delivery to send it.
 Messages already posted resume updating once the same workspace is connected again.
 
+If Slack does not confirm that the token was revoked (for example, during a Slack outage),
+removal stops and Slack stays connected, so you can try again without leaving a working token
+behind. A token Slack already rejects is treated as revoked.
+
 Removing the app from Slack itself is detected automatically: the card shows **Reconnect
 needed**, and Slack deliveries fail with a reconnect message until you reconnect.
+
+### Switching workspaces
+
+Each Slack destination remembers the workspace its channel was picked in. If you connect a
+different workspace, those destinations show **Not delivering · channel is in another Slack
+workspace**, deliveries to them fail with that reason, and alert rules cannot add them. Edit each
+one and pick a channel in the new workspace. Messages posted in the old workspace stop updating.
 
 ## Troubleshooting
 
@@ -243,6 +268,8 @@ needed**, and Slack deliveries fail with a reconnect message until you reconnect
 | "Your Slack email does not belong to a member" | Invite that email address to the Durabull organization, or change the Slack profile email. |
 | A private channel is missing or disabled in the picker | Run `/invite @Durabull` in the channel, then select **Reload**. |
 | Deliveries fail with `channel_not_found` or `is_archived` | Edit the destination and pick another channel. |
+| A delivery failed with "Slack did not confirm the post" | Check the channel. If the incident is not there, use **Retry** on the delivery. |
+| A channel is not in the picker of a very large workspace | Paste its channel ID into the field under the picker. |
 | Link previews do not appear | Confirm the app manifest lists your domain under unfurl domains, previews are enabled, and the person pasting is a member. |
 | `/durabull` says the workspace is not connected | Connect Slack from **Settings → Integrations** in the organization you want to use. |
 

@@ -70,7 +70,7 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, signed webhooks, Linear',
+        durabull: 'Slack app, email, signed webhooks, Linear',
         competitor: 'Custom worker / QueueEvents integration',
       },
       {
@@ -169,7 +169,7 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, signed webhooks, Linear',
+        durabull: 'Slack app, email, signed webhooks, Linear',
         competitor: 'Not documented',
       },
       { feature: 'MCP', durabull: sharedRows.mcp, competitor: 'Not documented' },
@@ -353,7 +353,7 @@ export const uiCompetitors: Competitor[] = [
       },
       {
         feature: 'Alerts',
-        durabull: 'Email, signed webhooks, Linear',
+        durabull: 'Slack app, email, signed webhooks, Linear',
         competitor: 'Slack, Discord, webhook',
       },
       {

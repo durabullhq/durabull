@@ -7,12 +7,12 @@ import {
   alertDestinationRepository,
   alertEventRepository,
   alertRuleRepository,
+  type ClaimedSlackAlertMessage,
   desiredSlackMessageState,
   eq,
   getDb,
   organization,
   redisConnectionRepository,
-  type SlackAlertMessage,
   type SlackInstallation,
   slackAlertMessageRepository,
   slackInstallationRepository,
@@ -24,7 +24,13 @@ import {
   type SlackAlertMessageView,
 } from './alert-message'
 import { runInBackground } from './background'
-import { getSlackPermalink, postSlackMessage, SlackApiError, updateSlackMessage } from './client'
+import {
+  getSlackPermalink,
+  isAmbiguousSlackFailure,
+  postSlackMessage,
+  SlackApiError,
+  updateSlackMessage,
+} from './client'
 import { appBaseUrl } from './config'
 import { SlackInstallationUnavailableError, withSlackToken } from './token'
 
@@ -33,14 +39,17 @@ const SYNC_RETRY_MAX_MS = 30 * 60_000
 const SYNC_MAX_ATTEMPTS = 50
 const DISCONNECTED_RECHECK_MS = 10 * 60_000
 
-/** Slack errors after which a posted message can never be updated again. */
+/**
+ * Slack errors after which a posted message cannot be updated until Slack
+ * access changes. `not_in_channel` is left out: it clears when the app is
+ * invited back, so it retries with backoff like other failures.
+ */
 const PERMANENT_UPDATE_ERRORS = new Set([
   'channel_not_found',
   'message_not_found',
   'cant_update_message',
   'edit_window_closed',
   'is_archived',
-  'not_in_channel',
 ])
 
 export function parseSlackDestinationConfig(
@@ -67,15 +76,32 @@ export function parseSlackDestinationConfig(
       ? source.userGroupIds.filter((id): id is string => typeof id === 'string')
       : [],
     threadUpdates: source.threadUpdates !== false,
+    slackTeamId: typeof source.slackTeamId === 'string' ? source.slackTeamId : undefined,
   }
 }
 
-/** The organization's Slack installation when it is connected and usable, otherwise null. */
+/**
+ * False when the destination's channel was picked in a different Slack
+ * workspace than the one now connected: its channel id means nothing there.
+ * Destinations saved before the workspace was recorded are assumed to match.
+ */
+export function slackDestinationMatchesWorkspace(
+  destination: Pick<AlertDestination, 'config'>,
+  installation: Pick<SlackInstallation, 'slackTeamId'>
+): boolean {
+  const teamId = asRecord(destination.config).slackTeamId
+  return typeof teamId !== 'string' || teamId === installation.slackTeamId
+}
+
+export const SLACK_WORKSPACE_CHANGED_MESSAGE =
+  'This Slack destination was set up in a different Slack workspace than the one now connected. Edit it and pick a channel again.'
+
 /** Thread updates are on unless the destination turned them off. */
 function slackThreadUpdatesEnabled(destination: Pick<AlertDestination, 'config'>): boolean {
   return asRecord(destination.config).threadUpdates !== false
 }
 
+/** The organization's Slack installation when it is connected and usable, otherwise null. */
 export async function findActiveSlackInstallation(
   organizationId: string
 ): Promise<SlackInstallation | null> {
@@ -237,6 +263,12 @@ export async function sendSlackDestinationAlert(input: {
   }
 
   const installation = await requireActiveSlackInstallation(input.event.organizationId)
+  if (!slackDestinationMatchesWorkspace(destination, installation)) {
+    throw new SlackApiError('workspace_changed', {
+      retryable: false,
+      message: SLACK_WORKSPACE_CHANGED_MESSAGE,
+    })
+  }
   const currentEvent =
     (await alertEventRepository.findById(input.event.id, input.event.organizationId)) ?? input.event
   const view = await loadSlackAlertView(currentEvent, installation, {
@@ -249,11 +281,23 @@ export async function sendSlackDestinationAlert(input: {
   const content = buildAlertMessage(view, { mention })
 
   const { posted, permalink } = await withSlackToken(installation, async (token) => {
-    const posted = await postSlackMessage(token, {
-      channel: config.channelId,
-      text: content.text,
-      attachments: content.attachments,
-    })
+    let posted: { channel: string; ts: string }
+    try {
+      posted = await postSlackMessage(token, {
+        channel: config.channelId,
+        text: content.text,
+        attachments: content.attachments,
+      })
+    } catch (error) {
+      if (isAmbiguousSlackFailure(error)) {
+        // Slack may have posted it. Retrying automatically could post the incident twice.
+        throw new SlackApiError('post_outcome_unknown', {
+          retryable: false,
+          message: `Slack did not confirm the post (${(error as SlackApiError).code}). Check the channel before retrying this delivery, so the incident is not posted twice.`,
+        })
+      }
+      throw error
+    }
     return { posted, permalink: await getSlackPermalink(token, posted.channel, posted.ts) }
   })
 
@@ -313,52 +357,56 @@ async function markSlackDeliveryDelivered(
 }
 
 /**
- * Re-renders Slack messages whose incident changed state and posts a short
- * thread reply describing the change. Safe to run from several processes:
- * each message is leased before it is updated.
+ * Re-renders Slack messages whose incident changed state (or that were asked
+ * to refresh) and posts a short thread reply describing the change. Safe to
+ * run from several processes: messages are claimed one at a time, so each
+ * lease starts when its Slack update does, and results only land while the
+ * lease is still held.
  */
 export async function syncSlackAlertMessages(
   options: { alertEventIds?: string[]; limit?: number } = {}
 ): Promise<{ synced: number; failed: number }> {
-  const messages = await slackAlertMessageRepository.claimOutOfSync({
-    alertEventIds: options.alertEventIds,
-    limit: options.limit ?? 25,
-    maxAttempts: SYNC_MAX_ATTEMPTS,
-  })
+  const limit = options.limit ?? 25
   let synced = 0
   let failed = 0
   const installations = new Map<string, SlackInstallation | null>()
-  for (const message of messages) {
+  for (let processed = 0; processed < limit; processed++) {
+    const [claim] = await slackAlertMessageRepository.claimOutOfSync({
+      alertEventIds: options.alertEventIds,
+      limit: 1,
+      maxAttempts: SYNC_MAX_ATTEMPTS,
+    })
+    if (!claim) break
     try {
-      await syncOneMessage(message, installations)
+      await syncOneMessage(claim, installations)
       synced++
     } catch (error) {
       failed++
-      await recordSyncFailure(message, error)
+      await recordSyncFailure(claim, error)
     }
   }
   return { synced, failed }
 }
 
 async function syncOneMessage(
-  message: SlackAlertMessage,
+  claim: ClaimedSlackAlertMessage,
   installations: Map<string, SlackInstallation | null>
 ): Promise<void> {
-  const event = await alertEventRepository.findById(message.alertEventId, message.organizationId)
+  const event = await alertEventRepository.findById(claim.alertEventId, claim.organizationId)
   if (!event) {
-    await slackAlertMessageRepository.abandon(message.id, 'Alert incident no longer exists.')
+    await slackAlertMessageRepository.abandon(claim, 'Alert incident no longer exists.')
     return
   }
-  if (!installations.has(message.organizationId)) {
+  if (!installations.has(claim.organizationId)) {
     installations.set(
-      message.organizationId,
-      await slackInstallationRepository.findByOrganization(message.organizationId)
+      claim.organizationId,
+      await slackInstallationRepository.findByOrganization(claim.organizationId)
     )
   }
-  const installation = installations.get(message.organizationId)
-  if (installation && installation.slackTeamId !== message.slackTeamId) {
+  const installation = installations.get(claim.organizationId)
+  if (installation && installation.slackTeamId !== claim.slackTeamId) {
     await slackAlertMessageRepository.abandon(
-      message.id,
+      claim,
       'The organization is now connected to a different Slack workspace.'
     )
     return
@@ -366,7 +414,7 @@ async function syncOneMessage(
   if (!installation || installation.status !== 'active') {
     // Picked up again after Slack is reconnected; waiting does not use up retries.
     await slackAlertMessageRepository.defer(
-      message.id,
+      claim,
       new Date(Date.now() + DISCONNECTED_RECHECK_MS),
       'Slack is not connected.'
     )
@@ -374,43 +422,53 @@ async function syncOneMessage(
   }
   const view = await loadSlackAlertView(event, installation)
   const content = buildAlertMessage(view)
-  const destination = message.destinationId
-    ? await alertDestinationRepository.findById(message.destinationId, message.organizationId)
+  const acknowledgedBy = view.state === 'acknowledged' ? event.acknowledgedBy : null
+  const stateChanged =
+    view.state !== claim.renderedState || acknowledgedBy !== claim.renderedAcknowledgedBy
+  const destination = claim.destinationId
+    ? await alertDestinationRepository.findById(claim.destinationId, claim.organizationId)
     : null
   const threadUpdates =
     destination?.type === 'slack' ? slackThreadUpdatesEnabled(destination) : true
-  const reply = threadUpdates ? buildStateChangeReply(message.renderedState, view) : null
+  // A refresh-only pass (snooze, retry, settings change) re-renders without a reply.
+  const reply =
+    threadUpdates && stateChanged ? buildStateChangeReply(claim.renderedState, view) : null
 
   await withSlackToken(installation, async (token) => {
     await updateSlackMessage(token, {
-      channel: message.channelId,
-      ts: message.messageTs,
+      channel: claim.channelId,
+      ts: claim.messageTs,
       text: content.text,
       attachments: content.attachments,
     })
     if (reply) {
       try {
         await postSlackMessage(token, {
-          channel: message.channelId,
-          thread_ts: message.messageTs,
+          channel: claim.channelId,
+          thread_ts: claim.messageTs,
           text: reply,
         })
       } catch (error) {
         // The message itself is current; a missing thread reply is cosmetic.
         console.warn('[slack] Thread reply failed', {
-          messageId: message.id,
+          messageId: claim.id,
           error: error instanceof Error ? error.message : String(error),
         })
       }
     }
   })
-  await slackAlertMessageRepository.markSynced(message.id, {
+  const recorded = await slackAlertMessageRepository.markSynced(claim, {
     state: view.state,
-    acknowledgedBy: view.state === 'acknowledged' ? event.acknowledgedBy : null,
+    acknowledgedBy,
   })
+  if (!recorded) {
+    // Another worker took the message over while this one was in Slack, so this
+    // view may have overwritten a newer one. Ask for one more pass from current state.
+    await slackAlertMessageRepository.requestRefresh([claim.alertEventId])
+  }
 }
 
-async function recordSyncFailure(message: SlackAlertMessage, error: unknown): Promise<void> {
+async function recordSyncFailure(claim: ClaimedSlackAlertMessage, error: unknown): Promise<void> {
   const text = error instanceof Error ? error.message : String(error)
   if (
     (error instanceof SlackApiError && error.isAuthError) ||
@@ -418,65 +476,73 @@ async function recordSyncFailure(message: SlackAlertMessage, error: unknown): Pr
   ) {
     // The installation is marked for reconnect; resume once it is fixed.
     await slackAlertMessageRepository.defer(
-      message.id,
+      claim,
       new Date(Date.now() + DISCONNECTED_RECHECK_MS),
       text
     )
     return
   }
   if (error instanceof SlackApiError && PERMANENT_UPDATE_ERRORS.has(error.code)) {
-    await slackAlertMessageRepository.abandon(message.id, text)
+    // Parked until the workspace is reconnected, which revives its messages.
+    await slackAlertMessageRepository.abandon(claim, text)
     return
   }
-  const attempts = message.syncAttempts + 1
+  const attempts = claim.syncAttempts + 1
   const resetAt = error instanceof SlackApiError ? error.rateLimitResetAt : null
   const backoff = Math.min(SYNC_RETRY_MAX_MS, SYNC_RETRY_BASE_MS * 2 ** Math.max(0, attempts - 1))
-  await slackAlertMessageRepository.markSyncFailed(message.id, {
+  await slackAlertMessageRepository.markSyncFailed(claim, {
     error: text,
     nextSyncAt: attempts >= SYNC_MAX_ATTEMPTS ? null : (resetAt ?? new Date(Date.now() + backoff)),
   })
 }
 
 /**
- * Re-renders every Slack message for an incident whose state did not change
- * (for example its rule was snoozed) and optionally posts a thread note.
+ * Re-renders an incident's Slack messages after a change that does not alter
+ * its state (its rule was snoozed, its job retried) and posts an optional
+ * thread note. The refresh is recorded first, so the sweep finishes it if
+ * Slack is unavailable now, and the view is always rendered from the
+ * incident's current state, never from a copy read before the change.
  */
 export async function refreshSlackAlertMessages(
-  event: AlertEvent,
+  event: Pick<AlertEvent, 'id' | 'organizationId'>,
   options: { note?: string } = {}
 ): Promise<void> {
-  const messages = await slackAlertMessageRepository.listByEvent(event.id)
-  if (messages.length === 0) return
+  const requested = await slackAlertMessageRepository.requestRefresh([event.id])
+  if (requested === 0) return
   const installation = await findActiveSlackInstallation(event.organizationId)
   if (!installation) return
-  const view = await loadSlackAlertView(event, installation)
-  const content = buildAlertMessage(view)
-  await withSlackToken(installation, async (token) => {
+  if (options.note) {
+    const note = options.note
+    const messages = await slackAlertMessageRepository.listByEvent(event.id)
+    const destinations = new Map<string, AlertDestination | null>()
     for (const message of messages) {
       if (message.slackTeamId !== installation.slackTeamId) continue
+      if (message.destinationId && !destinations.has(message.destinationId)) {
+        destinations.set(
+          message.destinationId,
+          await alertDestinationRepository.findById(message.destinationId, message.organizationId)
+        )
+      }
+      const destination = message.destinationId ? destinations.get(message.destinationId) : null
+      if (destination?.type === 'slack' && !slackThreadUpdatesEnabled(destination)) continue
       try {
-        await updateSlackMessage(token, {
-          channel: message.channelId,
-          ts: message.messageTs,
-          text: content.text,
-          attachments: content.attachments,
-        })
-        if (options.note) {
-          await postSlackMessage(token, {
+        await withSlackToken(installation, (token) =>
+          postSlackMessage(token, {
             channel: message.channelId,
             thread_ts: message.messageTs,
-            text: options.note,
+            text: note,
           })
-        }
+        )
       } catch (error) {
-        if (error instanceof SlackApiError && error.isAuthError) throw error
-        console.warn('[slack] Could not refresh alert message', {
+        if (error instanceof SlackApiError && error.isAuthError) break
+        console.warn('[slack] Could not post thread note', {
           messageId: message.id,
           error: error instanceof Error ? error.message : String(error),
         })
       }
     }
-  })
+  }
+  await syncSlackAlertMessages({ alertEventIds: [event.id] })
 }
 
 /** Mirrors incident changes into Slack right away instead of waiting for the sweep. */

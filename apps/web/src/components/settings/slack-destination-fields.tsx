@@ -6,18 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import type { SlackDestinationConfig, SlackMentionMode } from '@/hooks/use-alerts'
-import { useSlackChannels, useSlackUserGroups } from '@/hooks/use-slack'
+import { type SlackChannelRecord, useSlackChannels, useSlackUserGroups } from '@/hooks/use-slack'
+import { parseSlackChannelId } from '@/lib/slack-destination'
 
-/** Settings a new Slack destination starts with. */
-export const DEFAULT_SLACK_DESTINATION_CONFIG: Partial<SlackDestinationConfig> = {
-  mention: 'none',
-  threadUpdates: true,
-}
-
-/** Default destination name for a channel, e.g. "Slack #alerts". */
-export function slackDestinationName(config: Partial<SlackDestinationConfig>): string {
-  return `Slack #${config.channelName ?? config.channelId ?? 'alerts'}`
-}
+const NO_CHANNELS: SlackChannelRecord[] = []
 
 const MENTION_OPTIONS: Array<{ value: SlackMentionMode; label: string }> = [
   { value: 'none', label: 'No broadcast mention' },
@@ -42,8 +34,12 @@ export function SlackDestinationFields({
   const userGroupsQuery = useSlackUserGroups(!compact)
   const [filter, setFilter] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [manualId, setManualId] = useState('')
 
-  const channels = channelsQuery.data?.channels ?? []
+  const channels = channelsQuery.data?.channels ?? NO_CHANNELS
+  // Very large workspaces list only their first channels; any other channel
+  // can still be chosen by its ID (the API checks it when saving).
+  const truncated = channelsQuery.data?.truncated === true
   const filtered = useMemo(() => {
     const query = filter.trim().replace(/^#/, '').toLowerCase()
     const matching = query
@@ -55,8 +51,11 @@ export function SlackDestinationFields({
   }, [channels, filter, config.channelId])
 
   const selectedChannel = channels.find((channel) => channel.id === config.channelId)
+  // A saved channel that is not in the listed page (entered by ID).
+  const unlistedChannelId = config.channelId && !selectedChannel ? config.channelId : null
   const userGroups = userGroupsQuery.data?.userGroups ?? []
   const selectedGroups = config.userGroupIds ?? []
+  const parsedManualId = parseSlackChannelId(manualId)
 
   return (
     <div className="space-y-4">
@@ -106,6 +105,9 @@ export function SlackDestinationFields({
                 ? 'Channels unavailable'
                 : 'Choose a channel'}
           </option>
+          {unlistedChannelId ? (
+            <option value={unlistedChannelId}># {config.channelName ?? unlistedChannelId}</option>
+          ) : null}
           {filtered.map((channel) => (
             <option
               key={channel.id}
@@ -118,6 +120,37 @@ export function SlackDestinationFields({
             </option>
           ))}
         </Select>
+        {truncated ? (
+          <div className="space-y-1.5 rounded-md border border-dashed px-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              This workspace has more channels than Durabull lists. If yours is missing, paste its
+              channel ID (in Slack: channel name → About → Channel ID).
+            </p>
+            <div className="flex gap-2">
+              <Input
+                value={manualId}
+                onChange={(event) => setManualId(event.target.value)}
+                placeholder="C0123456789"
+                aria-label="Slack channel ID"
+                className="max-w-xs font-mono"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                disabled={!parsedManualId}
+                onClick={() => {
+                  if (!parsedManualId) return
+                  const listed = channels.find((channel) => channel.id === parsedManualId)
+                  onChange({ ...config, channelId: parsedManualId, channelName: listed?.name })
+                  setManualId('')
+                }}
+              >
+                Use channel
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {channelsQuery.isError ? (
           <p className="text-xs text-status-danger">
             {channelsQuery.error instanceof Error
@@ -172,13 +205,15 @@ export function SlackDestinationFields({
                       ? 'No user groups in this workspace'
                       : 'Add a group, e.g. @oncall'}
                 </option>
-                {userGroups
-                  .filter((group) => !selectedGroups.includes(group.id))
-                  .map((group) => (
-                    <option key={group.id} value={group.id}>
-                      @{group.handle} ({group.name})
-                    </option>
-                  ))}
+                {userGroups.flatMap((group) =>
+                  selectedGroups.includes(group.id)
+                    ? []
+                    : [
+                        <option key={group.id} value={group.id}>
+                          @{group.handle} ({group.name})
+                        </option>,
+                      ]
+                )}
               </Select>
               {selectedGroups.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">

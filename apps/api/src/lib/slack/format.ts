@@ -51,6 +51,15 @@ export function plainText(text: string, maxLength = 75) {
   return { type: 'plain_text' as const, text: truncate(text, maxLength), emoji: true }
 }
 
+/**
+ * Body text for a confirmation dialog. Slack caps it at 300 characters and
+ * rejects the whole message when it is longer, so it is plain text (nothing to
+ * escape, so nothing that can grow past the cap) and truncated to fit.
+ */
+export function confirmText(text: string) {
+  return plainText(text.replace(/\s+/g, ' ').trim(), 300)
+}
+
 export function mrkdwn(text: string, maxLength = 3000) {
   return { type: 'mrkdwn' as const, text: truncate(text, maxLength) }
 }

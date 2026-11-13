@@ -9,21 +9,53 @@ import { getSlackUser, type SlackUser } from './client'
 import { withSlackToken } from './token'
 
 const PROFILE_CACHE_TTL_MS = 10 * 60_000
-const profileCache = new Map<string, { value: SlackUser; expiresAt: number }>()
+const PROFILE_CACHE_MAX_ENTRIES = 5_000
+const profileCache = new Map<
+  string,
+  { value: SlackUser; expiresAt: number; timer: ReturnType<typeof setTimeout> }
+>()
 
 export function clearSlackProfileCache(): void {
+  for (const entry of profileCache.values()) clearTimeout(entry.timer)
   profileCache.clear()
 }
 
+function forgetProfile(key: string): void {
+  const entry = profileCache.get(key)
+  if (!entry) return
+  clearTimeout(entry.timer)
+  profileCache.delete(key)
+}
+
+function rememberProfile(key: string, value: SlackUser): void {
+  forgetProfile(key)
+  // Bounded: the oldest entry goes first (Maps iterate in insertion order).
+  if (profileCache.size >= PROFILE_CACHE_MAX_ENTRIES) {
+    const oldest = profileCache.keys().next().value
+    if (oldest !== undefined) forgetProfile(oldest)
+  }
+  // Each profile (and its email) is dropped from memory when it expires, not
+  // only when it is next looked up.
+  const timer = setTimeout(() => profileCache.delete(key), PROFILE_CACHE_TTL_MS)
+  timer.unref?.()
+  profileCache.set(key, { value, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS, timer })
+}
+
+/**
+ * The Slack user's profile. Read-only commands may use a copy up to ten
+ * minutes old; anything that changes state (`fresh`) reads it from Slack, so
+ * an email changed by a workspace admin takes effect immediately.
+ */
 async function getSlackProfile(
   installation: SlackInstallation,
-  slackUserId: string
+  slackUserId: string,
+  options: { fresh?: boolean } = {}
 ): Promise<SlackUser> {
   const key = `${installation.slackTeamId}:${slackUserId}`
   const cached = profileCache.get(key)
-  if (cached && cached.expiresAt > Date.now()) return cached.value
+  if (!options.fresh && cached && cached.expiresAt > Date.now()) return cached.value
   const value = await withSlackToken(installation, (token) => getSlackUser(token, slackUserId))
-  profileCache.set(key, { value, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS })
+  rememberProfile(key, value)
   return value
 }
 
@@ -55,7 +87,9 @@ export async function resolveSlackActor(
   const orgLabel = installation.organizationName
     ? `the ${installation.organizationName} organization`
     : 'this Durabull organization'
-  const slackUser = await getSlackProfile(installation, slackUserId)
+  const slackUser = await getSlackProfile(installation, slackUserId, {
+    fresh: options.requireActions,
+  })
   // Slack Connect guests keep their own workspace, whose admins control their
   // emails; only people in the installed workspace (or its Enterprise Grid) act.
   const sameWorkspace =

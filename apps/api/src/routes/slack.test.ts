@@ -25,9 +25,11 @@ import { toBillingHttpError } from '../billing/errors'
 import { dispatchAlertNotification } from '../lib/alert-notifier'
 import { SLACK_ACTIONS } from '../lib/slack/alert-message'
 import { syncSlackAlertMessages } from '../lib/slack/alerts'
+import { SlackApiError } from '../lib/slack/client'
 import { flushSlackBackgroundWork } from '../lib/slack/background'
 import { SLACK_BOT_SCOPES } from '../lib/slack/config'
 import { clearSlackProfileCache } from '../lib/slack/identity'
+import { getSlackBotToken, withSlackToken } from '../lib/slack/token'
 import { signSlackRequest } from '../lib/slack/verify'
 import { clearSlackEventDedupe } from './slack-events'
 import { clearSlackChannelCache } from './slack-integration'
@@ -63,6 +65,8 @@ class FakeSlack {
     G0SECRET: { name: 'secret', is_private: true, is_member: false },
   }
   failures: Record<string, string> = {}
+  /** Methods whose request never gets an answer (the fetch itself throws). */
+  throws: Record<string, Error> = {}
   private ts = 1_700_000_000
   spy: Mock<typeof fetch>
 
@@ -93,6 +97,7 @@ class FakeSlack {
       ? JSON.parse(raw)
       : Object.fromEntries(new URLSearchParams(raw))
     this.calls.push({ method, body })
+    if (this.throws[method]) throw this.throws[method]
     if (this.failures[method]) return Response.json({ ok: false, error: this.failures[method] })
 
     switch (method) {
@@ -934,5 +939,218 @@ describe('Slack integration', () => {
     expect(await alertDestinationRepository.listByOrganization(ORG_ID, { type: 'slack' })).toEqual(
       []
     )
+  })
+
+  it('does not post an incident twice when Slack never confirms the first post', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    slack.throws['chat.postMessage'] = Object.assign(new Error('The operation timed out.'), {
+      name: 'TimeoutError',
+    })
+
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+
+    const [delivery] = await alertDeliveryRepository.listByEvent(event.id)
+    expect(delivery?.status).not.toBe('delivered')
+    expect(delivery?.nextRetryAt ?? null).toBeNull()
+    expect(String(delivery?.lastError)).toContain('did not confirm the post')
+    expect(slack.callsTo('chat.postMessage')).toHaveLength(1)
+  })
+
+  it('keeps Slack connected when Slack does not confirm the token was revoked', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+
+    slack.failures['auth.revoke'] = 'service_unavailable'
+    const failed = await app.request('/api/integrations/slack', { method: 'DELETE' })
+    expect(failed.status).toBe(503)
+    expect(await slackInstallationRepository.findByOrganization(ORG_ID)).not.toBeNull()
+
+    // A token Slack already rejects counts as revoked.
+    slack.failures['auth.revoke'] = 'token_revoked'
+    const removed = await app.request('/api/integrations/slack', { method: 'DELETE' })
+    expect(await removed.json()).toEqual({ success: true, revokedToken: true })
+    expect(await slackInstallationRepository.findByOrganization(ORG_ID)).toBeNull()
+  })
+
+  it('re-renders open incident messages when Slack actions are turned off', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    const posts = slack.callsTo('chat.postMessage').length
+
+    await app.request('/api/integrations/slack', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actionsEnabled: false }),
+    })
+    await flushSlackBackgroundWork()
+
+    const update = slack.callsTo('chat.update').at(-1)
+    expect(update).toBeDefined()
+    expect(JSON.stringify(update?.body.attachments)).not.toContain(SLACK_ACTIONS.acknowledge)
+    // A refresh is not a state change, so nothing is posted in the thread.
+    expect(slack.callsTo('chat.postMessage')).toHaveLength(posts)
+  })
+
+  it('keeps a snooze refresh pending when Slack rejects the message update', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    slack.failures['chat.update'] = 'internal_error'
+
+    await app.request(
+      interaction({
+        type: 'block_actions',
+        team: { id: 'T0ACME' },
+        user: { id: 'UADA', team_id: 'T0ACME' },
+        container: { type: 'message' },
+        actions: [
+          { action_id: SLACK_ACTIONS.snooze, selected_option: { value: `${event.id}|60` } },
+        ],
+      })
+    )
+    await flushSlackBackgroundWork()
+
+    const [message] = await slackAlertMessageRepository.listByEvent(event.id)
+    expect(message?.refreshRequestedAt).not.toBeNull()
+    expect(message?.syncAttempts).toBe(1)
+    expect(message?.lastSyncError).toContain('internal_error')
+  })
+
+  it('stops delivering to Slack destinations set up in a previously connected workspace', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    const saved = await alertDestinationRepository.findById(destination.id, ORG_ID)
+    expect(saved?.config).toMatchObject({ slackTeamId: 'T0ACME' })
+
+    await slackInstallationRepository.upsert({
+      organizationId: ORG_ID,
+      slackTeamId: 'T0BETA',
+      slackTeamName: 'Beta',
+      botUserId: 'UBOT2',
+      botToken: 'xoxb-beta',
+      scopes: SLACK_BOT_SCOPES.join(','),
+    })
+    const overview = await app.request('/api/integrations/slack')
+    expect(
+      ((await overview.json()) as { installation: { slackDestinationCount: number } }).installation
+        .slackDestinationCount
+    ).toBe(0)
+
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    const [delivery] = await alertDeliveryRepository.listByEvent(event.id)
+    expect(String(delivery?.lastError)).toContain('different Slack workspace')
+    expect(slack.callsTo('chat.postMessage')).toHaveLength(0)
+  })
+
+  it('does not let a failure on an old token revoke a fresh reconnect', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+    const before = await slackInstallationRepository.findByOrganization(ORG_ID)
+    await install(app)
+
+    await expect(
+      withSlackToken(before!, async () => {
+        throw new SlackApiError('invalid_auth')
+      })
+    ).rejects.toThrow()
+    expect((await slackInstallationRepository.findByOrganization(ORG_ID))?.status).toBe('active')
+  })
+
+  it('does not revoke an installation when the deployment’s client secret is wrong', async () => {
+    await seed()
+    const installation = await slackInstallationRepository.upsert({
+      organizationId: ORG_ID,
+      slackTeamId: 'T0ACME',
+      slackTeamName: 'Acme',
+      botUserId: 'UBOT',
+      botToken: 'xoxe.xoxb-expiring',
+      refreshToken: 'xoxe-1-refresh',
+      botTokenExpiresAt: new Date(Date.now() + 60_000),
+      scopes: SLACK_BOT_SCOPES.join(','),
+    })
+    slack.failures['oauth.v2.access'] = 'bad_client_secret'
+    await expect(getSlackBotToken(installation)).rejects.toThrow()
+    expect((await slackInstallationRepository.findByOrganization(ORG_ID))?.status).toBe('active')
+
+    // A refresh token Slack rejects does mean the installation needs reconnecting.
+    slack.failures['oauth.v2.access'] = 'invalid_refresh_token'
+    await expect(getSlackBotToken(installation)).rejects.toThrow()
+    expect((await slackInstallationRepository.findByOrganization(ORG_ID))?.status).toBe('revoked')
+  })
+
+  it('shares one token refresh between concurrent callers', async () => {
+    await seed()
+    const installation = await slackInstallationRepository.upsert({
+      organizationId: ORG_ID,
+      slackTeamId: 'T0ACME',
+      slackTeamName: 'Acme',
+      botUserId: 'UBOT',
+      botToken: 'xoxe.xoxb-expiring',
+      refreshToken: 'xoxe-1-refresh',
+      botTokenExpiresAt: new Date(Date.now() + 60_000),
+      scopes: SLACK_BOT_SCOPES.join(','),
+    })
+    const tokens = await Promise.all([
+      getSlackBotToken(installation),
+      getSlackBotToken(installation),
+      getSlackBotToken(installation),
+    ])
+    expect(new Set(tokens)).toEqual(new Set(['xoxb-test-token']))
+    expect(slack.callsTo('oauth.v2.access')).toHaveLength(1)
+  })
+
+  it('asks Slack to resend an uninstall it could not record', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+    const failing = spyOn(slackInstallationRepository, 'markTeamRevoked').mockRejectedValueOnce(
+      new Error('database unavailable')
+    )
+    const uninstall = JSON.stringify({
+      type: 'event_callback',
+      api_app_id: 'A0DURABULL',
+      team_id: 'T0ACME',
+      event_id: 'Ev9',
+      event: { type: 'app_uninstalled' },
+    })
+    const first = await app.request(signed('/api/slack/events', uninstall, 'application/json'))
+    expect(first.status).toBe(500)
+    failing.mockRestore()
+
+    const retried = await app.request(signed('/api/slack/events', uninstall, 'application/json'))
+    expect(retried.status).toBe(200)
+    expect((await slackInstallationRepository.findByOrganization(ORG_ID))?.status).toBe('revoked')
   })
 })

@@ -7,6 +7,7 @@ import {
   getDb,
   organization,
   type SlackInstallation,
+  slackAlertMessageRepository,
   slackInstallationRepository,
   slackOauthStateRepository,
 } from '@durabull/dal'
@@ -32,7 +33,11 @@ import {
   SLACK_BOT_SCOPES,
   SlackNotConfiguredError,
 } from '../lib/slack/config'
-import { findActiveSlackInstallation } from '../lib/slack/alerts'
+import {
+  findActiveSlackInstallation,
+  queueSlackMessageSync,
+  slackDestinationMatchesWorkspace,
+} from '../lib/slack/alerts'
 import { buildSlackAppManifest } from '../lib/slack/manifest'
 import { withSlackToken } from '../lib/slack/token'
 import { isAuthlessMode } from '../lib/authless'
@@ -101,11 +106,16 @@ function serializeInstallation(installation: SlackInstallation, slackDestination
   }
 }
 
-async function countSlackDestinations(organizationId: string): Promise<number> {
-  const destinations = await alertDestinationRepository.listByOrganization(organizationId, {
-    type: 'slack',
-  })
-  return destinations.length
+/** Enabled Slack destinations whose channel belongs to the connected workspace. */
+async function countSlackDestinations(installation: SlackInstallation): Promise<number> {
+  const destinations = await alertDestinationRepository.listByOrganization(
+    installation.organizationId,
+    { type: 'slack' }
+  )
+  return destinations.filter(
+    (destination) =>
+      destination.enabled && slackDestinationMatchesWorkspace(destination, installation)
+  ).length
 }
 
 async function organizationSlug(organizationId: string): Promise<string | null> {
@@ -181,7 +191,7 @@ const app = new Hono()
       entitled,
       canManage,
       installation: installation
-        ? serializeInstallation(installation, await countSlackDestinations(organizationId))
+        ? serializeInstallation(installation, await countSlackDestinations(installation))
         : null,
     })
   })
@@ -289,6 +299,8 @@ const app = new Hono()
         installedByUserId: oauthState.userId,
         installedBySlackUserId: token.authedUserId,
       })
+      // Messages parked while Slack access was lost can update again.
+      await slackAlertMessageRepository.reviveForWorkspace(oauthState.organizationId, token.teamId)
       channelCache.delete(oauthState.organizationId)
       return redirectWithResult(c, slug, page, { slack: 'connected' })
     } catch (error) {
@@ -304,16 +316,19 @@ const app = new Hono()
     if (!(await isOrganizationAdmin(c, organizationId))) {
       return c.json({ error: ADMIN_ONLY_MESSAGE }, 403)
     }
-    const installation = await slackInstallationRepository.updateSettings(
-      organizationId,
-      c.req.valid('json')
-    )
+    const settings = c.req.valid('json')
+    const before = await slackInstallationRepository.findByOrganization(organizationId)
+    if (!before) return c.json({ error: 'Slack is not connected.' }, 404)
+    const installation = await slackInstallationRepository.updateSettings(organizationId, settings)
     if (!installation) return c.json({ error: 'Slack is not connected.' }, 404)
+    if (installation.actionsEnabled !== before.actionsEnabled) {
+      // Open incidents' messages show or hide their buttons to match.
+      queueSlackMessageSync(
+        await slackAlertMessageRepository.requestRefreshForOpenIncidents(organizationId)
+      )
+    }
     return c.json({
-      installation: serializeInstallation(
-        installation,
-        await countSlackDestinations(organizationId)
-      ),
+      installation: serializeInstallation(installation, await countSlackDestinations(installation)),
     })
   })
   .delete('/', async (c) => {
@@ -331,16 +346,31 @@ const app = new Hono()
       installation.slackTeamId,
       organizationId
     )
+    let revokedToken = false
     if (shared === 0 && installation.status === 'active') {
       try {
         await slackAuthRevoke(decryptSecret(installation.encryptedBotToken))
-      } catch {
-        // Removal must succeed even if Slack already revoked the token.
+        revokedToken = true
+      } catch (error) {
+        // A token Slack already rejects is as good as revoked. Anything else
+        // (a timeout, a Slack outage) keeps the installation so removal can be
+        // retried without leaving a live token behind in the workspace.
+        if (!(error instanceof SlackApiError && error.isAuthError)) {
+          return c.json(
+            {
+              error:
+                'Slack did not confirm that the app’s access was revoked, so Slack is still connected. Try again in a moment.',
+              code: error instanceof SlackApiError ? error.code : 'revoke_failed',
+            },
+            503
+          )
+        }
+        revokedToken = true
       }
     }
     await slackInstallationRepository.delete(organizationId)
     channelCache.delete(organizationId)
-    return c.json({ success: true, revokedToken: shared === 0 })
+    return c.json({ success: true, revokedToken })
   })
   .post('/test', async (c) => {
     const organizationId = c.get('organizationId')
@@ -402,6 +432,9 @@ const app = new Hono()
       manifest: buildSlackAppManifest({
         baseUrl: appBaseUrl(),
         redirectUri: env.SLACK_OAUTH_REDIRECT_URI?.trim() || undefined,
+        // Slack verifies the events URL when the manifest is saved, and this
+        // deployment cannot answer that check until its Slack secrets are set.
+        skipEvents: !isSlackConfigured(),
       }),
     })
   })

@@ -220,9 +220,16 @@ export async function retryFailedJob(
 export async function setQueuePaused(
   organizationId: string,
   input: { connectionId: string; queueName: string; paused: boolean }
-): Promise<QueueOverview> {
+): Promise<QueueOverview | null> {
   const connection = await requireUsableConnection(organizationId, input.connectionId)
   const queue = await openQueue(connection, input.queueName)
   await withRedisTimeout(input.paused ? queue.pause() : queue.resume(), 'pause queue')
-  return getQueueOverview(connection, input.queueName)
+  // The pause has happened; failing to read the refreshed counts must not hide that.
+  return getQueueOverview(connection, input.queueName).catch((error) => {
+    console.warn('[slack] Queue overview after pause failed', {
+      queueName: input.queueName,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  })
 }

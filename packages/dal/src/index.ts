@@ -277,6 +277,7 @@ export {
   serviceAccountRepository,
 } from './repositories/service-account'
 export {
+  type ClaimedSlackAlertMessage,
   type CreateSlackAlertMessageInput,
   desiredSlackMessageState,
   slackAlertMessageRepository,

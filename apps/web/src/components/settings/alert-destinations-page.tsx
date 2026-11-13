@@ -17,11 +17,7 @@ import {
 import { SlackLogo } from '@/components/brand/slack-logo'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SecretInput } from '@/components/secret-input'
-import {
-  DEFAULT_SLACK_DESTINATION_CONFIG,
-  SlackDestinationFields,
-  slackDestinationName,
-} from '@/components/settings/slack-destination-fields'
+import { SlackDestinationFields } from '@/components/settings/slack-destination-fields'
 import {
   SlackConnectButton,
   useSlackOauthResultToast,
@@ -63,6 +59,7 @@ import {
 import { useEntitlement } from '@/hooks/use-entitlement'
 import { useSlackIntegration } from '@/hooks/use-slack'
 import { isPlanDenial } from '@/lib/api'
+import { DEFAULT_SLACK_DESTINATION_CONFIG, slackDestinationName } from '@/lib/slack-destination'
 
 const TYPE_META: Record<
   AlertDestinationType,
@@ -339,6 +336,14 @@ function DestinationRow({
   // After a downgrade the destination is kept, but nothing is delivered to it.
   const paidFeature = featureForDeliveryType(destination.type)
   const requiredPlan = paidFeature ? entitlement.feature(paidFeature).requiredPlan : null
+  const slackTeamId = useSlackIntegration().data?.installation?.slackTeamId
+  const savedTeamId =
+    destination.type === 'slack'
+      ? (destination.config as { slackTeamId?: unknown } | undefined)?.slackTeamId
+      : undefined
+  // The channel was picked in a workspace other than the one now connected.
+  const otherWorkspace =
+    typeof savedTeamId === 'string' && Boolean(slackTeamId) && savedTeamId !== slackTeamId
 
   return (
     <div className="px-4 py-3" data-testid="alert-destination-row">
@@ -354,9 +359,13 @@ function DestinationRow({
               <Badge variant="warning" data-testid="destination-needs-plan">
                 Not delivering · needs {PLANS[requiredPlan].name}
               </Badge>
-            ) : destination.enabled ? null : (
+            ) : !destination.enabled ? (
               <Badge variant="neutral">Disabled</Badge>
-            )}
+            ) : otherWorkspace ? (
+              <Badge variant="warning" data-testid="destination-other-workspace">
+                Not delivering · channel is in another Slack workspace
+              </Badge>
+            ) : null}
             <span className="text-xs text-muted-foreground">
               {inUse
                 ? `In use by ${destination.inUseByRuleCount} rule${destination.inUseByRuleCount === 1 ? '' : 's'}`

@@ -31,6 +31,8 @@ export interface AlertSlackDestinationConfig {
   userGroupIds?: string[]
   /** Post acknowledgement and resolution updates as thread replies (default true). */
   threadUpdates?: boolean
+  /** Slack workspace (team id) the channel was picked in; set by the API on save. */
+  slackTeamId?: string
 }
 
 export type AlertDestinationConfig =

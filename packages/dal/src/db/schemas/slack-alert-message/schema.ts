@@ -37,6 +37,10 @@ export const slackAlertMessage = pgTable(
     renderedAcknowledgedBy: text('rendered_acknowledged_by'),
     syncAttempts: integer('sync_attempts').notNull().default(0),
     nextSyncAt: timestamp('next_sync_at', { withTimezone: true }),
+    /** Identifies the worker holding the current lease; completion writes must match it. */
+    syncLeaseToken: text('sync_lease_token'),
+    /** Re-render even though the incident state is unchanged (snooze, settings change). */
+    refreshRequestedAt: timestamp('refresh_requested_at', { withTimezone: true }),
     lastSyncError: text('last_sync_error'),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
   },
