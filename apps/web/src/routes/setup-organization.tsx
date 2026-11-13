@@ -1,4 +1,4 @@
-import { organization } from '@durabull/auth/client'
+import { isSafeAppRedirectPath, organization } from '@durabull/auth/client'
 import { useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { Check, Loader2, X } from 'lucide-react'
@@ -30,8 +30,19 @@ import { cn } from '@/lib/utils'
 
 type AppConfigResponse = InferResponseType<(typeof api.app.config)['$get'], 200>
 
+interface SetupOrganizationSearch {
+  /** App path to continue to once the member has an organization (e.g. /slack/install). */
+  redirect?: string
+}
+
 export const Route = createFileRoute('/setup-organization')({
-  beforeLoad: async ({ context }) => {
+  validateSearch: (search: Record<string, unknown>): SetupOrganizationSearch => ({
+    redirect:
+      typeof search.redirect === 'string' && isSafeAppRedirectPath(search.redirect)
+        ? search.redirect
+        : undefined,
+  }),
+  beforeLoad: async ({ context, search }) => {
     // Check if we should skip this page (e.g., after accepting an invite)
     // This prevents the brief flash of this page when navigating from invite acceptance
     if (typeof window !== 'undefined') {
@@ -80,6 +91,7 @@ export const Route = createFileRoute('/setup-organization')({
       await organization.setActive({ organizationId: firstOrg.id })
       // Invalidate queries and redirect
       context.queryClient.invalidateQueries({ queryKey: organizationKeys.active })
+      if (search.redirect) throw redirect({ href: search.redirect })
       throw redirect({ to: '/$orgSlug', params: { orgSlug: firstOrg.slug } })
     }
   },
@@ -88,6 +100,7 @@ export const Route = createFileRoute('/setup-organization')({
 
 function SetupOrganizationPage() {
   const navigate = useNavigate()
+  const { redirect: continueTo } = Route.useSearch()
   const queryClient = useQueryClient()
   const { isAuthenticated, isLoading: sessionLoading, user, signOut } = useAuth()
 
@@ -192,7 +205,8 @@ function SetupOrganizationPage() {
       if (result?.id) {
         // Set the new organization as active
         await setActiveOrganization.mutateAsync(result.id)
-        navigate({ to: '/' })
+        if (continueTo) navigate({ href: continueTo })
+        else navigate({ to: '/' })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization')
@@ -229,7 +243,8 @@ function SetupOrganizationPage() {
       queryClient.invalidateQueries({ queryKey: organizationKeys.active })
       queryClient.invalidateQueries({ queryKey: organizationKeys.list() })
 
-      navigate({ to: '/$orgSlug', params: { orgSlug: acceptedOrg.slug } })
+      if (continueTo) navigate({ href: continueTo })
+      else navigate({ to: '/$orgSlug', params: { orgSlug: acceptedOrg.slug } })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to accept invitation')
     }

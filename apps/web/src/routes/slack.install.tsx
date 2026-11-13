@@ -34,7 +34,8 @@ function SlackInstallRoute() {
     }
     if (orgsLoading || activeOrgLoading) return
     if (!organizations || organizations.length === 0) {
-      navigate({ to: '/setup-organization', replace: true })
+      // Come back here once they have an organization.
+      navigate({ to: '/setup-organization', search: { redirect: '/slack/install' }, replace: true })
       return
     }
     const slug = activeOrg?.slug ?? organizations[0]?.slug
