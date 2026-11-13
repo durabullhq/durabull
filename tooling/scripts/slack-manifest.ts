@@ -45,7 +45,11 @@ console.log(
       baseUrl,
       appName: values.name,
       skipEvents: values['skip-events'],
-      redirectUri: values['redirect-uri'],
+      // Without --base-url this describes the current deployment, so its
+      // SLACK_OAUTH_REDIRECT_URI override applies too.
+      redirectUri:
+        values['redirect-uri'] ??
+        (values['base-url'] ? undefined : env.SLACK_OAUTH_REDIRECT_URI?.trim() || undefined),
     }),
     null,
     2

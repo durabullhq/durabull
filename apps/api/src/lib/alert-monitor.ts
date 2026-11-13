@@ -467,16 +467,14 @@ async function processDueAlertDeliveries(): Promise<void> {
 async function runResolutionRecoveryCycle(): Promise<void> {
   if (resolutionRecoveryInProgress) return
   resolutionRecoveryInProgress = true
+  // Mirror acknowledgements and resolutions made anywhere (web, MCP,
+  // auto-resolve, rule changes) into the Slack messages for those incidents.
+  // It runs alongside the rest of the cycle, so a Slack outage cannot delay
+  // Linear sync or rule deletion, and a Linear outage cannot hold Slack back.
+  const slackSync = syncSlackAlertMessages({ limit: 25 }).catch((error) => {
+    console.error('[alert-monitor] Slack message sync failed:', error)
+  })
   try {
-    // Mirror acknowledgements and resolutions made anywhere (web, MCP,
-    // auto-resolve, rule changes) into the Slack messages for those incidents.
-    // Runs first and on its own so a Linear outage cannot hold Slack back.
-    try {
-      await syncSlackAlertMessages({ limit: 25 })
-    } catch (error) {
-      console.error('[alert-monitor] Slack message sync failed:', error)
-    }
-
     const pendingSync = await alertEventRepository.findPendingLinearResolutionSync(10)
     if (pendingSync.length > 0) {
       await syncLinearIssuesForResolvedEvents(pendingSync)
@@ -490,6 +488,7 @@ async function runResolutionRecoveryCycle(): Promise<void> {
   } catch (error) {
     console.error('[alert-monitor] Resolution recovery cycle failed:', error)
   } finally {
+    await slackSync
     resolutionRecoveryInProgress = false
   }
 }

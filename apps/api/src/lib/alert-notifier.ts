@@ -238,9 +238,29 @@ export async function processAlertDeliveries(
       await alertDeliveryRepository.markFailed(delivery.id, {
         ...retry,
         expectedClaimedAt: requireClaimedAt(delivery),
+        providerMetadata: await labelFailedDestinationDelivery(delivery, event.organizationId),
       })
     }
   }
+}
+
+/**
+ * A saved-destination delivery only learns its destination's type and name
+ * when it succeeds. Record them on failure too, so the incident shows which
+ * Slack channel, Linear team or inbox needs attention.
+ */
+async function labelFailedDestinationDelivery(
+  delivery: AlertDelivery,
+  organizationId: string
+): Promise<Record<string, unknown> | undefined> {
+  if (delivery.channelType !== 'destination') return undefined
+  const metadata = (delivery.providerMetadata ?? {}) as Record<string, unknown>
+  if (typeof metadata.destinationId !== 'string' || metadata.resolvedType) return undefined
+  const destination = await alertDestinationRepository
+    .findById(metadata.destinationId, organizationId)
+    .catch(() => null)
+  if (!destination) return undefined
+  return { ...metadata, resolvedType: destination.type, destinationName: destination.name }
 }
 
 function getDeliveryProviderMetadata(

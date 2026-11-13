@@ -320,7 +320,8 @@ export function buildTestMessage(input: {
   organizationName: string
   settingsUrl: string
 }): SlackMessageContent {
-  const text = `Durabull test message for destination "${input.destinationName}"`
+  // Escaped: a name such as `<!channel>` would otherwise notify the channel.
+  const text = `Durabull test message for destination "${slackInline(input.destinationName, 100)}"`
   return {
     text,
     attachments: [

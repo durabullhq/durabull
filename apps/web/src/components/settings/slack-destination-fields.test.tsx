@@ -3,19 +3,29 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SlackDestinationFields } from '@/components/settings/slack-destination-fields'
 
-const mocks = vi.hoisted(() => ({ channels: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  channels: vi.fn(),
+  refresh: vi.fn(),
+  groupsFailed: false,
+  refetchGroups: vi.fn(),
+}))
 
 vi.mock('@/hooks/use-slack', () => ({
   useSlackChannels: () => ({
     data: mocks.channels(),
     isLoading: false,
     isError: false,
-    refresh: vi.fn(),
+    refresh: mocks.refresh,
   }),
-  useSlackUserGroups: () => ({
-    data: { userGroups: [{ id: 'S0ONCALL', handle: 'oncall', name: 'On-call' }] },
-    isLoading: false,
-  }),
+  useSlackUserGroups: () =>
+    mocks.groupsFailed
+      ? { data: undefined, isLoading: false, isError: true, refetch: mocks.refetchGroups }
+      : {
+          data: { userGroups: [{ id: 'S0ONCALL', handle: 'oncall', name: 'On-call' }] },
+          isLoading: false,
+          isError: false,
+          refetch: mocks.refetchGroups,
+        },
 }))
 
 const ALERTS = { id: 'C0ALERTS', name: 'alerts', isPrivate: false, isMember: true }
@@ -23,6 +33,26 @@ const ALERTS = { id: 'C0ALERTS', name: 'alerts', isPrivate: false, isMember: tru
 describe('SlackDestinationFields', () => {
   beforeEach(() => {
     mocks.channels.mockReturnValue({ channels: [ALERTS], truncated: false })
+    mocks.refresh.mockReset()
+    mocks.groupsFailed = false
+  })
+
+  it('says why the channel list did not reload', async () => {
+    mocks.refresh.mockRejectedValue(new Error('Slack rate limit reached.'))
+    render(<SlackDestinationFields config={{}} onChange={vi.fn()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Reload Slack channels' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not reload channels: Slack rate limit reached.'
+    )
+  })
+
+  it('reports a failed user group request instead of an empty workspace', async () => {
+    mocks.groupsFailed = true
+    render(<SlackDestinationFields config={{ channelId: 'C0ALERTS' }} onChange={vi.fn()} />)
+    expect(screen.getByRole('option', { name: 'User groups unavailable' })).toBeInTheDocument()
+    expect(screen.queryByText('No user groups in this workspace')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(mocks.refetchGroups).toHaveBeenCalled()
   })
 
   it('offers channel ID entry only when the channel list is truncated', async () => {

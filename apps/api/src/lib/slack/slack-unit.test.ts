@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, spyOn } from 'bun:test'
 import {
   buildAlertMessage,
   buildStateChangeReply,
+  buildTestMessage,
   mentionPrefix,
   SLACK_ACTIONS,
 } from './alert-message'
@@ -136,6 +137,17 @@ describe('Slack alert messages', () => {
       expect(confirm.text.type).toBe('plain_text')
       expect(confirm.text.text.length).toBeLessThanOrEqual(300)
     }
+  })
+
+  it('escapes the destination name in test messages so it cannot mention the channel', () => {
+    const content = buildTestMessage({
+      channelName: 'alerts',
+      destinationName: '<!channel>',
+      organizationName: 'Acme',
+      settingsUrl: 'https://app.durabull.test',
+    })
+    expect(content.text).not.toContain('<!channel>')
+    expect(content.text).toContain('&lt;!channel&gt;')
   })
 
   it('swaps acknowledge for unacknowledge and names the responder', () => {
@@ -292,6 +304,17 @@ describe('Slack app manifest', () => {
     )
     expect((manifest.features as { unfurl_domains?: string[] }).unfurl_domains).toEqual([
       'app.durabull.test',
+    ])
+
+    // A redirect override on another host is registered alongside the default callback.
+    expect(
+      buildSlackAppManifest({
+        baseUrl: 'https://app.durabull.test',
+        redirectUri: 'https://api.durabull.test/api/integrations/slack/callback',
+      }).oauth_config.redirect_urls
+    ).toEqual([
+      'https://api.durabull.test/api/integrations/slack/callback',
+      'https://app.durabull.test/api/integrations/slack/callback',
     ])
 
     const beforeDeploy = buildSlackAppManifest({

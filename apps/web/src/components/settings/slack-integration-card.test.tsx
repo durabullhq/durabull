@@ -6,6 +6,7 @@ import { SlackIntegrationCard } from '@/components/settings/slack-integration-ca
 
 const mocks = vi.hoisted(() => ({
   overview: vi.fn(),
+  refetch: vi.fn(),
   billing: vi.fn(),
   reportUpgrade: vi.fn(),
   connect: vi.fn(),
@@ -22,7 +23,14 @@ vi.mock('sonner', () => ({
 }))
 
 vi.mock('@/hooks/use-slack', () => ({
-  useSlackIntegration: () => ({ data: mocks.overview(), isLoading: false }),
+  useSlackIntegration: () => ({
+    data: mocks.overview(),
+    isLoading: false,
+    isError: mocks.overview() === undefined,
+    error: new Error('Network down'),
+    isFetching: false,
+    refetch: mocks.refetch,
+  }),
   useConnectSlack: () => ({ mutateAsync: mocks.connect, isPending: false }),
   useUpdateSlackSettings: () => ({ mutateAsync: mocks.update, isPending: false }),
   useDisconnectSlack: () => ({ mutateAsync: mocks.disconnect, isPending: false }),
@@ -242,5 +250,13 @@ describe('SlackIntegrationCard', () => {
     await user.click(dialogButtons[dialogButtons.length - 1] as HTMLElement)
     await waitFor(() => expect(mocks.disconnect).toHaveBeenCalled())
     expect(mocks.toastSuccess).toHaveBeenCalledWith('Slack removed')
+  })
+
+  it('shows a retry instead of a permanent skeleton when the Slack status fails to load', async () => {
+    mocks.overview.mockReturnValue(undefined)
+    render(<SlackIntegrationCard orgSlug="acme" />)
+    expect(screen.getByText('Network down')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(mocks.refetch).toHaveBeenCalled()
   })
 })

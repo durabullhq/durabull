@@ -130,6 +130,9 @@ export function AlertDestinationsPage() {
     configured: slackQuery.data?.configured === true,
     connected: slackQuery.data?.installation?.status === 'active',
     canManage: slackQuery.data?.canManage !== false,
+    // A failed status request says nothing about the server's configuration.
+    loadFailed: !slackQuery.data && slackQuery.isError,
+    retry: () => void slackQuery.refetch(),
   }
 
   async function handleTest(destination: AlertDestinationRecord) {
@@ -427,6 +430,9 @@ interface SlackAvailability {
   connected: boolean
   /** The member may connect Slack (owners and admins). */
   canManage: boolean
+  /** The Slack status request failed, so the other fields are unknown. */
+  loadFailed: boolean
+  retry: () => void
 }
 
 function CreateDestinationDialog({
@@ -534,6 +540,8 @@ function CreateDestinationDialog({
                     key={candidate}
                     configured={slack.configured}
                     canManage={slack.canManage}
+                    loadFailed={slack.loadFailed}
+                    onRetry={slack.retry}
                   />
                 )
               }
@@ -833,9 +841,13 @@ function EditDestinationDialog({
 function SlackTypeNeedsConnection({
   configured,
   canManage,
+  loadFailed = false,
+  onRetry,
 }: {
   configured: boolean
   canManage: boolean
+  loadFailed?: boolean
+  onRetry?: () => void
 }) {
   return (
     <div
@@ -846,13 +858,19 @@ function SlackTypeNeedsConnection({
       <div className="min-w-0 flex-1 space-y-2">
         <span className="block text-sm font-semibold">Slack</span>
         <span className="block text-sm text-muted-foreground">
-          {!configured
-            ? 'Slack is not set up on this Durabull server yet. See Settings → Integrations.'
-            : canManage
-              ? 'Connect your Slack workspace to choose a channel.'
-              : 'Ask an organization owner or admin to connect Slack, then pick a channel here.'}
+          {loadFailed
+            ? 'Could not check the Slack connection.'
+            : !configured
+              ? 'Slack is not set up on this Durabull server yet. See Settings → Integrations.'
+              : canManage
+                ? 'Connect your Slack workspace to choose a channel.'
+                : 'Ask an organization owner or admin to connect Slack, then pick a channel here.'}
         </span>
-        {configured && canManage ? (
+        {loadFailed ? (
+          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+            Retry
+          </Button>
+        ) : configured && canManage ? (
           <SlackConnectButton returnTo="destinations" variant="outline" />
         ) : null}
       </div>

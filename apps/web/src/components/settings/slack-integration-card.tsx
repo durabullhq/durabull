@@ -83,6 +83,31 @@ export function SlackIntegrationCard({ orgSlug }: { orgSlug: string }) {
   const slackQuery = useSlackIntegration()
   const overview = slackQuery.data
 
+  if (!overview && slackQuery.isError) {
+    return (
+      <Panel>
+        <CardHeader
+          subtitle={
+            <span className="text-status-danger">
+              {getErrorMessage(slackQuery.error, 'Could not load the Slack integration.')}
+            </span>
+          }
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => void slackQuery.refetch()}
+              disabled={slackQuery.isFetching}
+            >
+              {slackQuery.isFetching ? 'Retrying…' : 'Retry'}
+            </Button>
+          }
+        />
+      </Panel>
+    )
+  }
+
   if (slackQuery.isLoading || !overview) {
     return (
       <Panel>

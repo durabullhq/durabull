@@ -590,6 +590,15 @@ function normalizeAlertDeliveries(value: unknown): AlertDeliveryRecord[] {
   })
 }
 
+/**
+ * The Slack card's setup checklist counts Slack destinations, so destination
+ * changes refresh it. (Same key as `slackKeys.overview` in use-slack, which
+ * imports this module.)
+ */
+function invalidateSlackOverview(queryClient: QueryClient, organizationId?: string | null) {
+  void queryClient.invalidateQueries({ queryKey: ['slack', organizationId ?? 'none'], exact: true })
+}
+
 function invalidateAlertQueries(queryClient: QueryClient, connectionId?: string) {
   queryClient.invalidateQueries({ queryKey: alertKeys.summary() })
   queryClient.invalidateQueries({ queryKey: ['alerts', 'global-events'] })
@@ -979,8 +988,10 @@ export function useCreateAlertDestination() {
       const data = await handleRes<AlertDestinationResponse>(res)
       return { destination: normalizeAlertDestination(data.destination) }
     },
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) })
+      invalidateSlackOverview(queryClient, organizationId)
+    },
   })
 }
 
@@ -1007,6 +1018,7 @@ export function useUpdateAlertDestination() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) })
+      invalidateSlackOverview(queryClient, organizationId)
       queryClient.invalidateQueries({ queryKey: ['alerts', 'connection'] })
     },
   })
@@ -1027,6 +1039,7 @@ export function useDeleteAlertDestination() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: alertKeys.destinations(organizationId) })
+      invalidateSlackOverview(queryClient, organizationId)
       queryClient.invalidateQueries({ queryKey: ['alerts', 'connection'] })
     },
   })

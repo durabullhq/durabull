@@ -64,7 +64,7 @@ button in the same place. Members who are not owners are asked to contact an own
 Durabull can post to any public channel without joining it. For a private channel, run
 `/invite @Durabull` in the channel first, then reload the channel list.
 
-The picker lists up to 10,000 channels. In larger workspaces it also offers a channel ID field:
+The picker lists about the first 10,000 channels. In larger workspaces it also offers a channel ID field:
 in Slack, open the channel's name, then **About**, and copy the **Channel ID** (it starts with
 `C`, or `G` for older private channels).
 
@@ -82,15 +82,17 @@ manifest that Durabull generates for your deployment.
 
 ### 1. Create the Slack app
 
-Print the manifest for your deployment:
+Slack verifies the Events API URL as soon as a manifest with event subscriptions is saved, and
+Durabull can only answer once it has the app's signing secret, which Slack issues when the app
+is created. So create the app without event subscriptions first:
 
 ```bash
-bun run slack:manifest -- --base-url https://durabull.example.com
+bun run slack:manifest -- --base-url https://durabull.example.com --skip-events
 ```
 
-If `APP_BASE_URL` is already set, `bun run slack:manifest` uses it. Organization admins can also
-copy the manifest from **Settings → Integrations** on a deployment where Slack is not configured
-yet.
+If `APP_BASE_URL` is already set, `bun run slack:manifest -- --skip-events` uses it (and
+`SLACK_OAUTH_REDIRECT_URI`, if set). Organization admins can also copy this manifest from
+**Settings → Integrations** on a deployment where Slack is not configured yet.
 
 Then:
 
@@ -99,9 +101,8 @@ Then:
 2. Pick the workspace that should own the app (it can still be installed by other workspaces).
 3. Paste the JSON, review, and select **Create**.
 
-The manifest configures the bot scopes, the `/durabull` command, interactivity, the Events API
-subscriptions (mentions, direct messages, App Home, link previews and uninstall detection), the
-App Home and Messages tabs, link unfurling for your domain, and the OAuth redirect URL.
+This manifest configures the bot scopes, the `/durabull` command, interactivity, the App Home
+and Messages tabs, and the OAuth redirect URL. Step 3 adds the rest.
 
 ### 2. Copy the credentials
 
@@ -113,26 +114,27 @@ From the app's **Basic Information** page, copy into Durabull's environment:
 | `SLACK_CLIENT_SECRET` | App Credentials → Client Secret |
 | `SLACK_SIGNING_SECRET` | App Credentials → Signing Secret |
 | `SLACK_APP_ID` | App Credentials → App ID (optional; rejects payloads addressed to other apps) |
-| `SLACK_OAUTH_REDIRECT_URI` | Optional; only when the OAuth callback is not `{APP_BASE_URL}/api/integrations/slack/callback` |
+| `SLACK_OAUTH_REDIRECT_URI` | Optional; only when the OAuth callback is not `{APP_BASE_URL}/api/integrations/slack/callback`. The manifest registers both URLs. |
 
-Restart Durabull. The Slack card in **Settings → Integrations** switches from "Not set up" to
-**Add to Slack**.
+Restart (or deploy) Durabull. The Slack card in **Settings → Integrations** switches from "Not
+set up" to **Add to Slack**.
 
-### 3. Verify the event URL
+### 3. Add event subscriptions
 
-Slack checks the Events API request URL when a manifest is saved, so Durabull must already be
-running with `SLACK_SIGNING_SECRET` set. If you are creating the app before Durabull is reachable
-(for example, before a deploy), create it from a manifest without event subscriptions:
+With Durabull running and the credentials set, print the full manifest:
 
 ```bash
-bun run slack:manifest -- --base-url https://durabull.example.com --skip-events
+bun run slack:manifest -- --base-url https://durabull.example.com
 ```
 
-Then, once Durabull is running with the credentials, open **App Manifest** in the Slack app
-settings, paste the full manifest (without `--skip-events`) and save. Slack verifies
-`/api/slack/events` and enables link previews, the App Home tab's live content and uninstall
-detection. (Slack only accepts link-preview domains together with event subscriptions, so
-`--skip-events` leaves both out.)
+Open **App Manifest** in the Slack app settings, replace the JSON with it and save. Slack
+verifies `/api/slack/events` and enables @Durabull mentions, direct messages, link previews for
+your domain, the App Home tab's live content and uninstall detection. (Slack only accepts
+link-preview domains together with event subscriptions, which is why step 1 leaves both out.)
+
+If Durabull is already running with the credentials when you create the app (for example, when
+you rotate to a new app), you can leave out `--skip-events` in step 1 and create it from the full
+manifest directly.
 
 ### 4. Distribute the app (optional)
 

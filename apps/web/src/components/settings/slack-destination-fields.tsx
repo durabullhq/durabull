@@ -34,6 +34,7 @@ export function SlackDestinationFields({
   const userGroupsQuery = useSlackUserGroups(!compact)
   const [filter, setFilter] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   const [manualId, setManualId] = useState('')
 
   const channels = channelsQuery.data?.channels ?? NO_CHANNELS
@@ -68,8 +69,15 @@ export function SlackDestinationFields({
             size="xs"
             onClick={async () => {
               setRefreshing(true)
+              setRefreshError(null)
               try {
                 await channelsQuery.refresh()
+              } catch (error) {
+                setRefreshError(
+                  error instanceof Error && error.message
+                    ? `Could not reload channels: ${error.message}`
+                    : 'Could not reload channels. Try again.'
+                )
               } finally {
                 setRefreshing(false)
               }
@@ -151,6 +159,11 @@ export function SlackDestinationFields({
             </div>
           </div>
         ) : null}
+        {refreshError ? (
+          <p className="text-xs text-status-danger" role="alert">
+            {refreshError}
+          </p>
+        ) : null}
         {channelsQuery.isError ? (
           <p className="text-xs text-status-danger">
             {channelsQuery.error instanceof Error
@@ -201,9 +214,11 @@ export function SlackDestinationFields({
                 <option value="">
                   {userGroupsQuery.isLoading
                     ? 'Loading groups…'
-                    : userGroups.length === 0
-                      ? 'No user groups in this workspace'
-                      : 'Add a group, e.g. @oncall'}
+                    : userGroupsQuery.isError
+                      ? 'User groups unavailable'
+                      : userGroups.length === 0
+                        ? 'No user groups in this workspace'
+                        : 'Add a group, e.g. @oncall'}
                 </option>
                 {userGroups.flatMap((group) =>
                   selectedGroups.includes(group.id)
@@ -215,6 +230,18 @@ export function SlackDestinationFields({
                       ]
                 )}
               </Select>
+              {userGroupsQuery.isError ? (
+                <p className="text-xs text-status-danger">
+                  Could not load Slack user groups.{' '}
+                  <button
+                    type="button"
+                    className="underline underline-offset-2"
+                    onClick={() => void userGroupsQuery.refetch()}
+                  >
+                    Try again
+                  </button>
+                </p>
+              ) : null}
               {selectedGroups.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {selectedGroups.map((id) => {

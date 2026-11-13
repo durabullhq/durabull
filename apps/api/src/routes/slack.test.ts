@@ -277,6 +277,16 @@ function interaction(payload: Record<string, unknown>) {
 }
 
 async function install(app: Hono) {
+  return finishInstall(app, await startInstall(app))
+}
+
+function finishInstall(app: Hono, state: string) {
+  return app.request(
+    `/api/integrations/slack/callback?code=code-1&state=${encodeURIComponent(state)}`
+  )
+}
+
+async function startInstall(app: Hono): Promise<string> {
   const connect = await app.request('/api/integrations/slack/connect', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -284,10 +294,7 @@ async function install(app: Hono) {
   })
   expect(connect.status).toBe(200)
   const { authorizationUrl } = (await connect.json()) as { authorizationUrl: string }
-  const state = new URL(authorizationUrl).searchParams.get('state') ?? ''
-  return app.request(
-    `/api/integrations/slack/callback?code=code-1&state=${encodeURIComponent(state)}`
-  )
+  return new URL(authorizationUrl).searchParams.get('state') ?? ''
 }
 
 async function createSlackDestination(app: Hono) {
@@ -374,7 +381,8 @@ describe('Slack integration', () => {
   it('installs through OAuth and returns to the page that started it', async () => {
     await seed()
     const app = await createApp()
-    const callback = await install(app)
+    const state = await startInstall(app)
+    const callback = await finishInstall(app, state)
     expect(callback.status).toBe(302)
     expect(callback.headers.get('location')).toBe(
       `${BASE_URL}/acme/settings/destinations?slack=connected`
@@ -402,9 +410,10 @@ describe('Slack integration', () => {
     }
     expect(overview.installation).toMatchObject({ slackTeamName: 'Acme', missingScopes: [] })
 
-    // State is single use.
-    const replay = await app.request(`/api/integrations/slack/callback?code=code-1&state=used`)
+    // State is single use: replaying the same callback does not exchange the code again.
+    const replay = await finishInstall(app, state)
     expect(replay.headers.get('location')).toContain('slack=error')
+    expect(slack.callsTo('oauth.v2.access')).toHaveLength(1)
   })
 
   it('reports a cancelled consent screen without installing', async () => {
@@ -1152,5 +1161,58 @@ describe('Slack integration', () => {
     const retried = await app.request(signed('/api/slack/events', uninstall, 'application/json'))
     expect(retried.status).toBe(200)
     expect((await slackInstallationRepository.findByOrganization(ORG_ID))?.status).toBe('revoked')
+  })
+
+  it('refuses direct-message conversations as alert channels', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+    const byPrefix = await app.request('/api/alerts/destinations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'slack', name: 'DM', config: { channelId: 'D0DIRECT' } }),
+    })
+    expect(byPrefix.status).toBe(400)
+
+    // A shared group DM can have a channel-style id; Slack's answer decides.
+    slack.channels.C0GROUPDM = { name: 'mpdm-ada--bob-1', is_private: true, is_member: true }
+    ;(slack.channels.C0GROUPDM as Record<string, unknown>).is_mpim = true
+    const byType = await app.request('/api/alerts/destinations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'slack', name: 'Group DM', config: { channelId: 'C0GROUPDM' } }),
+    })
+    expect(byType.status).toBe(400)
+    expect(((await byType.json()) as { error: string }).error).toContain('direct messages')
+  })
+
+  it('returns no user groups on Slack plans without them', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+    slack.failures['usergroups.list'] = 'plan_upgrade_required'
+    const response = await app.request('/api/integrations/slack/user-groups')
+    expect(await response.json()).toEqual({ userGroups: [] })
+  })
+
+  it('names the Slack destination on a failed delivery', async () => {
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const destination = await createSlackDestination(app)
+    slack.failures['chat.postMessage'] = 'channel_not_found'
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    const [delivery] = await alertDeliveryRepository.listByEvent(event.id)
+    expect(delivery?.status).toBe('failed')
+    expect(delivery?.providerMetadata).toMatchObject({
+      destinationId: destination.id,
+      resolvedType: 'slack',
+      destinationName: 'Ops channel',
+    })
   })
 })

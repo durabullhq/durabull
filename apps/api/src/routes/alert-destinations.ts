@@ -55,7 +55,8 @@ const slackConfigSchema = z
     channelId: z
       .string()
       .trim()
-      .regex(/^[CGD][A-Z0-9]{2,}$/, 'Choose a Slack channel.'),
+      // Public (C…) and private (G…) channels; direct messages (D…) are not destinations.
+      .regex(/^[CG][A-Z0-9]{2,}$/, 'Choose a Slack channel.'),
     channelName: z.string().trim().max(200).optional(),
     mention: z.enum(['none', 'here', 'channel']).optional(),
     userGroupIds: z

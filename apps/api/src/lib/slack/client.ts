@@ -369,7 +369,8 @@ export async function listSlackChannels(
     const body = await callSlack<ConversationsListResponse>('conversations.list', token, {
       types: 'public_channel,private_channel',
       exclude_archived: true,
-      limit: 1000,
+      // Slack requires a page size under 1000.
+      limit: 999,
       cursor,
     })
     for (const channel of body.channels ?? []) {
@@ -396,11 +397,18 @@ export async function getSlackChannel(token: string, channelId: string): Promise
         is_private?: boolean
         is_member?: boolean
         is_archived?: boolean
+        is_im?: boolean
+        is_mpim?: boolean
       }
     }
   >('conversations.info', token, { channel: channelId })
   const channel = body.channel
   if (!channel) throw new SlackApiError('channel_not_found')
+  if (channel.is_im || channel.is_mpim) {
+    throw new SlackApiError('not_a_channel', {
+      message: 'Choose a public or private channel; direct messages cannot receive alerts.',
+    })
+  }
   return {
     id: channel.id,
     name: channel.name ?? channel.id,
@@ -474,7 +482,12 @@ export async function listSlackUserGroups(token: string): Promise<SlackUserGroup
   } catch (error) {
     if (
       error instanceof SlackApiError &&
-      ['paid_teams_only', 'not_allowed_token_type', 'missing_scope'].includes(error.code)
+      [
+        'paid_teams_only',
+        'plan_upgrade_required',
+        'not_allowed_token_type',
+        'missing_scope',
+      ].includes(error.code)
     ) {
       return []
     }

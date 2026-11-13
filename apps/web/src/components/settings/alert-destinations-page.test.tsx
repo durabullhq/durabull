@@ -16,9 +16,11 @@ const {
   refetchMock,
   slackOverviewMock,
   connectSlackMock,
+  refetchSlackMock,
 } = vi.hoisted(() => ({
   slackOverviewMock: vi.fn(),
   connectSlackMock: vi.fn(),
+  refetchSlackMock: vi.fn(),
   toastSuccessMock: vi.fn(),
   toastErrorMock: vi.fn(),
   useAlertDestinationsMock: vi.fn(),
@@ -49,7 +51,12 @@ vi.mock('@/hooks/use-alerts', () => ({
 }))
 
 vi.mock('@/hooks/use-slack', () => ({
-  useSlackIntegration: () => ({ data: slackOverviewMock(), isLoading: false }),
+  useSlackIntegration: () => ({
+    data: slackOverviewMock(),
+    isLoading: false,
+    isError: slackOverviewMock() === undefined,
+    refetch: refetchSlackMock,
+  }),
   useConnectSlack: () => ({ mutateAsync: connectSlackMock, isPending: false }),
   useSlackChannels: () => ({
     data: {
@@ -352,6 +359,19 @@ describe('AlertDestinationsPage', () => {
     expect(slackOption).toHaveTextContent('Connect your Slack workspace')
     await user.click(screen.getByRole('button', { name: /Add to Slack/ }))
     expect(connectSlackMock).toHaveBeenCalledWith({ returnTo: 'destinations' })
+  })
+
+  it('offers a retry when the Slack status cannot be loaded, not a setup message', async () => {
+    slackOverviewMock.mockReturnValue(undefined)
+    const user = userEvent.setup()
+    render(<AlertDestinationsPage />)
+
+    await user.click(screen.getByRole('button', { name: 'Add destination' }))
+    const slackOption = await screen.findByTestId('destination-type-slack')
+    expect(slackOption).toHaveTextContent('Could not check the Slack connection.')
+    expect(slackOption).not.toHaveTextContent('not set up')
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(refetchSlackMock).toHaveBeenCalled()
   })
 
   it('nudges Free organizations toward the Team plan instead of offering Slack', async () => {

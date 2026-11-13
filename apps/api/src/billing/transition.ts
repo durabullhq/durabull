@@ -16,7 +16,11 @@ import {
   type SubscriptionStatus,
   smallestPlanForUsage,
 } from '@durabull/billing'
-import { type BillingNoticeKind, billingRepository } from '@durabull/dal'
+import {
+  type BillingNoticeKind,
+  billingRepository,
+  slackInstallationRepository,
+} from '@durabull/dal'
 import {
   BillingEmailError,
   type BillingTransitionEmailProps,
@@ -102,7 +106,12 @@ export async function listTransitionAudience(now = new Date()): Promise<Transiti
       featuresInUse.push('alerts.webhook')
     if (candidates.destinations.some((d) => d.type === 'linear'))
       featuresInUse.push('alerts.linear')
-    if (candidates.destinations.some((d) => d.type === 'slack'))
+    // The Slack app (commands, buttons, previews) is in use once it is
+    // connected, even before any Slack destination exists.
+    if (
+      candidates.destinations.some((d) => d.type === 'slack') ||
+      (await slackInstallationRepository.findByOrganization(org.id))?.status === 'active'
+    )
       featuresInUse.push('integrations.slack')
     if (candidates.serviceAccounts.length > 0) featuresInUse.push('automation.service_accounts')
     const restrictions = exceededLimits(PLANS.free.limits, usage)

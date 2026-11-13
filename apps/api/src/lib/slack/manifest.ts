@@ -53,7 +53,15 @@ export function buildSlackAppManifest(input: {
       ...(input.skipEvents ? {} : { unfurl_domains: [hostname] }),
     },
     oauth_config: {
-      redirect_urls: [input.redirectUri ?? `${baseUrl}/api/integrations/slack/callback`],
+      // The deployment's own callback, plus SLACK_OAUTH_REDIRECT_URI when it
+      // points elsewhere, so OAuth works whichever one Durabull sends.
+      redirect_urls: [
+        ...new Set(
+          [input.redirectUri, `${baseUrl}/api/integrations/slack/callback`].filter(
+            (url): url is string => Boolean(url)
+          )
+        ),
+      ],
       scopes: { bot: [...SLACK_BOT_SCOPES] },
     },
     settings: {
