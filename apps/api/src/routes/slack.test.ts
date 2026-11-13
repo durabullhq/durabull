@@ -369,6 +369,7 @@ describe('Slack integration', () => {
     const app = await createApp()
     const response = await app.request('/api/integrations/slack')
     expect(await response.json()).toEqual({
+      organizationId: ORG_ID,
       configured: true,
       entitled: true,
       canManage: true,

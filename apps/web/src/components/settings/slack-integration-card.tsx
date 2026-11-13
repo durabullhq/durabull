@@ -107,7 +107,10 @@ export function useSlackInstallRequest(
   // until it is the organization in the URL, so a stale overview from the
   // previously active organization never decides the install.
   const { data: activeOrganization } = useActiveOrganization()
-  const isCurrentOrganization = activeOrganization?.slug === orgSlug
+  const isCurrentOrganization =
+    activeOrganization?.slug === orgSlug &&
+    // Older APIs omit organizationId; then the query key is the only check.
+    (overview?.organizationId == null || overview.organizationId === activeOrganization.id)
   useEffect(() => {
     if (handled.current || !overview || !isCurrentOrganization || typeof window === 'undefined')
       return

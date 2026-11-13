@@ -23,6 +23,8 @@ export interface SlackInstallationRecord {
 }
 
 export interface SlackIntegrationOverview {
+  /** The organization this overview describes (the session's active organization). */
+  organizationId: string | null
   /** The deployment has Slack app credentials. */
   configured: boolean
   /** The organization's plan includes the Slack app. */
@@ -85,6 +87,13 @@ export function normalizeSlackInstallation(value: unknown): SlackInstallationRec
   }
 }
 
+export class SlackOverviewOrganizationMismatchError extends Error {
+  constructor() {
+    super('The active organization changed while loading Slack. Try again.')
+    this.name = 'SlackOverviewOrganizationMismatchError'
+  }
+}
+
 export function useSlackIntegration() {
   const { data: activeOrganization } = useActiveOrganization()
   const organizationId = activeOrganization?.id
@@ -92,7 +101,15 @@ export function useSlackIntegration() {
     queryKey: slackKeys.overview(organizationId),
     queryFn: async (): Promise<SlackIntegrationOverview> => {
       const data = await handleRes<Record<string, unknown>>(await api.integrations.slack.$get())
+      const answeredFor = typeof data.organizationId === 'string' ? data.organizationId : null
+      // The API answers for the session's active organization, which can change
+      // while this request is in flight. Never cache another organization's
+      // overview under this organization's key.
+      if (answeredFor && answeredFor !== organizationId) {
+        throw new SlackOverviewOrganizationMismatchError()
+      }
       return {
+        organizationId: answeredFor,
         configured: data.configured === true,
         entitled: data.entitled !== false,
         canManage: data.canManage !== false,

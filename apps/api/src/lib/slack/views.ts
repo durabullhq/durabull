@@ -244,7 +244,9 @@ export function queueBlocks(
         mrkdwn(`*Waiting*\n${formatCount(counts.waiting + counts.prioritized)}`),
         mrkdwn(`*Active*\n${formatCount(counts.active)}`),
         mrkdwn(`*Delayed*\n${formatCount(counts.delayed)}`),
-        mrkdwn(`*Failed*\n${counts.failed > 0 ? `:red_circle: ${formatCount(counts.failed)}` : '0'}`),
+        mrkdwn(
+          `*Failed*\n${counts.failed > 0 ? `:red_circle: ${formatCount(counts.failed)}` : '0'}`
+        ),
         mrkdwn(`*Completed*\n${formatCount(counts.completed)}`),
       ],
     },

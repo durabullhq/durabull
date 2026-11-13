@@ -189,6 +189,9 @@ const app = new Hono()
       isOrganizationAdmin(c, organizationId),
     ])
     return c.json({
+      // Lets clients tell which organization this answer is for when the
+      // session's active organization changes mid-request.
+      organizationId,
       configured: isSlackConfigured(),
       entitled,
       canManage,

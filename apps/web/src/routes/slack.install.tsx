@@ -70,10 +70,7 @@ function SlackInstallRoute() {
 
   if (orgsError) {
     return (
-      <div
-        className="flex h-full min-h-60 flex-col items-center justify-center gap-3"
-        role="alert"
-      >
+      <div className="flex h-full min-h-60 flex-col items-center justify-center gap-3" role="alert">
         <p className="text-[13px] text-muted-foreground">
           Could not load your organizations to connect Slack.
         </p>

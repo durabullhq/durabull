@@ -1,4 +1,8 @@
-import { AddToSlackButton, SlackHero, SlackSecurity } from '@docs/components/integrations/slack-landing'
+import {
+  AddToSlackButton,
+  SlackHero,
+  SlackSecurity,
+} from '@docs/components/integrations/slack-landing'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import '@docs/styles/v2.css'
 const meta = {
