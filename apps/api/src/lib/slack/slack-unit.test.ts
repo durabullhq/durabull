@@ -6,6 +6,7 @@ import {
   mentionPrefix,
   SLACK_ACTIONS,
 } from './alert-message'
+import { safeErrorCode } from './analytics'
 import {
   callSlack,
   isAmbiguousSlackFailure,
@@ -18,8 +19,8 @@ import { buildSlackAuthorizeUrl, SLACK_BOT_EVENTS, SLACK_BOT_SCOPES } from './co
 import { escapeSlackText, formatDuration, slackCodeBlock } from './format'
 import { parseCommandText, parseDurabullLink, stripMentions } from './handlers'
 import { buildSlackAppManifest } from './manifest'
-import { statusBlocks } from './views'
 import { signSlackRequest, verifySlackSignature } from './verify'
+import { statusBlocks } from './views'
 
 const view = {
   eventId: '11111111-1111-4111-8111-111111111111',
@@ -407,5 +408,15 @@ describe('Slack status view', () => {
     expect(text).not.toContain('No open incidents')
     expect(text).toContain('*2* open incidents')
     expect(text).toContain('with 2 open incident(s) counted above')
+  })
+})
+
+describe('safeErrorCode', () => {
+  it('keeps Slack-style codes and drops anything that could be free text', () => {
+    expect(safeErrorCode('channel_not_found')).toBe('channel_not_found')
+    expect(safeErrorCode('access_denied')).toBe('access_denied')
+    expect(safeErrorCode('Ada Lovelace <ada@example.com>')).toBe('other')
+    expect(safeErrorCode('x'.repeat(65))).toBe('other')
+    expect(safeErrorCode(undefined)).toBe('other')
   })
 })

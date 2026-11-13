@@ -1,16 +1,19 @@
+import { AnalyticsEvents, SlackSurface } from '@durabull/analytics/events'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { SLACK_ACTIONS } from '../lib/slack/alert-message'
+import { recordSlackEvent } from '../lib/slack/analytics'
 import { finishOrContinueInBackground, runInBackground } from '../lib/slack/background'
 import { getSlackConfig, isSlackConfigured } from '../lib/slack/config'
 import {
+  handleAppHomeOpened,
   handleAppUninstalled,
   handleBlockActions,
   handleConversationMessage,
   handleLinkShared,
   handleSlashCommand,
   parseCommandText,
-  publishHomeTab,
+  recordSlackLinkClicks,
   type SlackBlockActionsPayload,
   type SlackLinkSharedEvent,
 } from '../lib/slack/handlers'
@@ -141,7 +144,7 @@ const app = new Hono()
       case 'app_home_opened':
         if (event.tab === 'home' && event.user) {
           const userId = event.user
-          runInBackground('home tab', () => publishHomeTab(teamId, userId))
+          runInBackground('home tab', () => handleAppHomeOpened(teamId, userId))
         }
         break
       case 'app_mention':
@@ -182,6 +185,16 @@ const app = new Hono()
     const responseUrl = form.get('response_url') ?? ''
 
     if (parseCommandText(text).command === 'help') {
+      // Answered inline without looking anyone up, so only the workspace is known.
+      recordSlackEvent(
+        AnalyticsEvents.SLACK_COMMAND_RUN,
+        { slackTeamId: teamId, slackUserId: userId },
+        {
+          slack_surface: SlackSurface.SLASH_COMMAND,
+          slack_command: 'help',
+          slack_outcome: 'help',
+        }
+      )
       return c.json({ response_type: 'ephemeral', text: 'Durabull commands', blocks: helpBlocks() })
     }
     runInBackground('slash command', () =>
@@ -210,6 +223,9 @@ const app = new Hono()
     if (payload.type === 'block_actions' && Array.isArray(payload.actions)) {
       const onlyLinks = payload.actions.every((action) =>
         action.action_id?.startsWith(SLACK_ACTIONS.openLink)
+      )
+      runInBackground('link click analytics', () =>
+        recordSlackLinkClicks(payload as SlackBlockActionsPayload)
       )
       if (!onlyLinks) {
         const actions = payload as SlackBlockActionsPayload

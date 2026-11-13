@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, spyOn } from 'b
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { configureServerAnalytics, resetServerAnalyticsForTests } from '@durabull/analytics/server'
 import {
   alertDeliveryRepository,
   alertDestinationRepository,
@@ -9,11 +10,11 @@ import {
   alertRuleRepository,
   closeDb,
   encryptRedisUrl,
+  eq,
   getDb,
   member,
   organization,
   redisConnection,
-  eq,
   slackAlertMessage,
   slackAlertMessageRepository,
   slackInstallationRepository,
@@ -27,8 +28,9 @@ import { toBillingHttpError } from '../billing/errors'
 import { dispatchAlertNotification } from '../lib/alert-notifier'
 import { SLACK_ACTIONS } from '../lib/slack/alert-message'
 import { syncSlackAlertMessages } from '../lib/slack/alerts'
-import { SlackApiError } from '../lib/slack/client'
+import { flushSlackAnalytics } from '../lib/slack/analytics'
 import { flushSlackBackgroundWork } from '../lib/slack/background'
+import { SlackApiError } from '../lib/slack/client'
 import { SLACK_BOT_SCOPES } from '../lib/slack/config'
 import { getSlackBotToken, withSlackToken } from '../lib/slack/token'
 import { signSlackRequest } from '../lib/slack/verify'
@@ -53,6 +55,8 @@ interface SlackCall {
 /** A stand-in for slack.com: records every Web API call and response URL post. */
 class FakeSlack {
   calls: SlackCall[] = []
+  /** Events sent to PostHog's batch endpoint. */
+  analytics: Array<{ event: string; properties: Record<string, unknown> }> = []
   responseUrlPosts: Array<Record<string, unknown>> = []
   emails: Record<string, string> = {
     UADA: 'ada@example.com',
@@ -92,6 +96,13 @@ class FakeSlack {
 
   private async handle(url: string, init?: RequestInit): Promise<Response> {
     const raw = typeof init?.body === 'string' ? init.body : String(init?.body ?? '')
+    if (url.startsWith('https://us.i.posthog.com/')) {
+      const { batch } = JSON.parse(raw) as {
+        batch: Array<{ event: string; properties: Record<string, unknown> }>
+      }
+      this.analytics.push(...batch)
+      return new Response(null, { status: 200 })
+    }
     if (url.startsWith('https://hooks.slack.com/')) {
       this.responseUrlPosts.push(JSON.parse(raw))
       return new Response('ok')
@@ -354,6 +365,8 @@ describe('Slack integration', () => {
 
   afterEach(async () => {
     await flushSlackBackgroundWork()
+    await flushSlackAnalytics()
+    resetServerAnalyticsForTests()
     slack.restore()
     setBillingConfigForTests(null)
     invalidateEntitlementCache()
@@ -1557,5 +1570,268 @@ describe('Slack integration', () => {
     expect(await syncSlackAlertMessages()).toEqual({ synced: 1, failed: 0 })
     const [current] = await slackAlertMessageRepository.listByEvent(event.id)
     expect(current?.renderedState).toBe('resolved')
+  })
+  it('records every Slack touchpoint in PostHog without Slack ids or message text', async () => {
+    configureServerAnalytics({
+      enabled: true,
+      collectEnabled: true,
+      dedupeIdentifiedPosthogEvents: false,
+      disclosureUrl: 'https://durabull.io/privacy',
+      collectSigningSecret: null,
+      hmacSecret: 'analytics-secret',
+      durabullTelemetryPosthogKey: 'phc_durabull',
+      durabullTelemetryPosthogHost: 'https://us.i.posthog.com',
+      appPosthogKey: 'phc_app',
+      appPosthogHost: 'https://us.i.posthog.com',
+      cloudCollectUrl: 'https://app.durabull.io/api/telemetry/collect',
+      getRuntimeContext: () => ({
+        authless: false,
+        env_connections: false,
+        environment: 'production',
+        persistence: 'postgres',
+        stateless: false,
+        deployment: 'cloud',
+        distribution: 'cloud',
+      }),
+      resolveAnonymousInstanceId: async () => 'anon-instance',
+    })
+    const settle = async () => {
+      await flushSlackBackgroundWork()
+      await flushSlackAnalytics()
+    }
+    // Identified copies feed per-customer analytics; anonymous copies are sanitized telemetry.
+    const identified = (event: string) =>
+      slack.analytics.filter(
+        (entry) => entry.event === event && entry.properties.$process_person_profile === true
+      )
+    const anonymous = (event: string) =>
+      slack.analytics.filter(
+        (entry) => entry.event === event && entry.properties.$process_person_profile === false
+      )
+
+    const { rule, event } = await seed()
+    const app = await createApp()
+    await install(app)
+    await settle()
+    expect(identified('slack_connect_started')[0]?.properties).toMatchObject({
+      distinct_id: 'user-ada',
+      $groups: { organization: ORG_ID },
+      slack_return_to: 'destinations',
+      slack_reinstall: false,
+      slack_identified_member: true,
+    })
+    expect(identified('slack_connected')[0]?.properties).toMatchObject({
+      distinct_id: 'user-ada',
+      slack_reason: 'new',
+      slack_missing_scope_count: 0,
+    })
+
+    await app.request('/api/integrations/slack', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unfurlsEnabled: false }),
+    })
+    await app.request('/api/integrations/slack', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unfurlsEnabled: true }),
+    })
+    await app.request('/api/integrations/slack/test', { method: 'POST' })
+    const destination = await createSlackDestination(app)
+    await app.request(`/api/alerts/destinations/${destination.id}/test`, { method: 'POST' })
+    await settle()
+    expect(identified('slack_settings_updated').map((entry) => entry.properties)).toMatchObject([
+      { slack_setting: 'unfurls', slack_enabled: false },
+      { slack_setting: 'unfurls', slack_enabled: true },
+    ])
+    expect(identified('slack_connection_tested')[0]?.properties).toMatchObject({ success: true })
+    expect(identified('slack_destination_created')[0]?.properties).toMatchObject({
+      distinct_id: 'user-ada',
+      slack_mention: 'here',
+      slack_user_group_count: 1,
+      slack_thread_updates: true,
+    })
+    expect(identified('slack_destination_tested')[0]?.properties).toMatchObject({ success: true })
+
+    await dispatchAlertNotification(
+      event,
+      [{ type: 'destination', destinationId: destination.id }],
+      { id: CONNECTION_ID, name: 'Production Redis' },
+      rule.name
+    )
+    await settle()
+    expect(identified('slack_alert_posted')[0]?.properties).toMatchObject({
+      // No member did this: the organization itself is the actor.
+      distinct_id: ORG_ID,
+      $groups: { organization: ORG_ID },
+      slack_rule_type: 'job_failed',
+      slack_alert_state: 'firing',
+      slack_identified_member: false,
+    })
+
+    const [message] = await slackAlertMessageRepository.listByEvent(event.id)
+    await app.request(
+      interaction({
+        type: 'block_actions',
+        api_app_id: 'A0DURABULL',
+        team: { id: 'T0ACME' },
+        user: { id: 'UADA', team_id: 'T0ACME' },
+        container: { type: 'message', channel_id: 'C0ALERTS', message_ts: message?.messageTs },
+        actions: [{ action_id: SLACK_ACTIONS.acknowledge, value: event.id }],
+      })
+    )
+    await app.request(
+      interaction({
+        type: 'block_actions',
+        api_app_id: 'A0DURABULL',
+        team: { id: 'T0ACME' },
+        user: { id: 'UEVE', team_id: 'T0ACME' },
+        container: { type: 'message' },
+        actions: [{ action_id: SLACK_ACTIONS.resolve, value: event.id }],
+      })
+    )
+    await app.request(
+      interaction({
+        type: 'block_actions',
+        api_app_id: 'A0DURABULL',
+        team: { id: 'T0ACME' },
+        user: { id: 'UADA', team_id: 'T0ACME' },
+        container: { type: 'message' },
+        actions: [{ action_id: `${SLACK_ACTIONS.openLink}.incident` }],
+      })
+    )
+    await settle()
+    const actions = identified('slack_action_performed').map((entry) => entry.properties)
+    expect(actions).toMatchObject([
+      {
+        distinct_id: 'user-ada',
+        slack_action: 'acknowledge',
+        slack_surface: 'alert_message',
+        success: true,
+      },
+      { slack_action: 'resolve', success: false, slack_reason: 'not_a_member' },
+    ])
+    // Someone who is not a member is counted by a hashed key, never their Slack id.
+    expect(String(actions[1]?.distinct_id)).toMatch(/^[0-9a-f]{64}$/)
+    expect(identified('slack_alert_message_synced')[0]?.properties).toMatchObject({
+      slack_alert_state: 'acknowledged',
+      slack_state_changed: true,
+    })
+    expect(identified('slack_link_clicked')[0]?.properties).toMatchObject({
+      $groups: { organization: ORG_ID },
+      slack_link_kind: 'incident',
+      slack_surface: 'alert_message',
+    })
+
+    const command = (text: string, user = 'UADA') =>
+      signed(
+        '/api/slack/commands',
+        new URLSearchParams({
+          command: '/durabull',
+          text,
+          team_id: 'T0ACME',
+          user_id: user,
+          api_app_id: 'A0DURABULL',
+          response_url: 'https://hooks.slack.com/commands/T0ACME/1/xyz',
+        }).toString(),
+        'application/x-www-form-urlencoded'
+      )
+    await app.request(command('help'))
+    await app.request(command('alerts'))
+    await app.request(command('queue'))
+    await app.request(command('status', 'UEVE'))
+    const callback = (eventId: string, body: Record<string, unknown>) =>
+      signed(
+        '/api/slack/events',
+        JSON.stringify({
+          type: 'event_callback',
+          api_app_id: 'A0DURABULL',
+          team_id: 'T0ACME',
+          event_id: eventId,
+          event: body,
+        }),
+        'application/json'
+      )
+    await app.request(
+      callback('EvA1', {
+        type: 'app_mention',
+        user: 'UADA',
+        channel: 'C0ALERTS',
+        ts: '1700000100.000100',
+        text: '<@UBOT> status secret-queue-name',
+      })
+    )
+    await app.request(callback('EvA2', { type: 'app_home_opened', user: 'UADA', tab: 'home' }))
+    await app.request(
+      callback('EvA3', {
+        type: 'link_shared',
+        user: 'UADA',
+        channel: 'C0ALERTS',
+        message_ts: '1700000000.000001',
+        links: [{ url: `${BASE_URL}/acme/c/${CONNECTION_ID}/alerts/rules/${rule.id}` }],
+      })
+    )
+    await settle()
+    const commands = identified('slack_command_run').map((entry) => entry.properties)
+    expect(commands).toHaveLength(5)
+    // Background commands finish in any order.
+    for (const expected of [
+      { slack_surface: 'slash_command', slack_command: 'help', slack_outcome: 'help' },
+      {
+        distinct_id: 'user-ada',
+        $groups: { organization: ORG_ID },
+        slack_surface: 'slash_command',
+        slack_command: 'alerts',
+        slack_outcome: 'ok',
+        slack_organization_count: 1,
+      },
+      { slack_command: 'queue', slack_outcome: 'usage' },
+      { slack_command: 'status', slack_outcome: 'denied', $groups: { organization: ORG_ID } },
+      { distinct_id: 'user-ada', slack_surface: 'mention', slack_command: 'status' },
+    ]) {
+      expect(commands).toContainEqual(expect.objectContaining(expected))
+    }
+    expect(anonymous('slack_command_run')[0]?.properties.$groups).toBeUndefined()
+    expect(identified('slack_app_home_opened')[0]?.properties).toMatchObject({
+      distinct_id: 'user-ada',
+      slack_outcome: 'ok',
+    })
+    expect(identified('slack_links_unfurled')[0]?.properties).toMatchObject({
+      slack_outcome: 'ok',
+      slack_link_kind: 'rule',
+      slack_link_count: 1,
+    })
+
+    await app.request(
+      signed(
+        '/api/slack/events',
+        JSON.stringify({
+          type: 'event_callback',
+          api_app_id: 'A0DURABULL',
+          team_id: 'T0ACME',
+          event_id: 'EvA4',
+          event: { type: 'app_uninstalled' },
+        }),
+        'application/json'
+      )
+    )
+    await app.request('/api/integrations/slack', { method: 'DELETE' })
+    await settle()
+    expect(identified('slack_uninstalled_from_slack')[0]?.properties).toMatchObject({
+      $groups: { organization: ORG_ID },
+      slack_reason: 'app_uninstalled',
+    })
+    expect(identified('slack_disconnected')[0]?.properties).toMatchObject({
+      distinct_id: 'user-ada',
+      success: true,
+      slack_revoked_token: false,
+      slack_reason: 'revoked',
+    })
+
+    // Nothing identifying in Slack or typed by people reaches PostHog.
+    const payload = JSON.stringify(slack.analytics)
+    for (const secret of ['T0ACME', 'UADA', 'UEVE', 'C0ALERTS', 'secret-queue-name', 'Acme']) {
+      expect(payload).not.toContain(secret)
+    }
   })
 })

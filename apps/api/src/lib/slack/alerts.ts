@@ -1,3 +1,4 @@
+import { AnalyticsEvents, SlackSurface } from '@durabull/analytics/events'
 import {
   type AlertDelivery,
   type AlertDestination,
@@ -23,6 +24,7 @@ import {
   mentionPrefix,
   type SlackAlertMessageView,
 } from './alert-message'
+import { recordSlackEvent, slackErrorCode } from './analytics'
 import { runInBackground } from './background'
 import {
   getSlackPermalink,
@@ -262,6 +264,47 @@ export async function sendSlackDestinationAlert(input: {
   organizationSlug: string | null
   requireClaimedAt: (delivery: AlertDelivery) => Date
 }): Promise<void> {
+  const config = (() => {
+    try {
+      return parseSlackDestinationConfig(input.destination)
+    } catch {
+      return null
+    }
+  })()
+  const properties = {
+    slack_surface: SlackSurface.ALERT_MESSAGE,
+    slack_rule_type: input.event.type,
+    slack_mention: config?.mention ?? 'none',
+    slack_user_group_count: config?.userGroupIds?.length ?? 0,
+    slack_thread_updates: slackThreadUpdatesEnabled(input.destination),
+  }
+  const actor = { organizationId: input.event.organizationId }
+  try {
+    const result = await deliverSlackDestinationAlert(input)
+    if (result === 'posted') {
+      recordSlackEvent(AnalyticsEvents.SLACK_ALERT_POSTED, actor, {
+        ...properties,
+        slack_alert_state: input.event.status,
+      })
+    }
+  } catch (error) {
+    recordSlackEvent(AnalyticsEvents.SLACK_ALERT_POST_FAILED, actor, {
+      ...properties,
+      slack_error_code: slackErrorCode(error),
+      slack_reason:
+        error instanceof SlackApiError && error.retryable
+          ? 'retryable'
+          : error instanceof SlackInstallationUnavailableError
+            ? 'not_connected'
+            : 'permanent',
+    })
+    throw error
+  }
+}
+
+async function deliverSlackDestinationAlert(
+  input: Parameters<typeof sendSlackDestinationAlert>[0]
+): Promise<'posted' | 'already_posted'> {
   const { delivery, destination } = input
   const config = parseSlackDestinationConfig(destination)
   const metadata = (delivery.providerMetadata ?? {}) as Record<string, unknown>
@@ -281,7 +324,7 @@ export async function sendSlackDestinationAlert(input: {
       existing.permalink,
       metadata
     )
-    return
+    return 'already_posted'
   }
 
   const installation = await requireActiveSlackInstallation(input.event.organizationId)
@@ -345,6 +388,7 @@ export async function sendSlackDestinationAlert(input: {
     })
   }
   await markSlackDeliveryDelivered(input, config, posted.ts, permalink, metadata)
+  return 'posted'
 }
 
 async function markSlackDeliveryDelivered(
@@ -487,6 +531,17 @@ async function syncOneMessage(
     state: view.state,
     acknowledgedBy,
   })
+  recordSlackEvent(
+    AnalyticsEvents.SLACK_ALERT_MESSAGE_SYNCED,
+    { organizationId: claim.organizationId },
+    {
+      slack_surface: SlackSurface.ALERT_MESSAGE,
+      slack_alert_state: view.state,
+      slack_state_changed: stateChanged,
+      slack_thread_updates: Boolean(reply),
+      slack_rule_type: event.type,
+    }
+  )
   if (!recorded) {
     // Another worker took the message over while this one was in Slack, so this
     // view may have overwritten a newer one. Ask for one more pass from current state.

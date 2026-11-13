@@ -16,7 +16,10 @@ const mocks = vi.hoisted(() => ({
   createDestination: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  trackEvent: vi.fn(),
 }))
+
+vi.mock('@durabull/analytics/browser', () => ({ trackEvent: mocks.trackEvent }))
 
 vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), { success: mocks.toastSuccess, error: mocks.toastError }),
@@ -134,6 +137,9 @@ describe('SlackIntegrationCard', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Show app manifest' }))
     expect(screen.getByText(/"display_information"/)).toBeInTheDocument()
+    expect(mocks.trackEvent).toHaveBeenCalledWith('slack_manifest_viewed', {
+      slack_surface: 'settings',
+    })
   })
 
   it('starts the OAuth install', async () => {
@@ -144,6 +150,11 @@ describe('SlackIntegrationCard', () => {
 
     await user.click(screen.getByRole('button', { name: /Add to Slack/ }))
     expect(mocks.connect).toHaveBeenCalledWith({ returnTo: 'integrations' })
+    expect(mocks.trackEvent).toHaveBeenCalledWith('slack_connect_clicked', {
+      slack_surface: 'settings',
+      slack_return_to: 'integrations',
+      slack_reinstall: false,
+    })
   })
 
   describe('continuing an install from the direct install URL', () => {
@@ -166,6 +177,12 @@ describe('SlackIntegrationCard', () => {
       await waitFor(() => expect(mocks.connect).toHaveBeenCalledWith({ returnTo: 'integrations' }))
       expect(mocks.connect).toHaveBeenCalledTimes(1)
       expect(window.location.search).toBe('')
+      expect(mocks.trackEvent).toHaveBeenCalledTimes(1)
+      expect(mocks.trackEvent).toHaveBeenCalledWith('slack_install_link_opened', {
+        slack_surface: 'settings',
+        slack_source: 'integrations_page',
+        slack_outcome: 'start',
+      })
     })
 
     it('asks members of several organizations to confirm instead of starting OAuth', async () => {
@@ -367,6 +384,7 @@ describe('SlackIntegrationCard', () => {
     render(<SlackIntegrationCard orgSlug="acme" />)
 
     await user.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(mocks.trackEvent).toHaveBeenCalledWith('dialog_opened', { dialog_type: 'remove_slack' })
     const dialogButtons = await screen.findAllByRole('button', { name: 'Remove' })
     await user.click(dialogButtons[dialogButtons.length - 1] as HTMLElement)
     await waitFor(() => expect(mocks.disconnect).toHaveBeenCalled())

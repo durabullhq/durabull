@@ -1,3 +1,5 @@
+import { trackEvent } from '@durabull/analytics/browser'
+import { AnalyticsEvents } from '@durabull/analytics/events'
 import { RefreshCw } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
@@ -72,7 +74,12 @@ export function SlackDestinationFields({
               setRefreshError(null)
               try {
                 await channelsQuery.refresh()
+                trackEvent(AnalyticsEvents.SLACK_CHANNELS_REFRESHED, { success: true })
               } catch (error) {
+                trackEvent(AnalyticsEvents.SLACK_CHANNELS_REFRESHED, {
+                  success: false,
+                  error_message: error instanceof Error ? error.message : undefined,
+                })
                 setRefreshError(
                   error instanceof Error && error.message
                     ? `Could not reload channels: ${error.message}`
