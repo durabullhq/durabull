@@ -3,6 +3,10 @@ import { refreshSlackToken, SlackApiError } from './client'
 import { getSlackConfig } from './config'
 
 const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000
+/** Longer than a refresh can take (Slack requests time out after 10 seconds). */
+const REFRESH_LOCK_MS = 30_000
+const REFRESH_WAIT_MS = 15_000
+const REFRESH_POLL_MS = 250
 
 /**
  * Refresh errors caused by Durabull's own app credentials (a wrong client ID
@@ -67,12 +71,44 @@ async function resolveSlackBotToken(
   return refresh
 }
 
+/** Refreshes under a lease shared by every API process. */
+async function refreshInstallationToken(organizationId: string): Promise<ResolvedToken> {
+  // Shared by every API process: only one redeems the single-use refresh token.
+  if (
+    !(await slackInstallationRepository.acquireTokenRefreshLock(organizationId, REFRESH_LOCK_MS))
+  ) {
+    return waitForOtherRefresh(organizationId)
+  }
+  try {
+    return await redeemRefreshToken(organizationId)
+  } finally {
+    await slackInstallationRepository.releaseTokenRefreshLock(organizationId).catch(() => {})
+  }
+}
+
+/** Another process is refreshing: use its new token once it is saved. */
+async function waitForOtherRefresh(organizationId: string): Promise<ResolvedToken> {
+  const deadline = Date.now() + REFRESH_WAIT_MS
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, REFRESH_POLL_MS))
+    const latest = await slackInstallationRepository.findByOrganization(organizationId)
+    if (!latest) {
+      throw new SlackInstallationUnavailableError('Slack is not connected for this organization.')
+    }
+    if (!needsRefresh(latest)) return storedToken(latest)
+  }
+  throw new SlackApiError('token_refresh_in_progress', {
+    retryable: true,
+    message: 'Another Durabull process is refreshing the Slack token. Try again in a moment.',
+  })
+}
+
 /**
  * Redeems the stored refresh token. The installation is re-read first, and the
  * new tokens are written only if the refresh token is still the one redeemed,
- * so another API process that rotated first keeps its (newer) tokens.
+ * so a process that rotated first keeps its (newer) tokens.
  */
-async function refreshInstallationToken(organizationId: string): Promise<ResolvedToken> {
+async function redeemRefreshToken(organizationId: string): Promise<ResolvedToken> {
   const current = await slackInstallationRepository.findByOrganization(organizationId)
   if (!current) {
     throw new SlackInstallationUnavailableError('Slack is not connected for this organization.')

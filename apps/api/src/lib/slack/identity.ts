@@ -8,55 +8,17 @@ import { hasFeature, isMemberSuspended } from '../../billing/entitlements'
 import { getSlackUser, type SlackUser } from './client'
 import { withSlackToken } from './token'
 
-const PROFILE_CACHE_TTL_MS = 10 * 60_000
-const PROFILE_CACHE_MAX_ENTRIES = 5_000
-const profileCache = new Map<
-  string,
-  { value: SlackUser; expiresAt: number; timer: ReturnType<typeof setTimeout> }
->()
-
-export function clearSlackProfileCache(): void {
-  for (const entry of profileCache.values()) clearTimeout(entry.timer)
-  profileCache.clear()
-}
-
-function forgetProfile(key: string): void {
-  const entry = profileCache.get(key)
-  if (!entry) return
-  clearTimeout(entry.timer)
-  profileCache.delete(key)
-}
-
-function rememberProfile(key: string, value: SlackUser): void {
-  forgetProfile(key)
-  // Bounded: the oldest entry goes first (Maps iterate in insertion order).
-  if (profileCache.size >= PROFILE_CACHE_MAX_ENTRIES) {
-    const oldest = profileCache.keys().next().value
-    if (oldest !== undefined) forgetProfile(oldest)
-  }
-  // Each profile (and its email) is dropped from memory when it expires, not
-  // only when it is next looked up.
-  const timer = setTimeout(() => profileCache.delete(key), PROFILE_CACHE_TTL_MS)
-  timer.unref?.()
-  profileCache.set(key, { value, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS, timer })
-}
-
 /**
- * The Slack user's profile. Read-only commands may use a copy up to ten
- * minutes old; anything that changes state (`fresh`) reads it from Slack, so
- * an email changed by a workspace admin takes effect immediately.
+ * The Slack user's current profile, read from Slack on every check. It is
+ * not cached, so an email changed by a workspace admin takes effect on the
+ * next command, click or link preview, and the email is held only for the
+ * request that needed it.
  */
 async function getSlackProfile(
   installation: SlackInstallation,
-  slackUserId: string,
-  options: { fresh?: boolean } = {}
+  slackUserId: string
 ): Promise<SlackUser> {
-  const key = `${installation.slackTeamId}:${slackUserId}`
-  const cached = profileCache.get(key)
-  if (!options.fresh && cached && cached.expiresAt > Date.now()) return cached.value
-  const value = await withSlackToken(installation, (token) => getSlackUser(token, slackUserId))
-  rememberProfile(key, value)
-  return value
+  return withSlackToken(installation, (token) => getSlackUser(token, slackUserId))
 }
 
 export type SlackActorResult =
@@ -82,14 +44,16 @@ export type SlackActorResult =
 export async function resolveSlackActor(
   installation: SlackInstallation & { organizationName?: string },
   slackUserId: string,
-  options: { requireActions?: boolean } = {}
+  options: {
+    requireActions?: boolean
+    /** A profile already read from Slack for this same request. */
+    profile?: SlackUser
+  } = {}
 ): Promise<SlackActorResult> {
   const orgLabel = installation.organizationName
     ? `the ${installation.organizationName} organization`
     : 'this Durabull organization'
-  const slackUser = await getSlackProfile(installation, slackUserId, {
-    fresh: options.requireActions,
-  })
+  const slackUser = options.profile ?? (await getSlackProfile(installation, slackUserId))
   // Slack Connect guests keep their own workspace, whose admins control their
   // emails; only people in the installed workspace (or its Enterprise Grid) act.
   // A profile without a workspace is not a match: only a positive one authorizes.
@@ -186,9 +150,12 @@ export async function resolveSlackUserOrganizations(
     member: SlackOrganizationMember
   }> = []
   const denied: SlackDenial[] = []
+  // One profile read per request, shared by every organization in the workspace.
+  let profile: SlackUser | undefined
   for (const installation of installations) {
     try {
-      const actor = await resolveSlackActor(installation, slackUserId)
+      profile ??= await getSlackProfile(installation, slackUserId)
+      const actor = await resolveSlackActor(installation, slackUserId, { profile })
       if (actor.ok) allowed.push({ installation, member: actor.member })
       else denied.push({ installation, reason: actor.reason, message: actor.message })
     } catch (error) {

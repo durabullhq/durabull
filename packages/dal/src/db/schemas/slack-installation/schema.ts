@@ -43,6 +43,8 @@ export const slackInstallation = pgTable(
     lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }),
     /** When the current tokens were installed (each OAuth reconnect resets it). */
     installedAt: timestamp('installed_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Held while one API process redeems the (single-use) refresh token. */
+    tokenRefreshLockUntil: timestamp('token_refresh_lock_until', { withTimezone: true }),
   },
   (table) => ({
     teamIdx: index('slack_installation_team_idx').on(table.slackTeamId),

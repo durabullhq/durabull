@@ -352,11 +352,11 @@ function PrivacySharingSection() {
           When you connect Slack, Durabull also stores the workspace name and identifier, an
           encrypted bot token, and the channel and timestamp of each alert message it posts, and it
           reads the profile email of Slack users who use the app to match them to organization
-          members. That email is held in memory for at most ten minutes and is never written to the
-          database. Durabull does not send job payloads to Slack, but failure details such as a
-          job&apos;s error message are sent as your workers wrote them, so an error message that
-          includes job data carries it to Slack. You choose these destinations; their operators
-          control the copies they receive.
+          members. Durabull reads that email from Slack for each request that needs it, uses it only
+          for that request, and does not store or cache it. Durabull does not send job payloads to
+          Slack, but failure details such as a job&apos;s error message are sent as your workers
+          wrote them, so an error message that includes job data carries it to Slack. You choose
+          these destinations; their operators control the copies they receive.
         </li>
         <li>
           <strong className="text-[var(--v2-fg)]">Support and necessary disclosures:</strong>{' '}

@@ -30,7 +30,6 @@ import { syncSlackAlertMessages } from '../lib/slack/alerts'
 import { SlackApiError } from '../lib/slack/client'
 import { flushSlackBackgroundWork } from '../lib/slack/background'
 import { SLACK_BOT_SCOPES } from '../lib/slack/config'
-import { clearSlackProfileCache } from '../lib/slack/identity'
 import { getSlackBotToken, withSlackToken } from '../lib/slack/token'
 import { signSlackRequest } from '../lib/slack/verify'
 import { clearSlackEventDedupe } from './slack-events'
@@ -346,7 +345,6 @@ describe('Slack integration', () => {
       SLACK_OAUTH_REDIRECT_URI: undefined,
     })
     sessionUser = ADA
-    clearSlackProfileCache()
     clearSlackChannelCache()
     clearSlackEventDedupe()
     invalidateEntitlementCache()
@@ -635,7 +633,6 @@ describe('Slack integration', () => {
     expect(JSON.stringify(reply?.blocks)).toContain(`${SLACK_ACTIONS.acknowledge}|${event.id}`)
 
     slack.emails.UADA = 'someone@else.test'
-    clearSlackProfileCache()
     await app.request(
       signed('/api/slack/commands', form('status'), 'application/x-www-form-urlencoded')
     )
@@ -1443,5 +1440,58 @@ describe('Slack integration', () => {
     expect(delivery?.status).toBe('failed')
     expect(delivery?.nextRetryAt).not.toBeNull()
     expect(String(delivery?.lastError)).toContain('reconnected')
+  })
+
+  it('makes a concurrent uninstall retry wait for its own result', async () => {
+    await seed()
+    const app = await createApp()
+    await install(app)
+    const spy = spyOn(slackInstallationRepository, 'markTeamRevoked').mockImplementationOnce(
+      async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        throw new Error('database unavailable')
+      }
+    )
+    const uninstall = JSON.stringify({
+      type: 'event_callback',
+      api_app_id: 'A0DURABULL',
+      team_id: 'T0ACME',
+      event_id: 'EvRace',
+      event: { type: 'app_uninstalled' },
+    })
+    const [first, retry] = await Promise.all([
+      app.request(signed('/api/slack/events', uninstall, 'application/json')),
+      app.request(signed('/api/slack/events', uninstall, 'application/json')),
+    ])
+    spy.mockRestore()
+    expect(first.status).toBe(500)
+    // The retry ran its own (successful) revocation instead of being acknowledged unseen.
+    expect(retry.status).toBe(200)
+    expect((await slackInstallationRepository.findByOrganization(ORG_ID))?.status).toBe('revoked')
+  })
+
+  it('waits for another process’s token refresh instead of redeeming the same token', async () => {
+    await seed()
+    const installation = await slackInstallationRepository.upsert({
+      organizationId: ORG_ID,
+      slackTeamId: 'T0ACME',
+      slackTeamName: 'Acme',
+      botUserId: 'UBOT',
+      botToken: 'xoxe.xoxb-expiring',
+      refreshToken: 'xoxe-1-refresh',
+      botTokenExpiresAt: new Date(Date.now() + 60_000),
+      scopes: SLACK_BOT_SCOPES.join(','),
+    })
+    // Another API process holds the refresh lease and saves new tokens shortly.
+    expect(await slackInstallationRepository.acquireTokenRefreshLock(ORG_ID, 30_000)).toBe(true)
+    setTimeout(() => {
+      void slackInstallationRepository.updateTokens(ORG_ID, {
+        botToken: 'xoxe.xoxb-from-other-process',
+        refreshToken: 'xoxe-1-next',
+        botTokenExpiresAt: new Date(Date.now() + 12 * 3_600_000),
+      })
+    }, 300)
+    expect(await getSlackBotToken(installation)).toBe('xoxe.xoxb-from-other-process')
+    expect(slack.callsTo('oauth.v2.access')).toHaveLength(0)
   })
 })

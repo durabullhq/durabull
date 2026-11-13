@@ -235,8 +235,8 @@ organization. Turn them off with **Preview Durabull links** in **Settings → In
   failed jobs, the job id, name, attempts and failure reason. Job payloads are never sent to
   Slack, but the failure reason is the error message your worker threw, so keep job data out of
   error messages if it must not reach Slack.
-- Slack profile emails used to match members are held in memory for at most ten minutes and are
-  never stored. Buttons and other actions always read the current email from Slack.
+- Slack profile emails used to match members are read from Slack for every command, click and
+  link preview, and are neither stored nor cached, so an email change takes effect immediately.
 
 ## Disconnecting
 

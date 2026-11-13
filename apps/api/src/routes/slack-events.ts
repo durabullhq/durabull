@@ -112,10 +112,31 @@ const app = new Hono()
     ) {
       return c.body(null, 200)
     }
-    if (!firstDelivery(envelope.event_id)) return c.body(null, 200)
-
     const teamId = envelope.team_id ?? ''
     const event = envelope.event
+
+    if (event.type === 'app_uninstalled' || event.type === 'tokens_revoked') {
+      if (event.type === 'tokens_revoked' && (event.tokens?.bot?.length ?? 0) === 0) {
+        return c.body(null, 200)
+      }
+      // Not de-duplicated: recording a revocation is safe to repeat, so every
+      // delivery (including a retry that arrives while the first is still
+      // being recorded) waits for its own result, and a failure returns 500
+      // so Slack retries.
+      try {
+        await handleAppUninstalled(
+          teamId,
+          event.type,
+          typeof envelope.event_time === 'number' ? new Date(envelope.event_time * 1000) : undefined
+        )
+      } catch (error) {
+        console.error('[slack] Recording workspace revocation failed:', error)
+        return c.json({ error: 'Could not record the revocation.' }, 500)
+      }
+      return c.body(null, 200)
+    }
+
+    if (!firstDelivery(envelope.event_id)) return c.body(null, 200)
     switch (event.type) {
       case 'app_home_opened':
         if (event.tab === 'home' && event.user) {
@@ -149,25 +170,6 @@ const app = new Hono()
           runInBackground('link unfurl', () => handleLinkShared(teamId, linkEvent))
         }
         break
-      case 'app_uninstalled':
-      case 'tokens_revoked': {
-        if (event.type === 'tokens_revoked' && (event.tokens?.bot?.length ?? 0) === 0) break
-        // Recorded before acknowledging: if it fails, a 500 makes Slack retry the event.
-        try {
-          await handleAppUninstalled(
-            teamId,
-            event.type,
-            typeof envelope.event_time === 'number'
-              ? new Date(envelope.event_time * 1000)
-              : undefined
-          )
-        } catch (error) {
-          if (envelope.event_id) seenEventIds.delete(envelope.event_id)
-          console.error('[slack] Recording workspace revocation failed:', error)
-          return c.json({ error: 'Could not record the revocation.' }, 500)
-        }
-        break
-      }
     }
     return c.body(null, 200)
   })

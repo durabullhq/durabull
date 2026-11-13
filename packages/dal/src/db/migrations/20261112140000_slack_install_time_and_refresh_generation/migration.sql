@@ -5,3 +5,7 @@ ALTER TABLE "slack_installation" ADD COLUMN IF NOT EXISTS "installed_at" timesta
 -- refresh_generation identifies each refresh request, so a sync clears only the
 -- request it rendered, without comparing clocks across API replicas.
 ALTER TABLE "slack_alert_message" ADD COLUMN IF NOT EXISTS "refresh_generation" integer DEFAULT 0 NOT NULL;
+--> statement-breakpoint
+-- A lease taken while redeeming a rotating refresh token, so API processes
+-- never redeem the same single-use refresh token concurrently.
+ALTER TABLE "slack_installation" ADD COLUMN IF NOT EXISTS "token_refresh_lock_until" timestamp with time zone;

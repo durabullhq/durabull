@@ -1,4 +1,4 @@
-import { and, eq, lt, ne, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { getDb } from '../db/client'
 import { member, organization } from '../db/schemas/organization/schema'
 import { slackInstallation } from '../db/schemas/slack-installation/schema'
@@ -143,6 +143,9 @@ export const slackInstallationRepository = {
           ? { encryptedRefreshToken: encryptSecret(tokens.refreshToken) }
           : {}),
         botTokenExpiresAt: tokens.botTokenExpiresAt ?? null,
+        // Slack just issued working tokens, so the installation is usable.
+        status: 'active',
+        statusReason: null,
         updatedAt: new Date(),
       })
       .where(
@@ -155,6 +158,37 @@ export const slackInstallationRepository = {
       )
       .returning()
     return row ?? null
+  },
+
+  /**
+   * Takes the token-refresh lease for an organization, shared by every API
+   * process. False while another process holds an unexpired lease.
+   */
+  async acquireTokenRefreshLock(organizationId: string, durationMs: number): Promise<boolean> {
+    const db = await getDb()
+    const now = new Date()
+    const rows = await db
+      .update(slackInstallation)
+      .set({ tokenRefreshLockUntil: new Date(now.getTime() + durationMs) })
+      .where(
+        and(
+          eq(slackInstallation.organizationId, organizationId),
+          or(
+            isNull(slackInstallation.tokenRefreshLockUntil),
+            lt(slackInstallation.tokenRefreshLockUntil, now)
+          )
+        )
+      )
+      .returning({ id: slackInstallation.id })
+    return rows.length > 0
+  },
+
+  async releaseTokenRefreshLock(organizationId: string): Promise<void> {
+    const db = await getDb()
+    await db
+      .update(slackInstallation)
+      .set({ tokenRefreshLockUntil: null })
+      .where(eq(slackInstallation.organizationId, organizationId))
   },
 
   async updateSettings(
