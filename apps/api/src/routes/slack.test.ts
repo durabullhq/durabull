@@ -621,6 +621,88 @@ describe('Slack integration', () => {
     expect(JSON.stringify(slack.responseUrlPosts.at(-1))).toContain('does not belong to a member')
   })
 
+  it('answers @Durabull mentions in a thread and direct messages to the app', async () => {
+    const { event } = await seed()
+    const app = await createApp()
+    await install(app)
+    const callback = (eventId: string, body: Record<string, unknown>) =>
+      signed(
+        '/api/slack/events',
+        JSON.stringify({
+          type: 'event_callback',
+          api_app_id: 'A0DURABULL',
+          team_id: 'T0ACME',
+          event_id: eventId,
+          event: body,
+        }),
+        'application/json'
+      )
+
+    await app.request(
+      callback('EvM1', {
+        type: 'app_mention',
+        user: 'UADA',
+        channel: 'C0ALERTS',
+        ts: '1700000100.000100',
+        text: '<@UBOT> alerts',
+      })
+    )
+    await flushSlackBackgroundWork()
+    const threaded = slack.callsTo('chat.postMessage').at(-1)
+    expect(threaded?.body).toMatchObject({ channel: 'C0ALERTS', thread_ts: '1700000100.000100' })
+    expect(JSON.stringify(threaded?.body.blocks)).toContain('Job 42 failed in email-send')
+    expect(JSON.stringify(threaded?.body.blocks)).toContain(
+      `${SLACK_ACTIONS.acknowledge}|${event.id}`
+    )
+
+    // A non-member gets a private explanation instead of a public answer.
+    await app.request(
+      callback('EvM2', {
+        type: 'app_mention',
+        user: 'UEVE',
+        channel: 'C0ALERTS',
+        ts: '1700000200.000100',
+        text: '<@UBOT> status',
+      })
+    )
+    await flushSlackBackgroundWork()
+    const ephemeral = slack.callsTo('chat.postEphemeral').at(-1)
+    expect(ephemeral?.body).toMatchObject({ channel: 'C0ALERTS', user: 'UEVE' })
+    expect(String(ephemeral?.body.text)).toContain('does not belong to a member')
+    const posts = slack.callsTo('chat.postMessage').length
+
+    await app.request(
+      callback('EvM3', {
+        type: 'message',
+        channel_type: 'im',
+        user: 'UADA',
+        channel: 'D0ADA',
+        ts: '1700000300.000100',
+        text: 'help',
+      })
+    )
+    await flushSlackBackgroundWork()
+    const direct = slack.callsTo('chat.postMessage').at(-1)
+    expect(direct?.body.channel).toBe('D0ADA')
+    expect(direct?.body.thread_ts).toBeUndefined()
+    expect(JSON.stringify(direct?.body.blocks)).toContain('`status`')
+
+    // Bot messages, including Durabull's own replies, are never answered.
+    await app.request(
+      callback('EvM4', {
+        type: 'message',
+        channel_type: 'im',
+        user: 'UBOT',
+        bot_id: 'B0DURABULL',
+        channel: 'D0ADA',
+        ts: '1700000400.000100',
+        text: 'status',
+      })
+    )
+    await flushSlackBackgroundWork()
+    expect(slack.callsTo('chat.postMessage')).toHaveLength(posts + 1)
+  })
+
   it('verifies Events API requests and handles uninstalls', async () => {
     await seed()
     const app = await createApp()

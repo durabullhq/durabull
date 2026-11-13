@@ -14,6 +14,8 @@ import {
   syncSlackAlertMessages,
 } from './alerts'
 import {
+  postSlackEphemeral,
+  postSlackMessage,
   postToSlackResponseUrl,
   publishSlackHomeView,
   SlackApiError,
@@ -161,55 +163,75 @@ export interface SlackCommandPayload {
   channelId?: string
 }
 
-export function parseCommandText(text: string): { command: string; args: string[] } {
-  const parts = text.trim().split(/\s+/).filter(Boolean)
-  const command = (parts[0] ?? 'status').toLowerCase()
-  const aliases: Record<string, string> = {
-    incidents: 'alerts',
-    alert: 'alerts',
-    incident: 'alerts',
-    q: 'queue',
-    queues: 'queue',
-    jobs: 'job',
-    '?': 'help',
-  }
-  return { command: aliases[command] ?? command, args: parts.slice(1) }
+const COMMANDS = new Set(['status', 'alerts', 'queue', 'job', 'help'])
+const COMMAND_ALIASES: Record<string, string> = {
+  incidents: 'alerts',
+  alert: 'alerts',
+  incident: 'alerts',
+  q: 'queue',
+  queues: 'queue',
+  jobs: 'job',
+  '?': 'help',
 }
 
-export async function handleSlashCommand(payload: SlackCommandPayload): Promise<void> {
-  const { command, args } = parseCommandText(payload.text)
-  if (command === 'help') {
-    await respond(payload.responseUrl, {
-      replaceOriginal: true,
-      text: 'Durabull commands',
-      blocks: helpBlocks(),
-    })
-    return
-  }
+function toCommand(word: string): string | null {
+  const normalized = word.toLowerCase().replace(/[?!.,:]+$/, '') || word
+  const command = COMMAND_ALIASES[normalized] ?? normalized
+  return COMMANDS.has(command) ? command : null
+}
+
+/**
+ * Reads a command from what someone typed. The first known command word wins,
+ * so "@Durabull show me the alerts" works like "alerts"; arguments are the
+ * words after it. Empty text means status.
+ */
+export function parseCommandText(text: string): { command: string; args: string[] } {
+  const parts = text.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return { command: 'status', args: [] }
+  const index = parts.findIndex((word) => toCommand(word) !== null)
+  if (index === -1) return { command: (parts[0] ?? '').toLowerCase(), args: parts.slice(1) }
+  return { command: toCommand(parts[index] ?? '') ?? 'status', args: parts.slice(index + 1) }
+}
+
+export interface CommandReply {
+  text: string
+  blocks: unknown[]
+  /** The requester is not a member of any connected organization; reply privately. */
+  denied: boolean
+}
+
+function reply(text: string, blocks: unknown[], denied = false): CommandReply {
+  return { text, blocks: capBlocks(blocks), denied }
+}
+
+/**
+ * Runs a Durabull command for a Slack user and returns the reply. Shared by
+ * the slash command, @Durabull mentions and direct messages; `prefix` is how
+ * the user invoked it, so usage hints match what they typed.
+ */
+export async function runCommand(input: {
+  teamId: string
+  userId: string
+  text: string
+  prefix: string
+}): Promise<CommandReply> {
+  const { prefix } = input
+  const { command, args } = parseCommandText(input.text)
+  if (command === 'help') return reply('Durabull commands', helpBlocks(prefix))
 
   const { allowed, denied, installations } = await resolveSlackUserOrganizations(
-    payload.teamId,
-    payload.userId
+    input.teamId,
+    input.userId
   )
   if (installations.length === 0) {
-    await respond(payload.responseUrl, {
-      replaceOriginal: true,
-      text: 'Durabull is not connected to this Slack workspace.',
-      blocks: errorBlocks(
-        'Durabull is not connected to this Slack workspace. An organization admin can connect it under Settings → Integrations.'
-      ),
-    })
-    return
+    const message =
+      'Durabull is not connected to this Slack workspace. An organization admin can connect it under Settings → Integrations.'
+    return reply(message, errorBlocks(message), true)
   }
   if (allowed.length === 0) {
     const message =
       denied[0]?.message ?? 'You are not a member of a connected Durabull organization.'
-    await respond(payload.responseUrl, {
-      replaceOriginal: true,
-      text: message,
-      blocks: errorBlocks(message),
-    })
-    return
+    return reply(message, errorBlocks(message), true)
   }
 
   try {
@@ -218,20 +240,13 @@ export async function handleSlashCommand(payload: SlackCommandPayload): Promise<
         const statuses = await Promise.all(
           allowed.map(({ installation }) => loadOrganizationStatus(installation))
         )
-        await respond(payload.responseUrl, {
-          replaceOriginal: true,
-          text: 'Durabull status',
-          blocks: [
-            ...statusBlocks(statuses),
-            {
-              type: 'context',
-              elements: [
-                mrkdwn(`\`${SLACK_SLASH_COMMAND} alerts\` lists open incidents with actions.`),
-              ],
-            },
-          ],
-        })
-        return
+        return reply('Durabull status', [
+          ...statusBlocks(statuses),
+          {
+            type: 'context',
+            elements: [mrkdwn(`\`${prefix} alerts\` lists open incidents with actions.`)],
+          },
+        ])
       }
       case 'alerts': {
         const perOrg = allowed.length > 1 ? 5 : 10
@@ -246,22 +261,15 @@ export async function handleSlashCommand(payload: SlackCommandPayload): Promise<
             })
           )
         }
-        await respond(payload.responseUrl, {
-          replaceOriginal: true,
-          text: 'Open incidents',
-          blocks,
-        })
-        return
+        return reply('Open incidents', blocks)
       }
       case 'queue': {
         const [queueName, ...rest] = args
         if (!queueName) {
-          await respond(payload.responseUrl, {
-            replaceOriginal: true,
-            text: 'Name a queue',
-            blocks: errorBlocks(`Usage: \`${SLACK_SLASH_COMMAND} queue <name> [connection]\``),
-          })
-          return
+          return reply(
+            'Name a queue',
+            errorBlocks(`Usage: \`${prefix} queue <name> [connection]\``)
+          )
         }
         const blocks: unknown[] = []
         for (const { installation } of allowed) {
@@ -287,32 +295,20 @@ export async function handleSlashCommand(payload: SlackCommandPayload): Promise<
           }
         }
         if (blocks.length === 0) {
-          await respond(payload.responseUrl, {
-            replaceOriginal: true,
-            text: 'Queue not found',
-            blocks: errorBlocks(
+          return reply(
+            'Queue not found',
+            errorBlocks(
               `No queue named \`${escapeSlackText(queueName)}\` was found on your Durabull connections. Queue names are case-sensitive.`
-            ),
-          })
-          return
+            )
+          )
         }
         blocks.pop()
-        await respond(payload.responseUrl, {
-          replaceOriginal: true,
-          text: `Queue ${queueName}`,
-          blocks,
-        })
-        return
+        return reply(`Queue ${queueName}`, blocks)
       }
       case 'job': {
         const [jobId, queueName] = args
         if (!jobId) {
-          await respond(payload.responseUrl, {
-            replaceOriginal: true,
-            text: 'Give a job id',
-            blocks: errorBlocks(`Usage: \`${SLACK_SLASH_COMMAND} job <id> [queue]\``),
-          })
-          return
+          return reply('Give a job id', errorBlocks(`Usage: \`${prefix} job <id> [queue]\``))
         }
         const blocks: unknown[] = []
         let truncated = false
@@ -324,36 +320,25 @@ export async function handleSlashCommand(payload: SlackCommandPayload): Promise<
           }
         }
         if (blocks.length === 0) {
-          await respond(payload.responseUrl, {
-            replaceOriginal: true,
-            text: 'Job not found',
-            blocks: errorBlocks(
+          return reply(
+            'Job not found',
+            errorBlocks(
               `No job \`${escapeSlackText(jobId)}\` was found${queueName ? ` in \`${escapeSlackText(queueName)}\`` : ''}.${
                 truncated
                   ? ' Only the first 100 queues per connection were searched; add the queue name to narrow it down.'
                   : ''
               }`
-            ),
-          })
-          return
+            )
+          )
         }
         blocks.pop()
-        await respond(payload.responseUrl, {
-          replaceOriginal: true,
-          text: `Job ${jobId}`,
-          blocks,
-        })
-        return
+        return reply(`Job ${jobId}`, blocks)
       }
       default:
-        await respond(payload.responseUrl, {
-          replaceOriginal: true,
-          text: 'Unknown command',
-          blocks: [
-            ...errorBlocks(`Unknown command \`${escapeSlackText(command)}\`.`),
-            ...helpBlocks(),
-          ],
-        })
+        return reply('Unknown command', [
+          ...errorBlocks(`Unknown command \`${escapeSlackText(command)}\`.`),
+          ...helpBlocks(prefix),
+        ])
     }
   } catch (error) {
     const message =
@@ -361,12 +346,84 @@ export async function handleSlashCommand(payload: SlackCommandPayload): Promise<
         ? error.message
         : 'Durabull could not complete that command. Try again in a moment.'
     if (!(error instanceof SlackOperationError)) console.error('[slack] Command failed:', error)
-    await respond(payload.responseUrl, {
-      replaceOriginal: true,
-      text: message,
-      blocks: errorBlocks(message),
-    })
+    return reply(message, errorBlocks(message))
   }
+}
+
+export async function handleSlashCommand(payload: SlackCommandPayload): Promise<void> {
+  const result = await runCommand({
+    teamId: payload.teamId,
+    userId: payload.userId,
+    text: payload.text,
+    prefix: SLACK_SLASH_COMMAND,
+  })
+  await respond(payload.responseUrl, {
+    replaceOriginal: true,
+    text: result.text,
+    blocks: result.blocks,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// @Durabull mentions and direct messages
+// ---------------------------------------------------------------------------
+
+export const MENTION_PREFIX = '@Durabull'
+
+export interface SlackConversationMessage {
+  teamId: string
+  userId: string
+  channel: string
+  ts: string
+  threadTs?: string
+  text: string
+  /** A direct message to the bot rather than a mention in a channel. */
+  direct: boolean
+}
+
+/** The command text after removing user mentions such as `<@U0BOT>`. */
+export function stripMentions(text: string): string {
+  return text
+    .replace(/<@[A-Z0-9]+(\|[^>]*)?>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Answers `@Durabull status` in a channel (in a thread on the mention) or a
+ * direct message to the app. Channel answers are visible to the channel, so a
+ * person who is not a member gets a private explanation instead.
+ */
+export async function handleConversationMessage(message: SlackConversationMessage): Promise<void> {
+  const installations = await slackInstallationRepository.listActiveByTeam(message.teamId)
+  const tokenInstallation = installations[0]
+  if (!tokenInstallation) return
+
+  const result = await runCommand({
+    teamId: message.teamId,
+    userId: message.userId,
+    text: stripMentions(message.text),
+    prefix: message.direct ? '' : MENTION_PREFIX,
+  })
+  const threadTs = message.direct ? message.threadTs : (message.threadTs ?? message.ts)
+  await withSlackToken(tokenInstallation, async (token) => {
+    if (result.denied && !message.direct) {
+      await postSlackEphemeral(token, {
+        channel: message.channel,
+        user: message.userId,
+        text: result.text,
+        blocks: result.blocks,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+      })
+      return
+    }
+    await postSlackMessage(token, {
+      channel: message.channel,
+      text: result.text,
+      blocks: result.blocks,
+      ...(threadTs ? { thread_ts: threadTs } : {}),
+    })
+  })
 }
 
 // ---------------------------------------------------------------------------

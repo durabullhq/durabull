@@ -61,19 +61,20 @@ export function jobUrl(
   return `${queueUrl(slug, connectionId, queueName)}/jobs/${encodeURIComponent(jobId)}`
 }
 
-export function helpBlocks(): unknown[] {
-  const c = SLACK_SLASH_COMMAND
+/** Command list; `prefix` is how the user talks to Durabull (`/durabull`, `@Durabull`, or nothing in a DM). */
+export function helpBlocks(prefix: string = SLACK_SLASH_COMMAND): unknown[] {
+  const c = prefix ? `${prefix} ` : ''
   return [
     { type: 'section', text: mrkdwn('*Durabull in Slack*') },
     {
       type: 'section',
       text: mrkdwn(
         [
-          `\`${c} status\`: open incidents per Redis connection`,
-          `\`${c} alerts\`: firing incidents, with acknowledge and resolve buttons`,
-          `\`${c} queue <name> [connection]\`: job counts for a queue, with pause and resume`,
-          `\`${c} job <id> [queue]\`: find a job and see why it failed`,
-          `\`${c} help\`: this message`,
+          `\`${c}status\`: open incidents per Redis connection`,
+          `\`${c}alerts\`: firing incidents, with acknowledge and resolve buttons`,
+          `\`${c}queue <name> [connection]\`: job counts for a queue, with pause and resume`,
+          `\`${c}job <id> [queue]\`: find a job and see why it failed`,
+          `\`${c}help\`: this message`,
         ].join('\n')
       ),
     },
@@ -81,7 +82,7 @@ export function helpBlocks(): unknown[] {
       type: 'context',
       elements: [
         mrkdwn(
-          'Durabull matches your Slack email to your Durabull account. Paste a Durabull queue, job or alert rule link to preview it.'
+          `Use \`${SLACK_SLASH_COMMAND}\` for a private answer, mention @Durabull to answer in the channel, or message the app directly. Durabull matches your Slack email to your Durabull account. Paste a Durabull queue, job or alert rule link to preview it.`
         ),
       ],
     },

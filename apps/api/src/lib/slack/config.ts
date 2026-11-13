@@ -13,6 +13,9 @@ export const SLACK_BOT_SCOPES = [
   'groups:read',
   // The /durabull slash command.
   'commands',
+  // Answer "@Durabull status" in channels and messages sent to the app directly.
+  'app_mentions:read',
+  'im:history',
   // Match Slack users to Durabull members by their verified email.
   'users:read',
   'users:read.email',
@@ -25,6 +28,8 @@ export const SLACK_BOT_SCOPES = [
 
 export const SLACK_BOT_EVENTS = [
   'app_home_opened',
+  'app_mention',
+  'message.im',
   'link_shared',
   'app_uninstalled',
   'tokens_revoked',

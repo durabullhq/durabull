@@ -20,6 +20,7 @@ self-hosted deployment.
 | **One-click actions** | Acknowledge, unacknowledge, resolve, snooze the rule (30 minutes to 7 days) and retry a failed job from buttons on the message. |
 | **Live messages** | The message turns amber when acknowledged and green when resolved, names who acted, and posts a short thread reply for each change, whether it happened in Slack, the web app, through MCP, or automatically. |
 | **`/durabull` command** | `status`, `alerts`, `queue <name>` and `job <id>` answer privately in any channel. Queue results include pause and resume. |
+| **`@Durabull` mentions and DMs** | Mention the app in a channel to answer in a thread everyone can see, or message it directly. Same commands, and plain phrasing such as "@Durabull what alerts are open?" works. |
 | **App Home** | The Durabull app's Home tab shows open incidents and the health of every connection, with quick actions. |
 | **Link previews** | Durabull queue, job and alert rule links pasted by members unfurl with live counts and status. |
 
@@ -88,7 +89,8 @@ Then:
 3. Paste the JSON, review, and select **Create**.
 
 The manifest configures the bot scopes, the `/durabull` command, interactivity, the Events API
-subscriptions, the App Home tab, link unfurling for your domain, and the OAuth redirect URL.
+subscriptions (mentions, direct messages, App Home, link previews and uninstall detection), the
+App Home and Messages tabs, link unfurling for your domain, and the OAuth redirect URL.
 
 ### 2. Copy the credentials
 
@@ -134,6 +136,8 @@ workspace can be connected to several Durabull organizations; each keeps its own
 | `chat:write`, `chat:write.public` | Post and update alert messages, including in public channels the app has not joined. |
 | `channels:read`, `groups:read` | List channels for the destination picker and check that a private channel has the app. |
 | `commands` | The `/durabull` slash command. |
+| `app_mentions:read` | Answer when someone mentions @Durabull in a channel. |
+| `im:history` | Answer messages people send to the app directly. |
 | `users:read`, `users:read.email` | Match the Slack user who pressed a button or ran a command to a Durabull member. |
 | `usergroups:read` | Offer user groups such as `@oncall` as mentions. |
 | `links:read`, `links:write` | Preview Durabull links pasted in Slack. |
@@ -163,7 +167,18 @@ whose administrators you trust with the same access as your Durabull organizatio
 Connecting, changing and removing the Slack integration is limited to organization owners and
 admins. Any member can create Slack destinations once Slack is connected.
 
-## Slash Command Reference
+## Commands
+
+Talk to Durabull three ways, with the same commands:
+
+- **`/durabull <command>`** answers privately, only visible to you.
+- **`@Durabull <command>`** in a channel answers in a thread on your message, visible to the
+  channel. If you are not a member of a connected organization, you get a private explanation
+  instead. Buttons in the answer still only work for members.
+- **A direct message** to the app (its **Messages** tab) answers in the conversation.
+
+Durabull picks the first command word in what you write, so "@Durabull what's in queue
+email-send?" works like `queue email-send`. Mentioning the app with nothing else shows status.
 
 | Command | Result |
 | --- | --- |
@@ -173,8 +188,8 @@ admins. Any member can create Slack destinations once Slack is connected.
 | `/durabull job <id> [queue]` | The job's state, attempts and failure reason. Without a queue, Durabull searches up to 100 queues per connection. |
 | `/durabull help` | Command list. |
 
-Responses are only visible to you. If the Slack workspace is connected to several Durabull
-organizations, results are grouped by organization for those you belong to.
+If the Slack workspace is connected to several Durabull organizations, results are grouped by
+organization for those you belong to.
 
 ## Link Previews
 

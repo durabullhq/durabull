@@ -30,13 +30,14 @@ export function buildSlackAppManifest(input: {
       description: 'BullMQ alerts, incident actions and queue lookups from Durabull.',
       background_color: '#141414',
       long_description:
-        'Durabull watches your BullMQ queues on Redis. The Slack app delivers alert incidents to the channels you choose, lets your team acknowledge, resolve, snooze and retry right from the message, answers /durabull status, alerts, queue and job lookups, and previews Durabull links pasted into Slack. Messages update themselves when an incident changes anywhere in Durabull.',
+        'Durabull watches your BullMQ queues on Redis. The Slack app delivers alert incidents to the channels you choose, lets your team acknowledge, resolve, snooze and retry right from the message, answers status, alerts, queue and job lookups through /durabull, @Durabull mentions or direct messages, and previews Durabull links pasted into Slack. Messages update themselves when an incident changes anywhere in Durabull.',
     },
     features: {
       app_home: {
         home_tab_enabled: true,
-        messages_tab_enabled: false,
-        messages_tab_read_only_enabled: true,
+        // People can message the app directly with the same commands as /durabull.
+        messages_tab_enabled: true,
+        messages_tab_read_only_enabled: false,
       },
       bot_user: { display_name: appName, always_online: true },
       slash_commands: [

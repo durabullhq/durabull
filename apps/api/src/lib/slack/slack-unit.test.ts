@@ -14,7 +14,7 @@ import {
 } from './client'
 import { buildSlackAuthorizeUrl, SLACK_BOT_EVENTS, SLACK_BOT_SCOPES } from './config'
 import { escapeSlackText, formatDuration, slackCodeBlock } from './format'
-import { parseCommandText, parseDurabullLink } from './handlers'
+import { parseCommandText, parseDurabullLink, stripMentions } from './handlers'
 import { buildSlackAppManifest } from './manifest'
 import { signSlackRequest, verifySlackSignature } from './verify'
 
@@ -195,6 +195,20 @@ describe('Slash command parsing', () => {
       command: 'job',
       args: ['42', 'email-send'],
     })
+  })
+})
+
+describe('Mention parsing', () => {
+  it('drops user mentions and keeps the command', () => {
+    expect(stripMentions('<@U0BOT> queue  email-send')).toBe('queue email-send')
+    expect(stripMentions('hey <@U0BOT|durabull> status please')).toBe('hey status please')
+    expect(parseCommandText('show me the alerts?')).toEqual({ command: 'alerts', args: [] })
+    expect(parseCommandText('what is in queue email-send')).toEqual({
+      command: 'queue',
+      args: ['email-send'],
+    })
+    expect(parseCommandText('dance')).toEqual({ command: 'dance', args: [] })
+    expect(parseCommandText(stripMentions('<@U0BOT>'))).toEqual({ command: 'status', args: [] })
   })
 })
 

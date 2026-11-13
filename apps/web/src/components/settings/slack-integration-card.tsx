@@ -53,8 +53,9 @@ const HIGHLIGHTS = [
     detail: 'When an incident changes anywhere in Durabull, the Slack message updates too.',
   },
   {
-    title: '/durabull, App Home and link previews',
-    detail: 'Check status, open incidents, queues and jobs, and preview pasted Durabull links.',
+    title: '/durabull, @Durabull, App Home and link previews',
+    detail:
+      'Ask for status, incidents, queues and jobs privately or in a thread, and preview pasted links.',
   },
 ]
 

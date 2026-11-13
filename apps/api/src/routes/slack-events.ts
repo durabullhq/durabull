@@ -6,6 +6,7 @@ import { getSlackConfig, isSlackConfigured } from '../lib/slack/config'
 import {
   handleAppUninstalled,
   handleBlockActions,
+  handleConversationMessage,
   handleLinkShared,
   handleSlashCommand,
   parseCommandText,
@@ -80,6 +81,12 @@ interface SlackEventEnvelope {
     type: string
     user?: string
     tab?: string
+    text?: string
+    ts?: string
+    thread_ts?: string
+    channel_type?: string
+    subtype?: string
+    bot_id?: string
     tokens?: { bot?: string[] }
   } & Partial<SlackLinkSharedEvent>
 }
@@ -114,6 +121,26 @@ const app = new Hono()
           runInBackground('home tab', () => publishHomeTab(teamId, userId))
         }
         break
+      case 'app_mention':
+      case 'message': {
+        // Never answer bots (including Durabull's own replies) or edits/joins.
+        if (event.bot_id || event.subtype || !event.user || !event.channel || !event.ts) break
+        const direct = event.type === 'message'
+        // Plain channel messages arrive only for DMs; mentions inside a DM come as messages.
+        if (direct && event.channel_type !== 'im') break
+        if (!direct && event.channel.startsWith('D')) break
+        const message = {
+          teamId,
+          userId: event.user,
+          channel: event.channel,
+          ts: event.ts,
+          threadTs: event.thread_ts,
+          text: event.text ?? '',
+          direct,
+        }
+        runInBackground('conversation message', () => handleConversationMessage(message))
+        break
+      }
       case 'link_shared':
         if (event.user && Array.isArray(event.links)) {
           const linkEvent = event as SlackLinkSharedEvent
