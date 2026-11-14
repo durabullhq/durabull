@@ -1,3 +1,4 @@
+import { AnalyticsEvents, AnalyticsProperties, SlackSurface } from '@durabull/analytics/events'
 import {
   type AlertDestination,
   type AlertSlackDestinationConfig,
@@ -32,6 +33,12 @@ import {
   SLACK_WORKSPACE_CHANGED_MESSAGE,
   slackDestinationMatchesWorkspace,
 } from '../lib/slack/alerts'
+import {
+  recordSlackEvent,
+  type SlackAnalyticsProperties,
+  slackDestinationProperties,
+  slackErrorCode,
+} from '../lib/slack/analytics'
 import { getSlackChannel, postSlackMessage, SlackApiError } from '../lib/slack/client'
 import { appBaseUrl } from '../lib/slack/config'
 import { withSlackToken } from '../lib/slack/token'
@@ -182,6 +189,18 @@ async function validateSlackDestinationConfig(
   return { config: { ...config, channelName, slackTeamId: installation.slackTeamId } }
 }
 
+/** Id-free analytics properties for a Slack destination managed in settings. */
+function destinationAnalytics(config: unknown): SlackAnalyticsProperties {
+  const settings =
+    typeof config === 'object' && config !== null
+      ? (config as Partial<AlertSlackDestinationConfig>)
+      : null
+  return {
+    [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.DESTINATIONS,
+    ...slackDestinationProperties(settings),
+  }
+}
+
 async function findOrganizationLabels(
   organizationId: string
 ): Promise<{ name: string; slug: string | null }> {
@@ -276,6 +295,16 @@ const app = new Hono()
         enabled: body.enabled,
       })
 
+      if (destination.type === 'slack') {
+        recordSlackEvent(
+          AnalyticsEvents.SLACK_DESTINATION_CREATED,
+          { organizationId, userId: c.get('user')?.id ?? null },
+          {
+            ...destinationAnalytics(slackConfig),
+            [AnalyticsProperties.SLACK_ENABLED]: destination.enabled,
+          }
+        )
+      }
       return c.json({ destination: serializeDestination(destination) }, 201)
     } catch (error) {
       if (toBillingHttpError(error)) throw error
@@ -382,6 +411,22 @@ const app = new Hono()
         return c.json({ error: 'Destination not found' }, 404)
       }
 
+      if (destination.type === 'slack') {
+        recordSlackEvent(
+          AnalyticsEvents.SLACK_DESTINATION_UPDATED,
+          { organizationId, userId: c.get('user')?.id ?? null },
+          {
+            ...destinationAnalytics(destination.config),
+            [AnalyticsProperties.SLACK_ENABLED]: destination.enabled,
+            [AnalyticsProperties.SLACK_SETTING]:
+              body.enabled !== undefined && body.enabled !== existing.enabled
+                ? 'enabled'
+                : updatedSlackConfig
+                  ? 'config'
+                  : 'name',
+          }
+        )
+      }
       return c.json({ destination: serializeDestination(destination) })
     } catch (error) {
       if (toBillingHttpError(error)) throw error
@@ -406,11 +451,19 @@ const app = new Hono()
       )
     }
 
+    const existing = await alertDestinationRepository.findById(destinationId, organizationId)
     const deleted = await alertDestinationRepository.delete(destinationId, organizationId)
     if (!deleted) {
       return c.json({ error: 'Destination not found' }, 404)
     }
     await rebalanceCapacity(organizationId)
+    if (existing?.type === 'slack') {
+      recordSlackEvent(
+        AnalyticsEvents.SLACK_DESTINATION_DELETED,
+        { organizationId, userId: c.get('user')?.id ?? null },
+        destinationAnalytics(existing.config)
+      )
+    }
 
     return c.json({ ok: true })
   })
@@ -502,17 +555,26 @@ const app = new Hono()
         }
       }
       case 'slack': {
+        const testActor = { organizationId, userId: c.get('user')?.id ?? null }
+        const recordTest = (success: boolean, errorCode?: string) =>
+          recordSlackEvent(AnalyticsEvents.SLACK_DESTINATION_TESTED, testActor, {
+            ...destinationAnalytics(destination.config),
+            [AnalyticsProperties.SUCCESS]: success,
+            [AnalyticsProperties.SLACK_ERROR_CODE]: errorCode,
+          })
         if (!takeSlackTestSlot(destination.id)) {
           return c.json({ error: 'Wait a few seconds before sending another test message.' }, 429)
         }
         const installation = await findActiveSlackInstallation(organizationId)
         if (!installation) {
+          recordTest(false, 'not_connected')
           return c.json(
             { success: false, error: 'Slack is not connected or needs to be reconnected.' },
             400
           )
         }
         if (!slackDestinationMatchesWorkspace(destination, installation)) {
+          recordTest(false, 'workspace_changed')
           return c.json({ success: false, error: SLACK_WORKSPACE_CHANGED_MESSAGE }, 400)
         }
         try {
@@ -534,12 +596,14 @@ const app = new Hono()
               attachments: content.attachments,
             })
           )
+          recordTest(true)
           return c.json({
             success: true,
             durationMs: Date.now() - startedAt,
             channelName: config.channelName ?? null,
           })
         } catch (error) {
+          recordTest(false, slackErrorCode(error))
           if (error instanceof SlackApiError) {
             return c.json({ success: false, error: error.message }, error.retryable ? 503 : 400)
           }

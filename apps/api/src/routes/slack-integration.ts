@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { AnalyticsEvents, AnalyticsProperties, SlackSurface } from '@durabull/analytics/events'
 import {
   alertDestinationRepository,
   billingRepository,
@@ -16,6 +17,13 @@ import { zValidator } from '@hono/zod-validator'
 import { type Context, Hono } from 'hono'
 import { z } from 'zod'
 import { hasFeature, requireFeature } from '../billing/entitlements'
+import { isAuthlessMode } from '../lib/authless'
+import {
+  findActiveSlackInstallation,
+  queueSlackMessageSync,
+  slackDestinationMatchesWorkspace,
+} from '../lib/slack/alerts'
+import { oauthErrorCode, recordSlackEvent, slackErrorCode } from '../lib/slack/analytics'
 import {
   exchangeSlackOauthCode,
   listSlackChannels,
@@ -32,17 +40,11 @@ import {
   getSlackConfig,
   isSlackConfigured,
   SLACK_BOT_SCOPES,
-  slackInstallUrl,
   SlackNotConfiguredError,
+  slackInstallUrl,
 } from '../lib/slack/config'
-import {
-  findActiveSlackInstallation,
-  queueSlackMessageSync,
-  slackDestinationMatchesWorkspace,
-} from '../lib/slack/alerts'
 import { buildSlackAppManifest } from '../lib/slack/manifest'
 import { withSlackToken } from '../lib/slack/token'
-import { isAuthlessMode } from '../lib/authless'
 import { requireOrganization } from '../middleware/auth'
 
 const RETURN_TO_PAGES = ['integrations', 'destinations'] as const
@@ -204,9 +206,21 @@ const app = new Hono()
     const organizationId = c.get('organizationId')
     const user = c.get('user')
     if (!organizationId) return c.json({ error: 'Organization is required' }, 403)
+    // Refusals here never reach OAuth, so they are recorded as failed connects.
+    const refused = (reason: 'not_admin' | 'not_entitled' | 'not_configured') =>
+      recordSlackEvent(
+        AnalyticsEvents.SLACK_CONNECT_FAILED,
+        { organizationId, userId: user?.id ?? null },
+        {
+          [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+          [AnalyticsProperties.SLACK_REASON]: reason,
+        }
+      )
     if (!(await isOrganizationAdmin(c, organizationId))) {
+      refused('not_admin')
       return c.json({ error: ADMIN_ONLY_MESSAGE }, 403)
     }
+    if (!(await hasFeature(organizationId, 'integrations.slack'))) refused('not_entitled')
     await requireFeature(organizationId, 'integrations.slack')
     if (!user) return c.json({ error: 'User is required' }, 401)
 
@@ -214,18 +228,37 @@ const app = new Hono()
     try {
       config = getSlackConfig()
     } catch (error) {
-      if (error instanceof SlackNotConfiguredError) return c.json({ error: error.message }, 503)
+      if (error instanceof SlackNotConfiguredError) {
+        refused('not_configured')
+        return c.json({ error: error.message }, 503)
+      }
       throw error
     }
 
     await slackOauthStateRepository.deleteExpired()
+    const returnTo = c.req.valid('json')?.returnTo ?? 'integrations'
+    const existing = await slackInstallationRepository.findByOrganization(organizationId)
+    recordSlackEvent(
+      AnalyticsEvents.SLACK_CONNECT_STARTED,
+      { organizationId, userId: user.id },
+      {
+        [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+        [AnalyticsProperties.SLACK_RETURN_TO]: returnTo,
+        [AnalyticsProperties.SLACK_REINSTALL]: Boolean(existing),
+        [AnalyticsProperties.SLACK_REASON]: existing
+          ? existing.status === 'active'
+            ? 'scopes'
+            : 'reconnect'
+          : 'new',
+      }
+    )
     const state = randomBytes(32).toString('base64url')
     await slackOauthStateRepository.create({
       organizationId,
       userId: user.id,
       state,
       redirectUri: config.redirectUri,
-      returnTo: c.req.valid('json')?.returnTo ?? 'integrations',
+      returnTo,
       expiresAt: new Date(Date.now() + 10 * 60_000),
     })
     return c.json({
@@ -244,8 +277,24 @@ const app = new Hono()
     const slug = oauthState ? await organizationSlug(oauthState.organizationId) : null
     const page: ReturnToPage =
       oauthState && isReturnToPage(oauthState.returnTo) ? oauthState.returnTo : 'integrations'
+    const actor = {
+      organizationId: oauthState?.organizationId ?? null,
+      userId: oauthState?.userId ?? null,
+    }
+    const connectFailed = (reason: string, errorCode?: string) =>
+      recordSlackEvent(AnalyticsEvents.SLACK_CONNECT_FAILED, actor, {
+        [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.OAUTH,
+        [AnalyticsProperties.SLACK_RETURN_TO]: page,
+        [AnalyticsProperties.SLACK_REASON]: reason,
+        [AnalyticsProperties.SLACK_ERROR_CODE]: errorCode,
+      })
 
     if (query.error) {
+      connectFailed(
+        query.error === 'access_denied' ? 'cancelled' : 'slack_error',
+        // Anyone can put text in the callback URL; only known OAuth errors are kept.
+        oauthErrorCode(query.error)
+      )
       // access_denied means the user cancelled on Slack's consent screen.
       return redirectWithResult(c, slug, page, {
         slack: query.error === 'access_denied' ? 'cancelled' : 'error',
@@ -258,9 +307,15 @@ const app = new Hono()
       // member. Accepting the code here would let anyone attach their
       // workspace to whoever opens the link. Restart from Durabull's direct
       // install URL instead: Slack re-approves an installed app in one click.
+      recordSlackEvent(
+        AnalyticsEvents.SLACK_INSTALL_LINK_OPENED,
+        {},
+        { slack_surface: SlackSurface.OAUTH, slack_source: 'slack_initiated' }
+      )
       return c.redirect(slackInstallUrl(), 302)
     }
     if (!oauthState || !query.code) {
+      connectFailed(oauthState ? 'missing_code' : 'expired')
       return redirectWithResult(c, slug, page, {
         slack: 'error',
         message: 'The Slack sign-in link expired. Start the connection again.',
@@ -270,6 +325,7 @@ const app = new Hono()
     // started it. Otherwise someone could send their own install link to a
     // Slack admin and attach that workspace to the sender's organization.
     if (!isAuthlessMode() && c.get('user')?.id !== oauthState.userId) {
+      connectFailed('wrong_user')
       return redirectWithResult(c, slug, page, {
         slack: 'error',
         message:
@@ -278,11 +334,13 @@ const app = new Hono()
     }
     // Roles can change while the Slack consent screen is open.
     if (!(await isOrganizationAdmin(c, oauthState.organizationId))) {
+      connectFailed('not_admin')
       return redirectWithResult(c, slug, page, { slack: 'error', message: ADMIN_ONLY_MESSAGE })
     }
 
     try {
       if (!(await hasFeature(oauthState.organizationId, 'integrations.slack'))) {
+        connectFailed('not_entitled')
         return redirectWithResult(c, slug, 'integrations', {
           slack: 'error',
           message: 'The Slack app is not included in this organization’s plan.',
@@ -301,7 +359,10 @@ const app = new Hono()
         })
       }
       const identity = await slackAuthTest(token.accessToken)
-      await slackInstallationRepository.upsert({
+      const previous = await slackInstallationRepository.findByOrganization(
+        oauthState.organizationId
+      )
+      const installation = await slackInstallationRepository.upsert({
         organizationId: oauthState.organizationId,
         slackTeamId: token.teamId,
         slackTeamName: identity.teamName || token.teamName,
@@ -319,11 +380,31 @@ const app = new Hono()
       // Messages parked while Slack access was lost can update again.
       await slackAlertMessageRepository.reviveForWorkspace(oauthState.organizationId, token.teamId)
       channelCache.delete(oauthState.organizationId)
+      recordSlackEvent(AnalyticsEvents.SLACK_CONNECTED, actor, {
+        [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.OAUTH,
+        [AnalyticsProperties.SLACK_RETURN_TO]: page,
+        [AnalyticsProperties.SLACK_REINSTALL]: Boolean(previous),
+        [AnalyticsProperties.SLACK_REASON]: !previous
+          ? 'new'
+          : previous.slackTeamId !== token.teamId
+            ? 'workspace_changed'
+            : previous.status === 'active'
+              ? 'scopes'
+              : 'reconnect',
+        [AnalyticsProperties.SLACK_MISSING_SCOPE_COUNT]: missingScopes(installation).length,
+        [AnalyticsProperties.SLACK_ACTIONS_ENABLED]: installation.actionsEnabled,
+        [AnalyticsProperties.SLACK_UNFURLS_ENABLED]: installation.unfurlsEnabled,
+      })
       return redirectWithResult(c, slug, page, { slack: 'connected' })
     } catch (error) {
       if (error instanceof SlackApiError || error instanceof SlackNotConfiguredError) {
+        connectFailed(
+          error instanceof SlackNotConfiguredError ? 'not_configured' : 'slack_error',
+          error instanceof SlackApiError ? slackErrorCode(error) : undefined
+        )
         return redirectWithResult(c, slug, page, { slack: 'error', message: error.message })
       }
+      connectFailed('internal_error')
       throw error
     }
   })
@@ -338,6 +419,26 @@ const app = new Hono()
     if (!before) return c.json({ error: 'Slack is not connected.' }, 404)
     const installation = await slackInstallationRepository.updateSettings(organizationId, settings)
     if (!installation) return c.json({ error: 'Slack is not connected.' }, 404)
+    const settingsActor = { organizationId, userId: c.get('user')?.id ?? null }
+    for (const [setting, changed, enabled] of [
+      [
+        'actions',
+        installation.actionsEnabled !== before.actionsEnabled,
+        installation.actionsEnabled,
+      ],
+      [
+        'unfurls',
+        installation.unfurlsEnabled !== before.unfurlsEnabled,
+        installation.unfurlsEnabled,
+      ],
+    ] as const) {
+      if (!changed) continue
+      recordSlackEvent(AnalyticsEvents.SLACK_SETTINGS_UPDATED, settingsActor, {
+        [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+        [AnalyticsProperties.SLACK_SETTING]: setting,
+        [AnalyticsProperties.SLACK_ENABLED]: enabled,
+      })
+    }
     if (installation.actionsEnabled !== before.actionsEnabled) {
       // Open incidents' messages show or hide their buttons to match.
       queueSlackMessageSync(
@@ -363,6 +464,7 @@ const app = new Hono()
       installation.slackTeamId,
       organizationId
     )
+    const removeActor = { organizationId, userId: c.get('user')?.id ?? null }
     let revokedToken = false
     if (shared === 0 && installation.status === 'active') {
       try {
@@ -380,6 +482,13 @@ const app = new Hono()
         // (a timeout, a Slack outage) keeps the installation so removal can be
         // retried without leaving a live token behind in the workspace.
         if (!(error instanceof SlackApiError && error.isAuthError)) {
+          recordSlackEvent(AnalyticsEvents.SLACK_DISCONNECTED, removeActor, {
+            [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+            [AnalyticsProperties.SUCCESS]: false,
+            [AnalyticsProperties.SLACK_ERROR_CODE]:
+              error instanceof SlackApiError ? slackErrorCode(error) : 'revoke_failed',
+            [AnalyticsProperties.SLACK_SHARED_WORKSPACE]: false,
+          })
           return c.json(
             {
               error:
@@ -394,6 +503,13 @@ const app = new Hono()
     }
     await slackInstallationRepository.delete(organizationId)
     channelCache.delete(organizationId)
+    recordSlackEvent(AnalyticsEvents.SLACK_DISCONNECTED, removeActor, {
+      [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+      [AnalyticsProperties.SUCCESS]: true,
+      [AnalyticsProperties.SLACK_REVOKED_TOKEN]: revokedToken,
+      [AnalyticsProperties.SLACK_SHARED_WORKSPACE]: shared > 0,
+      [AnalyticsProperties.SLACK_REASON]: installation.status === 'active' ? 'active' : 'revoked',
+    })
     return c.json({ success: true, revokedToken })
   })
   .post('/test', async (c) => {
@@ -402,6 +518,14 @@ const app = new Hono()
     await requireFeature(organizationId, 'integrations.slack')
     const installation = await slackInstallationRepository.findByOrganization(organizationId)
     if (!installation) return c.json({ error: 'Slack is not connected.' }, 404)
+    const testActor = { organizationId, userId: c.get('user')?.id ?? null }
+    const recordTest = (success: boolean, errorCode?: string) =>
+      recordSlackEvent(AnalyticsEvents.SLACK_CONNECTION_TESTED, testActor, {
+        [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+        [AnalyticsProperties.SUCCESS]: success,
+        [AnalyticsProperties.SLACK_ERROR_CODE]: errorCode,
+        [AnalyticsProperties.SLACK_REASON]: installation.status,
+      })
     try {
       // A revoked installation is still worth testing: if Slack accepts the
       // token again, the test marks it active.
@@ -409,11 +533,14 @@ const app = new Hono()
         allowRevoked: true,
       })
       if (identity.teamId && identity.teamId !== installation.slackTeamId) {
+        recordTest(false, 'workspace_mismatch')
         return c.json({ error: 'The bot token belongs to a different Slack workspace.' }, 400)
       }
       await slackInstallationRepository.markValidated(organizationId)
+      recordTest(true)
       return c.json({ ok: true, teamName: identity.teamName, url: identity.url })
     } catch (error) {
+      recordTest(false, slackErrorCode(error))
       return slackFailure(c, error)
     }
   })

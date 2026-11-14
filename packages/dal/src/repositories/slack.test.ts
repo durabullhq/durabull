@@ -128,8 +128,10 @@ describe('Slack repositories', () => {
       await slackInstallationRepository.markTeamRevoked('T1', 'app_uninstalled', {
         occurredAt: new Date(Date.now() - 60_000),
       })
-    ).toBe(0)
-    expect(await slackInstallationRepository.markTeamRevoked('T1', 'app_uninstalled')).toBe(2)
+    ).toEqual([])
+    expect(
+      (await slackInstallationRepository.markTeamRevoked('T1', 'app_uninstalled')).sort()
+    ).toEqual([ORG_A, ORG_B].sort())
     expect(await slackInstallationRepository.listActiveByTeam('T1')).toEqual([])
     // A revoked installation no longer holds the shared bot token.
     expect(await slackInstallationRepository.countOtherInstallationsForTeam('T1', ORG_A)).toBe(0)

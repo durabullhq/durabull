@@ -1,3 +1,4 @@
+import { AnalyticsEvents, AnalyticsProperties, SlackSurface } from '@durabull/analytics/events'
 import {
   type AlertDelivery,
   type AlertDestination,
@@ -23,6 +24,12 @@ import {
   mentionPrefix,
   type SlackAlertMessageView,
 } from './alert-message'
+import {
+  recordSlackEvent,
+  type SlackAnalyticsProperties,
+  slackDestinationProperties,
+  slackErrorCode,
+} from './analytics'
 import { runInBackground } from './background'
 import {
   getSlackPermalink,
@@ -262,8 +269,43 @@ export async function sendSlackDestinationAlert(input: {
   organizationSlug: string | null
   requireClaimedAt: (delivery: AlertDelivery) => Date
 }): Promise<void> {
+  const actor = { organizationId: input.event.organizationId }
+  let properties: SlackAnalyticsProperties = {
+    [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.ALERT_MESSAGE,
+    [AnalyticsProperties.SLACK_RULE_TYPE]: input.event.type,
+  }
+  try {
+    const config = parseSlackDestinationConfig(input.destination)
+    properties = { ...properties, ...slackDestinationProperties(config) }
+    const result = await deliverSlackDestinationAlert(input, config)
+    if (result.posted) {
+      recordSlackEvent(AnalyticsEvents.SLACK_ALERT_POSTED, actor, {
+        ...properties,
+        // The state rendered in Slack, which can differ from the queued event's status.
+        [AnalyticsProperties.SLACK_ALERT_STATE]: result.state,
+      })
+    }
+  } catch (error) {
+    recordSlackEvent(AnalyticsEvents.SLACK_ALERT_POST_FAILED, actor, {
+      ...properties,
+      [AnalyticsProperties.SLACK_ERROR_CODE]: slackErrorCode(error),
+      [AnalyticsProperties.SLACK_REASON]:
+        error instanceof SlackApiError && error.retryable
+          ? 'retryable'
+          : error instanceof SlackInstallationUnavailableError ||
+              (error instanceof SlackApiError && error.code === 'not_connected')
+            ? 'not_connected'
+            : 'permanent',
+    })
+    throw error
+  }
+}
+
+async function deliverSlackDestinationAlert(
+  input: Parameters<typeof sendSlackDestinationAlert>[0],
+  config: AlertSlackDestinationConfig
+): Promise<{ posted: false } | { posted: true; state: SlackAlertMessageView['state'] }> {
   const { delivery, destination } = input
-  const config = parseSlackDestinationConfig(destination)
   const metadata = (delivery.providerMetadata ?? {}) as Record<string, unknown>
 
   const existing = await slackAlertMessageRepository.findByDelivery(delivery.id)
@@ -281,7 +323,7 @@ export async function sendSlackDestinationAlert(input: {
       existing.permalink,
       metadata
     )
-    return
+    return { posted: false }
   }
 
   const installation = await requireActiveSlackInstallation(input.event.organizationId)
@@ -345,6 +387,7 @@ export async function sendSlackDestinationAlert(input: {
     })
   }
   await markSlackDeliveryDelivered(input, config, posted.ts, permalink, metadata)
+  return { posted: true, state: view.state }
 }
 
 async function markSlackDeliveryDelivered(
@@ -456,6 +499,7 @@ async function syncOneMessage(
   // A refresh-only pass (snooze, retry, settings change) re-renders without a reply.
   const reply =
     threadUpdates && stateChanged ? buildStateChangeReply(claim.renderedState, view) : null
+  let threadReplyPosted = false
 
   await withSlackToken(installation, async (token) => {
     await assertInstallationCurrent(installation)
@@ -474,6 +518,7 @@ async function syncOneMessage(
           thread_ts: claim.messageTs,
           text: reply,
         })
+        threadReplyPosted = true
       } catch (error) {
         // The message itself is current; a missing thread reply is cosmetic.
         console.warn('[slack] Thread reply failed', {
@@ -487,6 +532,17 @@ async function syncOneMessage(
     state: view.state,
     acknowledgedBy,
   })
+  recordSlackEvent(
+    AnalyticsEvents.SLACK_ALERT_MESSAGE_SYNCED,
+    { organizationId: claim.organizationId },
+    {
+      [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.ALERT_MESSAGE,
+      [AnalyticsProperties.SLACK_ALERT_STATE]: view.state,
+      [AnalyticsProperties.SLACK_STATE_CHANGED]: stateChanged,
+      [AnalyticsProperties.SLACK_THREAD_REPLY_POSTED]: threadReplyPosted,
+      [AnalyticsProperties.SLACK_RULE_TYPE]: event.type,
+    }
+  )
   if (!recorded) {
     // Another worker took the message over while this one was in Slack, so this
     // view may have overwritten a newer one. Ask for one more pass from current state.

@@ -1,3 +1,10 @@
+import { trackEvent } from '@durabull/analytics/browser'
+import {
+  AnalyticsEvents,
+  AnalyticsProperties,
+  DialogType,
+  SlackSurface,
+} from '@durabull/analytics/events'
 import { PLANS, requiredPlanForFeature } from '@durabull/api-client/billing'
 import { Link } from '@tanstack/react-router'
 import {
@@ -32,12 +39,12 @@ import {
   useTestSlack,
   useUpdateSlackSettings,
 } from '@/hooks/use-slack'
-import { cn } from '@/lib/utils'
 import {
   DEFAULT_SLACK_DESTINATION_CONFIG,
   SLACK_INSTALL_REQUEST,
   slackDestinationName,
 } from '@/lib/slack-destination'
+import { cn } from '@/lib/utils'
 
 const SLACK_DOCS_URL = 'https://durabull.io/documentation/integrations/slack'
 const SLACK_FEATURE = 'integrations.slack' as const
@@ -128,8 +135,15 @@ export function useSlackInstallRequest(
     handled.current = true
     url.searchParams.delete('slack')
     window.history.replaceState(window.history.state, '', url.toString())
+    const trackOutcome = (outcome: string) =>
+      trackEvent(AnalyticsEvents.SLACK_INSTALL_LINK_OPENED, {
+        [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+        [AnalyticsProperties.SLACK_SOURCE]: 'integrations_page',
+        [AnalyticsProperties.SLACK_OUTCOME]: outcome,
+      })
 
     if (!verified) {
+      trackOutcome('unverified')
       // This API cannot confirm which organization the overview is for, so
       // leave the decision to the member instead of starting OAuth.
       toast('Select Add to Slack to connect Slack to this organization')
@@ -138,24 +152,29 @@ export function useSlackInstallRequest(
 
     const installation = overview.installation
     if (!overview.entitled) {
+      trackOutcome('not_entitled')
       toast('The Slack app is included with the Team plan and above', {
         description: 'Upgrade this organization to connect Slack.',
       })
       return
     }
     if (!overview.configured) {
+      trackOutcome('not_configured')
       toast.error('Slack is not set up on this Durabull deployment')
       return
     }
     if (installation?.status === 'active') {
+      trackOutcome('already_connected')
       toast(`Slack is already connected to ${installation.slackTeamName}`)
       return
     }
     if (!overview.canManage) {
+      trackOutcome('not_admin')
       toast(ADMIN_ONLY_HINT)
       return
     }
     if (request === SLACK_INSTALL_REQUEST.confirm) {
+      trackOutcome('confirm')
       toast('Select Add to Slack to connect Slack to this organization', {
         description:
           'You belong to several organizations. Switch organizations first if Slack should connect to another one.',
@@ -163,6 +182,7 @@ export function useSlackInstallRequest(
       })
       return
     }
+    trackOutcome('start')
     connect.mutateAsync({ returnTo: 'integrations' }).catch((error: unknown) => {
       toast.error('Could not start the Slack connection', {
         description: getErrorMessage(error, 'Please try again.'),
@@ -340,7 +360,17 @@ export function SlackNotConfiguredCard() {
         subtitle="This Durabull server does not have Slack app credentials yet."
         actions={
           <Button asChild variant="outline" size="xs">
-            <a href={SLACK_DOCS_URL} target="_blank" rel="noreferrer">
+            <a
+              href={SLACK_DOCS_URL}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() =>
+                trackEvent(AnalyticsEvents.SLACK_DOCS_CLICKED, {
+                  [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+                  [AnalyticsProperties.SLACK_SOURCE]: 'not_configured_card',
+                })
+              }
+            >
               Setup guide
               <ExternalLink className="h-3.5 w-3.5" aria-hidden />
             </a>
@@ -369,6 +399,9 @@ export function SlackNotConfiguredCard() {
               disabled={!manifestJson}
               onClick={async () => {
                 await navigator.clipboard.writeText(manifestJson)
+                trackEvent(AnalyticsEvents.SLACK_MANIFEST_COPIED, {
+                  [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+                })
                 toast.success('Manifest copied', {
                   description: 'Paste it at api.slack.com/apps → Create New App → From a manifest.',
                 })
@@ -379,7 +412,17 @@ export function SlackNotConfiguredCard() {
             </Button>
           </div>
         ) : (
-          <Button type="button" size="xs" variant="outline" onClick={() => setShowManifest(true)}>
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              setShowManifest(true)
+              trackEvent(AnalyticsEvents.SLACK_MANIFEST_VIEWED, {
+                [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+              })
+            }}
+          >
             Show app manifest
           </Button>
         )}
@@ -405,6 +448,12 @@ function ConnectButton({
       variant={variant}
       disabled={connect.isPending}
       onClick={async () => {
+        trackEvent(AnalyticsEvents.SLACK_CONNECT_CLICKED, {
+          [AnalyticsProperties.SLACK_SURFACE]:
+            returnTo === 'destinations' ? SlackSurface.DESTINATIONS : SlackSurface.SETTINGS,
+          [AnalyticsProperties.SLACK_RETURN_TO]: returnTo,
+          [AnalyticsProperties.SLACK_REINSTALL]: label === 'Reconnect',
+        })
         try {
           await connect.mutateAsync({ returnTo })
         } catch (error) {
@@ -596,7 +645,12 @@ export function SlackConnectedCard({
                 variant="outline"
                 size="xs"
                 className="text-status-danger hover:text-status-danger"
-                onClick={() => setConfirmingRemove(true)}
+                onClick={() => {
+                  setConfirmingRemove(true)
+                  trackEvent(AnalyticsEvents.DIALOG_OPENED, {
+                    [AnalyticsProperties.DIALOG_TYPE]: DialogType.REMOVE_SLACK,
+                  })
+                }}
               >
                 Remove
               </Button>
@@ -725,7 +779,13 @@ export function SlackConnectedCard({
 
       <ConfirmDialog
         open={confirmingRemove}
-        onOpenChange={setConfirmingRemove}
+        onOpenChange={(open) => {
+          setConfirmingRemove(open)
+          if (!open)
+            trackEvent(AnalyticsEvents.DIALOG_CLOSED, {
+              [AnalyticsProperties.DIALOG_TYPE]: DialogType.REMOVE_SLACK,
+            })
+        }}
         title="Remove Slack"
         description="Slack destinations stop delivering and existing messages stop updating until Slack is connected again. Your destinations and rules are kept."
         confirmLabel="Remove"
@@ -735,6 +795,10 @@ export function SlackConnectedCard({
           try {
             await disconnect.mutateAsync()
             setConfirmingRemove(false)
+            // Closing from here bypasses onOpenChange, so record the close too.
+            trackEvent(AnalyticsEvents.DIALOG_CLOSED, {
+              [AnalyticsProperties.DIALOG_TYPE]: DialogType.REMOVE_SLACK,
+            })
             toast.success('Slack removed')
           } catch (error) {
             toast.error('Could not remove Slack', {

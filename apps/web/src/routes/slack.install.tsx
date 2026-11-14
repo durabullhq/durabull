@@ -1,3 +1,5 @@
+import { trackEvent } from '@durabull/analytics/browser'
+import { AnalyticsEvents, AnalyticsProperties, SlackSurface } from '@durabull/analytics/events'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -11,6 +13,21 @@ export const Route = createFileRoute('/slack/install')({
   head: () => ({ meta: [{ title: 'Add Durabull to Slack' }] }),
   component: SlackInstallRoute,
 })
+
+function trackInstallOutcome(
+  tracked: { current: boolean },
+  outcome: string,
+  organizationCount?: number
+) {
+  if (tracked.current) return
+  tracked.current = true
+  trackEvent(AnalyticsEvents.SLACK_INSTALL_LINK_OPENED, {
+    [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.INSTALL_LINK,
+    [AnalyticsProperties.SLACK_SOURCE]: 'install_page',
+    [AnalyticsProperties.SLACK_OUTCOME]: outcome,
+    [AnalyticsProperties.SLACK_ORGANIZATION_COUNT]: organizationCount,
+  })
+}
 
 /**
  * The Slack app's direct install URL. Slack's App Directory, the marketing
@@ -35,16 +52,22 @@ function SlackInstallRoute() {
   // An empty list is looked up once more; 'pending' until that lookup settles.
   const [emptyListRecheck, setEmptyListRecheck] = useState<'idle' | 'pending' | 'done'>('idle')
   const recheckStarted = useRef(false)
+  // One analytics event per visit, recording where the install link sent the member.
+  const tracked = useRef(false)
 
   useEffect(() => {
     if (authLoading) return
     if (!isAuthenticated && !isAuthless) {
+      trackInstallOutcome(tracked, 'sign_in')
       navigate({ to: '/login', search: { redirect: '/slack/install' }, replace: true })
       return
     }
     if (orgsLoading || activeOrgLoading) return
     // A failed lookup is not "no organizations": never send members to setup for it.
-    if (orgsError) return
+    if (orgsError) {
+      trackInstallOutcome(tracked, 'error')
+      return
+    }
     if (orgsFetching) return
     if (!organizations || organizations.length === 0) {
       // An organization joined moments ago (an accepted invitation) can be
@@ -61,6 +84,7 @@ function SlackInstallRoute() {
         return
       }
       // Come back here once they have an organization.
+      trackInstallOutcome(tracked, 'setup_organization', 0)
       navigate({ to: '/setup-organization', search: { redirect: '/slack/install' }, replace: true })
       return
     }
@@ -69,6 +93,11 @@ function SlackInstallRoute() {
     // With several organizations, ask before connecting rather than guessing.
     const request =
       organizations.length > 1 ? SLACK_INSTALL_REQUEST.confirm : SLACK_INSTALL_REQUEST.start
+    trackInstallOutcome(
+      tracked,
+      organizations.length > 1 ? 'confirm' : 'start',
+      organizations.length
+    )
     navigate({
       href: `/${encodeURIComponent(slug)}/settings/integrations?slack=${request}`,
       replace: true,

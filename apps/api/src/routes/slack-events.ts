@@ -1,16 +1,19 @@
+import { SlackSurface } from '@durabull/analytics/events'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { SLACK_ACTIONS } from '../lib/slack/alert-message'
 import { finishOrContinueInBackground, runInBackground } from '../lib/slack/background'
 import { getSlackConfig, isSlackConfigured } from '../lib/slack/config'
 import {
+  handleAppHomeOpened,
   handleAppUninstalled,
   handleBlockActions,
   handleConversationMessage,
   handleLinkShared,
   handleSlashCommand,
   parseCommandText,
-  publishHomeTab,
+  recordHelpCommand,
+  recordSlackLinkClicks,
   type SlackBlockActionsPayload,
   type SlackLinkSharedEvent,
 } from '../lib/slack/handlers'
@@ -141,7 +144,7 @@ const app = new Hono()
       case 'app_home_opened':
         if (event.tab === 'home' && event.user) {
           const userId = event.user
-          runInBackground('home tab', () => publishHomeTab(teamId, userId))
+          runInBackground('home tab', () => handleAppHomeOpened(teamId, userId))
         }
         break
       case 'app_mention':
@@ -182,6 +185,8 @@ const app = new Hono()
     const responseUrl = form.get('response_url') ?? ''
 
     if (parseCommandText(text).command === 'help') {
+      // Answered inline; the member and organizations are resolved in the background.
+      recordHelpCommand({ slackTeamId: teamId, slackUserId: userId }, SlackSurface.SLASH_COMMAND)
       return c.json({ response_type: 'ephemeral', text: 'Durabull commands', blocks: helpBlocks() })
     }
     runInBackground('slash command', () =>
@@ -210,6 +215,9 @@ const app = new Hono()
     if (payload.type === 'block_actions' && Array.isArray(payload.actions)) {
       const onlyLinks = payload.actions.every((action) =>
         action.action_id?.startsWith(SLACK_ACTIONS.openLink)
+      )
+      runInBackground('link click analytics', () =>
+        recordSlackLinkClicks(payload as SlackBlockActionsPayload)
       )
       if (!onlyLinks) {
         const actions = payload as SlackBlockActionsPayload

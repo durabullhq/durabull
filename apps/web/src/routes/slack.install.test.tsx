@@ -6,7 +6,10 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   organizations: { data: [] as Array<{ id: string; slug: string }>, isFetching: false },
   refetch: vi.fn(),
+  trackEvent: vi.fn(),
 }))
+
+vi.mock('@durabull/analytics/browser', () => ({ trackEvent: mocks.trackEvent }))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: { component: ComponentType }) => ({ options }),
@@ -35,6 +38,7 @@ describe('/slack/install', () => {
   beforeEach(() => {
     mocks.navigate.mockReset()
     mocks.refetch.mockReset()
+    mocks.trackEvent.mockReset()
     mocks.refetch.mockResolvedValue(undefined)
     mocks.organizations = { data: [], isFetching: false }
   })
@@ -80,5 +84,13 @@ describe('/slack/install', () => {
         replace: true,
       })
     )
+    // One visit, one event, even under Strict Mode's double effects.
+    expect(mocks.trackEvent).toHaveBeenCalledTimes(1)
+    expect(mocks.trackEvent).toHaveBeenCalledWith('slack_install_link_opened', {
+      slack_surface: 'install_link',
+      slack_source: 'install_page',
+      slack_outcome: 'setup_organization',
+      slack_organization_count: 0,
+    })
   })
 })

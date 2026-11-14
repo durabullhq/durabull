@@ -128,6 +128,39 @@ export const AnalyticsEvents = {
   SUBSCRIPTION_CANCELED: 'subscription_canceled',
   FEATURE_DENIED: 'feature_denied',
 
+  // Slack app. Server events record outcomes (authoritative); browser events
+  // record intent in the settings UI (`*_clicked`, `*_viewed`).
+  // Lifecycle (server)
+  SLACK_CONNECT_STARTED: 'slack_connect_started',
+  SLACK_CONNECTED: 'slack_connected',
+  SLACK_CONNECT_FAILED: 'slack_connect_failed',
+  SLACK_DISCONNECTED: 'slack_disconnected',
+  SLACK_UNINSTALLED_FROM_SLACK: 'slack_uninstalled_from_slack',
+  SLACK_SETTINGS_UPDATED: 'slack_settings_updated',
+  SLACK_CONNECTION_TESTED: 'slack_connection_tested',
+  // Destinations (server)
+  SLACK_DESTINATION_CREATED: 'slack_destination_created',
+  SLACK_DESTINATION_UPDATED: 'slack_destination_updated',
+  SLACK_DESTINATION_DELETED: 'slack_destination_deleted',
+  SLACK_DESTINATION_TESTED: 'slack_destination_tested',
+  // Alert delivery (server)
+  SLACK_ALERT_POSTED: 'slack_alert_posted',
+  SLACK_ALERT_POST_FAILED: 'slack_alert_post_failed',
+  SLACK_ALERT_MESSAGE_SYNCED: 'slack_alert_message_synced',
+  // In-Slack usage (server)
+  SLACK_COMMAND_RUN: 'slack_command_run',
+  SLACK_ACTION_PERFORMED: 'slack_action_performed',
+  SLACK_LINK_CLICKED: 'slack_link_clicked',
+  SLACK_APP_HOME_OPENED: 'slack_app_home_opened',
+  SLACK_LINKS_UNFURLED: 'slack_links_unfurled',
+  // Settings UI (browser)
+  SLACK_INSTALL_LINK_OPENED: 'slack_install_link_opened',
+  SLACK_CONNECT_CLICKED: 'slack_connect_clicked',
+  SLACK_MANIFEST_VIEWED: 'slack_manifest_viewed',
+  SLACK_MANIFEST_COPIED: 'slack_manifest_copied',
+  SLACK_DOCS_CLICKED: 'slack_docs_clicked',
+  SLACK_CHANNELS_REFRESHED: 'slack_channels_refreshed',
+
   // Canonical MCP wire values; server captures use @posthog/mcp constants.
   // Shared literals keep the server SDK out of browser bundles (contract tested).
   MCP_RPC_REQUESTED: 'mcp_rpc_requested',
@@ -248,7 +281,60 @@ export const AnalyticsProperties = {
   MCP_AUTH_FAILURE: 'mcp_auth_failure',
   MCP_RATE_LIMIT_SCOPE: 'mcp_rate_limit_scope',
   REDACTION_COUNT: 'redaction_count',
+
+  // Slack properties (coarse labels and counts only: never channel, team, user or message ids)
+  SLACK_SURFACE: 'slack_surface',
+  SLACK_COMMAND: 'slack_command',
+  SLACK_ACTION: 'slack_action',
+  SLACK_OUTCOME: 'slack_outcome',
+  SLACK_SOURCE: 'slack_source',
+  SLACK_RETURN_TO: 'slack_return_to',
+  SLACK_REINSTALL: 'slack_reinstall',
+  SLACK_SETTING: 'slack_setting',
+  SLACK_ENABLED: 'slack_enabled',
+  SLACK_REVOKED_TOKEN: 'slack_revoked_token',
+  SLACK_SHARED_WORKSPACE: 'slack_shared_workspace',
+  SLACK_REASON: 'slack_reason',
+  SLACK_ERROR_CODE: 'slack_error_code',
+  SLACK_LINK_KIND: 'slack_link_kind',
+  SLACK_LINK_COUNT: 'slack_link_count',
+  SLACK_ORGANIZATION_COUNT: 'slack_organization_count',
+  SLACK_MENTION: 'slack_mention',
+  SLACK_USER_GROUP_COUNT: 'slack_user_group_count',
+  /** The destination's thread-updates setting is on. */
+  SLACK_THREAD_UPDATES: 'slack_thread_updates',
+  /** A thread reply describing the state change was posted. */
+  SLACK_THREAD_REPLY_POSTED: 'slack_thread_reply_posted',
+  SLACK_SNOOZE_MINUTES: 'slack_snooze_minutes',
+  SLACK_ALERT_STATE: 'slack_alert_state',
+  SLACK_STATE_CHANGED: 'slack_state_changed',
+  SLACK_RULE_TYPE: 'slack_rule_type',
+  SLACK_ACTIONS_ENABLED: 'slack_actions_enabled',
+  SLACK_UNFURLS_ENABLED: 'slack_unfurls_enabled',
+  SLACK_MISSING_SCOPE_COUNT: 'slack_missing_scope_count',
+  SLACK_IDENTIFIED_MEMBER: 'slack_identified_member',
 } as const
+
+/** Where in Slack (or Durabull) a Slack interaction happened. */
+export const SlackSurface = {
+  SLASH_COMMAND: 'slash_command',
+  MENTION: 'mention',
+  DIRECT_MESSAGE: 'direct_message',
+  ALERT_MESSAGE: 'alert_message',
+  /** A non-alert message Durabull posted, such as an @Durabull reply. */
+  MESSAGE: 'message',
+  EPHEMERAL: 'ephemeral',
+  APP_HOME: 'app_home',
+  LINK_UNFURL: 'link_unfurl',
+  SETTINGS: 'settings',
+  DESTINATIONS: 'destinations',
+  INSTALL_LINK: 'install_link',
+  OAUTH: 'oauth',
+  /** The durabull.io marketing and docs site. */
+  MARKETING_SITE: 'marketing_site',
+} as const
+
+export type SlackSurfaceValue = (typeof SlackSurface)[keyof typeof SlackSurface]
 
 /**
  * Auth method values
@@ -283,6 +369,7 @@ export const DialogType = {
   ADD_JOB: 'add_job',
   ADD_SCHEDULED_JOB: 'add_scheduled_job',
   DELETE_JOB_LOGS: 'delete_job_logs',
+  REMOVE_SLACK: 'remove_slack',
 } as const
 
 export type DialogTypeValue = (typeof DialogType)[keyof typeof DialogType]

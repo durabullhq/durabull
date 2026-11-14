@@ -6,6 +6,7 @@ import {
   mentionPrefix,
   SLACK_ACTIONS,
 } from './alert-message'
+import { oauthErrorCode, slackErrorCode } from './analytics'
 import {
   callSlack,
   isAmbiguousSlackFailure,
@@ -18,8 +19,8 @@ import { buildSlackAuthorizeUrl, SLACK_BOT_EVENTS, SLACK_BOT_SCOPES } from './co
 import { escapeSlackText, formatDuration, slackCodeBlock } from './format'
 import { parseCommandText, parseDurabullLink, stripMentions } from './handlers'
 import { buildSlackAppManifest } from './manifest'
-import { statusBlocks } from './views'
 import { signSlackRequest, verifySlackSignature } from './verify'
+import { statusBlocks } from './views'
 
 const view = {
   eventId: '11111111-1111-4111-8111-111111111111',
@@ -407,5 +408,25 @@ describe('Slack status view', () => {
     expect(text).not.toContain('No open incidents')
     expect(text).toContain('*2* open incidents')
     expect(text).toContain('with 2 open incident(s) counted above')
+  })
+})
+
+describe('analytics error codes', () => {
+  it('keeps only known OAuth errors from the callback URL', () => {
+    expect(oauthErrorCode('access_denied')).toBe('access_denied')
+    expect(oauthErrorCode('invalid_scope')).toBe('invalid_scope')
+    // Short names and domains look like codes but are free text.
+    expect(oauthErrorCode('ada')).toBe('other')
+    expect(oauthErrorCode('ada.lovelace')).toBe('other')
+    expect(oauthErrorCode('customer.example.com')).toBe('other')
+    expect(oauthErrorCode('Ada Lovelace <ada@example.com>')).toBe('other')
+    expect(oauthErrorCode(undefined)).toBe('other')
+  })
+
+  it('keeps snake_case Slack API codes and drops anything else', () => {
+    expect(slackErrorCode(new SlackApiError('channel_not_found'))).toBe('channel_not_found')
+    expect(slackErrorCode(new SlackApiError('customer.example.com'))).toBe('other')
+    expect(slackErrorCode(new SlackApiError('x'.repeat(65)))).toBe('other')
+    expect(slackErrorCode(new Error('boom'))).toBe('internal_error')
   })
 })

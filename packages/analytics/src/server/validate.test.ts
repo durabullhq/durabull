@@ -42,4 +42,23 @@ describe('validateTelemetryPayload', () => {
       expect(result.properties.environment).toBe('production')
     }
   })
+
+  it('accepts every Slack property and rejects Slack payloads carrying ids', () => {
+    const slackProperties = Object.entries(AnalyticsProperties)
+      .filter(([key]) => key.startsWith('SLACK_'))
+      .map(([, value]) => value)
+    expect(slackProperties.length).toBeGreaterThan(20)
+    const accepted = validateTelemetryPayload(
+      AnalyticsEvents.SLACK_COMMAND_RUN,
+      Object.fromEntries(slackProperties.map((key) => [key, 'value'])),
+      productionRuntime
+    )
+    expect(accepted.ok).toBe(true)
+
+    const rejected = validateTelemetryPayload(AnalyticsEvents.SLACK_ACTION_PERFORMED, {
+      [AnalyticsProperties.SLACK_ACTION]: 'acknowledge',
+      slack_team_id: 'T0ACME',
+    })
+    expect(rejected).toEqual({ ok: false, error: 'invalid_properties' })
+  })
 })

@@ -250,13 +250,14 @@ export const slackInstallationRepository = {
   /**
    * Slack reported the app was uninstalled or its tokens revoked for a whole
    * workspace. With `occurredAt`, installations made after the event (a
-   * reconnect that beat a late event) keep their new tokens.
+   * reconnect that beat a late event) keep their new tokens. Returns the
+   * organizations whose installation was revoked.
    */
   async markTeamRevoked(
     slackTeamId: string,
     reason: string,
     options: { occurredAt?: Date } = {}
-  ): Promise<number> {
+  ): Promise<string[]> {
     const db = await getDb()
     // Slack event times have one-second precision; a reconnect in the same
     // second as the event is treated as revoked too (the safe side).
@@ -273,8 +274,8 @@ export const slackInstallationRepository = {
           installedBefore ? lt(slackInstallation.installedAt, installedBefore) : undefined
         )
       )
-      .returning({ id: slackInstallation.id })
-    return rows.length
+      .returning({ organizationId: slackInstallation.organizationId })
+    return rows.map((row) => row.organizationId)
   },
 
   async delete(organizationId: string): Promise<boolean> {
