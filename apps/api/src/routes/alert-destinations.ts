@@ -1,4 +1,4 @@
-import { AnalyticsEvents, SlackSurface } from '@durabull/analytics/events'
+import { AnalyticsEvents, AnalyticsProperties, SlackSurface } from '@durabull/analytics/events'
 import {
   type AlertDestination,
   type AlertSlackDestinationConfig,
@@ -33,7 +33,12 @@ import {
   SLACK_WORKSPACE_CHANGED_MESSAGE,
   slackDestinationMatchesWorkspace,
 } from '../lib/slack/alerts'
-import { recordSlackEvent, slackErrorCode } from '../lib/slack/analytics'
+import {
+  recordSlackEvent,
+  type SlackAnalyticsProperties,
+  slackDestinationProperties,
+  slackErrorCode,
+} from '../lib/slack/analytics'
 import { getSlackChannel, postSlackMessage, SlackApiError } from '../lib/slack/client'
 import { appBaseUrl } from '../lib/slack/config'
 import { withSlackToken } from '../lib/slack/token'
@@ -184,13 +189,15 @@ async function validateSlackDestinationConfig(
   return { config: { ...config, channelName, slackTeamId: installation.slackTeamId } }
 }
 
-/** Coarse, id-free description of a Slack destination's settings for analytics. */
-function slackDestinationProperties(config: Partial<AlertSlackDestinationConfig> | null) {
+/** Id-free analytics properties for a Slack destination managed in settings. */
+function destinationAnalytics(config: unknown): SlackAnalyticsProperties {
+  const settings =
+    typeof config === 'object' && config !== null
+      ? (config as Partial<AlertSlackDestinationConfig>)
+      : null
   return {
-    slack_surface: SlackSurface.DESTINATIONS,
-    slack_mention: config?.mention ?? 'none',
-    slack_user_group_count: config?.userGroupIds?.length ?? 0,
-    slack_thread_updates: config?.threadUpdates !== false,
+    [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.DESTINATIONS,
+    ...slackDestinationProperties(settings),
   }
 }
 
@@ -292,7 +299,10 @@ const app = new Hono()
         recordSlackEvent(
           AnalyticsEvents.SLACK_DESTINATION_CREATED,
           { organizationId, userId: c.get('user')?.id ?? null },
-          { ...slackDestinationProperties(slackConfig), slack_enabled: destination.enabled }
+          {
+            ...destinationAnalytics(slackConfig),
+            [AnalyticsProperties.SLACK_ENABLED]: destination.enabled,
+          }
         )
       }
       return c.json({ destination: serializeDestination(destination) }, 201)
@@ -406,11 +416,9 @@ const app = new Hono()
           AnalyticsEvents.SLACK_DESTINATION_UPDATED,
           { organizationId, userId: c.get('user')?.id ?? null },
           {
-            ...slackDestinationProperties(
-              (destination.config ?? null) as Partial<AlertSlackDestinationConfig> | null
-            ),
-            slack_enabled: destination.enabled,
-            slack_setting:
+            ...destinationAnalytics(destination.config),
+            [AnalyticsProperties.SLACK_ENABLED]: destination.enabled,
+            [AnalyticsProperties.SLACK_SETTING]:
               body.enabled !== undefined && body.enabled !== existing.enabled
                 ? 'enabled'
                 : updatedSlackConfig
@@ -453,9 +461,7 @@ const app = new Hono()
       recordSlackEvent(
         AnalyticsEvents.SLACK_DESTINATION_DELETED,
         { organizationId, userId: c.get('user')?.id ?? null },
-        slackDestinationProperties(
-          (existing.config ?? null) as Partial<AlertSlackDestinationConfig> | null
-        )
+        destinationAnalytics(existing.config)
       )
     }
 
@@ -552,11 +558,9 @@ const app = new Hono()
         const testActor = { organizationId, userId: c.get('user')?.id ?? null }
         const recordTest = (success: boolean, errorCode?: string) =>
           recordSlackEvent(AnalyticsEvents.SLACK_DESTINATION_TESTED, testActor, {
-            ...slackDestinationProperties(
-              (destination.config ?? null) as Partial<AlertSlackDestinationConfig> | null
-            ),
-            success,
-            slack_error_code: errorCode,
+            ...destinationAnalytics(destination.config),
+            [AnalyticsProperties.SUCCESS]: success,
+            [AnalyticsProperties.SLACK_ERROR_CODE]: errorCode,
           })
         if (!takeSlackTestSlot(destination.id)) {
           return c.json({ error: 'Wait a few seconds before sending another test message.' }, 429)

@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import { ArrowRight, BookOpen, Check, KeyRound, LifeBuoy, ShieldCheck, Users } from 'lucide-react'
 import Link from 'next/link'
+import { usePostHog } from 'posthog-js/react'
 import { useState } from 'react'
 import { CONTACT_EMAIL, WEB_APP_URL } from '@/lib/config'
 import { slackFaqs } from '@/lib/slack-faqs'
@@ -16,11 +17,36 @@ export const SLACK_INSTALL_URL = `${WEB_APP_URL}/slack/install`
 const SLACK_DOCS_URL = '/documentation/integrations/slack'
 const SCREENSHOTS = '/images/integrations/slack'
 
+/**
+ * Records clicks on the page's Slack calls to action. Event and property names
+ * match the app's Slack analytics (`slack_connect_clicked`, `slack_docs_clicked`)
+ * so the marketing site shows up in the same funnel, under `slack_surface`.
+ */
+function useSlackLandingTracker() {
+  const posthog = usePostHog()
+  return (event: 'slack_connect_clicked' | 'slack_docs_clicked', placement: string) => {
+    try {
+      posthog?.capture(event, { slack_surface: 'marketing_site', slack_source: placement })
+    } catch {
+      // Analytics must never block navigation.
+    }
+  }
+}
+
 /** Slack's official Add to Slack button, as its brand guidelines require. */
-export function AddToSlackButton({ className }: { className?: string }) {
+export function AddToSlackButton({
+  className,
+  placement = 'other',
+}: {
+  className?: string
+  /** Where on the page the button sits, for analytics. */
+  placement?: string
+}) {
+  const track = useSlackLandingTracker()
   return (
     <a
       href={SLACK_INSTALL_URL}
+      onClick={() => track('slack_connect_clicked', placement)}
       className={className}
       aria-label="Add Durabull to Slack"
       data-testid="add-to-slack"
@@ -57,6 +83,7 @@ function Screenshot({ file, alt, priority }: { file: string; alt: string; priori
 
 export function SlackHero() {
   const fadeUp = useHeroFadeUp()
+  const track = useSlackLandingTracker()
   return (
     <section className="relative overflow-hidden bg-[var(--v2-bg)] pb-20 pt-36 sm:pt-44">
       <div aria-hidden className="v2-blueprint v2-blueprint-fade absolute inset-0" />
@@ -89,9 +116,13 @@ export function SlackHero() {
           {...fadeUp(0.3)}
           className="mt-9 flex flex-wrap items-center justify-center gap-4"
         >
-          <AddToSlackButton className="inline-flex rounded-md transition-opacity hover:opacity-90" />
+          <AddToSlackButton
+            placement="hero"
+            className="inline-flex rounded-md transition-opacity hover:opacity-90"
+          />
           <Link
             href={SLACK_DOCS_URL}
+            onClick={() => track('slack_docs_clicked', 'hero')}
             className="v2-btn-ghost inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-[15px] font-medium"
           >
             <BookOpen className="size-4" />
@@ -236,7 +267,10 @@ export function SlackInstallSteps() {
           ))}
         </ol>
         <Reveal delay={0.2} className="mt-10 flex flex-wrap items-center gap-4">
-          <AddToSlackButton className="inline-flex rounded-md transition-opacity hover:opacity-90" />
+          <AddToSlackButton
+            placement="steps"
+            className="inline-flex rounded-md transition-opacity hover:opacity-90"
+          />
           <Link
             href={`${WEB_APP_URL}/signup`}
             className="inline-flex items-center gap-1.5 text-[14.5px] font-medium text-[var(--v2-fg)] underline-offset-4 hover:underline"
@@ -276,6 +310,7 @@ const safeguards = [
 ]
 
 export function SlackSecurity() {
+  const track = useSlackLandingTracker()
   return (
     <section className="relative border-t border-[var(--v2-line)] bg-[var(--v2-bg)] py-24">
       <div className="mx-auto max-w-7xl px-5 sm:px-8">
@@ -291,7 +326,11 @@ export function SlackSecurity() {
               privacy policy
             </Link>{' '}
             and the{' '}
-            <Link href={`${SLACK_DOCS_URL}#permissions`} className="underline underline-offset-4">
+            <Link
+              href={`${SLACK_DOCS_URL}#permissions`}
+              onClick={() => track('slack_docs_clicked', 'permissions')}
+              className="underline underline-offset-4"
+            >
               permissions it requests
             </Link>
             .
@@ -316,6 +355,7 @@ export function SlackSecurity() {
 /* ---------------- FAQ and support ---------------- */
 
 export function SlackFaq() {
+  const track = useSlackLandingTracker()
   const [open, setOpen] = useState<number | null>(0)
   return (
     <section
@@ -338,7 +378,11 @@ export function SlackFaq() {
               contact us
             </Link>
             . No account needed. The{' '}
-            <Link href={SLACK_DOCS_URL} className="underline underline-offset-4">
+            <Link
+              href={SLACK_DOCS_URL}
+              onClick={() => track('slack_docs_clicked', 'self_hosted')}
+              className="underline underline-offset-4"
+            >
               setup guide
             </Link>{' '}
             covers every option.
@@ -383,7 +427,10 @@ export function SlackFinalCta() {
             Your next incident can start and end in one thread.
           </h2>
           <div className="mt-9 flex justify-center">
-            <AddToSlackButton className="inline-flex rounded-md transition-opacity hover:opacity-90" />
+            <AddToSlackButton
+              placement="final_cta"
+              className="inline-flex rounded-md transition-opacity hover:opacity-90"
+            />
           </div>
           <p className="v2-mono mt-7 text-[var(--v2-faint)]">
             Team plan and up · 14-day free trial · self-hosted included

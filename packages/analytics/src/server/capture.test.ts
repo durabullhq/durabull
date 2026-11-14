@@ -529,6 +529,30 @@ describe('captureMcpAnalyticsServerEvent coalescing', () => {
     )
   })
 
+  it('sends an identified event without a person profile when asked', async () => {
+    resetServerAnalyticsForTests()
+    configure()
+    const { bodies, restore } = captureFetchBodies()
+
+    await captureMcpAnalyticsServerEvent({
+      event: AnalyticsEvents.SLACK_ALERT_POSTED,
+      properties: { slack_rule_type: 'job_failed' },
+      includeAnonymous: false,
+      identifiedDistinctId: 'hashed-org-key',
+      identifiedOrganizationGroup: 'org-1',
+      identifiedPersonProfile: false,
+    })
+
+    restore()
+
+    const [capture] = (bodies[0] as { batch: Array<{ properties: Record<string, unknown> }> }).batch
+    expect(capture?.properties).toMatchObject({
+      distinct_id: 'hashed-org-key',
+      $process_person_profile: false,
+      $groups: { organization: 'org-1' },
+    })
+  })
+
   it('clamps stale explicit timestamps for MCP analytics capture', async () => {
     resetServerAnalyticsForTests()
     configure({ appPosthogKey: 'phc_durabull' })

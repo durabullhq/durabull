@@ -115,6 +115,8 @@ function buildIdentifiedCapture(input: {
   organizationGroup?: string | null
   timestamp?: string
   hmacSecret: string | null
+  /** False for an identified event with no real person behind it (an org or a hashed key). */
+  processPersonProfile?: boolean
 }): PosthogBatchCapture {
   const organizationGroup =
     input.organizationGroup !== undefined
@@ -128,7 +130,7 @@ function buildIdentifiedCapture(input: {
     properties: input.properties,
     distinctId: input.distinctId,
     organizationId: organizationGroup,
-    processPersonProfile: true,
+    processPersonProfile: input.processPersonProfile ?? true,
     timestamp: input.timestamp,
   }
 }
@@ -276,6 +278,11 @@ export async function captureMcpAnalyticsServerEvent(input: {
   identifiedDistinctId?: string | null
   /** App-project group key, matching the browser; never copied to anonymous telemetry. */
   identifiedOrganizationGroup?: string | null
+  /**
+   * Whether the identified distinct id is a real person. Pass false for
+   * organization-level or hashed keys so they never become PostHog persons.
+   */
+  identifiedPersonProfile?: boolean
   organizationId?: string | null
   timestamp?: string
 }): Promise<void> {
@@ -319,6 +326,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
             organizationGroup: input.identifiedOrganizationGroup,
             timestamp,
             hmacSecret: options.hmacSecret,
+            processPersonProfile: input.identifiedPersonProfile,
           })
         : null
 
@@ -389,6 +397,7 @@ export async function captureMcpAnalyticsServerEvent(input: {
               organizationGroup: input.identifiedOrganizationGroup,
               timestamp,
               hmacSecret: options.hmacSecret,
+              processPersonProfile: input.identifiedPersonProfile,
             }),
           ],
           { runtimeContext, mergeRuntime: true }

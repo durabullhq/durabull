@@ -301,7 +301,10 @@ export const AnalyticsProperties = {
   SLACK_ORGANIZATION_COUNT: 'slack_organization_count',
   SLACK_MENTION: 'slack_mention',
   SLACK_USER_GROUP_COUNT: 'slack_user_group_count',
+  /** The destination's thread-updates setting is on. */
   SLACK_THREAD_UPDATES: 'slack_thread_updates',
+  /** A thread reply describing the state change was posted. */
+  SLACK_THREAD_REPLY_POSTED: 'slack_thread_reply_posted',
   SLACK_SNOOZE_MINUTES: 'slack_snooze_minutes',
   SLACK_ALERT_STATE: 'slack_alert_state',
   SLACK_STATE_CHANGED: 'slack_state_changed',
@@ -327,6 +330,8 @@ export const SlackSurface = {
   DESTINATIONS: 'destinations',
   INSTALL_LINK: 'install_link',
   OAUTH: 'oauth',
+  /** The durabull.io marketing and docs site. */
+  MARKETING_SITE: 'marketing_site',
 } as const
 
 export type SlackSurfaceValue = (typeof SlackSurface)[keyof typeof SlackSurface]

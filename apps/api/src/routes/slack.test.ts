@@ -28,7 +28,7 @@ import { toBillingHttpError } from '../billing/errors'
 import { dispatchAlertNotification } from '../lib/alert-notifier'
 import { SLACK_ACTIONS } from '../lib/slack/alert-message'
 import { syncSlackAlertMessages } from '../lib/slack/alerts'
-import { flushSlackAnalytics } from '../lib/slack/analytics'
+import { clearSlackAnalyticsCache, flushSlackAnalytics } from '../lib/slack/analytics'
 import { flushSlackBackgroundWork } from '../lib/slack/background'
 import { SlackApiError } from '../lib/slack/client'
 import { SLACK_BOT_SCOPES } from '../lib/slack/config'
@@ -366,6 +366,7 @@ describe('Slack integration', () => {
   afterEach(async () => {
     await flushSlackBackgroundWork()
     await flushSlackAnalytics()
+    clearSlackAnalyticsCache()
     resetServerAnalyticsForTests()
     slack.restore()
     setBillingConfigForTests(null)
@@ -1599,14 +1600,15 @@ describe('Slack integration', () => {
       await flushSlackBackgroundWork()
       await flushSlackAnalytics()
     }
-    // Identified copies feed per-customer analytics; anonymous copies are sanitized telemetry.
+    // Identified copies feed per-customer analytics; anonymous copies are sanitized
+    // telemetry and carry the install's instance_key.
     const identified = (event: string) =>
       slack.analytics.filter(
-        (entry) => entry.event === event && entry.properties.$process_person_profile === true
+        (entry) => entry.event === event && entry.properties.instance_key === undefined
       )
     const anonymous = (event: string) =>
       slack.analytics.filter(
-        (entry) => entry.event === event && entry.properties.$process_person_profile === false
+        (entry) => entry.event === event && entry.properties.instance_key !== undefined
       )
 
     const { rule, event } = await seed()
@@ -1660,14 +1662,16 @@ describe('Slack integration', () => {
       rule.name
     )
     await settle()
-    expect(identified('slack_alert_posted')[0]?.properties).toMatchObject({
-      // No member did this: the organization itself is the actor.
-      distinct_id: ORG_ID,
+    const alertPosted = identified('slack_alert_posted')[0]?.properties
+    expect(alertPosted).toMatchObject({
+      // No member did this: it counts for the organization, never as a person.
       $groups: { organization: ORG_ID },
+      $process_person_profile: false,
       slack_rule_type: 'job_failed',
       slack_alert_state: 'firing',
       slack_identified_member: false,
     })
+    expect(String(alertPosted?.distinct_id)).toMatch(/^[0-9a-f]{64}$/)
 
     const [message] = await slackAlertMessageRepository.listByEvent(event.id)
     await app.request(
@@ -1709,9 +1713,15 @@ describe('Slack integration', () => {
         slack_surface: 'alert_message',
         success: true,
       },
-      { slack_action: 'resolve', success: false, slack_reason: 'not_a_member' },
+      {
+        slack_action: 'resolve',
+        success: false,
+        slack_reason: 'not_a_member',
+        $process_person_profile: false,
+      },
     ])
-    // Someone who is not a member is counted by a hashed key, never their Slack id.
+    // Only members are persons; anyone else is a hashed key, never their Slack id.
+    expect(actions[0]?.$process_person_profile).toBe(true)
     expect(String(actions[1]?.distinct_id)).toMatch(/^[0-9a-f]{64}$/)
     expect(identified('slack_alert_message_synced')[0]?.properties).toMatchObject({
       slack_alert_state: 'acknowledged',
@@ -1770,7 +1780,10 @@ describe('Slack integration', () => {
         user: 'UADA',
         channel: 'C0ALERTS',
         message_ts: '1700000000.000001',
-        links: [{ url: `${BASE_URL}/acme/c/${CONNECTION_ID}/alerts/rules/${rule.id}` }],
+        links: [
+          { url: `${BASE_URL}/acme/c/${CONNECTION_ID}/alerts/rules/${rule.id}` },
+          { url: `${BASE_URL}/elsewhere/c/${CONNECTION_ID}/queues/emails` },
+        ],
       })
     )
     await settle()
@@ -1805,10 +1818,51 @@ describe('Slack integration', () => {
       distinct_id: 'user-ada',
       slack_outcome: 'ok',
     })
-    expect(identified('slack_links_unfurled')[0]?.properties).toMatchObject({
-      slack_outcome: 'ok',
-      slack_link_kind: 'rule',
-      slack_link_count: 1,
+    const unfurled = identified('slack_links_unfurled').map((entry) => entry.properties)
+    expect(unfurled).toContainEqual(
+      expect.objectContaining({
+        distinct_id: 'user-ada',
+        slack_outcome: 'ok',
+        slack_link_kind: 'rule',
+        slack_link_count: 1,
+      })
+    )
+    // A link to an organization this workspace is not connected to is still counted.
+    expect(unfurled).toContainEqual(
+      expect.objectContaining({ slack_outcome: 'not_connected', slack_link_kind: 'queue' })
+    )
+
+    // Slack rejecting the unfurl turns the successful links into an error.
+    slack.failures['chat.unfurl'] = 'cannot_unfurl_url'
+    await app.request(
+      callback('EvA5', {
+        type: 'link_shared',
+        user: 'UADA',
+        channel: 'C0ALERTS',
+        message_ts: '1700000000.000002',
+        links: [{ url: `${BASE_URL}/acme/c/${CONNECTION_ID}/alerts/rules/${rule.id}` }],
+      })
+    )
+    await settle()
+    delete slack.failures['chat.unfurl']
+    expect(identified('slack_links_unfurled').at(-1)?.properties).toMatchObject({
+      slack_outcome: 'error',
+      slack_error_code: 'cannot_unfurl_url',
+    })
+
+    // A member who is not an admin is refused before OAuth; that is recorded too.
+    sessionUser = BOB
+    const refused = await app.request('/api/integrations/slack/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(refused.status).toBe(403)
+    sessionUser = ADA
+    await settle()
+    expect(identified('slack_connect_failed')[0]?.properties).toMatchObject({
+      distinct_id: 'user-bob',
+      slack_reason: 'not_admin',
     })
 
     await app.request(

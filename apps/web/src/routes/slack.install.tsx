@@ -1,5 +1,5 @@
 import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents, SlackSurface } from '@durabull/analytics/events'
+import { AnalyticsEvents, AnalyticsProperties, SlackSurface } from '@durabull/analytics/events'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -22,10 +22,10 @@ function trackInstallOutcome(
   if (tracked.current) return
   tracked.current = true
   trackEvent(AnalyticsEvents.SLACK_INSTALL_LINK_OPENED, {
-    slack_surface: SlackSurface.INSTALL_LINK,
-    slack_source: 'install_page',
-    slack_outcome: outcome,
-    slack_organization_count: organizationCount,
+    [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.INSTALL_LINK,
+    [AnalyticsProperties.SLACK_SOURCE]: 'install_page',
+    [AnalyticsProperties.SLACK_OUTCOME]: outcome,
+    [AnalyticsProperties.SLACK_ORGANIZATION_COUNT]: organizationCount,
   })
 }
 

@@ -1,4 +1,4 @@
-import { AnalyticsEvents, SlackSurface } from '@durabull/analytics/events'
+import { AnalyticsEvents, AnalyticsProperties, SlackSurface } from '@durabull/analytics/events'
 import {
   type AlertDelivery,
   type AlertDestination,
@@ -24,7 +24,12 @@ import {
   mentionPrefix,
   type SlackAlertMessageView,
 } from './alert-message'
-import { recordSlackEvent, slackErrorCode } from './analytics'
+import {
+  recordSlackEvent,
+  type SlackAnalyticsProperties,
+  slackDestinationProperties,
+  slackErrorCode,
+} from './analytics'
 import { runInBackground } from './background'
 import {
   getSlackPermalink,
@@ -264,35 +269,27 @@ export async function sendSlackDestinationAlert(input: {
   organizationSlug: string | null
   requireClaimedAt: (delivery: AlertDelivery) => Date
 }): Promise<void> {
-  const config = (() => {
-    try {
-      return parseSlackDestinationConfig(input.destination)
-    } catch {
-      return null
-    }
-  })()
-  const properties = {
-    slack_surface: SlackSurface.ALERT_MESSAGE,
-    slack_rule_type: input.event.type,
-    slack_mention: config?.mention ?? 'none',
-    slack_user_group_count: config?.userGroupIds?.length ?? 0,
-    slack_thread_updates: slackThreadUpdatesEnabled(input.destination),
-  }
   const actor = { organizationId: input.event.organizationId }
+  let properties: SlackAnalyticsProperties = {
+    [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.ALERT_MESSAGE,
+    [AnalyticsProperties.SLACK_RULE_TYPE]: input.event.type,
+  }
   try {
-    const result = await deliverSlackDestinationAlert(input)
+    const config = parseSlackDestinationConfig(input.destination)
+    properties = { ...properties, ...slackDestinationProperties(config) }
+    const result = await deliverSlackDestinationAlert(input, config)
     if (result.posted) {
       recordSlackEvent(AnalyticsEvents.SLACK_ALERT_POSTED, actor, {
         ...properties,
         // The state rendered in Slack, which can differ from the queued event's status.
-        slack_alert_state: result.state,
+        [AnalyticsProperties.SLACK_ALERT_STATE]: result.state,
       })
     }
   } catch (error) {
     recordSlackEvent(AnalyticsEvents.SLACK_ALERT_POST_FAILED, actor, {
       ...properties,
-      slack_error_code: slackErrorCode(error),
-      slack_reason:
+      [AnalyticsProperties.SLACK_ERROR_CODE]: slackErrorCode(error),
+      [AnalyticsProperties.SLACK_REASON]:
         error instanceof SlackApiError && error.retryable
           ? 'retryable'
           : error instanceof SlackInstallationUnavailableError
@@ -304,10 +301,10 @@ export async function sendSlackDestinationAlert(input: {
 }
 
 async function deliverSlackDestinationAlert(
-  input: Parameters<typeof sendSlackDestinationAlert>[0]
+  input: Parameters<typeof sendSlackDestinationAlert>[0],
+  config: AlertSlackDestinationConfig
 ): Promise<{ posted: false } | { posted: true; state: SlackAlertMessageView['state'] }> {
   const { delivery, destination } = input
-  const config = parseSlackDestinationConfig(destination)
   const metadata = (delivery.providerMetadata ?? {}) as Record<string, unknown>
 
   const existing = await slackAlertMessageRepository.findByDelivery(delivery.id)
@@ -538,11 +535,11 @@ async function syncOneMessage(
     AnalyticsEvents.SLACK_ALERT_MESSAGE_SYNCED,
     { organizationId: claim.organizationId },
     {
-      slack_surface: SlackSurface.ALERT_MESSAGE,
-      slack_alert_state: view.state,
-      slack_state_changed: stateChanged,
-      slack_thread_updates: threadReplyPosted,
-      slack_rule_type: event.type,
+      [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.ALERT_MESSAGE,
+      [AnalyticsProperties.SLACK_ALERT_STATE]: view.state,
+      [AnalyticsProperties.SLACK_STATE_CHANGED]: stateChanged,
+      [AnalyticsProperties.SLACK_THREAD_REPLY_POSTED]: threadReplyPosted,
+      [AnalyticsProperties.SLACK_RULE_TYPE]: event.type,
     }
   )
   if (!recorded) {

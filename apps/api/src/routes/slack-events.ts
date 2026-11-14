@@ -186,7 +186,7 @@ const app = new Hono()
 
     if (parseCommandText(text).command === 'help') {
       // Answered inline; the member and organizations are resolved in the background.
-      recordHelpCommand(teamId, userId, SlackSurface.SLASH_COMMAND)
+      recordHelpCommand({ slackTeamId: teamId, slackUserId: userId }, SlackSurface.SLASH_COMMAND)
       return c.json({ response_type: 'ephemeral', text: 'Durabull commands', blocks: helpBlocks() })
     }
     runInBackground('slash command', () =>

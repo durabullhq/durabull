@@ -177,6 +177,7 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'slack_mention',
   'slack_user_group_count',
   'slack_thread_updates',
+  'slack_thread_reply_posted',
   'slack_snooze_minutes',
   'slack_alert_state',
   'slack_state_changed',

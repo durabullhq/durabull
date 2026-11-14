@@ -1,5 +1,10 @@
 import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents, DialogType, SlackSurface } from '@durabull/analytics/events'
+import {
+  AnalyticsEvents,
+  AnalyticsProperties,
+  DialogType,
+  SlackSurface,
+} from '@durabull/analytics/events'
 import { PLANS, requiredPlanForFeature } from '@durabull/api-client/billing'
 import { Link } from '@tanstack/react-router'
 import {
@@ -132,9 +137,9 @@ export function useSlackInstallRequest(
     window.history.replaceState(window.history.state, '', url.toString())
     const trackOutcome = (outcome: string) =>
       trackEvent(AnalyticsEvents.SLACK_INSTALL_LINK_OPENED, {
-        slack_surface: SlackSurface.SETTINGS,
-        slack_source: 'integrations_page',
-        slack_outcome: outcome,
+        [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+        [AnalyticsProperties.SLACK_SOURCE]: 'integrations_page',
+        [AnalyticsProperties.SLACK_OUTCOME]: outcome,
       })
 
     if (!verified) {
@@ -361,8 +366,8 @@ export function SlackNotConfiguredCard() {
               rel="noreferrer"
               onClick={() =>
                 trackEvent(AnalyticsEvents.SLACK_DOCS_CLICKED, {
-                  slack_surface: SlackSurface.SETTINGS,
-                  slack_source: 'not_configured_card',
+                  [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
+                  [AnalyticsProperties.SLACK_SOURCE]: 'not_configured_card',
                 })
               }
             >
@@ -395,7 +400,7 @@ export function SlackNotConfiguredCard() {
               onClick={async () => {
                 await navigator.clipboard.writeText(manifestJson)
                 trackEvent(AnalyticsEvents.SLACK_MANIFEST_COPIED, {
-                  slack_surface: SlackSurface.SETTINGS,
+                  [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
                 })
                 toast.success('Manifest copied', {
                   description: 'Paste it at api.slack.com/apps → Create New App → From a manifest.',
@@ -414,7 +419,7 @@ export function SlackNotConfiguredCard() {
             onClick={() => {
               setShowManifest(true)
               trackEvent(AnalyticsEvents.SLACK_MANIFEST_VIEWED, {
-                slack_surface: SlackSurface.SETTINGS,
+                [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.SETTINGS,
               })
             }}
           >
@@ -444,10 +449,10 @@ function ConnectButton({
       disabled={connect.isPending}
       onClick={async () => {
         trackEvent(AnalyticsEvents.SLACK_CONNECT_CLICKED, {
-          slack_surface:
+          [AnalyticsProperties.SLACK_SURFACE]:
             returnTo === 'destinations' ? SlackSurface.DESTINATIONS : SlackSurface.SETTINGS,
-          slack_return_to: returnTo,
-          slack_reinstall: label === 'Reconnect',
+          [AnalyticsProperties.SLACK_RETURN_TO]: returnTo,
+          [AnalyticsProperties.SLACK_REINSTALL]: label === 'Reconnect',
         })
         try {
           await connect.mutateAsync({ returnTo })
@@ -643,7 +648,7 @@ export function SlackConnectedCard({
                 onClick={() => {
                   setConfirmingRemove(true)
                   trackEvent(AnalyticsEvents.DIALOG_OPENED, {
-                    dialog_type: DialogType.REMOVE_SLACK,
+                    [AnalyticsProperties.DIALOG_TYPE]: DialogType.REMOVE_SLACK,
                   })
                 }}
               >
@@ -777,7 +782,9 @@ export function SlackConnectedCard({
         onOpenChange={(open) => {
           setConfirmingRemove(open)
           if (!open)
-            trackEvent(AnalyticsEvents.DIALOG_CLOSED, { dialog_type: DialogType.REMOVE_SLACK })
+            trackEvent(AnalyticsEvents.DIALOG_CLOSED, {
+              [AnalyticsProperties.DIALOG_TYPE]: DialogType.REMOVE_SLACK,
+            })
         }}
         title="Remove Slack"
         description="Slack destinations stop delivering and existing messages stop updating until Slack is connected again. Your destinations and rules are kept."
@@ -789,7 +796,9 @@ export function SlackConnectedCard({
             await disconnect.mutateAsync()
             setConfirmingRemove(false)
             // Closing from here bypasses onOpenChange, so record the close too.
-            trackEvent(AnalyticsEvents.DIALOG_CLOSED, { dialog_type: DialogType.REMOVE_SLACK })
+            trackEvent(AnalyticsEvents.DIALOG_CLOSED, {
+              [AnalyticsProperties.DIALOG_TYPE]: DialogType.REMOVE_SLACK,
+            })
             toast.success('Slack removed')
           } catch (error) {
             toast.error('Could not remove Slack', {
