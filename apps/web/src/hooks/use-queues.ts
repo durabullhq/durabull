@@ -27,6 +27,7 @@ type MetricsEndpoint = (typeof api.c)[':connectionId']['metrics']
 type WorkersEndpoint = (typeof api.c)[':connectionId']['workers']
 type CanDeleteEndpoint = (typeof api.c)[':connectionId']['queues'][':queueName']['can-delete']
 type PurgeQueueEndpoint = (typeof api.c)[':connectionId']['queues'][':queueName']['purge']
+type FlowControlsEndpoint = (typeof api.c)[':connectionId']['queues'][':queueName']['flow-controls']
 
 // Type helpers using Hono's InferResponseType
 type ListQueuesResponse = InferResponseType<QueuesEndpoint['$get'], 200>
@@ -39,6 +40,13 @@ type ListMetricsResponse = InferResponseType<MetricsEndpoint['$get'], 200>
 type ListWorkersResponse = InferResponseType<WorkersEndpoint['$get'], 200>
 type CanDeleteQueueResponse = InferResponseType<CanDeleteEndpoint['$get'], 200>
 type PurgeQueueResponse = InferResponseType<PurgeQueueEndpoint['$post'], 200>
+export type QueueFlowControlsResponse = InferResponseType<FlowControlsEndpoint['$get'], 200>
+
+export interface QueueFlowControlsUpdate {
+  /** `undefined` leaves unchanged, `null` removes. */
+  globalConcurrency?: number | null
+  globalRateLimit?: { max: number; durationMs: number } | null
+}
 
 export interface QueueMetricsPoint {
   metricIndex: number
@@ -233,6 +241,8 @@ export const queryKeys = {
       : (['queues', connectionId] as const),
   queueDiscovery: (connectionId: string) => ['queues', connectionId, 'discovery'] as const,
   queue: (connectionId: string, name: string) => ['queue', connectionId, name] as const,
+  queueFlowControls: (connectionId: string, name: string) =>
+    ['queue', connectionId, name, 'flow-controls'] as const,
   queueMetrics: (connectionId: string, name: string, options?: QueueMetricsOptions) =>
     ['queue', connectionId, name, 'metrics', options] as const,
   jobs: (
@@ -724,6 +734,109 @@ export function useResumeQueue() {
     },
     onError: (_, queueName) => {
       trackEvent(AnalyticsEvents.QUEUE_RESUMED, {
+        queue_name: queueName,
+        success: false,
+      })
+    },
+  })
+}
+
+export function useQueueFlowControls(queueName: string, options?: { enabled?: boolean }) {
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useQuery({
+    queryKey: queryKeys.queueFlowControls(connectionId ?? '', queueName),
+    queryFn: async () => {
+      const res = await api.c[':connectionId'].queues[':queueName']['flow-controls'].$get({
+        param: { connectionId: connectionId!, queueName },
+      })
+      return handleRes<QueueFlowControlsResponse>(res)
+    },
+    enabled: (options?.enabled ?? true) && !!queueName && !!connectionId,
+    // The throttle window counts down in Redis; poll fast only while it is open
+    // or the concurrency cap is reached, otherwise just keep the counts fresh.
+    refetchInterval: (query) =>
+      query.state.data?.rateLimited || query.state.data?.isMaxed ? 2000 : 10_000,
+  })
+}
+
+function describeFlowControlsChange(update: QueueFlowControlsUpdate): string {
+  const describe = (label: string, value: unknown) =>
+    value === undefined ? null : `${label}_${value === null ? 'removed' : 'set'}`
+  return [
+    describe('concurrency', update.globalConcurrency),
+    describe('rate_limit', update.globalRateLimit),
+  ]
+    .filter(Boolean)
+    .join(',')
+}
+
+export function useUpdateQueueFlowControls() {
+  const queryClient = useQueryClient()
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useMutation({
+    mutationFn: async ({
+      queueName,
+      update,
+    }: {
+      queueName: string
+      update: QueueFlowControlsUpdate
+    }) => {
+      const res = await api.c[':connectionId'].queues[':queueName']['flow-controls'].$put({
+        param: { connectionId: connectionId!, queueName },
+        json: update,
+      })
+      return handleRes<QueueFlowControlsResponse>(res)
+    },
+    onSuccess: (data, { queueName, update }) => {
+      trackEvent(AnalyticsEvents.QUEUE_FLOW_CONTROLS_UPDATED, {
+        queue_name: queueName,
+        action: describeFlowControlsChange(update),
+        success: true,
+      })
+      queryClient.setQueryData(queryKeys.queueFlowControls(connectionId ?? '', queueName), data)
+      // Exact: the flow-controls key nests under the queue key, and a prefix match
+      // would immediately refetch the state we just wrote.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.queue(connectionId ?? '', queueName),
+        exact: true,
+      })
+    },
+    onError: (_, { queueName, update }) => {
+      trackEvent(AnalyticsEvents.QUEUE_FLOW_CONTROLS_UPDATED, {
+        queue_name: queueName,
+        action: describeFlowControlsChange(update),
+        success: false,
+      })
+    },
+  })
+}
+
+export function useClearQueueRateLimit() {
+  const queryClient = useQueryClient()
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useMutation({
+    mutationFn: async (queueName: string) => {
+      const res = await api.c[':connectionId'].queues[':queueName']['flow-controls'][
+        'clear-rate-limit'
+      ].$post({
+        param: { connectionId: connectionId!, queueName },
+      })
+      return handleRes<QueueFlowControlsResponse>(res)
+    },
+    onSuccess: (data, queueName) => {
+      trackEvent(AnalyticsEvents.QUEUE_RATE_LIMIT_CLEARED, {
+        queue_name: queueName,
+        success: true,
+      })
+      // Ending the window leaves the configured limits unchanged, so the queue
+      // detail (which only carries the limits) stays valid.
+      queryClient.setQueryData(queryKeys.queueFlowControls(connectionId ?? '', queueName), data)
+    },
+    onError: (_, queueName) => {
+      trackEvent(AnalyticsEvents.QUEUE_RATE_LIMIT_CLEARED, {
         queue_name: queueName,
         success: false,
       })

@@ -53,6 +53,8 @@ export const AnalyticsEvents = {
   QUEUE_PURGED: 'queue_purged',
   QUEUE_OBLITERATED: 'queue_obliterated',
   QUEUE_DELETED: 'queue_deleted',
+  QUEUE_FLOW_CONTROLS_UPDATED: 'queue_flow_controls_updated',
+  QUEUE_RATE_LIMIT_CLEARED: 'queue_rate_limit_cleared',
   QUEUE_VIEWED: 'queue_viewed',
   QUEUE_LIST_VIEWED: 'queue_list_viewed',
   QUEUE_EMPTY_TOGGLE: 'queue_empty_toggle',
@@ -357,6 +359,7 @@ export const DialogType = {
   CREATE_ORGANIZATION: 'create_organization',
   DELETE_QUEUE: 'delete_queue',
   PURGE_QUEUE: 'purge_queue',
+  QUEUE_FLOW_CONTROLS: 'queue_flow_controls',
   INVITE_MEMBER: 'invite_member',
   REMOVE_MEMBER: 'remove_member',
   CANCEL_INVITATION: 'cancel_invitation',
@@ -480,6 +483,13 @@ export interface QueueEventProperties {
   [AnalyticsProperties.QUEUE_NAME]: string
   [AnalyticsProperties.SUCCESS]?: boolean
   [AnalyticsProperties.ERROR_MESSAGE]?: string
+}
+
+/**
+ * `action` summarizes the change without values, e.g. `concurrency_set,rate_limit_removed`.
+ */
+export interface QueueFlowControlsUpdatedProperties extends QueueEventProperties {
+  [AnalyticsProperties.ACTION]: string
 }
 
 export interface QueueCleanedProperties extends QueueEventProperties {

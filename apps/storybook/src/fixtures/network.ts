@@ -23,6 +23,11 @@ import { jobDependenciesFixture } from './job-dependencies'
 export type FixtureState = 'ready' | 'empty' | 'empty-connections' | 'loading' | 'error'
 let state: FixtureState = 'ready'
 let updateAvailable = false
+const flowControlLimits = {
+  globalConcurrency: 8,
+  globalRateLimit: { max: 120, durationMs: 60_000 },
+}
+
 export function setUpdateAvailable(value: boolean) {
   updateAvailable = value
 }
@@ -392,7 +397,16 @@ function readFixture(path: string, url: URL): unknown {
       discovery,
     }
   }
-  if (/\/queues\/[^/]+$/.test(path)) return { ...queues[0], workers, scheduledJobsCount: 1 }
+  if (path.endsWith('/flow-controls'))
+    return {
+      ...flowControlLimits,
+      rateLimitTtlMs: 18_400,
+      rateLimited: true,
+      isMaxed: true,
+      activeCount: 8,
+    }
+  if (/\/queues\/[^/]+$/.test(path))
+    return { ...queues[0], workers, scheduledJobsCount: 1, flowControls: flowControlLimits }
   throw new Error(`Missing Storybook fixture: ${path}`)
 }
 export const worker = setupWorker(

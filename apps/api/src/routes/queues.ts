@@ -11,11 +11,19 @@ import {
 } from '../lib/bullmq-metrics'
 import { getConnectionRedisOptions } from '../lib/connection-options'
 import { deleteQueueWithDiscoveryCleanup } from '../lib/delete-queue'
+import { getQueueFromContext } from '../lib/queue-context'
 import {
   getQueueDiscoveryStatus,
   startQueueDiscovery,
   waitForQueueDiscovery,
 } from '../lib/queue-discovery'
+import {
+  applyQueueFlowControls,
+  clearQueueRateLimitWindow,
+  readQueueFlowControlLimits,
+  readQueueFlowControls,
+  updateFlowControlsSchema,
+} from '../lib/queue-flow-controls'
 import { debugGetBullKeys, getQueue, safeGetWorkers } from '../lib/redis'
 
 // Default and max page sizes for pagination
@@ -422,11 +430,12 @@ const app = new Hono()
       connectionPrefix,
       redisOptions
     )
-    const [counts, isPaused, workers, schedulers] = await Promise.all([
+    const [counts, isPaused, workers, schedulers, flowControls] = await Promise.all([
       queue.getJobCounts(),
       queue.isPaused(),
       safeGetWorkers(queue),
       queue.getJobSchedulers(),
+      readQueueFlowControlLimits(queue),
     ])
 
     const status: 'paused' | 'active' = isPaused ? 'paused' : 'active'
@@ -444,6 +453,7 @@ const app = new Hono()
         prioritized: counts.prioritized ?? 0,
       },
       isPaused,
+      flowControls,
       scheduledJobsCount: schedulers.length,
       workers: workers.map((w) => ({
         id: w.id ?? '',
@@ -546,6 +556,23 @@ const app = new Hono()
     )
     await queue.resume()
     return c.json({ success: true })
+  })
+  // Read queue-wide flow controls (global concurrency, global rate limit, throttle state)
+  .get('/:queueName/flow-controls', async (c) => {
+    const queue = await getQueueFromContext(c, c.req.param('queueName'))
+    return c.json(await readQueueFlowControls(queue))
+  })
+  // Set or remove queue-wide flow controls. Omitted fields stay unchanged; null removes.
+  .put('/:queueName/flow-controls', zValidator('json', updateFlowControlsSchema), async (c) => {
+    const queue = await getQueueFromContext(c, c.req.param('queueName'))
+    await applyQueueFlowControls(queue, c.req.valid('json'))
+    return c.json(await readQueueFlowControls(queue))
+  })
+  // End the current rate-limit window so workers can start jobs immediately.
+  .post('/:queueName/flow-controls/clear-rate-limit', async (c) => {
+    const queue = await getQueueFromContext(c, c.req.param('queueName'))
+    await clearQueueRateLimitWindow(queue)
+    return c.json(await readQueueFlowControls(queue))
   })
   // Clean queue
   .post(

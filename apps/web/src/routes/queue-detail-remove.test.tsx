@@ -78,6 +78,10 @@ vi.mock('@/components/retry-queue-dialog', () => ({
   RetryQueueDialog: () => null,
 }))
 
+vi.mock('@/components/queue-flow-controls-dialog', () => ({
+  QueueFlowControlsDialog: () => null,
+}))
+
 vi.mock('@/components/status-badge', () => ({
   StatusIndicator: ({ status }: { status: string }) => <span>{status}</span>,
 }))
