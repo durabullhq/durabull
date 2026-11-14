@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test'
+import type { RedisClient } from 'bullmq'
 import {
   applyQueueFlowControls,
   clearQueueRateLimitWindow,
@@ -12,15 +13,17 @@ function createQueue(
     concurrency?: number | null
     rateLimit?: { max: number; duration: number } | null
     ttl?: number
-    isMaxed?: boolean
     active?: number
   } = {}
 ) {
+  const redis = { eval: mock(async () => 0) }
   return {
+    redis,
+    client: Promise.resolve(redis as unknown as RedisClient),
+    keys: { limiter: 'bull:emails:limiter' },
     getGlobalConcurrency: mock(async () => overrides.concurrency ?? null),
     getGlobalRateLimit: mock(async () => overrides.rateLimit ?? null),
     getRateLimitTtl: mock(async () => overrides.ttl ?? -2),
-    isMaxed: mock(async () => overrides.isMaxed ?? false),
     getActiveCount: mock(async () => overrides.active ?? 0),
     setGlobalConcurrency: mock(async () => 1),
     removeGlobalConcurrency: mock(async () => 1),
@@ -50,7 +53,6 @@ describe('readQueueFlowControls', () => {
         concurrency: 5,
         rateLimit: { max: 100, duration: 60_000 },
         ttl: 4_250,
-        isMaxed: true,
         active: 5,
       })
     )
@@ -63,6 +65,23 @@ describe('readQueueFlowControls', () => {
       isMaxed: true,
       activeCount: 5,
     })
+  })
+
+  it('reports the cap as reached only once active jobs meet it', async () => {
+    expect((await readQueueFlowControls(createQueue({ concurrency: 5, active: 4 }))).isMaxed).toBe(
+      false
+    )
+    expect((await readQueueFlowControls(createQueue({ concurrency: 5, active: 6 }))).isMaxed).toBe(
+      true
+    )
+  })
+
+  it('surfaces meta read errors instead of reporting no limits', async () => {
+    const queue = createQueue()
+    queue.getGlobalRateLimit.mockImplementation(async () => {
+      throw new Error('NOPERM')
+    })
+    await expect(readQueueFlowControls(queue)).rejects.toThrow('NOPERM')
   })
 
   it('treats a limiter key without expiry (-1) as not throttled', async () => {
@@ -111,6 +130,27 @@ describe('applyQueueFlowControls', () => {
     expect(queue.removeGlobalRateLimit).not.toHaveBeenCalled()
   })
 
+  it('caps an open limiter window at the new duration, sparing a manual marker', async () => {
+    const queue = createQueue()
+    await applyQueueFlowControls(queue, { globalRateLimit: { max: 10, durationMs: 1_000 } })
+
+    expect(queue.redis.eval).toHaveBeenCalledTimes(1)
+    const [script, numKeys, key, duration, marker] = queue.redis.eval.mock.calls[0] as unknown[]
+    expect(script).toContain('PEXPIRE')
+    expect([numKeys, key, duration, marker]).toEqual([
+      1,
+      'bull:emails:limiter',
+      1_000,
+      Number.MAX_SAFE_INTEGER,
+    ])
+  })
+
+  it('leaves the limiter window alone when only concurrency changes', async () => {
+    const queue = createQueue()
+    await applyQueueFlowControls(queue, { globalConcurrency: 4, globalRateLimit: null })
+    expect(queue.redis.eval).not.toHaveBeenCalled()
+  })
+
   it('removes limits passed as null and leaves omitted ones untouched', async () => {
     const queue = createQueue()
     await applyQueueFlowControls(queue, { globalConcurrency: null })
@@ -150,6 +190,11 @@ describe('updateFlowControlsSchema', () => {
   it('rejects unknown keys', () => {
     expect(
       updateFlowControlsSchema.safeParse({ globalConcurrency: 2, concurrency: 2 }).success
+    ).toBe(false)
+    expect(
+      updateFlowControlsSchema.safeParse({
+        globalRateLimit: { max: 10, durationMs: 1000, duration: 60000 },
+      }).success
     ).toBe(false)
   })
 

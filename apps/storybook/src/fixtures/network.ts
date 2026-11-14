@@ -27,6 +27,15 @@ const flowControlLimits = {
   globalConcurrency: 8,
   globalRateLimit: { max: 120, durationMs: 60_000 },
 }
+function flowControlsFixture(rateLimited = true) {
+  return {
+    ...flowControlLimits,
+    rateLimitTtlMs: rateLimited ? 18_400 : 0,
+    rateLimited,
+    isMaxed: true,
+    activeCount: 8,
+  }
+}
 
 export function setUpdateAvailable(value: boolean) {
   updateAvailable = value
@@ -397,14 +406,7 @@ function readFixture(path: string, url: URL): unknown {
       discovery,
     }
   }
-  if (path.endsWith('/flow-controls'))
-    return {
-      ...flowControlLimits,
-      rateLimitTtlMs: 18_400,
-      rateLimited: true,
-      isMaxed: true,
-      activeCount: 8,
-    }
+  if (path.endsWith('/flow-controls')) return flowControlsFixture()
   if (/\/queues\/[^/]+$/.test(path))
     return { ...queues[0], workers, scheduledJobsCount: 1, flowControls: flowControlLimits }
   throw new Error(`Missing Storybook fixture: ${path}`)
@@ -426,6 +428,9 @@ export const worker = setupWorker(
         { error: 'Demo connection unavailable. Try again.' },
         { status: 503 }
       )
+    // Flow-controls writes return the queue's state, which the dialog writes into its cache.
+    if (request.method !== 'GET' && path.includes('/flow-controls'))
+      return HttpResponse.json(flowControlsFixture(!path.endsWith('/clear-rate-limit')))
     if (request.method !== 'GET')
       return HttpResponse.json({
         success: true,

@@ -69,7 +69,10 @@ vi.mock('@durabull/analytics/browser', () => ({
 vi.mock('@durabull/analytics/events', () => ({
   AnalyticsEvents: {
     QUEUE_VIEWED: 'QUEUE_VIEWED',
+    DIALOG_OPENED: 'dialog_opened',
   },
+  AnalyticsProperties: { DIALOG_TYPE: 'dialog_type' },
+  DialogType: { QUEUE_FLOW_CONTROLS: 'queue_flow_controls' },
 }))
 
 vi.mock('@/components/app-top-bar', () => ({
@@ -263,6 +266,9 @@ describe('queue detail scheduled job creation', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Flow controls' }))
 
     expect(flowControlsState.dialogOpen).toBe(true)
+    expect(trackEventMock).toHaveBeenCalledWith('dialog_opened', {
+      dialog_type: 'queue_flow_controls',
+    })
   })
 
   it('summarizes active flow controls in the header only when set', () => {

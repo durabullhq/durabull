@@ -21,6 +21,9 @@ export interface FlowControlLimits {
   globalRateLimit: { max: number; durationMs: number } | null
 }
 
+/** API update shape: an omitted control stays unchanged, `null` removes it. */
+export type FlowControlsUpdate = Partial<FlowControlLimits>
+
 export interface FlowControlsForm {
   concurrencyEnabled: boolean
   concurrency: string
@@ -42,25 +45,6 @@ export function splitDuration(ms: number): { amount: number; unit: DurationUnit 
     }
   }
   return { amount: ms, unit: 'ms' }
-}
-
-export function formatDurationMs(ms: number): string {
-  const { amount, unit } = splitDuration(ms)
-  const label = DURATION_UNITS.find((entry) => entry.value === unit)?.label ?? 'milliseconds'
-  if (amount === 1) {
-    // "1 second", "1 minute"
-    return `1 ${label.slice(0, -1)}`
-  }
-  return `${amount.toLocaleString()} ${label}`
-}
-
-export function formatRateLimit(rateLimit: { max: number; durationMs: number }): string {
-  const { amount, unit } = splitDuration(rateLimit.durationMs)
-  const per =
-    amount === 1
-      ? (DURATION_UNITS.find((entry) => entry.value === unit)?.label.slice(0, -1) ?? 'ms')
-      : formatDurationMs(rateLimit.durationMs)
-  return `${rateLimit.max.toLocaleString()} jobs / ${per}`
 }
 
 export function formFromLimits(limits: FlowControlLimits | null | undefined): FlowControlsForm {
@@ -94,21 +78,46 @@ export interface FlowControlsValidation {
   limits: FlowControlLimits | null
 }
 
-export function validateFlowControlsForm(form: FlowControlsForm): FlowControlsValidation {
+/**
+ * Parses and range-checks the form. `baseline` is the server state the form was
+ * seeded from: a control still showing its baseline value passes as-is even when it
+ * is outside the editor's ranges (for example a 48 hour window set from worker
+ * code), so it is not sent and does not block saving the other control.
+ */
+export function validateFlowControlsForm(
+  form: FlowControlsForm,
+  baseline?: FlowControlLimits | null
+): FlowControlsValidation {
   let concurrencyError: string | null = null
   let rateLimitMaxError: string | null = null
   let rateLimitDurationError: string | null = null
   let globalConcurrency: number | null = null
   let globalRateLimit: FlowControlLimits['globalRateLimit'] = null
+  const seeded = baseline ? formFromLimits(baseline) : null
+  const baselineConcurrency =
+    seeded?.concurrencyEnabled && form.concurrency.trim() === seeded.concurrency
+      ? (baseline?.globalConcurrency ?? null)
+      : null
+  const baselineRateLimit =
+    seeded?.rateLimitEnabled &&
+    form.rateLimitMax.trim() === seeded.rateLimitMax &&
+    form.rateLimitDuration.trim() === seeded.rateLimitDuration &&
+    form.rateLimitUnit === seeded.rateLimitUnit
+      ? (baseline?.globalRateLimit ?? null)
+      : null
 
-  if (form.concurrencyEnabled) {
+  if (form.concurrencyEnabled && baselineConcurrency !== null) {
+    globalConcurrency = baselineConcurrency
+  } else if (form.concurrencyEnabled) {
     globalConcurrency = parsePositiveInt(form.concurrency, MAX_GLOBAL_CONCURRENCY)
     if (globalConcurrency === null) {
       concurrencyError = `Enter a whole number from 1 to ${MAX_GLOBAL_CONCURRENCY.toLocaleString()}.`
     }
   }
 
-  if (form.rateLimitEnabled) {
+  if (form.rateLimitEnabled && baselineRateLimit !== null) {
+    globalRateLimit = baselineRateLimit
+  } else if (form.rateLimitEnabled) {
     const max = parsePositiveInt(form.rateLimitMax, MAX_RATE_LIMIT_JOBS)
     if (max === null) {
       rateLimitMaxError = `Enter a whole number from 1 to ${MAX_RATE_LIMIT_JOBS.toLocaleString()}.`
@@ -139,11 +148,8 @@ export function validateFlowControlsForm(form: FlowControlsForm): FlowControlsVa
 export function diffFlowControls(
   current: FlowControlLimits,
   next: FlowControlLimits
-): {
-  globalConcurrency?: number | null
-  globalRateLimit?: { max: number; durationMs: number } | null
-} {
-  const update: ReturnType<typeof diffFlowControls> = {}
+): FlowControlsUpdate {
+  const update: FlowControlsUpdate = {}
   if (current.globalConcurrency !== next.globalConcurrency) {
     update.globalConcurrency = next.globalConcurrency
   }
@@ -175,4 +181,14 @@ export function formatFlowControlsSummary(
     parts.push(`${limits.globalRateLimit.max.toLocaleString()}/${window}`)
   }
   return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/** Countdown text for the throttle window, e.g. `4.2 s`, `42 s`, `1 min 5 s`. */
+export function formatTtl(ms: number): string {
+  if (ms < 1_000) return `${ms} ms`
+  if (ms < 9_950) return `${(ms / 1_000).toFixed(1)} s`
+  // Round once up front so the parts never read "60 s" or "1 min 60 s".
+  const totalSeconds = Math.round(ms / 1_000)
+  if (totalSeconds < 60) return `${totalSeconds} s`
+  return `${Math.floor(totalSeconds / 60)} min ${totalSeconds % 60} s`
 }

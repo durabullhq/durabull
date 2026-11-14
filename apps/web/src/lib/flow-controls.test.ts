@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   diffFlowControls,
   formatFlowControlsSummary,
-  formatRateLimit,
   formFromLimits,
   splitDuration,
   validateFlowControlsForm,
@@ -19,11 +18,6 @@ describe('splitDuration', () => {
 })
 
 describe('formatting', () => {
-  it('formats rate limits per unit', () => {
-    expect(formatRateLimit({ max: 100, durationMs: 1_000 })).toBe('100 jobs / second')
-    expect(formatRateLimit({ max: 5, durationMs: 30_000 })).toBe('5 jobs / 30 seconds')
-  })
-
   it('summarizes active limits for the header', () => {
     expect(formatFlowControlsSummary(null)).toBeNull()
     expect(formatFlowControlsSummary({ globalConcurrency: null, globalRateLimit: null })).toBeNull()
@@ -81,6 +75,29 @@ describe('validateFlowControlsForm', () => {
     })
     expect(longWindow.rateLimitDurationError).not.toBeNull()
     expect(longWindow.limits).toBeNull()
+  })
+})
+
+describe('validateFlowControlsForm with a baseline', () => {
+  // Limits set from worker code can exceed the editor's ranges.
+  const baseline = {
+    globalConcurrency: 250_000,
+    globalRateLimit: { max: 10, durationMs: 172_800_000 },
+  }
+
+  it('passes untouched out-of-range values through so the other control can be saved', () => {
+    const form = formFromLimits(baseline)
+    const result = validateFlowControlsForm({ ...form, concurrency: '8' }, baseline)
+    expect(result.rateLimitDurationError).toBeNull()
+    expect(result.limits).toEqual({ ...baseline, globalConcurrency: 8 })
+    expect(diffFlowControls(baseline, result.limits!)).toEqual({ globalConcurrency: 8 })
+  })
+
+  it('still rejects an out-of-range value the user typed', () => {
+    const form = formFromLimits(baseline)
+    const result = validateFlowControlsForm({ ...form, rateLimitDuration: '49' }, baseline)
+    expect(result.rateLimitDurationError).not.toBeNull()
+    expect(result.limits).toBeNull()
   })
 })
 

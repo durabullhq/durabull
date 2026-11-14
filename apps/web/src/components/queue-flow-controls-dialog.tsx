@@ -1,7 +1,7 @@
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { Gauge, Loader2, TimerOff } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,6 +26,7 @@ import {
   diffFlowControls,
   type FlowControlLimits,
   type FlowControlsForm,
+  formatTtl,
   formFromLimits,
   validateFlowControlsForm,
 } from '@/lib/flow-controls'
@@ -40,13 +41,18 @@ interface QueueFlowControlsDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-export function formatTtl(ms: number): string {
-  if (ms < 1_000) return `${ms} ms`
-  if (ms < 9_950) return `${(ms / 1_000).toFixed(1)} s`
-  // Round once up front so the parts never read "60 s" or "1 min 60 s".
-  const totalSeconds = Math.round(ms / 1_000)
-  if (totalSeconds < 60) return `${totalSeconds} s`
-  return `${Math.floor(totalSeconds / 60)} min ${totalSeconds % 60} s`
+interface EditorState {
+  form: FlowControlsForm
+  /**
+   * The limits the form was seeded from. Saves diff against this snapshot, not the
+   * polled state, so a change someone else makes while the dialog is open is not
+   * silently reverted by fields this user never touched.
+   */
+  baseline: FlowControlLimits
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'Request failed.'
 }
 
 export function QueueFlowControlsDialog({
@@ -62,30 +68,31 @@ export function QueueFlowControlsDialog({
   } = useQueueFlowControls(queueName, { enabled: open })
   const updateMutation = useUpdateQueueFlowControls()
   const clearMutation = useClearQueueRateLimit()
-  const [form, setForm] = useState<FlowControlsForm | null>(null)
-  // The limits the form was seeded from. Saves diff against this snapshot, not the
-  // polled state, so a change someone else makes while the dialog is open is not
-  // silently reverted by fields this user never touched.
-  const [baseline, setBaseline] = useState<FlowControlLimits | null>(null)
+  const [editor, setEditor] = useState<EditorState | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
-  // Seed the form once per open from fresh server state (not a cached copy from a
-  // previous open); polling must not clobber edits.
-  useEffect(() => {
-    if (!open) {
-      setForm(null)
-      setBaseline(null)
-      return
-    }
-    if (state && !isFetching && form === null) {
-      setForm(formFromLimits(state))
-      setBaseline({
+  // Seed the editor once per open from fresh server state (not a cached copy from a
+  // previous open, nor one whose refresh just failed); polling must not clobber edits.
+  // Adjusted during render rather than in an effect so no frame shows a stale form.
+  if (!open) {
+    if (editor !== null) setEditor(null)
+    if (actionError !== null) setActionError(null)
+  } else if (editor === null && state && !isFetching && !error) {
+    setEditor({
+      form: formFromLimits(state),
+      baseline: {
         globalConcurrency: state.globalConcurrency,
         globalRateLimit: state.globalRateLimit,
-      })
-    }
-  }, [open, state, isFetching, form])
+      },
+    })
+  }
+  const form = editor?.form ?? null
+  const baseline = editor?.baseline ?? null
 
-  const validation = useMemo(() => (form ? validateFlowControlsForm(form) : null), [form])
+  const validation = useMemo(
+    () => (form ? validateFlowControlsForm(form, baseline) : null),
+    [form, baseline]
+  )
   const update = useMemo(() => {
     if (!baseline || !validation?.limits) return null
     return diffFlowControls(baseline, validation.limits)
@@ -94,45 +101,52 @@ export function QueueFlowControlsDialog({
   const isSaving = updateMutation.isPending
   const canSave = hasChanges && !isSaving
 
-  const patchForm = (patch: Partial<FlowControlsForm>) =>
-    setForm((prev) => (prev ? { ...prev, ...patch } : prev))
+  const patchForm = (patch: Partial<FlowControlsForm>) => {
+    setActionError(null)
+    setEditor((prev) => (prev ? { ...prev, form: { ...prev.form, ...patch } } : prev))
+  }
 
   const handleSave = async () => {
     if (!update || !hasChanges) return
+    setActionError(null)
     try {
       await updateMutation.mutateAsync({ queueName, update })
       toast.success('Flow controls updated', {
         description: 'Workers apply the new limits the next time they fetch a job.',
       })
       onOpenChange(false)
-    } catch {
-      // Errors are surfaced by shared API handlers.
+    } catch (saveError) {
+      // Keep the dialog and the edits; the shared handlers only surface 401/429.
+      setActionError(`Could not save the limits: ${errorMessage(saveError)}`)
     }
   }
 
   const handleClearWindow = async () => {
+    setActionError(null)
     try {
       await clearMutation.mutateAsync(queueName)
       toast.success('Rate-limit window ended', {
-        description: 'Workers can start jobs again right away. The limit still applies.',
+        description:
+          'Workers resume once their current back-off ends (30 seconds at most by default). The limit still applies.',
       })
-    } catch {
-      // Errors are surfaced by shared API handlers.
+    } catch (clearError) {
+      setActionError(`Could not end the rate-limit window: ${errorMessage(clearError)}`)
     }
+  }
+
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      trackEvent(AnalyticsEvents.DIALOG_CLOSED, {
+        [AnalyticsProperties.DIALOG_TYPE]: DialogType.QUEUE_FLOW_CONTROLS,
+      })
+    }
+    onOpenChange(newOpen)
   }
 
   const concurrencyCap = state?.globalConcurrency ?? null
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(newOpen) => {
-        trackEvent(newOpen ? AnalyticsEvents.DIALOG_OPENED : AnalyticsEvents.DIALOG_CLOSED, {
-          [AnalyticsProperties.DIALOG_TYPE]: DialogType.QUEUE_FLOW_CONTROLS,
-        })
-        onOpenChange(newOpen)
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>Flow controls</DialogTitle>
@@ -143,7 +157,7 @@ export function QueueFlowControlsDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {error ? (
+        {error && !form ? (
           <p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
             {error.message}
           </p>
@@ -153,6 +167,12 @@ export function QueueFlowControlsDialog({
           </div>
         ) : (
           <div className="space-y-4">
+            {error ? (
+              // A failed poll keeps the edits on screen; only the live status may be stale.
+              <p className="text-xs text-destructive">
+                Could not refresh the live status: {error.message}
+              </p>
+            ) : null}
             <div
               className="grid grid-cols-2 gap-px overflow-hidden rounded-md border bg-border"
               data-testid="flow-controls-status"
@@ -202,7 +222,7 @@ export function QueueFlowControlsDialog({
                   <>
                     <p className="mt-1 font-mono text-sm">Not throttled</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      No rate-limit window is open
+                      No queue-wide rate-limit window is open
                     </p>
                   </>
                 )}
@@ -328,8 +348,14 @@ export function QueueFlowControlsDialog({
           </div>
         )}
 
+        {actionError ? (
+          <p role="alert" className="text-sm text-destructive" data-testid="flow-controls-error">
+            {actionError}
+          </p>
+        ) : null}
+
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isSaving}>
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={!canSave}>

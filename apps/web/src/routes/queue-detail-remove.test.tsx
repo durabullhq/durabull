@@ -55,7 +55,10 @@ vi.mock('@durabull/analytics/browser', () => ({
 vi.mock('@durabull/analytics/events', () => ({
   AnalyticsEvents: {
     QUEUE_VIEWED: 'QUEUE_VIEWED',
+    DIALOG_OPENED: 'dialog_opened',
   },
+  AnalyticsProperties: { DIALOG_TYPE: 'dialog_type' },
+  DialogType: { QUEUE_FLOW_CONTROLS: 'queue_flow_controls' },
 }))
 
 vi.mock('@/components/app-top-bar', () => ({

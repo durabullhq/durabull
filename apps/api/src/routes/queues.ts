@@ -568,7 +568,7 @@ const app = new Hono()
     await applyQueueFlowControls(queue, c.req.valid('json'))
     return c.json(await readQueueFlowControls(queue))
   })
-  // End the current rate-limit window so workers can start jobs immediately.
+  // End the current rate-limit window. The configured limit stays in place.
   .post('/:queueName/flow-controls/clear-rate-limit', async (c) => {
     const queue = await getQueueFromContext(c, c.req.param('queueName'))
     await clearQueueRateLimitWindow(queue)

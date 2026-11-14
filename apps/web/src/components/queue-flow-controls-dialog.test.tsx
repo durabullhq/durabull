@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { formatTtl, QueueFlowControlsDialog } from '@/components/queue-flow-controls-dialog'
+import { QueueFlowControlsDialog } from '@/components/queue-flow-controls-dialog'
+import { formatTtl } from '@/lib/flow-controls'
 
 const { updateMock, clearMock, toastSuccessMock, queryState } = vi.hoisted(() => ({
   updateMock: vi.fn(),
@@ -10,6 +11,7 @@ const { updateMock, clearMock, toastSuccessMock, queryState } = vi.hoisted(() =>
   queryState: {
     data: null as null | Record<string, unknown>,
     isFetching: false,
+    error: null as null | Error,
   },
 }))
 
@@ -21,7 +23,7 @@ vi.mock('@/hooks/use-queues', async () => {
       data: queryState.data,
       isLoading: false,
       isFetching: queryState.isFetching,
-      error: null,
+      error: queryState.error,
     }),
     useUpdateQueueFlowControls: () => ({ mutateAsync: updateMock, isPending: false }),
     useClearQueueRateLimit: () => ({ mutateAsync: clearMock, isPending: false }),
@@ -49,6 +51,7 @@ describe('QueueFlowControlsDialog', () => {
     toastSuccessMock.mockReset()
     queryState.data = state()
     queryState.isFetching = false
+    queryState.error = null
   })
 
   it('disables save until something changes', () => {
@@ -170,6 +173,85 @@ describe('QueueFlowControlsDialog', () => {
         queueName: 'emails',
         update: { globalConcurrency: 4 },
       })
+    )
+  })
+})
+
+describe('QueueFlowControlsDialog refresh errors', () => {
+  beforeEach(() => {
+    updateMock.mockReset().mockResolvedValue(state())
+    queryState.data = state()
+    queryState.isFetching = false
+    queryState.error = null
+  })
+
+  it('keeps unsaved edits on screen when a poll fails', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <QueueFlowControlsDialog queueName="emails" open onOpenChange={vi.fn()} />
+    )
+    await user.click(screen.getByLabelText('Limit concurrent jobs'))
+    await user.type(screen.getByLabelText('Global concurrency'), '4')
+
+    queryState.error = new Error('Redis connection lost')
+    rerender(<QueueFlowControlsDialog queueName="emails" open onOpenChange={vi.fn()} />)
+
+    expect(screen.getByText(/Could not refresh the live status/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Global concurrency')).toHaveValue('4')
+  })
+
+  it('does not seed the form from cached state whose refresh failed', () => {
+    queryState.error = new Error('Redis connection lost')
+    render(<QueueFlowControlsDialog queueName="emails" open onOpenChange={vi.fn()} />)
+
+    expect(screen.getByText('Redis connection lost')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Limit concurrent jobs')).not.toBeInTheDocument()
+  })
+})
+
+describe('QueueFlowControlsDialog mutation failures', () => {
+  beforeEach(() => {
+    updateMock.mockReset()
+    clearMock.mockReset()
+    queryState.data = state()
+    queryState.isFetching = false
+    queryState.error = null
+  })
+
+  it('shows a failed save inline and keeps the edits', async () => {
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    updateMock.mockRejectedValue(new Error('READONLY replica'))
+    render(<QueueFlowControlsDialog queueName="emails" open onOpenChange={onOpenChange} />)
+
+    await user.click(screen.getByLabelText('Limit concurrent jobs'))
+    await user.type(screen.getByLabelText('Global concurrency'), '4')
+    await user.click(screen.getByRole('button', { name: /Save limits/ }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not save the limits: READONLY replica'
+    )
+    expect(screen.getByLabelText('Global concurrency')).toHaveValue('4')
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+
+    // Editing again clears the stale error.
+    await user.type(screen.getByLabelText('Global concurrency'), '0')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows a failed window clear inline', async () => {
+    const user = userEvent.setup()
+    clearMock.mockRejectedValue(new Error('Connection is closed'))
+    queryState.data = state({
+      globalRateLimit: { max: 10, durationMs: 60_000 },
+      rateLimited: true,
+      rateLimitTtlMs: 42_000,
+    })
+    render(<QueueFlowControlsDialog queueName="emails" open onOpenChange={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: /End window now/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not end the rate-limit window: Connection is closed'
     )
   })
 })

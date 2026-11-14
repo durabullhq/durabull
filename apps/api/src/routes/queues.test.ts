@@ -293,8 +293,12 @@ describe('queues routes', () => {
         duration: null,
       }
       let limiterTtl = -2
+      const redis = { eval: mock(async () => 0) }
 
       const queue = {
+        client: Promise.resolve(redis),
+        keys: { limiter: 'bull:emails:limiter' },
+        redis,
         getJobCounts: async () => ({ waiting: 4, active: 2 }),
         isPaused: async () => false,
         getJobSchedulers: async () => [],
@@ -304,7 +308,6 @@ describe('queues routes', () => {
             ? { max: meta.max, duration: meta.duration }
             : null,
         getRateLimitTtl: async () => limiterTtl,
-        isMaxed: async () => meta.concurrency !== null && meta.concurrency <= 2,
         getActiveCount: async () => 2,
         setGlobalConcurrency: mock(async (value: number) => {
           meta.concurrency = value
@@ -377,6 +380,7 @@ describe('queues routes', () => {
       expect(response.status).toBe(200)
       expect(queue.setGlobalConcurrency).toHaveBeenCalledWith(2)
       expect(queue.setGlobalRateLimit).toHaveBeenCalledWith(50, 1000)
+      expect(queue.redis.eval).toHaveBeenCalledTimes(1)
       const body = (await response.json()) as Record<string, unknown>
       expect(body.globalConcurrency).toBe(2)
       expect(body.globalRateLimit).toEqual({ max: 50, durationMs: 1000 })

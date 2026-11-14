@@ -1,5 +1,5 @@
 import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents } from '@durabull/analytics/events'
+import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { createFileRoute, Link, Outlet, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import {
@@ -523,6 +523,14 @@ function QueueDetailPage() {
     }
   }
 
+  // Every opener goes through here so the dialog itself needs no effect to track opens.
+  const openFlowControls = useCallback(() => {
+    trackEvent(AnalyticsEvents.DIALOG_OPENED, {
+      [AnalyticsProperties.DIALOG_TYPE]: DialogType.QUEUE_FLOW_CONTROLS,
+    })
+    setFlowControlsDialogOpen(true)
+  }, [])
+
   const handleOpenScheduledJobCreate = useCallback(() => {
     navigate({
       to: '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/new',
@@ -571,7 +579,7 @@ function QueueDetailPage() {
                 {flowControlsSummary ? (
                   <button
                     type="button"
-                    onClick={() => setFlowControlsDialogOpen(true)}
+                    onClick={openFlowControls}
                     className="hidden items-center gap-1 whitespace-nowrap rounded-sm text-xs text-muted-foreground hover:text-foreground sm:inline-flex"
                     title="Queue-wide flow controls are active. Click to edit."
                     data-testid="queue-flow-controls-summary"
@@ -620,7 +628,7 @@ function QueueDetailPage() {
                 <Repeat />
                 Schedule job
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFlowControlsDialogOpen(true)}>
+              <DropdownMenuItem onClick={openFlowControls}>
                 <Gauge />
                 Flow controls
               </DropdownMenuItem>
@@ -668,7 +676,7 @@ function QueueDetailPage() {
               </>
             )}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setFlowControlsDialogOpen(true)}>
+          <DropdownMenuItem onClick={openFlowControls}>
             <Gauge />
             Flow controls
           </DropdownMenuItem>
@@ -703,6 +711,7 @@ function QueueDetailPage() {
       workerCount,
       handleOpenScheduledJobCreate,
       handleTogglePause,
+      openFlowControls,
     ]
   )
 
@@ -1751,7 +1760,9 @@ function QueueDetailPage() {
         onOpenChange={setDeleteDialogOpen}
       />
 
+      {/* Keyed so a queue or connection change while open never reuses the old form. */}
       <QueueFlowControlsDialog
+        key={`${connectionId}:${queueName}`}
         queueName={queueName}
         open={flowControlsDialogOpen}
         onOpenChange={setFlowControlsDialogOpen}
