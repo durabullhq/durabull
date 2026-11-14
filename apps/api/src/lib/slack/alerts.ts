@@ -292,7 +292,8 @@ export async function sendSlackDestinationAlert(input: {
       [AnalyticsProperties.SLACK_REASON]:
         error instanceof SlackApiError && error.retryable
           ? 'retryable'
-          : error instanceof SlackInstallationUnavailableError
+          : error instanceof SlackInstallationUnavailableError ||
+              (error instanceof SlackApiError && error.code === 'not_connected')
             ? 'not_connected'
             : 'permanent',
     })

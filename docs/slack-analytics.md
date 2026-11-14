@@ -43,7 +43,7 @@ truth; browser events record intent in the settings UI. Event names live in
 | `slack_command_run` | `/durabull`, `@Durabull` or a DM | `slack_surface` (`slash_command`, `mention`, `direct_message`), `slack_command`, `slack_outcome` (`ok`, `help`, `usage`, `not_found`, `unknown_command`, `not_connected`, `denied`, `error`), `slack_organization_count` |
 | `slack_action_performed` | Button or menu in Slack | `slack_action` (`acknowledge`, `unacknowledge`, `resolve`, `snooze`, `retry`, `pause_queue`, `resume_queue`, `refresh_home`), `slack_surface`, `success`, `slack_reason`, `slack_snooze_minutes` |
 | `slack_link_clicked` | Open-in-Durabull buttons | `slack_link_kind`, `slack_surface` |
-| `slack_app_home_opened` | Home tab opened | `slack_outcome` |
+| `slack_app_home_opened` | Home tab opened (recorded even if Slack rejects the view) | `slack_outcome`, `success`, `slack_error_code` |
 | `slack_links_unfurled` | Durabull links pasted in Slack; `ok` only once Slack accepts the previews | `slack_outcome` (`ok`, `denied`, `unfurls_disabled`, `not_found`, `not_connected`, `error`), `slack_link_kind`, `slack_link_count`, `slack_error_code` |
 | `slack_manifest_viewed` / `slack_manifest_copied` / `slack_docs_clicked` | Self-hosted setup card (browser); `slack_docs_clicked` also on the marketing site | `slack_source` |
 | `slack_channels_refreshed` | Channel list reloaded (browser) | `success` |

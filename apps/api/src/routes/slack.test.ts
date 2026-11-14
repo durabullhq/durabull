@@ -1817,6 +1817,18 @@ describe('Slack integration', () => {
     expect(identified('slack_app_home_opened')[0]?.properties).toMatchObject({
       distinct_id: 'user-ada',
       slack_outcome: 'ok',
+      success: true,
+    })
+
+    // A visit is still counted when Slack rejects the Home view.
+    slack.failures['views.publish'] = 'not_enabled'
+    await app.request(callback('EvA6', { type: 'app_home_opened', user: 'UADA', tab: 'home' }))
+    await settle()
+    delete slack.failures['views.publish']
+    expect(identified('slack_app_home_opened').at(-1)?.properties).toMatchObject({
+      distinct_id: 'user-ada',
+      success: false,
+      slack_error_code: 'not_enabled',
     })
     const unfurled = identified('slack_links_unfurled').map((entry) => entry.properties)
     expect(unfurled).toContainEqual(

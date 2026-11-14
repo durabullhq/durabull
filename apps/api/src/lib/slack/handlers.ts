@@ -26,6 +26,7 @@ import {
   recordForAudience,
   recordSlackEvent,
   resolveAnalyticsAudience,
+  type SlackAnalyticsProperties,
   type SlackAudience,
   type SlackUserRef,
   slackErrorCode,
@@ -808,12 +809,8 @@ export async function handleBlockActions(payload: SlackBlockActionsPayload): Pro
       isQueueAction ? SlackSurface.MESSAGE : SlackSurface.ALERT_MESSAGE
     )
     if (action.action_id === SLACK_ACTIONS.refreshHome) {
-      const audience = await publishHomeTab(teamId, slackUserId)
-      recordForAudience(AnalyticsEvents.SLACK_ACTION_PERFORMED, slack, audience, {
-        [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.APP_HOME,
+      await publishHomeAndRecord(slack, AnalyticsEvents.SLACK_ACTION_PERFORMED, {
         [AnalyticsProperties.SLACK_ACTION]: 'refresh_home',
-        [AnalyticsProperties.SUCCESS]: true,
-        [AnalyticsProperties.SLACK_OUTCOME]: audienceOutcome(audience),
       })
       continue
     }
@@ -942,29 +939,55 @@ export async function recordSlackLinkClicks(payload: SlackBlockActionsPayload): 
 
 /** The Home tab was opened in Slack: render it and record the visit. */
 export async function handleAppHomeOpened(teamId: string, slackUserId: string): Promise<void> {
-  const audience = await publishHomeTab(teamId, slackUserId)
-  recordForAudience(
-    AnalyticsEvents.SLACK_APP_HOME_OPENED,
+  await publishHomeAndRecord(
     { slackTeamId: teamId, slackUserId },
-    audience,
-    {
-      [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.APP_HOME,
-      [AnalyticsProperties.SLACK_OUTCOME]: audienceOutcome(audience),
-    }
+    AnalyticsEvents.SLACK_APP_HOME_OPENED
   )
 }
 
-/** Publishes the user's App Home and returns who it was for (for analytics). */
+/**
+ * Publishes the App Home and records `event` for each organization the person
+ * saw, whether or not Slack accepted the view (`success` says which). The
+ * audience is resolved before publishing so a failed publish is still counted.
+ */
+async function publishHomeAndRecord(
+  slack: SlackUserRef,
+  event:
+    | typeof AnalyticsEvents.SLACK_APP_HOME_OPENED
+    | typeof AnalyticsEvents.SLACK_ACTION_PERFORMED,
+  properties: SlackAnalyticsProperties = {}
+): Promise<void> {
+  const resolution = await resolveSlackUserOrganizations(slack.slackTeamId, slack.slackUserId)
+  const audience = audienceFrom(resolution)
+  const base = {
+    ...properties,
+    [AnalyticsProperties.SLACK_SURFACE]: SlackSurface.APP_HOME,
+    [AnalyticsProperties.SLACK_OUTCOME]: audienceOutcome(audience),
+  }
+  try {
+    await publishHomeTab(slack.slackTeamId, slack.slackUserId, undefined, resolution)
+  } catch (error) {
+    recordForAudience(event, slack, audience, {
+      ...base,
+      [AnalyticsProperties.SUCCESS]: false,
+      [AnalyticsProperties.SLACK_ERROR_CODE]: slackErrorCode(error),
+    })
+    throw error
+  }
+  recordForAudience(event, slack, audience, { ...base, [AnalyticsProperties.SUCCESS]: true })
+}
+
+/** Publishes the user's App Home. `resolution` skips looking the person up again. */
 export async function publishHomeTab(
   teamId: string,
   slackUserId: string,
-  notice?: string
-): Promise<SlackAudience> {
-  const resolution = await resolveSlackUserOrganizations(teamId, slackUserId)
-  const { allowed, denied, installations } = resolution
-  const audience = audienceFrom(resolution)
+  notice?: string,
+  resolution?: Awaited<ReturnType<typeof resolveSlackUserOrganizations>>
+): Promise<void> {
+  const { allowed, denied, installations } =
+    resolution ?? (await resolveSlackUserOrganizations(teamId, slackUserId))
   const tokenInstallation = installations[0]
-  if (!tokenInstallation) return audience
+  if (!tokenInstallation) return
 
   const orgs = await Promise.all(
     allowed.map(async ({ installation }) => {
@@ -1001,7 +1024,6 @@ export async function publishHomeTab(
     })
   }
   await withSlackToken(tokenInstallation, (token) => publishSlackHomeView(token, slackUserId, view))
-  return audience
 }
 
 // ---------------------------------------------------------------------------
