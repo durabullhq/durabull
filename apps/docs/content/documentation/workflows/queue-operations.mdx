@@ -1,6 +1,6 @@
 ---
 title: Queue Operations
-description: Perform queue-level control actions including pause, resume, status-based purge, clean, delete, and obliterate.
+description: Perform queue-level control actions including pause, resume, flow controls, status-based purge, clean, delete, and obliterate.
 ---
 
 ## Route Scope
@@ -20,6 +20,58 @@ This page combines queue summary, jobs table, and scheduled-job tab.
 
 Pause prevents workers from picking up new jobs; jobs already active continue processing. Use it
 during downstream outages or maintenance, and resume after the underlying issue is resolved.
+
+### Flow Controls (Global Concurrency and Rate Limit)
+
+- `GET /api/c/:connectionId/queues/:queueName/flow-controls`
+- `PUT /api/c/:connectionId/queues/:queueName/flow-controls`
+- `POST /api/c/:connectionId/queues/:queueName/flow-controls/clear-rate-limit`
+
+Flow controls are queue-wide limits stored in the BullMQ queue meta hash. Every worker on the
+queue reads them from Redis, so you can throttle a queue during an incident or protect a
+downstream API's quota without redeploying workers.
+
+- **Global concurrency** caps how many jobs process at once across all workers, regardless of
+  each worker's own `concurrency` option.
+- **Global rate limit** caps how many jobs start per time window across all workers. A worker
+  that sets its own `limiter` option keeps its own `duration` and uses the queue-wide `max`
+  with it, so leave `limiter` off your workers when you want the window set here to apply.
+
+In the UI, open the queue actions menu and choose **Flow controls**. The dialog shows how many
+jobs are active against the concurrency cap and whether a rate-limit window is currently open.
+When limits are set, the queue header shows a summary such as `8 concurrent · 120/min`; click it
+to edit.
+
+`PUT` accepts either field or both. An omitted field stays unchanged and `null` removes the limit:
+
+```json
+{ "globalConcurrency": 8, "globalRateLimit": { "max": 120, "durationMs": 60000 } }
+```
+
+- `globalConcurrency`: integer from `1` to `100000`
+- `globalRateLimit.max`: integer from `1` to `1000000`
+- `globalRateLimit.durationMs`: integer from `1` to `86400000` (24 hours)
+
+Every flow-controls route returns the current state:
+
+- `globalConcurrency` and `globalRateLimit` (`null` when not set)
+- `rateLimited` and `rateLimitTtlMs`: whether the queue-wide rate limit or a manual
+  `rateLimit()` call is holding workers back, and for how long. A worker's own `limiter` option
+  is not stored in Redis, so throttling by that limiter alone is not reported.
+- `isMaxed`: whether active jobs have reached the concurrency cap
+- `activeCount`
+
+`clear-rate-limit` ends the current window. Workers that already saw it resume when their own
+back-off ends, which BullMQ caps at the worker's `maximumRateLimitDelay` (30 seconds by
+default). The configured limit stays in place and applies again from the next job. To remove the
+limit, send `{ "globalRateLimit": null }`.
+
+Changing the rate limit to a shorter window also shortens a window that is already open, so the
+new window applies right away rather than after the old one ends.
+
+Limits take effect the next time a worker fetches a job; jobs already running are not
+interrupted. Workers on BullMQ releases that predate queue-level limits ignore them, so confirm
+your workers' BullMQ version before relying on them.
 
 ### Clean Queue by Status
 

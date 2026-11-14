@@ -2,41 +2,53 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { routeState, topBarState, scheduledJobsState, navigateMock, trackEventMock } = vi.hoisted(
-  () => ({
-    routeState: {
-      params: {
-        orgSlug: 'acme',
-        connectionId: 'conn-1',
-        queueName: 'emails',
-      },
-      search: {
-        section: 'jobs' as 'jobs' | 'observability',
-        tab: 'jobs' as 'jobs' | 'scheduled',
-        status: '',
-        jobId: '',
-        hideScheduled: 0 as const,
-        page: 1,
-      },
+const {
+  flowControlsState,
+  routeState,
+  topBarState,
+  scheduledJobsState,
+  navigateMock,
+  trackEventMock,
+} = vi.hoisted(() => ({
+  flowControlsState: {
+    dialogOpen: false,
+    limits: null as null | {
+      globalConcurrency: number | null
+      globalRateLimit: { max: number; durationMs: number } | null
     },
-    topBarState: { config: null as null | { actions?: React.ReactNode } },
-    scheduledJobsState: {
-      scheduledJobs: [] as Array<{
-        schedulerId: string
-        pattern?: string
-        every?: number
-        queueName: string
-        jobName: string
-        nextRun?: number
-        enabled: boolean
-        recentFailedCount?: number
-      }>,
-      total: 0,
+  },
+  routeState: {
+    params: {
+      orgSlug: 'acme',
+      connectionId: 'conn-1',
+      queueName: 'emails',
     },
-    navigateMock: vi.fn(),
-    trackEventMock: vi.fn(),
-  })
-)
+    search: {
+      section: 'jobs' as 'jobs' | 'observability',
+      tab: 'jobs' as 'jobs' | 'scheduled',
+      status: '',
+      jobId: '',
+      hideScheduled: 0 as const,
+      page: 1,
+    },
+  },
+  topBarState: { config: null as null | { actions?: React.ReactNode; left?: React.ReactNode } },
+  scheduledJobsState: {
+    scheduledJobs: [] as Array<{
+      schedulerId: string
+      pattern?: string
+      every?: number
+      queueName: string
+      jobName: string
+      nextRun?: number
+      enabled: boolean
+      recentFailedCount?: number
+    }>,
+    total: 0,
+  },
+  navigateMock: vi.fn(),
+  trackEventMock: vi.fn(),
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a href="/">{children}</a>,
@@ -57,11 +69,14 @@ vi.mock('@durabull/analytics/browser', () => ({
 vi.mock('@durabull/analytics/events', () => ({
   AnalyticsEvents: {
     QUEUE_VIEWED: 'QUEUE_VIEWED',
+    DIALOG_OPENED: 'dialog_opened',
   },
+  AnalyticsProperties: { DIALOG_TYPE: 'dialog_type' },
+  DialogType: { QUEUE_FLOW_CONTROLS: 'queue_flow_controls' },
 }))
 
 vi.mock('@/components/app-top-bar', () => ({
-  useAppTopBar: (config: { actions?: React.ReactNode }) => {
+  useAppTopBar: (config: { actions?: React.ReactNode; left?: React.ReactNode }) => {
     topBarState.config = config
   },
 }))
@@ -80,6 +95,13 @@ vi.mock('@/components/purge-queue-dialog', () => ({
 
 vi.mock('@/components/retry-queue-dialog', () => ({
   RetryQueueDialog: () => null,
+}))
+
+vi.mock('@/components/queue-flow-controls-dialog', () => ({
+  QueueFlowControlsDialog: ({ open }: { open: boolean }) => {
+    flowControlsState.dialogOpen = open
+    return null
+  },
 }))
 
 vi.mock('@/components/status-badge', () => ({
@@ -120,6 +142,10 @@ vi.mock('@/hooks/use-queues', () => ({
       name: 'emails',
       isPaused: false,
       scheduledJobsCount: scheduledJobsState.total,
+      flowControls: flowControlsState.limits ?? {
+        globalConcurrency: null,
+        globalRateLimit: null,
+      },
       workers: [],
       jobCounts: {
         waiting: 0,
@@ -199,6 +225,8 @@ describe('queue detail scheduled job creation', () => {
       page: 1,
     }
     topBarState.config = null
+    flowControlsState.dialogOpen = false
+    flowControlsState.limits = null
     scheduledJobsState.scheduledJobs = []
     scheduledJobsState.total = 0
     navigateMock.mockReset()
@@ -224,6 +252,42 @@ describe('queue detail scheduled job creation', () => {
       },
       to: '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/new',
     })
+  })
+
+  it('opens flow controls from the queue actions menu', async () => {
+    const user = userEvent.setup()
+    const Component = Route.options.component as () => React.ReactNode
+
+    render(<Component />)
+    render(<div>{topBarState.config?.actions}</div>)
+    expect(flowControlsState.dialogOpen).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Queue actions' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Flow controls' }))
+
+    expect(flowControlsState.dialogOpen).toBe(true)
+    expect(trackEventMock).toHaveBeenCalledWith('dialog_opened', {
+      dialog_type: 'queue_flow_controls',
+    })
+  })
+
+  it('summarizes active flow controls in the header only when set', () => {
+    const Component = Route.options.component as () => React.ReactNode
+    const { unmount } = render(<Component />)
+    const { unmount: unmountBar } = render(<div>{topBarState.config?.left}</div>)
+    expect(screen.queryByTestId('queue-flow-controls-summary')).toBeNull()
+    unmountBar()
+    unmount()
+
+    flowControlsState.limits = {
+      globalConcurrency: 8,
+      globalRateLimit: { max: 120, durationMs: 60_000 },
+    }
+    render(<Component />)
+    render(<div>{topBarState.config?.left}</div>)
+    expect(screen.getByTestId('queue-flow-controls-summary')).toHaveTextContent(
+      '8 concurrent · 120/min'
+    )
   })
 
   it('shows an empty-state CTA in the scheduled tab', async () => {

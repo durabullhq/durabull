@@ -29,7 +29,7 @@
         "@durabull/mcp": "workspace:*",
         "@hono/zod-validator": "^0.4.2",
         "better-auth": "^1.4.9",
-        "bullmq": "^5.34.8",
+        "bullmq": "^5.62.0",
         "drizzle-orm": "^1.0.0-beta.9-e89174b",
         "hono": "^4.6.14",
         "ioredis": "^5.4.2",

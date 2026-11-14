@@ -1,5 +1,5 @@
 import { trackEvent } from '@durabull/analytics/browser'
-import { AnalyticsEvents } from '@durabull/analytics/events'
+import { AnalyticsEvents, AnalyticsProperties, DialogType } from '@durabull/analytics/events'
 import { createFileRoute, Link, Outlet, useMatchRoute, useNavigate } from '@tanstack/react-router'
 import { zodValidator } from '@tanstack/zod-adapter'
 import {
@@ -42,6 +42,7 @@ import { DeleteQueueDialog } from '@/components/delete-queue-dialog'
 import { JobRemoveButton } from '@/components/job-remove-button'
 import { PageTitle } from '@/components/page-title'
 import { PurgeQueueDialog } from '@/components/purge-queue-dialog'
+import { QueueFlowControlsDialog } from '@/components/queue-flow-controls-dialog'
 import { RetryQueueDialog } from '@/components/retry-queue-dialog'
 import { StatusIndicator } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
@@ -83,6 +84,7 @@ import {
   useRetryJobs,
 } from '@/hooks/use-queues'
 import { requestUpgrade } from '@/lib/billing'
+import { formatFlowControlsSummary } from '@/lib/flow-controls'
 import { getScheduleExpression, getScheduleSummary } from '@/lib/scheduled-jobs'
 import { cn, formatDate, formatNumber, getTimezoneAbbreviation } from '@/lib/utils'
 
@@ -157,6 +159,7 @@ function QueueDetailPage() {
   const [retryDialogOpen, setRetryDialogOpen] = useState(false)
   const [purgeDialogOpen, setPurgeDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [flowControlsDialogOpen, setFlowControlsDialogOpen] = useState(false)
   const [metricsWindowValue, setMetricsWindowValue] =
     useState<(typeof METRICS_WINDOWS)[number]['value']>('6h')
   const [includePrometheusMetrics, setIncludePrometheusMetrics] = useState(false)
@@ -520,6 +523,14 @@ function QueueDetailPage() {
     }
   }
 
+  // Every opener goes through here so the dialog itself needs no effect to track opens.
+  const openFlowControls = useCallback(() => {
+    trackEvent(AnalyticsEvents.DIALOG_OPENED, {
+      [AnalyticsProperties.DIALOG_TYPE]: DialogType.QUEUE_FLOW_CONTROLS,
+    })
+    setFlowControlsDialogOpen(true)
+  }, [])
+
   const handleOpenScheduledJobCreate = useCallback(() => {
     navigate({
       to: '/$orgSlug/c/$connectionId/queues/$queueName/scheduled-jobs/new',
@@ -536,6 +547,7 @@ function QueueDetailPage() {
   const isUnattended = !queueLoading && workerCount === 0 && backlogCount > 0
   const isPaused = queue?.isPaused ?? false
   const isTogglingPause = pauseMutation.isPending || resumeMutation.isPending
+  const flowControlsSummary = formatFlowControlsSummary(queue?.flowControls)
 
   const topBarConfig = useMemo(
     () => ({
@@ -564,6 +576,18 @@ function QueueDetailPage() {
                   <span className="font-mono tabular-nums">{formatNumber(workerCount)}</span>{' '}
                   {workerCount === 1 ? 'worker' : 'workers'}
                 </span>
+                {flowControlsSummary ? (
+                  <button
+                    type="button"
+                    onClick={openFlowControls}
+                    className="hidden items-center gap-1 whitespace-nowrap rounded-sm text-xs text-muted-foreground hover:text-foreground sm:inline-flex"
+                    title="Queue-wide flow controls are active. Click to edit."
+                    data-testid="queue-flow-controls-summary"
+                  >
+                    <Gauge className="h-3 w-3" aria-hidden="true" />
+                    <span className="font-mono tabular-nums">{flowControlsSummary}</span>
+                  </button>
+                ) : null}
               </>
             )
           }
@@ -603,6 +627,10 @@ function QueueDetailPage() {
               <DropdownMenuItem onClick={handleOpenScheduledJobCreate}>
                 <Repeat />
                 Schedule job
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={openFlowControls}>
+                <Gauge />
+                Flow controls
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setRetryDialogOpen(true)}>
                 <RefreshCw />
@@ -648,6 +676,10 @@ function QueueDetailPage() {
               </>
             )}
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={openFlowControls}>
+            <Gauge />
+            Flow controls
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setRetryDialogOpen(true)}>
             <RefreshCw />
@@ -673,11 +705,13 @@ function QueueDetailPage() {
       isPaused,
       isTogglingPause,
       isUnattended,
+      flowControlsSummary,
       queueLoading,
       queueName,
       workerCount,
       handleOpenScheduledJobCreate,
       handleTogglePause,
+      openFlowControls,
     ]
   )
 
@@ -1724,6 +1758,14 @@ function QueueDetailPage() {
         queueName={queueName}
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
+      />
+
+      {/* Keyed so a queue or connection change while open never reuses the old form. */}
+      <QueueFlowControlsDialog
+        key={`${connectionId}:${queueName}`}
+        queueName={queueName}
+        open={flowControlsDialogOpen}
+        onOpenChange={setFlowControlsDialogOpen}
       />
     </div>
   )

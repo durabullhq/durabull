@@ -5,11 +5,18 @@
 
 import { trackEvent } from '@durabull/analytics/browser'
 import { AnalyticsEvents, AnalyticsProperties } from '@durabull/analytics/events'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  type QueryClient,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
 import { useConnection } from '@/components/connection-provider'
 import { ApiError, api, fetchApi, handleRes, type InferResponseType } from '@/lib/api'
 import { PAGINATION } from '@/lib/constants'
+import type { FlowControlsUpdate } from '@/lib/flow-controls'
 import type { JobOptionsInput } from '@/lib/job-options'
 
 // Re-export ApiError for backward compatibility
@@ -27,6 +34,7 @@ type MetricsEndpoint = (typeof api.c)[':connectionId']['metrics']
 type WorkersEndpoint = (typeof api.c)[':connectionId']['workers']
 type CanDeleteEndpoint = (typeof api.c)[':connectionId']['queues'][':queueName']['can-delete']
 type PurgeQueueEndpoint = (typeof api.c)[':connectionId']['queues'][':queueName']['purge']
+type FlowControlsEndpoint = (typeof api.c)[':connectionId']['queues'][':queueName']['flow-controls']
 
 // Type helpers using Hono's InferResponseType
 type ListQueuesResponse = InferResponseType<QueuesEndpoint['$get'], 200>
@@ -39,6 +47,7 @@ type ListMetricsResponse = InferResponseType<MetricsEndpoint['$get'], 200>
 type ListWorkersResponse = InferResponseType<WorkersEndpoint['$get'], 200>
 type CanDeleteQueueResponse = InferResponseType<CanDeleteEndpoint['$get'], 200>
 type PurgeQueueResponse = InferResponseType<PurgeQueueEndpoint['$post'], 200>
+export type QueueFlowControlsResponse = InferResponseType<FlowControlsEndpoint['$get'], 200>
 
 export interface QueueMetricsPoint {
   metricIndex: number
@@ -233,6 +242,8 @@ export const queryKeys = {
       : (['queues', connectionId] as const),
   queueDiscovery: (connectionId: string) => ['queues', connectionId, 'discovery'] as const,
   queue: (connectionId: string, name: string) => ['queue', connectionId, name] as const,
+  queueFlowControls: (connectionId: string, name: string) =>
+    ['queue', connectionId, name, 'flow-controls'] as const,
   queueMetrics: (connectionId: string, name: string, options?: QueueMetricsOptions) =>
     ['queue', connectionId, name, 'metrics', options] as const,
   jobs: (
@@ -726,6 +737,143 @@ export function useResumeQueue() {
       trackEvent(AnalyticsEvents.QUEUE_RESUMED, {
         queue_name: queueName,
         success: false,
+      })
+    },
+  })
+}
+
+export function useQueueFlowControls(queueName: string, options?: { enabled?: boolean }) {
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useQuery({
+    queryKey: queryKeys.queueFlowControls(connectionId ?? '', queueName),
+    queryFn: async () => {
+      const res = await api.c[':connectionId'].queues[':queueName']['flow-controls'].$get({
+        param: { connectionId: connectionId!, queueName },
+      })
+      return handleRes<QueueFlowControlsResponse>(res)
+    },
+    enabled: (options?.enabled ?? true) && !!queueName && !!connectionId,
+    // The editor seeds from a fresh read on every open, never from the router's
+    // default 5s cache, so changes made elsewhere show up in the inputs.
+    staleTime: 0,
+    // The throttle window counts down in Redis; poll fast only while it is open
+    // or the concurrency cap is reached, otherwise just keep the counts fresh.
+    refetchInterval: (query) =>
+      query.state.data?.rateLimited || query.state.data?.isMaxed ? 2000 : 10_000,
+  })
+}
+
+/**
+ * Writes a mutation's returned state into the flow-controls cache. In-flight polls
+ * are cancelled first, otherwise one that read Redis before the write could land
+ * afterwards and restore the old state.
+ */
+async function writeFlowControlsState(
+  queryClient: QueryClient,
+  connectionId: string,
+  queueName: string,
+  data: QueueFlowControlsResponse
+) {
+  const queryKey = queryKeys.queueFlowControls(connectionId, queueName)
+  await queryClient.cancelQueries({ queryKey, exact: true })
+  queryClient.setQueryData(queryKey, data)
+}
+
+/**
+ * Invalidates the queue detail and everything nested under it except flow controls,
+ * whose fresh state the mutation already wrote.
+ */
+function invalidateQueueExceptFlowControls(
+  queryClient: QueryClient,
+  connectionId: string,
+  queueName: string
+) {
+  const flowControlsKey = queryKeys.queueFlowControls(connectionId, queueName)
+  return queryClient.invalidateQueries({
+    queryKey: queryKeys.queue(connectionId, queueName),
+    predicate: (query) => query.queryKey[3] !== flowControlsKey[3],
+  })
+}
+
+function describeFlowControlsChange(update: FlowControlsUpdate): string {
+  const describe = (label: string, value: unknown) =>
+    value === undefined ? null : `${label}_${value === null ? 'removed' : 'set'}`
+  return [
+    describe('concurrency', update.globalConcurrency),
+    describe('rate_limit', update.globalRateLimit),
+  ]
+    .filter(Boolean)
+    .join(',')
+}
+
+export function useUpdateQueueFlowControls() {
+  const queryClient = useQueryClient()
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useMutation({
+    mutationFn: async ({
+      queueName,
+      update,
+    }: {
+      queueName: string
+      update: FlowControlsUpdate
+    }) => {
+      const res = await api.c[':connectionId'].queues[':queueName']['flow-controls'].$put({
+        param: { connectionId: connectionId!, queueName },
+        json: update,
+      })
+      return handleRes<QueueFlowControlsResponse>(res)
+    },
+    onSuccess: async (data, { queueName, update }) => {
+      trackEvent(AnalyticsEvents.QUEUE_FLOW_CONTROLS_UPDATED, {
+        [AnalyticsProperties.QUEUE_NAME]: queueName,
+        [AnalyticsProperties.ACTION]: describeFlowControlsChange(update),
+        [AnalyticsProperties.SUCCESS]: true,
+      })
+      await writeFlowControlsState(queryClient, connectionId ?? '', queueName, data)
+      // The queue detail carries the limits and the metrics panel shows them too.
+      invalidateQueueExceptFlowControls(queryClient, connectionId ?? '', queueName)
+    },
+    onError: (_, { queueName, update }) => {
+      trackEvent(AnalyticsEvents.QUEUE_FLOW_CONTROLS_UPDATED, {
+        [AnalyticsProperties.QUEUE_NAME]: queueName,
+        [AnalyticsProperties.ACTION]: describeFlowControlsChange(update),
+        [AnalyticsProperties.SUCCESS]: false,
+      })
+    },
+  })
+}
+
+export function useClearQueueRateLimit() {
+  const queryClient = useQueryClient()
+  const connectionId = useConnectionIdFromContextOrRoute()
+
+  return useMutation({
+    mutationFn: async (queueName: string) => {
+      const res = await api.c[':connectionId'].queues[':queueName']['flow-controls'][
+        'clear-rate-limit'
+      ].$post({
+        param: { connectionId: connectionId!, queueName },
+      })
+      return handleRes<QueueFlowControlsResponse>(res)
+    },
+    onSuccess: async (data, queueName) => {
+      trackEvent(AnalyticsEvents.QUEUE_RATE_LIMIT_CLEARED, {
+        [AnalyticsProperties.QUEUE_NAME]: queueName,
+        [AnalyticsProperties.SUCCESS]: true,
+      })
+      await writeFlowControlsState(queryClient, connectionId ?? '', queueName, data)
+      // The configured limits are unchanged, so the queue detail stays valid; the
+      // metrics panel reports whether the queue is rate limited.
+      queryClient.invalidateQueries({
+        queryKey: [...queryKeys.queue(connectionId ?? '', queueName), 'metrics'],
+      })
+    },
+    onError: (_, queueName) => {
+      trackEvent(AnalyticsEvents.QUEUE_RATE_LIMIT_CLEARED, {
+        [AnalyticsProperties.QUEUE_NAME]: queueName,
+        [AnalyticsProperties.SUCCESS]: false,
       })
     },
   })

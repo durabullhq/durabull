@@ -284,4 +284,171 @@ describe('queues routes', () => {
       expect(response.status).toBe(400)
     })
   })
+
+  describe('flow controls', () => {
+    function createFlowQueue() {
+      const meta: { concurrency: number | null; max: number | null; duration: number | null } = {
+        concurrency: null,
+        max: null,
+        duration: null,
+      }
+      let limiterTtl = -2
+      const redis = { eval: mock(async () => 0) }
+
+      const queue = {
+        client: Promise.resolve(redis),
+        keys: { limiter: 'bull:emails:limiter' },
+        redis,
+        getJobCounts: async () => ({ waiting: 4, active: 2 }),
+        isPaused: async () => false,
+        getJobSchedulers: async () => [],
+        getGlobalConcurrency: async () => meta.concurrency,
+        getGlobalRateLimit: async () =>
+          meta.max !== null && meta.duration !== null
+            ? { max: meta.max, duration: meta.duration }
+            : null,
+        getRateLimitTtl: async () => limiterTtl,
+        getActiveCount: async () => 2,
+        setGlobalConcurrency: mock(async (value: number) => {
+          meta.concurrency = value
+          return 1
+        }),
+        removeGlobalConcurrency: mock(async () => {
+          meta.concurrency = null
+          return 1
+        }),
+        setGlobalRateLimit: mock(async (max: number, duration: number) => {
+          meta.max = max
+          meta.duration = duration
+          return 1
+        }),
+        removeGlobalRateLimit: mock(async () => {
+          meta.max = null
+          meta.duration = null
+          return 1
+        }),
+        removeRateLimitKey: mock(async () => {
+          limiterTtl = -2
+          return 1
+        }),
+        setThrottle: (ttl: number) => {
+          limiterTtl = ttl
+        },
+      }
+
+      mock.module('../lib/redis', () => ({
+        getQueue: async () => queue,
+        safeGetWorkers: async () => [],
+        debugGetBullKeys: async () => [],
+      }))
+
+      return queue
+    }
+
+    function putJson(body: unknown) {
+      return {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    }
+
+    it('reads unset flow controls', async () => {
+      createFlowQueue()
+      const app = await createQueuesRouteApp()
+      const response = await app.request('/emails/flow-controls')
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({
+        globalConcurrency: null,
+        globalRateLimit: null,
+        rateLimitTtlMs: 0,
+        rateLimited: false,
+        isMaxed: false,
+        activeCount: 2,
+      })
+    })
+
+    it('sets limits and returns the new state', async () => {
+      const queue = createFlowQueue()
+      const app = await createQueuesRouteApp()
+      const response = await app.request(
+        '/emails/flow-controls',
+        putJson({ globalConcurrency: 2, globalRateLimit: { max: 50, durationMs: 1000 } })
+      )
+
+      expect(response.status).toBe(200)
+      expect(queue.setGlobalConcurrency).toHaveBeenCalledWith(2)
+      expect(queue.setGlobalRateLimit).toHaveBeenCalledWith(50, 1000)
+      expect(queue.redis.eval).toHaveBeenCalledTimes(1)
+      const body = (await response.json()) as Record<string, unknown>
+      expect(body.globalConcurrency).toBe(2)
+      expect(body.globalRateLimit).toEqual({ max: 50, durationMs: 1000 })
+      expect(body.isMaxed).toBe(true)
+    })
+
+    it('removes a limit passed as null without touching the other', async () => {
+      const queue = createFlowQueue()
+      const app = await createQueuesRouteApp()
+      await app.request('/emails/flow-controls', putJson({ globalConcurrency: 8 }))
+      const response = await app.request(
+        '/emails/flow-controls',
+        putJson({ globalConcurrency: null })
+      )
+
+      expect(response.status).toBe(200)
+      expect(queue.removeGlobalConcurrency).toHaveBeenCalledTimes(1)
+      expect(queue.removeGlobalRateLimit).not.toHaveBeenCalled()
+      expect(((await response.json()) as { globalConcurrency: unknown }).globalConcurrency).toBe(
+        null
+      )
+    })
+
+    it('rejects invalid limits without writing to Redis', async () => {
+      const queue = createFlowQueue()
+      const app = await createQueuesRouteApp()
+
+      for (const body of [{}, { globalConcurrency: 0 }, { globalRateLimit: { max: 5 } }]) {
+        const response = await app.request('/emails/flow-controls', putJson(body))
+        expect(response.status).toBe(400)
+      }
+      expect(queue.setGlobalConcurrency).not.toHaveBeenCalled()
+      expect(queue.setGlobalRateLimit).not.toHaveBeenCalled()
+    })
+
+    it('clears an active rate-limit window', async () => {
+      const queue = createFlowQueue()
+      queue.setThrottle(3000)
+      const app = await createQueuesRouteApp()
+
+      const before = await app.request('/emails/flow-controls')
+      expect(((await before.json()) as { rateLimited: boolean }).rateLimited).toBe(true)
+
+      const response = await app.request('/emails/flow-controls/clear-rate-limit', {
+        method: 'POST',
+      })
+      expect(response.status).toBe(200)
+      expect(queue.removeRateLimitKey).toHaveBeenCalledTimes(1)
+      const body = (await response.json()) as { rateLimited: boolean; rateLimitTtlMs: number }
+      expect(body.rateLimited).toBe(false)
+      expect(body.rateLimitTtlMs).toBe(0)
+    })
+
+    it('includes configured limits in the queue detail response', async () => {
+      createFlowQueue()
+      const app = await createQueuesRouteApp()
+      await app.request(
+        '/emails/flow-controls',
+        putJson({ globalConcurrency: 4, globalRateLimit: { max: 10, durationMs: 60000 } })
+      )
+
+      const response = await app.request('/emails')
+      expect(response.status).toBe(200)
+      const body = (await response.json()) as { flowControls: unknown }
+      expect(body.flowControls).toEqual({
+        globalConcurrency: 4,
+        globalRateLimit: { max: 10, durationMs: 60000 },
+      })
+    })
+  })
 })

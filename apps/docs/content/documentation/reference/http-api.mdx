@@ -210,11 +210,18 @@ All routes below are under:
 - `GET /queues/:queueName/metrics`
 - `POST /queues/:queueName/pause`
 - `POST /queues/:queueName/resume`
+- `GET /queues/:queueName/flow-controls`
+- `PUT /queues/:queueName/flow-controls`
+- `POST /queues/:queueName/flow-controls/clear-rate-limit`
 - `POST /queues/:queueName/clean`
 - `POST /queues/:queueName/purge`
 - `POST /queues/:queueName/obliterate`
 - `DELETE /queues/:queueName`
 - `GET /queues/:queueName/can-delete`
+
+`GET /queues/:queueName` includes `flowControls` with the configured `globalConcurrency` and
+`globalRateLimit`. See [Flow Controls](/documentation/workflows/queue-operations#flow-controls-global-concurrency-and-rate-limit)
+for the update semantics.
 
 Queue discovery scans for `<prefix>:*:meta` and stores the discovered inventory. `POST /queues/discovery`
 starts a scan and returns `202`; add `wait=true` to wait for completion and receive `200`.
