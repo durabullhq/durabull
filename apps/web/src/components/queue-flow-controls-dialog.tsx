@@ -69,14 +69,17 @@ export function QueueFlowControlsDialog({
   const updateMutation = useUpdateQueueFlowControls()
   const clearMutation = useClearQueueRateLimit()
   const [editor, setEditor] = useState<EditorState | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  // Separate so one action's retry or an edit never hides the other action's failure.
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [clearError, setClearError] = useState<string | null>(null)
 
   // Seed the editor once per open from fresh server state (not a cached copy from a
   // previous open, nor one whose refresh just failed); polling must not clobber edits.
   // Adjusted during render rather than in an effect so no frame shows a stale form.
   if (!open) {
     if (editor !== null) setEditor(null)
-    if (actionError !== null) setActionError(null)
+    if (saveError !== null) setSaveError(null)
+    if (clearError !== null) setClearError(null)
   } else if (editor === null && state && !isFetching && !error) {
     setEditor({
       form: formFromLimits(state),
@@ -102,35 +105,36 @@ export function QueueFlowControlsDialog({
   const canSave = hasChanges && !isSaving
 
   const patchForm = (patch: Partial<FlowControlsForm>) => {
-    setActionError(null)
+    // Editing changes what Save would send, so its old failure no longer applies.
+    setSaveError(null)
     setEditor((prev) => (prev ? { ...prev, form: { ...prev.form, ...patch } } : prev))
   }
 
   const handleSave = async () => {
     if (!update || !hasChanges) return
-    setActionError(null)
+    setSaveError(null)
     try {
       await updateMutation.mutateAsync({ queueName, update })
       toast.success('Flow controls updated', {
         description: 'Workers apply the new limits the next time they fetch a job.',
       })
       onOpenChange(false)
-    } catch (saveError) {
+    } catch (error) {
       // Keep the dialog and the edits; the shared handlers only surface 401/429.
-      setActionError(`Could not save the limits: ${errorMessage(saveError)}`)
+      setSaveError(`Could not save the limits: ${errorMessage(error)}`)
     }
   }
 
   const handleClearWindow = async () => {
-    setActionError(null)
+    setClearError(null)
     try {
       await clearMutation.mutateAsync(queueName)
       toast.success('Rate-limit window ended', {
         description:
           'Workers resume once their current back-off ends (30 seconds at most by default). The limit still applies.',
       })
-    } catch (clearError) {
-      setActionError(`Could not end the rate-limit window: ${errorMessage(clearError)}`)
+    } catch (error) {
+      setClearError(`Could not end the rate-limit window: ${errorMessage(error)}`)
     }
   }
 
@@ -348,9 +352,22 @@ export function QueueFlowControlsDialog({
           </div>
         )}
 
-        {actionError ? (
-          <p role="alert" className="text-sm text-destructive" data-testid="flow-controls-error">
-            {actionError}
+        {clearError ? (
+          <p
+            role="alert"
+            className="text-sm text-destructive"
+            data-testid="flow-controls-clear-error"
+          >
+            {clearError}
+          </p>
+        ) : null}
+        {saveError ? (
+          <p
+            role="alert"
+            className="text-sm text-destructive"
+            data-testid="flow-controls-save-error"
+          >
+            {saveError}
           </p>
         ) : null}
 

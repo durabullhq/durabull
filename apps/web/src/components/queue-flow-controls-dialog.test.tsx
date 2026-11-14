@@ -256,6 +256,39 @@ describe('QueueFlowControlsDialog mutation failures', () => {
   })
 })
 
+describe('QueueFlowControlsDialog independent errors', () => {
+  beforeEach(() => {
+    updateMock.mockReset().mockRejectedValue(new Error('READONLY replica'))
+    clearMock.mockReset().mockRejectedValue(new Error('Connection is closed'))
+    queryState.data = state({
+      globalRateLimit: { max: 10, durationMs: 60_000 },
+      rateLimited: true,
+      rateLimitTtlMs: 42_000,
+    })
+    queryState.isFetching = false
+    queryState.error = null
+  })
+
+  it('keeps each failure until its own action is retried', async () => {
+    const user = userEvent.setup()
+    render(<QueueFlowControlsDialog queueName="emails" open onOpenChange={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: /End window now/ }))
+    await user.click(screen.getByLabelText('Limit concurrent jobs'))
+    await user.type(screen.getByLabelText('Global concurrency'), '4')
+    await user.click(screen.getByRole('button', { name: /Save limits/ }))
+
+    expect(await screen.findByTestId('flow-controls-save-error')).toBeInTheDocument()
+    // Editing clears only the save failure; the clear failure stays visible.
+    expect(screen.getByTestId('flow-controls-clear-error')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Global concurrency'), '0')
+    expect(screen.queryByTestId('flow-controls-save-error')).toBeNull()
+    expect(screen.getByTestId('flow-controls-clear-error')).toHaveTextContent(
+      'Could not end the rate-limit window: Connection is closed'
+    )
+  })
+})
+
 describe('formatTtl', () => {
   it('never shows 60 seconds in a part', () => {
     expect(formatTtl(500)).toBe('500 ms')
