@@ -153,8 +153,6 @@ const ALLOWED_PROPERTY_KEYS = new Set([
   'feature',
   'limit_key',
   'entitlement_source',
-  'enforcement_mode',
-  'shadow',
   'trial',
   // Slack: coarse labels, booleans and counts only. Never workspace, channel,
   // user or message ids, or anything typed in Slack.

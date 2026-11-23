@@ -343,10 +343,7 @@ const app = new Hono()
     if (existingRule.enabled && body.enabled === false) await rebalanceCapacity(organizationId)
 
     return c.json({
-      rule: serializeAlertRule(
-        rule,
-        await isResourceSuspended(organizationId, 'alert_rule', rule.id)
-      ),
+      rule: serializeAlertRule(rule, await isResourceSuspended('alert_rule', rule.id)),
     })
   })
   .delete('/rules/:ruleId', async (c) => {
@@ -931,7 +928,7 @@ async function validateNotificationChannels(
     if (!destination.enabled) {
       return `Destination "${destination.name}" is disabled.`
     }
-    if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
+    if (await isResourceSuspended('alert_destination', destination.id)) {
       return `Destination "${destination.name}" is paused because it is above your plan's destination limit.`
     }
     await requireDeliveryFeature(organizationId, destination.type)
@@ -1039,7 +1036,7 @@ async function resolveWebhookTestChannels(
       })
       continue
     }
-    if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
+    if (await isResourceSuspended('alert_destination', destination.id)) {
       results.push({
         url: destinationUrl,
         error: `Webhook destination "${destination.name}" is paused by your plan’s destination limit.`,

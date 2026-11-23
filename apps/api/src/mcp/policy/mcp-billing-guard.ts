@@ -26,9 +26,7 @@ async function deniedFeature(
   recordBillingEvent('feature_denied', organizationId, {
     feature,
     plan: entitlement.planCode,
-    shadow: !entitlement.enforced,
   })
-  if (!entitlement.enforced) return null
   const error = new FeatureNotEntitledError(feature)
   return {
     allowed: false,
@@ -74,9 +72,7 @@ export async function evaluateMcpBillingPolicy(input: {
   } else {
     const automationDenied = await deniedFeature(organizationId, 'automation.service_accounts')
     if (automationDenied) return automationDenied
-    if (
-      await isResourceSuspended(organizationId, 'service_account', input.principal.serviceAccountId)
-    ) {
+    if (await isResourceSuspended('service_account', input.principal.serviceAccountId)) {
       return {
         allowed: false,
         denialReason: 'service_account_suspended',
@@ -88,10 +84,7 @@ export async function evaluateMcpBillingPolicy(input: {
     }
   }
 
-  if (
-    input.connectionId &&
-    (await isResourceSuspended(organizationId, 'connection', input.connectionId))
-  ) {
+  if (input.connectionId && (await isResourceSuspended('connection', input.connectionId))) {
     return {
       allowed: false,
       denialReason: 'connection_suspended',

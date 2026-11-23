@@ -121,7 +121,7 @@ export default function PrivacyPage() {
       <PageHeading label="Legal · Durabull" title="Privacy Policy">
         <p>{policyDescription}</p>
         <p className="v2-mono mt-5 text-[var(--v2-muted)]">
-          Last updated: <time dateTime="2026-11-12">November 12, 2026</time>
+          Last updated: <time dateTime="2026-11-24">November 24, 2026</time>
         </p>
       </PageHeading>
 
@@ -337,13 +337,13 @@ function PrivacySharingSection() {
           hosting, database, storage, backup, network, and support providers process service data
           needed to run Durabull. PostHog receives configured analytics and diagnostics; Google
           receives configured website analytics. Resend processes recipient addresses and email
-          content for invitations, configured alerts, and billing notices to organization owners.
-          Google or GitHub participates in authentication when you choose that sign-in provider.
-          Stripe processes payment details, billing contacts, addresses, tax IDs, invoices, and
-          subscription status for Durabull Cloud subscriptions. Durabull stores the Stripe customer,
-          subscription, price, and latest-invoice references; subscription and invoice status; trial
-          and billing-period dates; checkout attempts; which member is the billing contact; and a
-          record of billing notices sent. It never stores card numbers.
+          content for invitations and configured alerts. Google or GitHub participates in
+          authentication when you choose that sign-in provider. Stripe processes payment details,
+          billing contacts, addresses, tax IDs, invoices, and subscription status for Durabull Cloud
+          subscriptions. Durabull stores the Stripe customer, subscription, price, and
+          latest-invoice references; subscription and invoice status; trial and billing-period
+          dates; checkout attempts; and which member is the billing contact. It never stores card
+          numbers.
         </li>
         <li>
           <strong className="text-[var(--v2-fg)]">Destinations you configure:</strong> notification

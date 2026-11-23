@@ -6,7 +6,6 @@ import {
   PLAN_CODES,
   PLANS,
   PURCHASABLE_PLAN_CODES,
-  smallestPlanForUsage,
 } from '@durabull/billing'
 import { billingRepository, isOwnerRole } from '@durabull/dal'
 import { zValidator } from '@hono/zod-validator'
@@ -35,7 +34,6 @@ import {
   allocateCapacity,
   findFoundingOwnerId,
 } from '../billing/suspension'
-import { getTransitionStatus } from '../billing/transition'
 import { receiveStripeWebhook, WebhookSignatureError } from '../billing/webhooks'
 import { requireOrganization } from '../middleware/auth'
 
@@ -81,13 +79,6 @@ function serializeSubscription(subscription: SubscriptionRow) {
     trialEnd: serializeDate(subscription.trialEnd),
     collectionMethod: subscription.collectionMethod,
   }
-}
-
-/** The beta grant end, only while access actually comes from the grant. */
-function activeMigrationGrant(entitlement: EffectiveEntitlement, now = new Date()): string | null {
-  const expiresAt = entitlement.migrationGrantExpiresAt
-  if (entitlement.source !== 'migration_grant' || !expiresAt) return null
-  return expiresAt.getTime() > now.getTime() ? expiresAt.toISOString() : null
 }
 
 function checkoutRefusalStatus(error: CheckoutRefusedError): 400 | 409 | 503 {
@@ -200,8 +191,6 @@ const app = new Hono()
       graceExpiresAt: serializeDate(entitlement.graceExpiresAt),
       capacityAdjustmentExpiresAt: serializeDate(entitlement.capacityAdjustmentExpiresAt),
       canManageBilling: isOwnerRole(membership?.role),
-      // Beta transition banner: only after the notice was sent, until a plan is chosen.
-      transition: await getTransitionStatus(organizationId, entitlement, subscription?.status),
     })
   })
 
@@ -338,7 +327,6 @@ const app = new Hono()
 
     return c.json({
       enabled: true as const,
-      enforcement: config.enforcement,
       enforced: entitlement.enforced,
       planCode: entitlement.planCode,
       planName: planName(entitlement),
@@ -354,15 +342,7 @@ const app = new Hono()
       subscription: serializeSubscription(subscription),
       graceExpiresAt: serializeDate(entitlement.graceExpiresAt),
       capacityAdjustmentExpiresAt: serializeDate(entitlement.capacityAdjustmentExpiresAt),
-      // Null once the grant has ended, so its notice does not outlive it.
-      migrationGrantExpiresAt: activeMigrationGrant(entitlement),
-      // Beta transition banner: only after the notice was sent, until a plan is chosen.
-      transition: await getTransitionStatus(organizationId, entitlement, subscription?.status),
       historyRetentionFloorExpiresAt: serializeDate(entitlement.historyRetentionFloorExpiresAt),
-      // Beta transition: the smallest plan that fits current usage, and what
-      // Free would restrict, so owners see the exact impact before it applies.
-      proposedPlanCode: smallestPlanForUsage(usage),
-      freePlanExceeded: exceededLimits(PLANS.free.limits, usage),
       pendingCheckout: openAttempt
         ? {
             planCode: openAttempt.planCode,

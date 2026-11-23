@@ -23,12 +23,9 @@ Set on the Cloud API only (see `.env.example`):
 
 | Variable | Purpose |
 | --- | --- |
-| `DURABULL_BILLING_ENABLED` | Turns Cloud billing on. Startup fails if combined with authless/env-connection mode, missing Stripe keys or prices, a non-https `APP_BASE_URL` in production, or a live key outside production. |
-| `DURABULL_BILLING_ENFORCEMENT` | `off`, `shadow` (default), `pilot`, `on`. Shadow records `feature_denied` with `shadow=true` and never denies. |
-| `DURABULL_BILLING_PILOT_ORG_IDS` | Organizations enforced while in `pilot`. |
+| `DURABULL_BILLING_ENABLED` | Turns Cloud billing on; plan limits are enforced whenever it is on. Startup fails if combined with authless/env-connection mode, missing Stripe keys or prices, a non-https `APP_BASE_URL` in production, or a live key outside production. |
 | `DURABULL_BILLING_PURCHASES_ENABLED` | `false` stops new Checkout sessions (rollback switch). Webhooks keep reconciling. |
 | `DURABULL_BILLING_TRIALS_ENABLED` | Disables the 14-day Business trial if Stripe trial support changes. |
-| `DURABULL_BILLING_LAUNCH_AT`, `DURABULL_BILLING_MIGRATION_GRANT_UNTIL` | Beta transition grant for organizations created before launch (must be ≥ 30 days). |
 | `STRIPE_*` | Keys, webhook secret, portal configuration, current Price IDs, Enterprise product IDs. |
 | `DURABULL_STRIPE_LEGACY_PRICES` | Retained Price versions so existing subscribers keep mapping after a price change. |
 
@@ -64,57 +61,15 @@ sandbox.
    IDs.
 6. Trials: `trial_period_days` with `missing_payment_method=cancel` is verified on the sandbox
    account (trial ends with no charge and the subscription cancels).
-7. Verify end to end before enforcing:
+7. Verify end to end after any Stripe or catalog change:
    `DURABULL_BILLING_VERIFY_DATABASE_URL=<disposable db> bun tooling/scripts/billing-sandbox-lifecycle.ts`
    runs the lifecycle scenarios with Stripe test clocks (refuses live keys).
 
-## Rollout
+## Rollback
 
-1. Deploy with `DURABULL_BILLING_ENABLED=true`, `DURABULL_BILLING_ENFORCEMENT=shadow`. The sweep
-   backfills entitlements for every organization (applying the migration grant to organizations
-   created before launch).
-2. Inspect who would be restricted: `bun tooling/scripts/billing-ops.ts status` and PostHog
-   `feature_denied` events with `shadow=true`.
-3. Send the beta-transition notice (see below). Each owner sees the proposed plan and the exact
-   resources Free would restrict in Settings → Billing.
-4. Switch to `pilot` for selected organizations, verify real invoices and feature access, then run a
-   full renewal / failed-payment simulation with Stripe test clocks.
-5. Switch to `on`.
-
-### Beta transition notice
-
-Organizations created before `DURABULL_BILLING_LAUNCH_AT` keep full access until their migration
-grant ends. Once the pricing page is live, run from the API environment:
-
-```bash
-bun tooling/scripts/billing-ops.ts launch-transition
-bun tooling/scripts/billing-ops.ts launch-transition --execute --by <you>
-```
-
-The first command is a dry run: it checks the deployment (billing enabled, a live Stripe key in
-production, email configured, pricing page reachable), warns when enforcement is not `on` (nothing
-changes at the announced deadline until it is), lists every organization still on the grant with
-its owners, proposed plan and what the Free plan would change, and counts the Stripe Customers it
-would create. `--execute` creates a Stripe Customer for every organization that lacks one (contact:
-the founding owner), emails the notice to every owner of every organization on the grant that has
-not chosen a plan (an active, trialing or past-due subscription), and records a
-`transition_notice_sent` operator action for each organization an owner of which received it.
-Every email is claimed in `billing_notice_delivery` before it is sent and carries an idempotency
-key, so re-running only retries what was not delivered. The key is kept when delivery is uncertain
-(a network or provider server error, or a send that was not recorded) and replaced after a definite
-rejection. Resend deduplicates a key for 24 hours, so a send left uncertain for longer than that can
-reach an owner twice; otherwise each owner gets each email once. `--allow-sandbox` (not in
-production) and `--skip-pricing-check` exist for rehearsals.
-
-After the notice, the billing lifecycle (at startup and then hourly) retries failed notices,
-reaches owners added since, and sends reminders 7 days and 1 day before an organization's grant
-ends, never within two days of its notice and only while it has not chosen a plan. Once the notice
-went out, every member of those organizations sees an in-app banner with the deadline in UTC
-(owners get "Choose a plan"); it can be dismissed until the final week.
-
-Rollback: set `DURABULL_BILLING_PURCHASES_ENABLED=false` (stops new purchases, keeps known paid
-access and ingestion), or `DURABULL_BILLING_ENFORCEMENT=shadow` (stops denials; suspensions are
-lifted on the next materialization). **Never disable the webhook endpoint as a rollback.** If a
+Set `DURABULL_BILLING_PURCHASES_ENABLED=false` to stop new purchases while keeping known paid access
+and ingestion. Turning `DURABULL_BILLING_ENABLED` off stops all plan enforcement: at startup the API
+marks every stored entitlement unenforced and lifts its suspensions. **Never disable the webhook endpoint as a rollback.** If a
 charge is wrong, fix it in Stripe and reconcile; editing local plan rows does not change an invoice.
 
 ## Monitoring
@@ -140,7 +95,6 @@ Route these to the on-call alerting channel.
 | Force reconciliation | `bun tooling/scripts/billing-ops.ts reconcile <org-id>` (or `--all`) |
 | Customer lookup | `bun tooling/scripts/billing-ops.ts lookup <org-id>` or `lookup cus_…` |
 | Enterprise contract limits | `bun tooling/scripts/billing-ops.ts contract <org-id> --limits '{"connections.enabled":60}' --reason "<agreement ref>" --by <you>` |
-| Extend a beta grant | `bun tooling/scripts/billing-ops.ts migration-grant <org-id> 2027-01-15T00:00:00Z --reason "<why>" --by <you>` |
 
 ### Wrongly locked customer
 
@@ -202,7 +156,6 @@ History visibility shortens immediately; stored samples are kept 7 days before p
   for Settings → Billing only.
 - A banner in the app shows the most urgent plan state: a failed payment or lapsed plan and a
   trial about to end (owners only), paused resources and an open adjustment window (everyone).
-  The beta transition banner shows when none of those apply.
 - `GET /api/billing/invoices` (owners) lists the twelve most recent Stripe invoices with hosted
   and PDF links; Settings → Billing shows them without leaving the app. A Stripe failure returns
   502 `invoices_unavailable` and the page points to Manage billing instead.

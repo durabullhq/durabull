@@ -81,7 +81,6 @@ function teamOverview(overrides: Partial<EnabledBillingOverview> = {}): BillingO
 function overview(overrides: Partial<EnabledBillingOverview> = {}): BillingOverview {
   return {
     enabled: true,
-    enforcement: 'on',
     enforced: true,
     planCode: 'free',
     planName: 'Free',
@@ -103,10 +102,7 @@ function overview(overrides: Partial<EnabledBillingOverview> = {}): BillingOverv
     subscription: null,
     graceExpiresAt: null,
     capacityAdjustmentExpiresAt: null,
-    migrationGrantExpiresAt: null,
     historyRetentionFloorExpiresAt: null,
-    proposedPlanCode: 'free',
-    freePlanExceeded: [],
     pendingCheckout: null,
     suspended: [],
     hasBillingAccount: false,
@@ -309,22 +305,6 @@ describe('BillingSettingsPage', () => {
     render(<BillingSettingsPage />)
     expect(screen.queryByRole('button', { name: 'Upgrade to Team' })).not.toBeInTheDocument()
     expect(screen.getByText(/New purchases are paused/)).toBeInTheDocument()
-  })
-
-  it('does not call Free the current plan while the beta grant gives full access', () => {
-    useBillingMock.mockReturnValue({
-      data: overview({
-        source: 'migration_grant',
-        migrationGrantExpiresAt: '2026-12-15T00:00:00.000Z',
-        proposedPlanCode: 'team',
-      }),
-      isLoading: false,
-    })
-    render(<BillingSettingsPage />)
-    expect(screen.queryByText('Current')).not.toBeInTheDocument()
-    expect(screen.getByText('Durabull Cloud plans are starting')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Choose Team' })).toBeInTheDocument()
-    expect(screen.getByText(/Applies from .* unless a plan is chosen/)).toBeInTheDocument()
   })
 
   it('waits for the route’s organization before showing or acting on billing', () => {

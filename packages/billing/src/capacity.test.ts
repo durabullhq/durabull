@@ -6,13 +6,7 @@ import {
   evaluateCapacityTransition,
   selectResourcesWithinLimit,
 } from './capacity'
-import {
-  isBillingErrorBody,
-  PLANS,
-  requiredPlanForFeature,
-  requiredPlanForLimit,
-  smallestPlanForUsage,
-} from './index'
+import { isBillingErrorBody, PLANS, requiredPlanForFeature, requiredPlanForLimit } from './index'
 
 const now = new Date('2026-11-01T00:00:00.000Z')
 const day = 24 * 60 * 60 * 1000
@@ -152,9 +146,6 @@ describe('catalog helpers', () => {
     expect(requiredPlanForFeature('alerts.linear')).toBe('team')
     expect(requiredPlanForLimit('connections.enabled', 6)).toBe('business')
     expect(requiredPlanForLimit('connections.enabled', 16)).toBe('enterprise')
-    expect(smallestPlanForUsage({ 'connections.enabled': 2, 'members.reserved': 12 })).toBe(
-      'business'
-    )
   })
 
   it('recognizes structured billing errors', () => {

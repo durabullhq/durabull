@@ -853,12 +853,7 @@ describe('Slack integration', () => {
 
   it('keeps Slack behind the Team plan and nudges Free organizations to upgrade', async () => {
     await seed()
-    setBillingConfigForTests({
-      enabled: true,
-      enforcement: 'on',
-      launchAt: null,
-      migrationGrantUntil: null,
-    })
+    setBillingConfigForTests({ enabled: true })
     invalidateEntitlementCache()
     const app = await createApp()
 

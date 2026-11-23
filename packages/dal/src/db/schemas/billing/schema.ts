@@ -101,13 +101,12 @@ export const organizationEntitlement = pgTable('organization_entitlement', {
   revision: integer('revision').notNull().default(1),
   features: jsonb('features').$type<string[]>().notNull().default([]),
   limits: jsonb('limits').$type<BillingLimitsJson>().notNull().default({}),
-  /** When false the row is informational (shadow mode) and capacity triggers ignore it. */
+  /** When false (Cloud billing turned off) capacity triggers ignore the row. */
   enforced: boolean('enforced').notNull().default(false),
   degraded: boolean('degraded').notNull().default(false),
   notices: jsonb('notices').$type<string[]>().notNull().default([]),
   lastPaidPlanCode: text('last_paid_plan_code'),
   graceExpiresAt: timestamp('grace_expires_at', { withTimezone: true }),
-  migrationGrantExpiresAt: timestamp('migration_grant_expires_at', { withTimezone: true }),
   capacityAdjustmentExpiresAt: timestamp('capacity_adjustment_expires_at', { withTimezone: true }),
   lastCapacityAdjustmentEndedAt: timestamp('last_capacity_adjustment_ended_at', {
     withTimezone: true,
@@ -245,8 +244,8 @@ export const billingEntitlementOverride = pgTable(
 )
 
 /**
- * Audit trail for manual billing changes (operator overrides, contract limits,
- * beta grants) and for organization deletion. Rows outlive the organization so
+ * Audit trail for manual billing changes (operator overrides, contract limits)
+ * and for organization deletion. Rows outlive the organization so
  * later refunds or disputes can still be matched to it.
  */
 export const billingOperatorAction = pgTable(
@@ -260,45 +259,4 @@ export const billingOperatorAction = pgTable(
     details: jsonb('details').$type<Record<string, unknown>>(),
   },
   (table) => [index('billing_operator_action_org_idx').on(table.organizationId)]
-)
-
-export const billingNoticeKinds = ['transition_notice', 'reminder_7d', 'reminder_1d'] as const
-export type BillingNoticeKind = (typeof billingNoticeKinds)[number]
-
-export const billingNoticeStatuses = ['sending', 'sent', 'failed'] as const
-export type BillingNoticeStatus = (typeof billingNoticeStatuses)[number]
-
-/**
- * One row per billing notice email per organization owner. The unique key
- * makes sending idempotent: a notice is claimed before it is sent, and only a
- * failed (or long-stuck) claim can be retried.
- */
-export const billingNoticeDelivery = pgTable(
-  'billing_notice_delivery',
-  {
-    ...baseColumns,
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    kind: text('kind').$type<BillingNoticeKind>().notNull(),
-    userId: text('user_id').notNull(),
-    email: text('email').notNull(),
-    status: text('status').$type<BillingNoticeStatus>().notNull(),
-    attempts: integer('attempts').notNull().default(1),
-    /**
-     * Sent to the email provider. Kept when a stuck send is retried (it may
-     * have been delivered), replaced after a send that failed.
-     */
-    idempotencyKey: text('idempotency_key').notNull(),
-    providerMessageId: text('provider_message_id'),
-    error: text('error'),
-    sentAt: timestamp('sent_at', { withTimezone: true }),
-  },
-  (table) => [
-    uniqueIndex('billing_notice_delivery_unique_idx').on(
-      table.organizationId,
-      table.kind,
-      table.userId
-    ),
-  ]
 )

@@ -175,16 +175,4 @@ describe('PlanStatusBanner', () => {
     render(<PlanStatusBanner orgSlug="acme" />)
     expect(screen.getByTestId('plan-status-banner')).toBeInTheDocument()
   })
-
-  it('falls back to the beta transition banner when the plan needs nothing else', () => {
-    plan({
-      transition: {
-        deadline: new Date(Date.now() + 20 * 86_400_000).toISOString(),
-        noticeSentAt: new Date().toISOString(),
-      },
-    })
-    render(<PlanStatusBanner orgSlug="acme" />)
-    expect(screen.queryByTestId('plan-status-banner')).not.toBeInTheDocument()
-    expect(screen.getByTestId('transition-banner')).toBeInTheDocument()
-  })
 })

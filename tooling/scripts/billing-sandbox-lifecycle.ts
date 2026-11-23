@@ -35,7 +35,6 @@ mutableEnv.DATABASE_URL = databaseUrl
 mutableEnv.DURABULL_AUTHLESS = false
 mutableEnv.DURABULL_ENV_CONNECTIONS = false
 mutableEnv.DURABULL_BILLING_ENABLED = true
-mutableEnv.DURABULL_BILLING_ENFORCEMENT = 'on'
 mutableEnv.STRIPE_WEBHOOK_SECRET = `whsec_${randomUUID().replaceAll('-', '')}`
 
 const { createStripeClient, setupStripeCatalog } = await import(

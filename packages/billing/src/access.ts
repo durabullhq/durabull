@@ -20,7 +20,7 @@ import {
 export interface EntitlementSnapshot {
   /** False on desktop, self-hosted and any deployment without Cloud billing. */
   billingEnabled: boolean
-  /** Denials and limits apply. False while billing is observed only (shadow, pilot). */
+  /** Denials and limits apply. False when Cloud billing is off (self-hosted). */
   enforced: boolean
   planCode: PlanCode | 'self_hosted'
   features: readonly FeatureKey[]

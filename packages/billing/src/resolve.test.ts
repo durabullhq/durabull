@@ -17,7 +17,6 @@ function inputs(overrides: Partial<EntitlementInputs> = {}): EntitlementInputs {
     billingEnabled: true,
     subscription: null,
     lastPaidPlan: null,
-    migrationGrantExpiresAt: null,
     override: null,
     contractLimits: null,
     verifiedAt: now,
@@ -297,18 +296,5 @@ describe('resolveEntitlement', () => {
       inputs({ override: { planCode: 'business', expiresAt: new Date(now.getTime() - 1) } })
     )
     expect(expired.planCode).toBe('free')
-  })
-
-  it('keeps existing usage unrestricted during the beta migration grant', () => {
-    const grantEnd = new Date(now.getTime() + 10 * day)
-    const result = resolveEntitlement(inputs({ migrationGrantExpiresAt: grantEnd }))
-    expect(result.source).toBe('migration_grant')
-    expect(result.limits['connections.enabled']).toBeNull()
-    expect(result.reevaluateAt).toEqual(grantEnd)
-
-    const after = resolveEntitlement(
-      inputs({ migrationGrantExpiresAt: new Date(now.getTime() - 1) })
-    )
-    expect(after.planCode).toBe('free')
   })
 })

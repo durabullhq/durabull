@@ -279,7 +279,7 @@ export async function allocateCapacity(
   return { suspended: toSuspend, restored }
 }
 
-/** Lift every suspension (billing disabled, enforcement off, or unlimited grant). */
+/** Lift every suspension (Cloud billing turned off). */
 export async function liftAllSuspensions(organizationId: string): Promise<number> {
   return billingRepository.unsuspend(organizationId)
 }

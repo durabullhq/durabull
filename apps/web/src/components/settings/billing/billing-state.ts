@@ -44,7 +44,7 @@ function standingOf(subscription: Subscription, source: string): SubscriptionSta
     case 'active':
       return subscription.cancelAtPeriodEnd ? 'ending' : 'active'
     // Overdue only takes paid access away once the organization is actually
-    // on Free; a grace period, beta grant or override keeps it meanwhile.
+    // on Free; a grace period or override keeps it meanwhile.
     case 'past_due':
     case 'unpaid':
       return source === 'free' ? 'overdue_lapsed' : 'overdue_grace'
@@ -147,8 +147,8 @@ export function planAction(
   if (!state.subscription) {
     if (!owner) return { kind: 'none', note: OWNER_NOTE }
     if (!overview.purchasesEnabled) return { kind: 'none' }
-    // During the beta grant or an arranged plan nothing is being "upgraded".
-    const choosing = overview.source === 'migration_grant' || overview.source === 'override'
+    // On an arranged plan nothing is being "upgraded".
+    const choosing = overview.source === 'override'
     return { kind: 'checkout', label: choosing ? `Choose ${name}` : `Upgrade to ${name}` }
   }
 

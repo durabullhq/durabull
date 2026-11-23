@@ -1,6 +1,7 @@
 # ADR-0002: Cloud billing and server-side entitlements
 
-Status: Accepted · 2026-10-20
+Status: Accepted · 2026-10-20 · Amended 2026-11-24 (beta migration grant and staged enforcement
+removed after launch)
 
 ## Context
 
@@ -17,7 +18,7 @@ evaluation, queued deliveries and history queries.
 2. **Versioned local catalog** (`packages/billing`) is the single source of plans, features and limits.
    Stripe Entitlements is not used, to avoid two catalogs that can disagree.
 3. **Pure resolver.** `resolveEntitlement` maps verified evidence (subscription projection, last paid
-   plan, overrides, migration grant, contract limits, verification time) to effective access. The
+   plan, overrides, contract limits, verification time) to effective access. The
    lifecycle table is unit-tested.
 4. **Materialized entitlement + reconciliation.** Signed webhooks are stored in a durable Postgres
    inbox and only trigger reconciliation against Stripe's current state, serialized per organization,
@@ -38,15 +39,16 @@ evaluation, queued deliveries and history queries.
 8. **Reversible suspension.** Over-limit resources are suspended through
    `billing_resource_suspension`, never deleted, and billing never mutates customer Redis data.
 9. **Deployment policy.** Billing is enabled only on the managed Cloud deployment; startup refuses
-   unsafe combinations (authless, env connections, missing keys). Enforcement rolls out through
-   `off → shadow → pilot → on`.
+   unsafe combinations (authless, env connections, missing keys). Plan limits are enforced whenever
+   billing is enabled. (The launch used a time-limited beta migration grant and a staged
+   `off → shadow → pilot → on` rollout; both were removed once the transition ended.)
 
 ## Consequences
 
 - Billing adds a Postgres dependency for production Cloud and a small background lifecycle worker.
 - Capacity trigger errors surface as `SQLSTATE DBL01`; route handlers that catch database errors
   must rethrow billing errors (`toBillingHttpError`).
-- Time-based transitions (trials, grace, adjustment windows, grants) are materialized by deadline;
+- Time-based transitions (trials, grace, adjustment windows, overrides) are materialized by deadline;
   request-time reads re-materialize when a deadline has passed.
 - Self-service MCP service accounts now exist (Settings → Service accounts), backed by bearer tokens
   stored like other Better Auth access tokens and shown once.

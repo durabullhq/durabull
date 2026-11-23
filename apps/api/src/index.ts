@@ -150,7 +150,7 @@ const redisHealthBanner = isRedisHealthHistoryEnabled()
   : '📈 Redis health: History disabled'
 const billingConfig = getBillingConfig()
 const billingBanner = billingConfig.enabled
-  ? `💳 Billing: Stripe ${billingConfig.stripe.livemode ? 'live' : 'sandbox'} (enforcement: ${billingConfig.enforcement}${billingConfig.purchasesEnabled ? '' : ', purchases paused'})`
+  ? `💳 Billing: Stripe ${billingConfig.stripe.livemode ? 'live' : 'sandbox'} ${billingConfig.purchasesEnabled ? '' : ' (purchases paused)'}`
   : '💳 Billing: Disabled (self-hosted: all local features available)'
 const authlessProductionWarning =
   isAuthlessMode() && env.NODE_ENV === 'production'

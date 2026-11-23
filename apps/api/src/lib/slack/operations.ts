@@ -47,7 +47,7 @@ export async function requireUsableConnection(
   if (!connection.enabled) {
     throw new SlackOperationError(`Connection "${connection.name}" is disabled in Durabull.`)
   }
-  if (await isResourceSuspended(organizationId, 'connection', connection.id)) {
+  if (await isResourceSuspended('connection', connection.id)) {
     throw new SlackOperationError(
       `Connection "${connection.name}" is paused because it is above the plan's connection limit.`
     )
@@ -70,7 +70,7 @@ export async function listUsableConnections(organizationId: string): Promise<Red
   const usable: RedisConnection[] = []
   for (const connection of connections) {
     if (!connection.enabled) continue
-    if (await isResourceSuspended(organizationId, 'connection', connection.id)) continue
+    if (await isResourceSuspended('connection', connection.id)) continue
     usable.push(connection)
   }
   return usable

@@ -11,6 +11,3 @@ export default meta
 type Story = StoryObj<typeof meta>
 export const ResourcesPaused: Story = {}
 export const PaymentFailed: Story = { parameters: { billingScenario: 'payment-failed' } }
-export const BetaTransitionFallback: Story = {
-  parameters: { billingScenario: 'team', billingTransition: 'notice' },
-}

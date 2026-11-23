@@ -13,6 +13,9 @@
 
 export const BILLING_CATALOG_VERSION = '2026-11-12'
 
+/** Public Durabull Cloud pricing page, linked from the product, emails and docs. */
+export const CLOUD_PRICING_URL = 'https://durabull.io/pricing'
+
 export const PLAN_CODES = ['free', 'team', 'business', 'enterprise'] as const
 export type PlanCode = (typeof PLAN_CODES)[number]
 
@@ -289,18 +292,6 @@ export function requiredPlanForLimit(limit: LimitKey, quantity: number): PlanCod
 }
 
 export type CapacityUsage = Partial<Record<CapacityLimitKey, number>>
-
-/** Smallest plan whose limits cover the given usage (used for beta transition proposals). */
-export function smallestPlanForUsage(usage: CapacityUsage): PlanCode {
-  for (const code of PLAN_CODES) {
-    const fits = CAPACITY_LIMIT_KEYS.every((key) => {
-      const limit = PLANS[code].limits[key]
-      return limit === null || (usage[key] ?? 0) <= limit
-    })
-    if (fits) return code
-  }
-  return 'enterprise'
-}
 
 /** Usage entries above a plan's limits, e.g. for "what would Free restrict?" */
 export function exceededLimits(
