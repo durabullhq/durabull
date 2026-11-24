@@ -404,7 +404,11 @@ export const billingRepository = {
       .where(eq(organizationEntitlement.organizationId, organizationId))
   },
 
-  /** Organizations whose entitlement may change because a recorded deadline passed. */
+  /**
+   * Organizations whose entitlement may change because a recorded deadline
+   * passed, or that were stored unenforced while billing was off. Only the
+   * billing lifecycle calls this, and only while billing is enabled.
+   */
   async listEntitlementsDue(now: Date, limit = 200): Promise<string[]> {
     const db = await getDb()
     const rows = await db
@@ -415,7 +419,9 @@ export const billingRepository = {
           lte(organizationEntitlement.reevaluateAt, now),
           lte(organizationEntitlement.graceExpiresAt, now),
           lte(organizationEntitlement.capacityAdjustmentExpiresAt, now),
-          lte(organizationEntitlement.historyRetentionFloorExpiresAt, now)
+          lte(organizationEntitlement.historyRetentionFloorExpiresAt, now),
+          // Stored while billing was off; recomputing applies the plan limits.
+          eq(organizationEntitlement.enforced, false)
         )
       )
       .orderBy(asc(organizationEntitlement.updatedAt))

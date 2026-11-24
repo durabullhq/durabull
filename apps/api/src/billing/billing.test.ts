@@ -656,6 +656,20 @@ describe('Cloud billing', () => {
     expect(enforced.historyRetentionFloorExpiresAt).not.toBeNull()
   })
 
+  it('re-enforces rows stored while billing was off on the next sweep', async () => {
+    await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
+    setBillingConfigForTests({ enabled: false })
+    invalidateEntitlementCache()
+    expect(await syncStoredEnforcement()).toBe(1)
+    expect((await billingRepository.findEntitlement(AUTHLESS_ORG_ID))?.enforced).toBe(false)
+
+    // Billing back on: no request touches the organization, the sweep does.
+    setBillingConfigForTests(billingConfig())
+    invalidateEntitlementCache()
+    await runEntitlementSweep()
+    expect((await billingRepository.findEntitlement(AUTHLESS_ORG_ID))?.enforced).toBe(true)
+  })
+
   it('stops premium deliveries and MCP writes after a downgrade', async () => {
     await subscribe(AUTHLESS_ORG_ID)
     expect(await hasFeature(AUTHLESS_ORG_ID, 'alerts.webhook')).toBe(true)
