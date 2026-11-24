@@ -2,7 +2,7 @@ import type { OrganizationPolicyHooks } from '@durabull/auth'
 import { LIVE_SUBSCRIPTION_STATUSES, type SubscriptionStatus } from '@durabull/billing'
 import { billingRepository, eq, getDb, isOwnerRole, member } from '@durabull/dal'
 import { APIError } from 'better-auth/api'
-import { getBillingConfig, isBillingEnabled, isEnforcedFor } from './config'
+import { isBillingEnabled } from './config'
 import { assertCapacity, rebalanceCapacity } from './entitlements'
 import { BillingStateUnverifiedError, PlanLimitReachedError } from './errors'
 
@@ -39,10 +39,7 @@ export function createBillingOrganizationPolicy(): OrganizationPolicyHooks | und
     },
 
     async beforeAcceptInvitation({ organizationId, invitationId }) {
-      if (
-        isEnforcedFor(organizationId) &&
-        (await billingRepository.isSuspended('invitation', invitationId))
-      ) {
+      if (await billingRepository.isSuspended('invitation', invitationId)) {
         throw new APIError('FORBIDDEN', {
           message:
             'This invitation is paused because the organization is above its plan’s member limit. Ask the owner to restore it or upgrade.',
@@ -108,8 +105,6 @@ export function createBillingOrganizationPolicy(): OrganizationPolicyHooks | und
     },
 
     async hasReachedOrganizationLimit(user) {
-      // An abuse control, so it observes the same rollout as plan limits.
-      if (getBillingConfig().enforcement !== 'on') return false
       const db = await getDb()
       const rows = await db
         .select({ role: member.role })

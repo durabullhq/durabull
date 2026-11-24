@@ -9,11 +9,7 @@ import { getDatabaseMode } from '@durabull/dal'
 import { env } from '@durabull/env'
 import { isAuthlessMode } from '../lib/authless'
 
-export const BILLING_ENFORCEMENT_MODES = ['off', 'shadow', 'pilot', 'on'] as const
-export type BillingEnforcementMode = (typeof BILLING_ENFORCEMENT_MODES)[number]
-
 export const TRIAL_PERIOD_DAYS = 14
-export const MIN_MIGRATION_NOTICE_MS = 30 * 24 * 60 * 60 * 1000
 
 export interface PriceMapping {
   planCode: PlanCode
@@ -25,12 +21,8 @@ export interface PriceMapping {
 
 export interface BillingConfig {
   enabled: boolean
-  enforcement: BillingEnforcementMode
-  pilotOrganizationIds: ReadonlySet<string>
   purchasesEnabled: boolean
   trialsEnabled: boolean
-  launchAt: Date | null
-  migrationGrantUntil: Date | null
   appBaseUrl: string
   stripe: {
     secretKey: string | null
@@ -47,12 +39,6 @@ export interface BillingConfig {
   enterpriseProductIds: ReadonlySet<string>
 }
 
-function parseDate(value: string | undefined): Date | null {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
 function parseList(value: string | undefined): Set<string> {
   return new Set(
     (value ?? '')
@@ -60,13 +46,6 @@ function parseList(value: string | undefined): Set<string> {
       .map((item) => item.trim())
       .filter(Boolean)
   )
-}
-
-function parseEnforcement(value: string | undefined): BillingEnforcementMode {
-  const normalized = value?.trim().toLowerCase()
-  return (BILLING_ENFORCEMENT_MODES as readonly string[]).includes(normalized ?? '')
-    ? (normalized as BillingEnforcementMode)
-    : 'shadow'
 }
 
 function parseLegacyPrices(raw: string | undefined): Map<string, PriceMapping> {
@@ -118,12 +97,8 @@ export function loadBillingConfig(): BillingConfig {
 
   return {
     enabled,
-    enforcement: enabled ? parseEnforcement(env.DURABULL_BILLING_ENFORCEMENT) : 'off',
-    pilotOrganizationIds: parseList(env.DURABULL_BILLING_PILOT_ORG_IDS),
     purchasesEnabled: env.DURABULL_BILLING_PURCHASES_ENABLED !== false,
     trialsEnabled: env.DURABULL_BILLING_TRIALS_ENABLED !== false,
-    launchAt: parseDate(env.DURABULL_BILLING_LAUNCH_AT),
-    migrationGrantUntil: parseDate(env.DURABULL_BILLING_MIGRATION_GRANT_UNTIL),
     appBaseUrl: (env.APP_BASE_URL ?? 'http://localhost:5173').replace(/\/$/, ''),
     stripe: {
       secretKey,
@@ -152,20 +127,6 @@ export function setBillingConfigForTests(config: Partial<BillingConfig> | null):
 
 export function isBillingEnabled(): boolean {
   return getBillingConfig().enabled
-}
-
-/** Whether denials and capacity limits are enforced (not merely observed) for an org. */
-export function isEnforcedFor(organizationId: string): boolean {
-  const config = getBillingConfig()
-  if (!config.enabled) return false
-  switch (config.enforcement) {
-    case 'on':
-      return true
-    case 'pilot':
-      return config.pilotOrganizationIds.has(organizationId)
-    default:
-      return false
-  }
 }
 
 export function getBillingUrl(orgSlug?: string | null): string {
@@ -207,20 +168,6 @@ export function validateBillingDeployment(config = getBillingConfig()): string[]
   }
   if (config.stripe.livemode && env.NODE_ENV !== 'production') {
     problems.push('A live Stripe key is configured outside production; use a sandbox key.')
-  }
-  if (config.migrationGrantUntil && !config.launchAt) {
-    problems.push(
-      'DURABULL_BILLING_LAUNCH_AT is required with DURABULL_BILLING_MIGRATION_GRANT_UNTIL.'
-    )
-  }
-  if (
-    config.migrationGrantUntil &&
-    config.launchAt &&
-    config.migrationGrantUntil.getTime() - config.launchAt.getTime() < MIN_MIGRATION_NOTICE_MS
-  ) {
-    problems.push(
-      'The beta migration grant must last at least 30 days after DURABULL_BILLING_LAUNCH_AT.'
-    )
   }
   return problems
 }

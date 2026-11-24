@@ -184,8 +184,7 @@ export function createConnectionMiddleware(auth?: Auth) {
     // possible: they need no Redis access, and a connection cannot be deleted
     // while it still has rules. The request body is only read in that case.
     const disabled = !connection.enabled
-    const suspended =
-      !disabled && (await isResourceSuspended(organizationId, 'connection', connection.id))
+    const suspended = !disabled && (await isResourceSuspended('connection', connection.id))
     if (disabled || suspended) {
       const housekeeping = isAlertRuleHousekeeping(
         c.req.method,

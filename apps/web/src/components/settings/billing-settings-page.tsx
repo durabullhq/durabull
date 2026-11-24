@@ -1,7 +1,6 @@
 import {
   CAPACITY_LIMIT_KEYS,
   CLOUD_PRICING_URL,
-  isPlanCode,
   LIMIT_LABELS,
   PLANS,
 } from '@durabull/api-client/billing'
@@ -53,7 +52,6 @@ const SOURCE_LABELS: Record<
   trial: { label: 'Trial', variant: 'info' },
   payment_grace: { label: 'Payment issue', variant: 'warning' },
   pending_upgrade: { label: 'Upgrade pending payment', variant: 'warning' },
-  migration_grant: { label: 'Beta access', variant: 'neutral' },
   override: { label: 'Arranged by Durabull', variant: 'neutral' },
   degraded: { label: 'Unverified', variant: 'warning' },
   free: { label: 'Free', variant: 'neutral' },
@@ -514,50 +512,6 @@ function BillingNotices({
       </Notice>
     )
   }
-  if (overview.migrationGrantExpiresAt) {
-    const until = formatBillingDate(overview.migrationGrantExpiresAt)
-    const exceeded = overview.freePlanExceeded
-    const chosen = state.standing === 'active' || state.standing === 'trialing'
-    const proposed = isPlanCode(overview.proposedPlanCode) ? overview.proposedPlanCode : 'free'
-    notices.push(
-      chosen ? (
-        <Notice
-          key="grant"
-          tone="info"
-          icon={CalendarClock}
-          title="You are set for the move to plans"
-        >
-          Everything you use today stays available until {until}. From then on your {subscribedName}{' '}
-          plan’s limits apply.
-        </Notice>
-      ) : (
-        <Notice
-          key="grant"
-          tone="info"
-          icon={CalendarClock}
-          title="Durabull Cloud plans are starting"
-        >
-          Your current usage stays available until {until}. Based on today’s usage we suggest the{' '}
-          {PLANS[proposed].name} plan.
-          {exceeded.length > 0
-            ? ` On Free, this organization would be above: ${exceeded
-                .map(
-                  (e) => `${LIMIT_LABELS[e.limit].name.toLowerCase()} (${e.usage} of ${e.allowed})`
-                )
-                .join(', ')}.`
-            : ' Your usage fits the Free plan.'}
-        </Notice>
-      )
-    )
-  }
-  if (!overview.enforced && overview.overLimit.length > 0 && !overview.migrationGrantExpiresAt) {
-    notices.push(
-      <Notice key="observed" tone="neutral" icon={Info} title="Plan limits are not applied yet">
-        Usage above a plan’s limits is shown for reference. Nothing is paused or blocked for this
-        organization at the moment.
-      </Notice>
-    )
-  }
   if (overview.capacityAdjustmentExpiresAt) {
     notices.push(
       <Notice key="window" tone="warning" icon={AlertTriangle} title="Above your plan’s limits">
@@ -581,7 +535,7 @@ function BillingNotices({
   return <div className="space-y-3">{notices}</div>
 }
 
-function planSummary(overview: EnabledBillingOverview, state: BillingState): string {
+function planSummary(state: BillingState): string {
   const subscription = state.subscription
   const billing = state.interval === 'year' ? 'Annual billing' : 'Monthly billing'
   const subscribedName = state.subscribedPlan ? PLANS[state.subscribedPlan].name : 'Paid'
@@ -601,12 +555,8 @@ function planSummary(overview: EnabledBillingOverview, state: BillingState): str
       return `${subscribedName} subscription · first payment not completed`
     case 'paused':
       return `${subscribedName} subscription · paused`
-    case 'none': {
-      const grantEnd = formatBillingDate(overview.migrationGrantExpiresAt)
-      if (grantEnd)
-        return `Full beta access until ${grantEnd}. Choose a plan below to keep what you use.`
+    case 'none':
       return 'Billed per organization. Your workers keep running on your infrastructure.'
-    }
   }
 }
 
@@ -638,7 +588,7 @@ function PlanSummary({
           </Badge>
         )
       }
-      description={planSummary(overview, state)}
+      description={planSummary(state)}
       actions={
         canOpenPortal ? (
           <>

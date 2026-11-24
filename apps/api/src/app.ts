@@ -179,7 +179,6 @@ function getAppConfig() {
     version: getAppVersionPayload(),
     billing: {
       enabled: getBillingConfig().enabled,
-      enforcement: getBillingConfig().enforcement,
     },
   }
 }

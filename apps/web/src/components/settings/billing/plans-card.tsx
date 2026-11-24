@@ -137,7 +137,6 @@ function PlanActions({
   const endDate = formatBillingDate(
     state.subscription?.cancelAt ?? state.subscription?.currentPeriodEnd
   )
-  const grantEnd = formatBillingDate(overview.migrationGrantExpiresAt)
   const note = 'text-xs leading-5 text-muted-foreground'
 
   return (
@@ -218,9 +217,6 @@ function PlanActions({
       {code === 'free' && state.standing === 'ending' && endDate ? (
         <p className={note}>Starts {endDate}.</p>
       ) : null}
-      {code === 'free' && !state.subscription && grantEnd ? (
-        <p className={note}>Applies from {grantEnd} unless a plan is chosen.</p>
-      ) : null}
     </div>
   )
 }
@@ -253,7 +249,7 @@ export function PlansCard({
     )
   const highlighted = (code: PlanCode) =>
     (state.subscription && state.subscribedPlan === code) ||
-    (!state.subscription && overview.planCode === code && overview.source !== 'migration_grant')
+    (!state.subscription && overview.planCode === code)
   const columnClass = (code: PlanCode) => cn(highlighted(code) && 'bg-muted/50')
 
   return (

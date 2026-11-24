@@ -1,16 +1,13 @@
 import { billingRepository } from '@durabull/dal'
-import { isEmailConfigured } from '@durabull/email'
 import { expireStaleCheckoutAttempts } from './checkout'
 import { isBillingEnabled } from './config'
 import { materializeEntitlement, rebalanceCapacity } from './entitlements'
 import { reconcileAllOrganizations } from './reconcile'
-import { sendDueReminders } from './transition'
 import { processWebhookInbox } from './webhooks'
 
 const INBOX_INTERVAL_MS = 15_000
 const SWEEP_INTERVAL_MS = 60_000
 const RECONCILE_INTERVAL_MS = 6 * 60 * 60 * 1000
-const REMINDER_INTERVAL_MS = 60 * 60 * 1000
 const EVENT_LAG_ALERT_MS = 15 * 60 * 1000
 
 const timers: Array<ReturnType<typeof setInterval>> = []
@@ -39,7 +36,7 @@ export async function runInboxPass(): Promise<void> {
 
 /**
  * Apply time-based transitions (trial end, grace expiry, capacity windows,
- * migration grants, history recovery) and backfill entitlements for
+ * history recovery) and backfill entitlements for
  * organizations that predate billing.
  */
 export async function runEntitlementSweep(now = new Date()): Promise<void> {
@@ -90,14 +87,9 @@ export function startBillingLifecycle(): void {
   running = true
   void singleFlight('inbox', runInboxPass)
   void singleFlight('sweep', () => runEntitlementSweep())
-  // Run once at startup too: frequent deploys would otherwise keep resetting the hourly timer.
-  void singleFlight('reminders', () => runReminderPass())
   timers.push(setInterval(() => void singleFlight('inbox', runInboxPass), INBOX_INTERVAL_MS))
   timers.push(
     setInterval(() => void singleFlight('sweep', () => runEntitlementSweep()), SWEEP_INTERVAL_MS)
-  )
-  timers.push(
-    setInterval(() => void singleFlight('reminders', () => runReminderPass()), REMINDER_INTERVAL_MS)
   )
   timers.push(
     setInterval(
@@ -113,21 +105,6 @@ export function startBillingLifecycle(): void {
       RECONCILE_INTERVAL_MS
     )
   )
-}
-
-/**
- * Send beta-transition reminders that are due. Replicas can run this at the
- * same time: each email is claimed in the database before it is sent.
- */
-export async function runReminderPass(now = new Date()): Promise<void> {
-  if (!isEmailConfigured()) return
-  const result = await sendDueReminders(now)
-  if (result.sent > 0) console.log(`[billing] Sent ${result.sent} transition reminder(s)`)
-  if (result.failed.length > 0) {
-    console.error(
-      `[billing] ALERT ${result.failed.length} transition reminder(s) failed; they are retried on the next pass`
-    )
-  }
 }
 
 export function stopBillingLifecycle(): void {

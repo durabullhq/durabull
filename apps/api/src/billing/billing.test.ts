@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,10 +12,8 @@ import {
   member,
   organization,
   redisConnection,
-  slackInstallationRepository,
   user,
 } from '@durabull/dal'
-import { BillingEmailError } from '@durabull/email'
 import { env } from '@durabull/env'
 import { createApiApp } from '../app'
 import { AUTHLESS_ORG_ID, getAuthlessContext, resetAuthlessStateForTests } from '../lib/authless'
@@ -43,14 +41,6 @@ import {
 } from './gateway'
 import { runEntitlementSweep } from './lifecycle'
 import { reconcileOrganization } from './reconcile'
-import {
-  listTransitionAudience,
-  refreshGrantEligibility,
-  sendDueReminders,
-  sendTransitionNotices,
-  setTransitionEmailSenderForTests,
-  syncStripeCustomers,
-} from './transition'
 import { processWebhookInbox, receiveStripeWebhook } from './webhooks'
 
 const TEST_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -72,11 +62,8 @@ const PRICES = {
 function billingConfig(overrides: Partial<BillingConfig> = {}): Partial<BillingConfig> {
   return {
     enabled: true,
-    enforcement: 'on',
     purchasesEnabled: true,
     trialsEnabled: true,
-    launchAt: null,
-    migrationGrantUntil: null,
     appBaseUrl: 'https://app.example.test',
     stripe: {
       secretKey: 'sk_test_x',
@@ -105,7 +92,6 @@ function billingConfig(overrides: Partial<BillingConfig> = {}): Partial<BillingC
     ]),
     purchasePrices: PRICES,
     enterpriseProductIds: new Set(),
-    pilotOrganizationIds: new Set(),
     ...overrides,
   }
 }
@@ -283,7 +269,7 @@ describe('Cloud billing', () => {
   })
 
   it('keeps every local feature available when billing is disabled (self-hosted)', async () => {
-    setBillingConfigForTests({ enabled: false, enforcement: 'off' })
+    setBillingConfigForTests({ enabled: false })
     const app = await createApp()
     for (const name of ['a', 'b', 'c']) {
       expect((await createConnection(app, name)).status).toBe(201)
@@ -592,16 +578,30 @@ describe('Cloud billing', () => {
     expect(suspendedMembers).toHaveLength(3)
   })
 
-  it('stops enforcing stored limits once enforcement is rolled back', async () => {
+  it('stops enforcing stored limits once billing is turned off', async () => {
     const app = await createApp()
     await createConnection(app, 'a')
     expect((await createConnection(app, 'b')).status).toBe(409)
 
-    setBillingConfigForTests(billingConfig({ enforcement: 'shadow' }))
+    setBillingConfigForTests({ enabled: false })
     invalidateEntitlementCache()
     expect(await syncStoredEnforcement()).toBe(1)
     // The capacity trigger no longer rejects, even before the organization is re-materialized.
     expect((await createConnection(app, 'b')).status).toBe(201)
+  })
+
+  it('never re-enforces limits when an operator materializes with billing off', async () => {
+    const app = await createApp()
+    await downgradeWithTwoConnections(app)
+    expect((await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).length).toBeGreaterThan(0)
+
+    // billing-ops reconcile / override / contract after billing is turned off.
+    setBillingConfigForTests({ enabled: false })
+    invalidateEntitlementCache()
+    const row = await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'operator' })
+    expect(row.enforced).toBe(false)
+    expect(await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).toEqual([])
+    expect((await createConnection(app, 'third')).status).toBe(201)
   })
 
   it('keeps alert rules on connections that stay active when trimming to the plan', async () => {
@@ -644,29 +644,30 @@ describe('Cloud billing', () => {
     expect(keptOnLiveConnection).toHaveLength(1)
   })
 
-  it('keeps collected history for the recovery window when enforcement turns on', async () => {
-    setBillingConfigForTests(billingConfig({ enforcement: 'shadow' }))
-    invalidateEntitlementCache()
+  it('keeps collected history for the recovery window when billing is turned back on', async () => {
     await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
+    setBillingConfigForTests({ enabled: false })
+    invalidateEntitlementCache()
+    expect(await syncStoredEnforcement()).toBe(1)
 
-    setBillingConfigForTests(billingConfig({ enforcement: 'on' }))
+    setBillingConfigForTests(billingConfig())
     invalidateEntitlementCache()
     const enforced = await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
     expect(enforced.historyRetentionFloorExpiresAt).not.toBeNull()
   })
 
-  it('applies the beta grant to organizations whose rows predate the launch dates', async () => {
-    // The shadow sweep created the row before launch dates were configured.
-    await getEntitlement(AUTHLESS_ORG_ID)
-    setBillingConfigForTests(
-      billingConfig({
-        launchAt: new Date(Date.now() + 86_400_000),
-        migrationGrantUntil: new Date(Date.now() + 31 * 86_400_000),
-      })
-    )
+  it('re-enforces rows stored while billing was off on the next sweep', async () => {
+    await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
+    setBillingConfigForTests({ enabled: false })
     invalidateEntitlementCache()
-    const entitlement = await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
-    expect(entitlement.source).toBe('migration_grant')
+    expect(await syncStoredEnforcement()).toBe(1)
+    expect((await billingRepository.findEntitlement(AUTHLESS_ORG_ID))?.enforced).toBe(false)
+
+    // Billing back on: no request touches the organization, the sweep does.
+    setBillingConfigForTests(billingConfig())
+    invalidateEntitlementCache()
+    await runEntitlementSweep()
+    expect((await billingRepository.findEntitlement(AUTHLESS_ORG_ID))?.enforced).toBe(true)
   })
 
   it('stops premium deliveries and MCP writes after a downgrade', async () => {
@@ -764,33 +765,6 @@ describe('Cloud billing', () => {
     })
   })
 
-  it('only observes denials in shadow mode', async () => {
-    setBillingConfigForTests(billingConfig({ enforcement: 'shadow' }))
-    invalidateEntitlementCache()
-    const app = await createApp()
-    expect((await createConnection(app, 'a')).status).toBe(201)
-    expect((await createConnection(app, 'b')).status).toBe(201)
-    const entitlement = await getEntitlement(AUTHLESS_ORG_ID)
-    expect(entitlement.enforced).toBe(false)
-    expect(entitlement.planCode).toBe('free')
-  })
-
-  it('applies the beta migration grant to organizations created before launch', async () => {
-    setBillingConfigForTests(
-      billingConfig({
-        launchAt: new Date(Date.now() + 86_400_000),
-        migrationGrantUntil: new Date(Date.now() + 31 * 86_400_000),
-      })
-    )
-    invalidateEntitlementCache()
-    const entitlement = await getEntitlement(AUTHLESS_ORG_ID)
-    expect(entitlement.source).toBe('migration_grant')
-    expect(entitlement.limits['connections.enabled']).toBeNull()
-    const app = await createApp()
-    const billing = await json(await app.request('/api/billing'))
-    expect(billing.migrationGrantExpiresAt).not.toBeNull()
-    expect(billing.proposedPlanCode).toBe('free')
-  })
   /** Team organization with two connections, then moved to Free with the window already over. */
   async function downgradeWithTwoConnections(app: Awaited<ReturnType<typeof createApp>>) {
     await subscribe(AUTHLESS_ORG_ID)
@@ -824,7 +798,6 @@ describe('Cloud billing', () => {
       canManageBilling: true,
       suspended: [],
       subscription: null,
-      transition: null,
     })
     expect(entitlement.limits['connections.enabled']).toBe(1)
     expect(entitlement.usage['connections.enabled']).toBe(1)
@@ -839,7 +812,7 @@ describe('Cloud billing', () => {
       interval: 'month',
     })
 
-    setBillingConfigForTests({ enabled: false, enforcement: 'off' })
+    setBillingConfigForTests({ enabled: false })
     invalidateEntitlementCache()
     expect(await json(await app.request('/api/billing/entitlement'))).toEqual({
       enabled: false,
@@ -1357,366 +1330,5 @@ describe('Cloud billing', () => {
     expect(await suspendedIdsOf('member')).toEqual([])
     const overview = await json(await app.request('/api/billing'))
     expect(overview.capacityAdjustmentExpiresAt).not.toBeNull()
-  })
-
-  it('hides the beta grant from the overview once it has ended', async () => {
-    const db = await getDb()
-    await db
-      .update(organization)
-      .set({ createdAt: new Date('2026-01-01T00:00:00Z') })
-      .where(eq(organization.id, AUTHLESS_ORG_ID))
-    const grantUntil = new Date(Date.now() + 40 * 86_400_000)
-    setBillingConfigForTests(
-      billingConfig({
-        launchAt: new Date(Date.now() - 86_400_000),
-        migrationGrantUntil: grantUntil,
-      })
-    )
-    invalidateEntitlementCache()
-    const app = await createApp()
-    const during = await json(await app.request('/api/billing'))
-    expect(during.source).toBe('migration_grant')
-    expect(during.migrationGrantExpiresAt).toBe(grantUntil.toISOString())
-
-    await materializeEntitlement(AUTHLESS_ORG_ID, {
-      reason: 'test',
-      now: new Date(grantUntil.getTime() + 1000),
-    })
-    invalidateEntitlementCache()
-    // The stored expiry is now in the past; getEntitlement would re-materialize
-    // on every read, so the overview must not present it as upcoming.
-    const stored = await billingRepository.findEntitlement(AUTHLESS_ORG_ID)
-    expect(stored?.source).toBe('free')
-    expect(stored?.migrationGrantExpiresAt).not.toBeNull()
-    const afterExpiry = new Date(grantUntil.getTime() + 60_000)
-    // An ended grant is history, not a deadline: the organization must not be
-    // recomputed on every sweep and every read from then on.
-    expect(await billingRepository.listEntitlementsDue(afterExpiry)).not.toContain(AUTHLESS_ORG_ID)
-  })
-
-  describe('beta transition notices', () => {
-    const day = 86_400_000
-    let sentEmails: Array<{
-      to: string
-      kind: string
-      idempotencyKey: string
-      restrictions: string[]
-      featuresInUse: string[]
-    }>
-
-    async function startGrant(grantDays: number) {
-      setBillingConfigForTests(
-        billingConfig({
-          launchAt: new Date(Date.now() + day),
-          migrationGrantUntil: new Date(Date.now() + grantDays * day),
-        })
-      )
-      invalidateEntitlementCache()
-      await getEntitlement(AUTHLESS_ORG_ID)
-    }
-
-    beforeEach(() => {
-      sentEmails = []
-      setTransitionEmailSenderForTests(async (email) => {
-        sentEmails.push({
-          to: email.to,
-          kind: email.kind,
-          idempotencyKey: email.idempotencyKey,
-          restrictions: email.restrictions,
-          featuresInUse: email.featuresInUse,
-        })
-        return { id: `msg_${sentEmails.length}` }
-      })
-    })
-
-    afterEach(() => setTransitionEmailSenderForTests(null))
-
-    it('emails every owner once, with what the Free plan would change', async () => {
-      await startGrant(31)
-      const app = await createApp()
-      await createConnection(app, 'a')
-      await createConnection(app, 'b')
-
-      const first = await sendTransitionNotices()
-      expect(first.sent).toBe(1)
-      expect(sentEmails[0]).toMatchObject({ kind: 'transition_notice' })
-      expect(sentEmails[0].restrictions).toEqual([
-        'Enabled Redis connections: 2 in use (a, b); Free includes 1, and you choose which stay active',
-      ])
-
-      // Running the launch again never emails an owner twice.
-      const second = await sendTransitionNotices()
-      expect(second.sent).toBe(0)
-      expect(second.alreadySent).toBe(1)
-      expect(sentEmails).toHaveLength(1)
-    })
-
-    it('tells organizations whose usage fits Free that only paid features change', async () => {
-      await startGrant(31)
-      await sendTransitionNotices()
-      expect(sentEmails[0].restrictions).toEqual([])
-      expect(sentEmails[0].featuresInUse).toEqual([])
-    })
-
-    it('lists the Slack app as in use once it is connected, even without destinations', async () => {
-      await startGrant(31)
-      const secretEnv = env as { DURABULL_SECRET_ENCRYPTION_KEY?: string }
-      const originalSecretKey = secretEnv.DURABULL_SECRET_ENCRYPTION_KEY
-      secretEnv.DURABULL_SECRET_ENCRYPTION_KEY =
-        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-      await slackInstallationRepository.upsert({
-        organizationId: AUTHLESS_ORG_ID,
-        slackTeamId: 'T0ACME',
-        slackTeamName: 'Acme',
-        botUserId: 'UBOT',
-        botToken: 'xoxb-test',
-        scopes: 'chat:write',
-      })
-      secretEnv.DURABULL_SECRET_ENCRYPTION_KEY = originalSecretKey
-      await sendTransitionNotices()
-      expect(sentEmails[0].featuresInUse).toEqual(['Slack app'])
-    })
-
-    it('retries an owner whose email failed, without resending to others', async () => {
-      await startGrant(31)
-      setTransitionEmailSenderForTests(async () => {
-        throw new Error('provider down')
-      })
-      const failed = await sendTransitionNotices()
-      expect(failed.failed).toHaveLength(1)
-
-      setTransitionEmailSenderForTests(async (email) => {
-        sentEmails.push({
-          to: email.to,
-          kind: email.kind,
-          idempotencyKey: email.idempotencyKey,
-          restrictions: [],
-          featuresInUse: [],
-        })
-        return { id: 'msg_retry' }
-      })
-      const retried = await sendTransitionNotices()
-      expect(retried.sent).toBe(1)
-    })
-
-    it('sends reminders 7 days and 1 day before the grant ends, only after the notice', async () => {
-      await startGrant(31)
-      const grantEnd = new Date(Date.now() + 31 * day)
-
-      // No notice yet: reminders never go out on their own.
-      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(0)
-
-      await sendTransitionNotices()
-      expect((await sendDueReminders(new Date(grantEnd.getTime() - 10 * day))).sent).toBe(0)
-      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(1)
-      expect((await sendDueReminders(new Date(grantEnd.getTime() - 5 * day))).sent).toBe(0)
-      expect((await sendDueReminders(new Date(grantEnd.getTime() - 12 * 3_600_000))).sent).toBe(1)
-      expect(sentEmails.map((email) => email.kind)).toEqual([
-        'transition_notice',
-        'reminder_7d',
-        'reminder_1d',
-      ])
-    })
-
-    it('stops reminding organizations that subscribed', async () => {
-      await startGrant(31)
-      await sendTransitionNotices()
-      await subscribe(AUTHLESS_ORG_ID)
-      const grantEnd = new Date(Date.now() + 31 * day)
-      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(0)
-    })
-
-    it('keeps reminding an organization whose first payment is incomplete', async () => {
-      await startGrant(31)
-      await sendTransitionNotices()
-      await subscribe(AUTHLESS_ORG_ID, { status: 'incomplete' })
-      const grantEnd = new Date(Date.now() + 31 * day)
-      expect((await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))).sent).toBe(1)
-    })
-
-    it('shows the in-app banner only after the notice and until a plan is chosen', async () => {
-      await startGrant(31)
-      const app = await createApp()
-      expect((await json(await app.request('/api/billing'))).transition).toBeNull()
-
-      await sendTransitionNotices()
-      const overview = await json(await app.request('/api/billing'))
-      expect(overview.transition.deadline).toBe(overview.migrationGrantExpiresAt)
-      expect(overview.transition.noticeSentAt).toBeTruthy()
-
-      await subscribe(AUTHLESS_ORG_ID)
-      invalidateEntitlementCache()
-      expect((await json(await app.request('/api/billing'))).transition).toBeNull()
-    })
-
-    it('retries a send it could not record under the same idempotency key', async () => {
-      await startGrant(31)
-      const spy = spyOn(billingRepository, 'completeNoticeDelivery').mockImplementationOnce(
-        async () => {
-          throw new Error('database unavailable')
-        }
-      )
-      try {
-        const first = await sendTransitionNotices()
-        // The provider accepted it, so it counts as sent; only the record is missing.
-        expect(first.sent).toBe(1)
-        expect(first.delivered.has(AUTHLESS_ORG_ID)).toBe(true)
-        expect(first.failed[0].error).toContain('Sent, but recording the delivery failed')
-
-        // Still claimed: an immediate rerun does not send again.
-        expect((await sendTransitionNotices()).sent).toBe(0)
-
-        // Once the claim is stale it is retried with the same key, which the
-        // provider deduplicates.
-        const later = await sendTransitionNotices(new Date(Date.now() + 2 * 3_600_000))
-        expect(later.sent).toBe(1)
-        expect(sentEmails).toHaveLength(2)
-        expect(sentEmails[1].idempotencyKey).toBe(sentEmails[0].idempotencyKey)
-      } finally {
-        spy.mockRestore()
-      }
-    })
-
-    it('keeps the idempotency key when the provider may have accepted the send', async () => {
-      await startGrant(31)
-      const keys: string[] = []
-      setTransitionEmailSenderForTests(async (email) => {
-        keys.push(email.idempotencyKey)
-        throw new BillingEmailError('Unable to fetch data', true)
-      })
-      const uncertain = await sendTransitionNotices()
-      expect(uncertain.failed[0].error).toContain('delivery uncertain')
-
-      setTransitionEmailSenderForTests(async (email) => {
-        keys.push(email.idempotencyKey)
-        return { id: 'msg_retry' }
-      })
-      // Left claimed, so only a stale retry sends again, under the same key.
-      expect((await sendTransitionNotices()).sent).toBe(0)
-      const later = await sendTransitionNotices(new Date(Date.now() + 2 * 3_600_000))
-      expect(later.sent).toBe(1)
-      expect(keys).toHaveLength(2)
-      expect(keys[1]).toBe(keys[0])
-    })
-
-    it('ignores a slow attempt finishing after its claim was taken over', async () => {
-      await startGrant(31)
-      const claim = async (now: Date) =>
-        billingRepository.claimNoticeDelivery({
-          organizationId: AUTHLESS_ORG_ID,
-          kind: 'transition_notice',
-          userId: 'owner-x',
-          email: 'owner-x@example.com',
-          now,
-          staleBefore: new Date(now.getTime() - 3_600_000),
-        })
-      const first = await claim(new Date())
-      const second = await claim(new Date(Date.now() + 2 * 3_600_000))
-      expect(first && second).toBeTruthy()
-      if (!first || !second) return
-      expect(
-        await billingRepository.completeNoticeDelivery(second, {
-          sent: true,
-          providerMessageId: 'msg_new',
-        })
-      ).toBe(true)
-      // The first attempt fails late; the delivered row must stay delivered.
-      expect(
-        await billingRepository.completeNoticeDelivery(first, { sent: false, error: 'timeout' })
-      ).toBe(false)
-      const [row] = await billingRepository.listNoticeDeliveries(AUTHLESS_ORG_ID)
-      expect(row.status).toBe('sent')
-    })
-
-    it('gives an owner added later their own reminder gap', async () => {
-      await startGrant(31)
-      await sendTransitionNotices()
-      const db = await getDb()
-      await db.insert(user).values({
-        id: 'late-owner',
-        name: 'Late owner',
-        email: 'late-owner@example.com',
-        emailVerified: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      await db.insert(member).values({
-        id: 'late-owner-member',
-        organizationId: AUTHLESS_ORG_ID,
-        userId: 'late-owner',
-        role: 'owner',
-        createdAt: new Date(),
-      })
-      const grantEnd = new Date(Date.now() + 31 * day)
-      // Six days left: the original owner is due a reminder; the new owner only
-      // gets the notice now, and no reminder in the same pass.
-      await sendDueReminders(new Date(grantEnd.getTime() - 6 * day))
-      expect(sentEmails.map((email) => [email.to, email.kind]).slice(1)).toEqual(
-        expect.arrayContaining([
-          ['late-owner@example.com', 'transition_notice'],
-          [expect.not.stringContaining('late-owner'), 'reminder_7d'],
-        ])
-      )
-      expect(
-        sentEmails.filter((email) => email.to === 'late-owner@example.com').map((e) => e.kind)
-      ).toEqual(['transition_notice'])
-    })
-
-    it('hides the in-app banner while an operator override provides access', async () => {
-      await startGrant(31)
-      await sendTransitionNotices()
-      await billingRepository.createOverride({
-        organizationId: AUTHLESS_ORG_ID,
-        planCode: 'team',
-        limits: null,
-        reason: 'test',
-        createdBy: 'test',
-        expiresAt: new Date(Date.now() + 60 * day),
-      })
-      await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'test' })
-      invalidateEntitlementCache()
-      const app = await createApp()
-      const overview = await json(await app.request('/api/billing'))
-      expect(overview.source).toBe('override')
-      expect(overview.transition).toBeNull()
-    })
-
-    it('finds organizations whose entitlement predates the launch dates', async () => {
-      // Materialized before launch was configured: no grant recorded.
-      await getEntitlement(AUTHLESS_ORG_ID)
-      setBillingConfigForTests(
-        billingConfig({
-          launchAt: new Date(Date.now() + day),
-          migrationGrantUntil: new Date(Date.now() + 31 * day),
-        })
-      )
-      invalidateEntitlementCache()
-      expect(await listTransitionAudience()).toHaveLength(0)
-
-      const dryRun = await refreshGrantEligibility({ execute: false })
-      expect(dryRun.pending.map((org) => org.id)).toEqual([AUTHLESS_ORG_ID])
-      expect(await listTransitionAudience()).toHaveLength(0)
-
-      const executed = await refreshGrantEligibility({ execute: true })
-      expect(executed.refreshed).toBe(1)
-      expect((await listTransitionAudience()).map((entry) => entry.organizationId)).toEqual([
-        AUTHLESS_ORG_ID,
-      ])
-      expect((await refreshGrantEligibility({ execute: false })).pending).toHaveLength(0)
-    })
-
-    it('creates one Stripe Customer per organization, and a dry run creates none', async () => {
-      const dryRun = await syncStripeCustomers({ execute: false })
-      expect(dryRun.created).toBe(1)
-      expect(await billingRepository.findAccount(AUTHLESS_ORG_ID)).toBeNull()
-
-      const first = await syncStripeCustomers({ execute: true })
-      expect(first.created).toBe(1)
-      expect((await billingRepository.findAccount(AUTHLESS_ORG_ID))?.stripeCustomerId).toBe('cus_1')
-
-      const second = await syncStripeCustomers({ execute: true })
-      expect(second.created).toBe(0)
-      expect(second.reconciled).toBe(1)
-    })
   })
 })

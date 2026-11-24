@@ -20,7 +20,6 @@ export const freeLimits = {
 
 export const billingOverview = {
   enabled: true,
-  enforcement: 'on',
   enforced: true,
   planCode: 'team',
   planName: 'Team',
@@ -58,10 +57,7 @@ export const billingOverview = {
   },
   graceExpiresAt: null,
   capacityAdjustmentExpiresAt: null,
-  migrationGrantExpiresAt: null,
   historyRetentionFloorExpiresAt: null,
-  proposedPlanCode: 'team',
-  freePlanExceeded: [],
   pendingCheckout: null,
   suspended: [],
   hasBillingAccount: true,
@@ -69,7 +65,6 @@ export const billingOverview = {
   purchasesEnabled: true,
   trialEligible: false,
   trialDays: 14,
-  transition: null,
   catalog: [],
 }
 

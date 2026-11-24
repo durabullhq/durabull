@@ -188,7 +188,7 @@ const app = new Hono()
     if (!destination.enabled) {
       return c.json({ error: 'Webhook destination is disabled.' }, 400)
     }
-    if (await isResourceSuspended(organizationId, 'alert_destination', destination.id)) {
+    if (await isResourceSuspended('alert_destination', destination.id)) {
       return c.json({ error: 'Destination is paused because it is above your plan limit.' }, 409)
     }
 

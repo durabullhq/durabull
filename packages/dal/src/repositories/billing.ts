@@ -1,16 +1,14 @@
 import { isOwnerRole } from '@durabull/utils/roles'
-import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import { getDatabaseMode, getDb, getPgLockPool } from '../db/client'
 import { alertDestination } from '../db/schemas/alert-destination/schema'
 import { alertRule } from '../db/schemas/alert-rule/schema'
 import {
   type BillingCheckoutAttemptStatus,
   type BillingLimitsJson,
-  type BillingNoticeKind,
   type BillingResourceKind,
   billingCheckoutAttempt,
   billingEntitlementOverride,
-  billingNoticeDelivery,
   billingOperatorAction,
   billingResourceSuspension,
   billingSubscription,
@@ -406,15 +404,11 @@ export const billingRepository = {
       .where(eq(organizationEntitlement.organizationId, organizationId))
   },
 
-  async setMigrationGrant(organizationId: string, expiresAt: Date | null): Promise<void> {
-    const db = await getDb()
-    await db
-      .update(organizationEntitlement)
-      .set({ migrationGrantExpiresAt: expiresAt, reevaluateAt: new Date() })
-      .where(eq(organizationEntitlement.organizationId, organizationId))
-  },
-
-  /** Organizations whose entitlement may change because a recorded deadline passed. */
+  /**
+   * Organizations whose entitlement may change because a recorded deadline
+   * passed, or that were stored unenforced while billing was off. Only the
+   * billing lifecycle calls this, and only while billing is enabled.
+   */
   async listEntitlementsDue(now: Date, limit = 200): Promise<string[]> {
     const db = await getDb()
     const rows = await db
@@ -425,13 +419,9 @@ export const billingRepository = {
           lte(organizationEntitlement.reevaluateAt, now),
           lte(organizationEntitlement.graceExpiresAt, now),
           lte(organizationEntitlement.capacityAdjustmentExpiresAt, now),
-          // A grant that already ended stays stored; it is due only while
-          // the snapshot still draws access from it.
-          and(
-            eq(organizationEntitlement.source, 'migration_grant'),
-            lte(organizationEntitlement.migrationGrantExpiresAt, now)
-          ),
-          lte(organizationEntitlement.historyRetentionFloorExpiresAt, now)
+          lte(organizationEntitlement.historyRetentionFloorExpiresAt, now),
+          // Stored while billing was off; recomputing applies the plan limits.
+          eq(organizationEntitlement.enforced, false)
         )
       )
       .orderBy(asc(organizationEntitlement.updatedAt))
@@ -454,16 +444,6 @@ export const billingRepository = {
       .where(eq(organization.id, organizationId))
       .limit(1)
     return rows[0] ?? null
-  },
-
-  async findOrganizationCreatedAt(organizationId: string): Promise<Date | null> {
-    const db = await getDb()
-    const rows = await db
-      .select({ createdAt: organization.createdAt })
-      .from(organization)
-      .where(eq(organization.id, organizationId))
-      .limit(1)
-    return rows[0]?.createdAt ?? null
   },
 
   async listAllOrganizationIds(): Promise<Array<{ id: string; createdAt: Date }>> {
@@ -605,168 +585,6 @@ export const billingRepository = {
         )
       )
     return rows.map((row) => row.organizationId)
-  },
-
-  /** Organizations whose access currently comes from an unexpired beta transition grant. */
-  async listMigrationGrantOrganizations(
-    now: Date
-  ): Promise<Array<{ id: string; name: string; slug: string; migrationGrantExpiresAt: Date }>> {
-    const db = await getDb()
-    const rows = await db
-      .select({
-        id: organization.id,
-        name: organization.name,
-        slug: organization.slug,
-        migrationGrantExpiresAt: organizationEntitlement.migrationGrantExpiresAt,
-      })
-      .from(organizationEntitlement)
-      .innerJoin(organization, eq(organizationEntitlement.organizationId, organization.id))
-      .where(
-        and(
-          eq(organizationEntitlement.source, 'migration_grant'),
-          gt(organizationEntitlement.migrationGrantExpiresAt, now)
-        )
-      )
-      .orderBy(asc(organization.createdAt))
-    return rows.flatMap((row) =>
-      row.migrationGrantExpiresAt
-        ? [{ ...row, migrationGrantExpiresAt: row.migrationGrantExpiresAt }]
-        : []
-    )
-  },
-
-  /**
-   * Organizations created before `createdBefore` whose stored entitlement has
-   * never decided a beta grant (or that have no entitlement row yet), such as
-   * snapshots materialized before the launch dates were configured.
-   */
-  async listOrganizationsWithoutMigrationGrant(
-    createdBefore: Date
-  ): Promise<Array<{ id: string; name: string }>> {
-    const db = await getDb()
-    return db
-      .select({ id: organization.id, name: organization.name })
-      .from(organization)
-      .leftJoin(
-        organizationEntitlement,
-        eq(organizationEntitlement.organizationId, organization.id)
-      )
-      .where(
-        and(
-          lt(organization.createdAt, createdBefore),
-          isNull(organizationEntitlement.migrationGrantExpiresAt)
-        )
-      )
-      .orderBy(asc(organization.createdAt))
-  },
-
-  /**
-   * Claim one notice email before sending it. Returns null when it was already
-   * sent or another worker is sending it; a failed attempt, or one stuck in
-   * `sending` since before `staleBefore`, can be claimed again.
-   */
-  async claimNoticeDelivery(input: {
-    organizationId: string
-    kind: BillingNoticeKind
-    userId: string
-    email: string
-    now: Date
-    staleBefore: Date
-  }): Promise<{ id: string; attempts: number; idempotencyKey: string } | null> {
-    const db = await getDb()
-    const result = await db.execute(sql`
-      INSERT INTO ${billingNoticeDelivery}
-        (id, organization_id, kind, user_id, email, status, attempts, idempotency_key,
-         created_at, updated_at)
-      VALUES
-        (gen_random_uuid(), ${input.organizationId}, ${input.kind}, ${input.userId},
-         ${input.email}, 'sending', 1, gen_random_uuid()::text, ${input.now}, ${input.now})
-      ON CONFLICT (organization_id, kind, user_id) DO UPDATE
-        SET status = 'sending',
-            email = EXCLUDED.email,
-            attempts = ${billingNoticeDelivery}.attempts + 1,
-            idempotency_key = CASE
-              WHEN ${billingNoticeDelivery}.status = 'failed' THEN gen_random_uuid()::text
-              ELSE ${billingNoticeDelivery}.idempotency_key
-            END,
-            error = NULL,
-            updated_at = EXCLUDED.updated_at
-        WHERE ${billingNoticeDelivery}.status = 'failed'
-           OR (${billingNoticeDelivery}.status = 'sending'
-               AND ${billingNoticeDelivery}.updated_at < ${input.staleBefore})
-      RETURNING id, attempts, idempotency_key AS "idempotencyKey"
-    `)
-    return (
-      rowsFromExecute<{ id: string; attempts: number; idempotencyKey: string }>(result)[0] ?? null
-    )
-  },
-
-  /**
-   * Record the outcome of a claimed send. Applies only while the claim is
-   * still current (`attempts` grows on every claim), so a slow attempt cannot
-   * overwrite a newer one that reclaimed the row. Returns whether it applied.
-   */
-  async completeNoticeDelivery(
-    claim: { id: string; attempts: number },
-    outcome: { sent: true; providerMessageId: string | null } | { sent: false; error: string },
-    now = new Date()
-  ): Promise<boolean> {
-    const db = await getDb()
-    const rows = await db
-      .update(billingNoticeDelivery)
-      .set(
-        outcome.sent
-          ? {
-              status: 'sent',
-              providerMessageId: outcome.providerMessageId,
-              sentAt: now,
-              updatedAt: now,
-            }
-          : { status: 'failed', error: outcome.error.slice(0, 1000), updatedAt: now }
-      )
-      .where(
-        and(
-          eq(billingNoticeDelivery.id, claim.id),
-          eq(billingNoticeDelivery.attempts, claim.attempts),
-          eq(billingNoticeDelivery.status, 'sending')
-        )
-      )
-      .returning({ id: billingNoticeDelivery.id })
-    return rows.length > 0
-  },
-
-  /**
-   * Whether this notice was attempted for any owner of the organization, and
-   * when it was first delivered (null if no owner has received it yet).
-   */
-  async findNoticeProgress(
-    organizationId: string,
-    kind: BillingNoticeKind
-  ): Promise<{ attempted: boolean; firstSentAt: Date | null }> {
-    const db = await getDb()
-    const rows = await db
-      .select({ status: billingNoticeDelivery.status, sentAt: billingNoticeDelivery.sentAt })
-      .from(billingNoticeDelivery)
-      .where(
-        and(
-          eq(billingNoticeDelivery.organizationId, organizationId),
-          eq(billingNoticeDelivery.kind, kind)
-        )
-      )
-    const sent = rows
-      .map((row) => row.sentAt)
-      .filter((sentAt): sentAt is Date => sentAt !== null)
-      .sort((a, b) => a.getTime() - b.getTime())
-    return { attempted: rows.length > 0, firstSentAt: sent[0] ?? null }
-  },
-
-  async listNoticeDeliveries(organizationId: string) {
-    const db = await getDb()
-    return db
-      .select()
-      .from(billingNoticeDelivery)
-      .where(eq(billingNoticeDelivery.organizationId, organizationId))
-      .orderBy(asc(billingNoticeDelivery.createdAt))
   },
 
   async listEntitlements(): Promise<OrganizationEntitlement[]> {

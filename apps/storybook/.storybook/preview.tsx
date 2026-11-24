@@ -3,7 +3,6 @@ import { CatalogProvider } from '../src/catalog-provider'
 import { controlledStory } from '../src/controlled-story'
 import {
   setBillingScenario,
-  setBillingTransition,
   setFixtureState,
   setSlackFixture,
   setUpdateAvailable,
@@ -27,7 +26,6 @@ const preview: Preview = {
       await startFixtures()
       setFixtureState(parameters.fixtureState ?? 'ready')
       setUpdateAvailable(parameters.updateAvailable === true)
-      setBillingTransition(parameters.billingTransition ?? 'off')
       setBillingScenario(parameters.billingScenario ?? 'team')
       setSlackFixture(parameters.slackFixture ?? 'connected')
       setSignedIn(parameters.signedIn !== false)

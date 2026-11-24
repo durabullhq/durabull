@@ -27,7 +27,7 @@ export function planStatus(plan: EnabledEntitlement, today = new Date()): PlanSt
 
   if (owner && (status === 'past_due' || status === 'unpaid')) {
     // Paid access is only on hold once the organization is actually on Free;
-    // grace, a beta grant or an override keeps it meanwhile.
+    // grace or an override keeps it meanwhile.
     const grace = plan.source === 'payment_grace' ? formatDate(plan.graceExpiresAt) : null
     return plan.source !== 'free'
       ? {

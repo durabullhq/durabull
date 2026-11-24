@@ -40,12 +40,6 @@ function flowControlsFixture(rateLimited = true) {
 export function setUpdateAvailable(value: boolean) {
   updateAvailable = value
 }
-/** Beta transition preview: an organization on the beta grant that has not subscribed. */
-export type BillingTransitionFixture = 'off' | 'notice' | 'final-week'
-let billingTransition: BillingTransitionFixture = 'off'
-export function setBillingTransition(value: BillingTransitionFixture) {
-  billingTransition = value
-}
 /**
  * Plan states for billing UI previews: paused resources on Free, a failed
  * renewal still in its grace period, and Free with its limits reached.
@@ -121,21 +115,6 @@ function scenarioOverview() {
       }
     default:
       return billingOverview
-  }
-}
-function billingFixture() {
-  if (billingTransition === 'off') return scenarioOverview()
-  const days = billingTransition === 'final-week' ? 3 : 26
-  const deadline = new Date(Date.now() + days * 86_400_000).toISOString()
-  return {
-    ...billingOverview,
-    planCode: 'free',
-    planName: 'Free',
-    subscribedPlanCode: null,
-    source: 'migration_grant',
-    subscription: null,
-    migrationGrantExpiresAt: deadline,
-    transition: { deadline, noticeSentAt: new Date().toISOString() },
   }
 }
 /** Slack integration preview: which state Settings → Integrations shows. */
@@ -220,7 +199,7 @@ export const appConfig = {
     deployment: 'self_hosted',
     distribution: 'unknown',
   },
-  billing: { enabled: true, enforcement: 'on' },
+  billing: { enabled: true },
   version: {
     version: 'storybook',
     buildId: 'public-preview',
@@ -269,7 +248,7 @@ function readFixture(path: string, url: URL): unknown {
   if (path.startsWith('/connections/')) return { connection: connections[0], ...connections[0] }
   if (path === '/team/members') return { members: list(members) }
   // The entitlement lookup is a subset of the overview, so one fixture serves both.
-  if (path === '/billing' || path === '/billing/entitlement') return billingFixture()
+  if (path === '/billing' || path === '/billing/entitlement') return scenarioOverview()
   if (path === '/billing/invoices') return state === 'empty' ? { invoices: [] } : billingInvoices
   if (path === '/service-accounts')
     return state === 'empty' ? { ...serviceAccounts, serviceAccounts: [] } : serviceAccounts

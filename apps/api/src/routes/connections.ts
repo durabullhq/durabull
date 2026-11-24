@@ -89,7 +89,7 @@ const app = new Hono()
         prefix: conn.prefix,
         allowSelfSignedCerts: conn.allowSelfSignedCerts,
         enabled: conn.enabled,
-        suspended: await isResourceSuspended(organizationId, 'connection', conn.id),
+        suspended: await isResourceSuspended('connection', conn.id),
         createdAt: conn.createdAt.toISOString(),
         updatedAt: conn.updatedAt.toISOString(),
       },
@@ -275,7 +275,7 @@ const app = new Hono()
           prefix: conn.prefix,
           allowSelfSignedCerts: conn.allowSelfSignedCerts,
           enabled: conn.enabled,
-          suspended: await isResourceSuspended(organizationId, 'connection', conn.id),
+          suspended: await isResourceSuspended('connection', conn.id),
         },
       })
     }

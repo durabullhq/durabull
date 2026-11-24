@@ -32,7 +32,6 @@ const FALLBACK_APP_CONFIG: AppConfigResponse = {
   },
   billing: {
     enabled: false,
-    enforcement: 'off',
   },
   version: {
     version: APP_BUILD_INFO.version,

@@ -579,7 +579,7 @@ async function sendDestinationAlert(
       retryable: true,
     })
   }
-  if (await isResourceSuspended(event.organizationId, 'alert_destination', destination.id)) {
+  if (await isResourceSuspended('alert_destination', destination.id)) {
     throw new NonRetryableDeliveryError(
       `Destination "${destination.name}" is paused because it is above the plan's destination limit.`
     )
@@ -701,10 +701,7 @@ async function sendWebhookAlert(
   // plan like any other destination.
   const savedDestinationId =
     metadata && typeof metadata.destinationId === 'string' ? metadata.destinationId : null
-  if (
-    savedDestinationId &&
-    (await isResourceSuspended(event.organizationId, 'alert_destination', savedDestinationId))
-  ) {
+  if (savedDestinationId && (await isResourceSuspended('alert_destination', savedDestinationId))) {
     throw new NonRetryableDeliveryError(
       "This webhook destination is paused because it is above the plan's destination limit."
     )

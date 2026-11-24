@@ -63,8 +63,6 @@ export interface EntitlementInputs {
   subscription: SubscriptionEvidence | null
   /** Highest plan the organization has verifiably paid for on the current subscription. */
   lastPaidPlan: PlanCode | null
-  /** Beta transition grant: existing usage stays unrestricted until this instant. */
-  migrationGrantExpiresAt: Date | null
   override: EntitlementOverride | null
   /** Contracted limits for Enterprise agreements. */
   contractLimits: Partial<PlanLimits> | null
@@ -74,6 +72,19 @@ export interface EntitlementInputs {
   unknownPriceSince?: Date | null
 }
 
+/**
+ * Statuses of a subscription that still exists in Stripe. While one exists an
+ * organization may not start a second Checkout or be deleted.
+ */
+export const LIVE_SUBSCRIPTION_STATUSES: ReadonlySet<SubscriptionStatus> = new Set([
+  'active',
+  'trialing',
+  'past_due',
+  'unpaid',
+  'incomplete',
+  'paused',
+])
+
 export type EntitlementSource =
   | 'self_hosted'
   | 'free'
@@ -81,7 +92,6 @@ export type EntitlementSource =
   | 'trial'
   | 'payment_grace'
   | 'pending_upgrade'
-  | 'migration_grant'
   | 'override'
   | 'degraded'
 
@@ -163,7 +173,6 @@ export function resolveEntitlement(input: EntitlementInputs): ResolvedEntitlemen
 
   const base = resolveFromSubscription(input)
   const overrideExpiry = future(input.override?.expiresAt ?? null, now)
-  const grantExpiry = future(input.migrationGrantExpiresAt, now)
 
   if (input.override && overrideExpiry) {
     const plan = PLANS[input.override.planCode]
@@ -180,20 +189,6 @@ export function resolveEntitlement(input: EntitlementInputs): ResolvedEntitlemen
       ),
       degraded: false,
       reevaluateAt: earliest(overrideExpiry, base.reevaluateAt),
-    }
-  }
-
-  if (grantExpiry) {
-    // The beta grant keeps existing usage unrestricted during the notice
-    // period, whatever the organization has purchased in the meantime.
-    return {
-      ...base,
-      planCode: base.planCode === 'self_hosted' ? 'business' : base.planCode,
-      source: 'migration_grant',
-      features: [...FEATURE_KEYS],
-      limits: { ...UNLIMITED_LIMITS, 'history.redis_health_days': 30 },
-      degraded: false,
-      reevaluateAt: earliest(grantExpiry, base.reevaluateAt),
     }
   }
 

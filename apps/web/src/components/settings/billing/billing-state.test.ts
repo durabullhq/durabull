@@ -61,8 +61,8 @@ describe('describeBilling', () => {
     ).toBe('overdue_lapsed')
   })
 
-  it('does not call paid access lapsed while a beta grant or override still gives it', () => {
-    for (const source of ['migration_grant', 'override', 'subscription'] as const) {
+  it('does not call paid access lapsed while an override still gives it', () => {
+    for (const source of ['override', 'subscription'] as const) {
       expect(
         describeBilling(overview({ source, subscription: subscription({ status: 'past_due' }) }))
           .standing
@@ -175,12 +175,7 @@ describe('planAction', () => {
     expect(action(invoiced, 'free')).toEqual({ kind: 'none' })
   })
 
-  it('lets an organization on the beta grant or an arranged plan choose a plan', () => {
-    expect(action({ source: 'migration_grant' }, 'team')).toEqual({
-      kind: 'checkout',
-      label: 'Choose Team',
-    })
-    expect(action({ source: 'migration_grant' }, 'free')).toEqual({ kind: 'none' })
+  it('lets an organization on an arranged plan choose a plan', () => {
     expect(action({ source: 'override', planCode: 'business' }, 'business')).toEqual({
       kind: 'checkout',
       label: 'Choose Business',

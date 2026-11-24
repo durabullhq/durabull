@@ -6,7 +6,14 @@ import { useEntitlement } from '@/hooks/use-entitlement'
 import { useActiveOrganization } from '@/hooks/use-organization'
 import { cn } from '@/lib/utils'
 import { planStatus } from './plan-status'
-import { PLAN_BANNER_POSITION, PLAN_BANNER_SURFACE, TransitionBanner } from './transition-banner'
+
+/**
+ * Bottom-left, but beside the desktop sidebar rather than on top of it: the
+ * user menu lives in the sidebar's bottom corner and must stay reachable.
+ */
+const PLAN_BANNER_POSITION = 'fixed bottom-4 left-4 z-40 w-[calc(100vw-2rem)] max-w-sm md:left-64'
+
+const PLAN_BANNER_SURFACE = 'rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg'
 
 function dismissalKey(orgSlug: string, id: string): string {
   return `durabull:plan-status-dismissed:${orgSlug}:${id}`
@@ -23,8 +30,7 @@ function readDismissed(key: string): boolean {
 /**
  * App-wide plan status for the active organization. Billing problems used to
  * be visible only to someone who opened Settings → Billing; this surfaces the
- * one that matters wherever the member is working. Falls back to the beta
- * transition banner when nothing more urgent applies.
+ * one that matters wherever the member is working.
  */
 export function PlanStatusBanner({ orgSlug }: { orgSlug: string }) {
   const { plan } = useEntitlement()
@@ -35,12 +41,10 @@ export function PlanStatusBanner({ orgSlug }: { orgSlug: string }) {
   // navigation; until it matches this route it may describe the previous one.
   if (!plan || activeOrganization?.slug !== orgSlug) return null
   const status = planStatus(plan)
-  if (!status) return <TransitionBanner orgSlug={orgSlug} />
+  if (!status) return null
 
   const key = dismissalKey(orgSlug, status.id)
-  // A dismissed status must not also hide the transition banner, which stays
-  // up (undismissible) in its final week.
-  if (dismissedKey === key || readDismissed(key)) return <TransitionBanner orgSlug={orgSlug} />
+  if (dismissedKey === key || readDismissed(key)) return null
   const dismiss = () => {
     try {
       window.localStorage.setItem(key, '1')
