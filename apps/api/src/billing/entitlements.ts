@@ -99,7 +99,7 @@ function toEffective(row: OrganizationEntitlement): EffectiveEntitlement {
     source: row.source as EntitlementSource,
     features: (row.features ?? []).filter(isFeatureKey),
     limits: limitsFromJson(row.limits),
-    enforced: true,
+    enforced: row.enforced,
     degraded: row.degraded,
     revision: row.revision,
     notices: (row.notices ?? []) as EntitlementNotice[],
@@ -211,6 +211,9 @@ export async function materializeEntitlementLocked(
 ): Promise<OrganizationEntitlement> {
   {
     const now = options.now ?? new Date()
+    // Operator commands (reconcile, overrides, contract limits) can still
+    // materialize while Cloud billing is off; such rows impose no limits.
+    const enforced = isBillingEnabled()
     const [existing, subscription, override] = await Promise.all([
       billingRepository.findEntitlement(organizationId),
       billingRepository.findCurrentSubscription(organizationId),
@@ -240,44 +243,50 @@ export async function materializeEntitlementLocked(
     let capacityAdjustmentExpiresAt = existing?.capacityAdjustmentExpiresAt ?? null
     let lastCapacityAdjustmentEndedAt = existing?.lastCapacityAdjustmentEndedAt ?? null
 
-    const usage = await billingRepository.getUsage(organizationId)
-    const transition = evaluateCapacityTransition({
-      now,
-      nextLimits: resolved.limits,
-      usage,
-      activeWindowExpiresAt: capacityAdjustmentExpiresAt,
-      lastWindowEndedAt: lastCapacityAdjustmentEndedAt,
-      // Payment grace already gave the customer time.
-      skipWindow: existing?.source === 'payment_grace',
-    })
-    if (transition.suspendNow) {
-      const result = await allocateCapacity(organizationId, resolved.limits, {
-        reason: `Plan ${resolved.planCode} limits after ${options.reason}`,
+    if (enforced) {
+      const usage = await billingRepository.getUsage(organizationId)
+      const transition = evaluateCapacityTransition({
+        now,
+        nextLimits: resolved.limits,
+        usage,
+        activeWindowExpiresAt: capacityAdjustmentExpiresAt,
+        lastWindowEndedAt: lastCapacityAdjustmentEndedAt,
+        // Payment grace already gave the customer time.
+        skipWindow: existing?.source === 'payment_grace',
       })
-      if (capacityAdjustmentExpiresAt) lastCapacityAdjustmentEndedAt = now
-      capacityAdjustmentExpiresAt = null
-      if (result.suspended.length > 0) {
-        console.warn(
-          `[billing] Suspended ${result.suspended.length} resource(s) above plan limits for organization ${organizationId}`
-        )
-      }
-    } else {
-      if (transition.overLimit.length === 0 && capacityAdjustmentExpiresAt) {
-        lastCapacityAdjustmentEndedAt = now
-      }
-      capacityAdjustmentExpiresAt = transition.windowExpiresAt
-      // Only connections and memberships get the adjustment window.
-      if (transition.suspendImmediately.length > 0) {
-        await allocateCapacity(organizationId, resolved.limits, {
+      if (transition.suspendNow) {
+        const result = await allocateCapacity(organizationId, resolved.limits, {
           reason: `Plan ${resolved.planCode} limits after ${options.reason}`,
-          only: transition.suspendImmediately,
+        })
+        if (capacityAdjustmentExpiresAt) lastCapacityAdjustmentEndedAt = now
+        capacityAdjustmentExpiresAt = null
+        if (result.suspended.length > 0) {
+          console.warn(
+            `[billing] Suspended ${result.suspended.length} resource(s) above plan limits for organization ${organizationId}`
+          )
+        }
+      } else {
+        if (transition.overLimit.length === 0 && capacityAdjustmentExpiresAt) {
+          lastCapacityAdjustmentEndedAt = now
+        }
+        capacityAdjustmentExpiresAt = transition.windowExpiresAt
+        // Only connections and memberships get the adjustment window.
+        if (transition.suspendImmediately.length > 0) {
+          await allocateCapacity(organizationId, resolved.limits, {
+            reason: `Plan ${resolved.planCode} limits after ${options.reason}`,
+            only: transition.suspendImmediately,
+          })
+        }
+        // Restore previously suspended resources when the new limits allow.
+        await allocateCapacity(organizationId, resolved.limits, {
+          reason: 'restore',
+          restoreOnly: true,
         })
       }
-      // Restore previously suspended resources when the new limits allow.
-      await allocateCapacity(organizationId, resolved.limits, {
-        reason: 'restore',
-        restoreOnly: true,
-      })
+    } else if (existing?.enforced) {
+      // Billing was turned off: nothing stays suspended.
+      await liftAllSuspensions(organizationId)
+      capacityAdjustmentExpiresAt = null
     }
 
     // Keep previously collected history for the recovery window after a
@@ -287,7 +296,7 @@ export async function materializeEntitlementLocked(
     // While a row was not enforced (billing was turned off), storage kept the
     // deployment's full retention; that is what is lost.
     const previousHistory =
-      existing && !existing.enforced
+      existing && !existing.enforced && enforced
         ? getRedisHealthRetentionDays()
         : (previousLimits?.['history.redis_health_days'] ?? null)
     const nextHistory = resolved.limits['history.redis_health_days']
@@ -325,7 +334,7 @@ export async function materializeEntitlementLocked(
       catalogVersion: BILLING_CATALOG_VERSION,
       features: resolved.features,
       limits: limitsToJson(resolved.limits),
-      enforced: true,
+      enforced,
       degraded: resolved.degraded,
       notices: resolved.notices,
       lastPaidPlanCode: subscription?.lastPaidPlanCode ?? existing?.lastPaidPlanCode ?? null,

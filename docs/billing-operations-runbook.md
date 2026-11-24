@@ -68,9 +68,17 @@ sandbox.
 ## Rollback
 
 Set `DURABULL_BILLING_PURCHASES_ENABLED=false` to stop new purchases while keeping known paid access
-and ingestion. Turning `DURABULL_BILLING_ENABLED` off stops all plan enforcement: at startup the API
-marks every stored entitlement unenforced and lifts its suspensions. **Never disable the webhook endpoint as a rollback.** If a
-charge is wrong, fix it in Stripe and reconcile; editing local plan rows does not change an invoice.
+and webhook ingestion. To unblock a wrongly restricted customer, use a time-boxed override (see
+**Wrongly locked customer**).
+
+Turning `DURABULL_BILLING_ENABLED` off is a decommission, not a rollback: besides lifting every
+limit (at startup the API marks stored entitlements unenforced and lifts their suspensions, and
+operator commands keep them unenforced), it stops the webhook endpoint and the inbox worker, so
+Stripe subscription changes are no longer reconciled. Only do it after live subscriptions are
+handled in Stripe, and turn billing back on to catch up on events.
+
+**Never disable the webhook endpoint as a rollback.** If a charge is wrong, fix it in Stripe and
+reconcile; editing local plan rows does not change an invoice.
 
 ## Monitoring
 

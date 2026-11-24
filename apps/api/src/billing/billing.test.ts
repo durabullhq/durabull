@@ -590,6 +590,20 @@ describe('Cloud billing', () => {
     expect((await createConnection(app, 'b')).status).toBe(201)
   })
 
+  it('never re-enforces limits when an operator materializes with billing off', async () => {
+    const app = await createApp()
+    await downgradeWithTwoConnections(app)
+    expect((await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).length).toBeGreaterThan(0)
+
+    // billing-ops reconcile / override / contract after billing is turned off.
+    setBillingConfigForTests({ enabled: false })
+    invalidateEntitlementCache()
+    const row = await materializeEntitlement(AUTHLESS_ORG_ID, { reason: 'operator' })
+    expect(row.enforced).toBe(false)
+    expect(await billingRepository.listSuspensions(AUTHLESS_ORG_ID)).toEqual([])
+    expect((await createConnection(app, 'third')).status).toBe(201)
+  })
+
   it('keeps alert rules on connections that stay active when trimming to the plan', async () => {
     await subscribe(AUTHLESS_ORG_ID)
     const app = await createApp()
